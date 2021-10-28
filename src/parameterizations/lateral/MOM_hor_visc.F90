@@ -546,6 +546,10 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       endif
     enddo ; enddo
 
+    call thickness_diffuse_get_KH(TD, KH_u_GME, KH_v_GME, G, GV)
+
+    call pass_vector(KH_u_GME, KH_v_GME, G%Domain)
+
   endif ! use_GME
 
   !$OMP parallel do default(none) &
@@ -558,7 +562,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
   !$OMP   h_neglect, h_neglect3, FWfrac, inv_PI3, inv_PI6, H0_GME, &
   !$OMP   diffu, diffv, Kh_h, Kh_q, Ah_h, Ah_q, FrictWork, FrictWork_GME, &
   !$OMP   div_xx_h, sh_xx_h, vort_xy_q, sh_xy_q, GME_coeff_h, GME_coeff_q, &
-  !$OMP   TD, KH_u_GME, KH_v_GME, grid_Re_Kh, grid_Re_Ah, NoSt, ShSt &
+  !$OMP   KH_u_GME, KH_v_GME, grid_Re_Kh, grid_Re_Ah, NoSt, ShSt &
   !$OMP ) &
   !$OMP private( &
   !$OMP   i, j, k, n, &
@@ -1426,12 +1430,6 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
     endif
 
     if (CS%use_GME) then
-      !### This call to get the 3-d GME diffusivity arrays and the subsequent blocking halo update
-      !    should occur outside of the k-loop, and perhaps the halo update should occur outside of
-      !    this routine altogether!
-      call thickness_diffuse_get_KH(TD, KH_u_GME, KH_v_GME, G, GV)
-      call pass_vector(KH_u_GME, KH_v_GME, G%Domain)
-
       do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
         GME_coeff = GME_effic_h(i,j) * 0.25 * &
             ((KH_u_GME(I,j,k)+KH_u_GME(I-1,j,k)) + (KH_v_GME(i,J,k)+KH_v_GME(i,J-1,k)))
@@ -1439,7 +1437,6 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
 
         if ((CS%id_GME_coeff_h>0) .or. find_FrictWork) GME_coeff_h(i,j,k) = GME_coeff
         str_xx_GME(i,j) = GME_coeff * sh_xx_bt(i,j)
-
       enddo ; enddo
 
       do J=js-1,Jeq ; do I=is-1,Ieq
@@ -1449,7 +1446,6 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
 
         if (CS%id_GME_coeff_q>0) GME_coeff_q(I,J,k) = GME_coeff
         str_xy_GME(I,J) = GME_coeff * sh_xy_bt(I,J)
-
       enddo ; enddo
 
       ! Applying GME diagonal term.  This is linear and the arguments can be rescaled.
