@@ -517,15 +517,15 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
             (0.25*((dvdy_bt(i,j)+dvdy_bt(i+1,j+1))+(dvdy_bt(i,j+1)+dvdy_bt(i+1,j))))**2)
     enddo ; enddo
 
-    do j=js-1,je+1 ; do i=is-1,ie+1
+    do j=js-2,je+2 ; do i=is-2,ie+2
       htot(i,j) = 0.0
     enddo ; enddo
-    do k=1,nz ; do j=js-1,je+1 ; do i=is-1,ie+1
+    do k=1,nz ; do j=js-2,je+2 ; do i=is-2,ie+2
       htot(i,j) = htot(i,j) + GV%H_to_Z*h(i,j,k)
     enddo ; enddo ; enddo
 
     I_GME_h0 = 1.0 / CS%GME_h0
-    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+    do j=Jsq-1,Jeq+2 ; do i=Isq-1,Ieq+2
       if (grad_vel_mag_bt_h(i,j)>0) then
         GME_effic_h(i,j) = CS%GME_efficiency * boundary_mask_h(i,j) * &
             (MIN(htot(i,j) * I_GME_h0, 1.0)**2)
@@ -534,7 +534,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       endif
     enddo ; enddo
 
-    do J=js-1,Jeq ; do I=is-1,Ieq
+    do J=js-2,Jeq+1 ; do I=is-2,Ieq+1
       if (grad_vel_mag_bt_q(I,J)>0) then
         h_arith_q = 0.25 * ((htot(i,j) + htot(i+1,j+1)) + (htot(i+1,j) + htot(i,j+1)))
         I_hq = 1.0 / h_arith_q
@@ -1430,7 +1430,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
     endif
 
     if (CS%use_GME) then
-      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+      do j=Jsq-1,Jeq+2 ; do i=Isq-1,Ieq+2
         GME_coeff = GME_effic_h(i,j) * 0.25 * &
             ((KH_u_GME(I,j,k)+KH_u_GME(I-1,j,k)) + (KH_v_GME(i,J,k)+KH_v_GME(i,J-1,k)))
         GME_coeff = MIN(GME_coeff, CS%GME_limiter)
@@ -1439,7 +1439,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
         str_xx_GME(i,j) = GME_coeff * sh_xx_bt(i,j)
       enddo ; enddo
 
-      do J=js-1,Jeq ; do I=is-1,Ieq
+      do J=js-2,Jeq+1 ; do I=is-2,Ieq+1
         GME_coeff = GME_effic_q(I,J) * 0.25 * &
             ((KH_u_GME(I,j,k)+KH_u_GME(I,j+1,k)) + (KH_v_GME(i,J,k)+KH_v_GME(i+1,J,k)))
         GME_coeff = MIN(GME_coeff, CS%GME_limiter)
