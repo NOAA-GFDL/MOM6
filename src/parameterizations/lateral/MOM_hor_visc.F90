@@ -1880,11 +1880,10 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, MEKE, ADp)
                  "If true, use a Leith nonlinear eddy viscosity.", &
                  default=.false., do_not_log=.not.CS%Laplacian)
   if (.not.CS%Laplacian) CS%Leith_Kh = .false.
-  ! This call duplicates one that occurs 26 lines later, and is probably unneccessary.
-  call get_param(param_file, mdl, "MODIFIED_LEITH", CS%Modified_Leith, &
-                 "If true, add a term to Leith viscosity which is "//&
-                 "proportional to the gradient of divergence.", &
-                 default=.false., do_not_log=.not.CS%Laplacian) !### (.not.CS%Leith_Kh)?
+  call get_param(param_file, mdl, "LEITH_LAP_CONST", Leith_Lap_const, &
+                 "The nondimensional Laplacian Leith constant, "//&
+                 "often set to 1.0", units="nondim", default=0.0, &
+                  fail_if_missing=CS%Leith_Kh, do_not_log=.not.CS%Leith_Kh)
   call get_param(param_file, mdl, "USE_MEKE", use_MEKE, &
                  default=.false., do_not_log=.true.)
   call get_param(param_file, mdl, "RES_SCALE_MEKE_VISC", CS%res_scale_MEKE, &
@@ -1892,27 +1891,6 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, MEKE, ADp)
                  "the resolution function.", default=.false., &
                  do_not_log=.not.(CS%Laplacian.and.use_MEKE))
   if (.not.(CS%Laplacian.and.use_MEKE)) CS%res_scale_MEKE = .false.
-
-  call get_param(param_file, mdl, "LEITH_LAP_CONST", Leith_Lap_const, &
-                 "The nondimensional Laplacian Leith constant, "//&
-                 "often set to 1.0", units="nondim", default=0.0, &
-                  fail_if_missing=CS%Leith_Kh, do_not_log=.not.CS%Leith_Kh)
-  call get_param(param_file, mdl, "USE_QG_LEITH_VISC", CS%use_QG_Leith_visc, &
-                 "If true, use QG Leith nonlinear eddy viscosity.", &
-                 default=.false., do_not_log=.not.CS%Leith_Kh)
-  if (CS%use_QG_Leith_visc .and. .not. CS%Leith_Kh) call MOM_error(FATAL, &
-                 "MOM_hor_visc.F90, hor_visc_init:"//&
-                 "LEITH_KH must be True when USE_QG_LEITH_VISC=True.")
-
-  !### The following two get_param_calls need to occur after Leith_Ah is read, but for now it replciates prior code.
-  CS%Leith_Ah = .false.
-  call get_param(param_file, mdl, "USE_BETA_IN_LEITH", CS%use_beta_in_Leith, &
-                 "If true, include the beta term in the Leith nonlinear eddy viscosity.", &
-                 default=CS%Leith_Kh, do_not_log=.not.(CS%Leith_Kh .or. CS%Leith_Ah) )
-  call get_param(param_file, mdl, "MODIFIED_LEITH", CS%modified_Leith, &
-                 "If true, add a term to Leith viscosity which is "//&
-                 "proportional to the gradient of divergence.", &
-                 default=.false., do_not_log=.not.(CS%Leith_Kh .or. CS%Leith_Ah) )
 
   call get_param(param_file, mdl, "BOUND_KH", CS%bound_Kh, &
                  "If true, the Laplacian coefficient is locally limited "//&
@@ -2005,6 +1983,21 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, MEKE, ADp)
                  "The nondimensional biharmonic Smagorinsky constant, "//&
                  "typically 0.015 - 0.06.", units="nondim", default=0.0, &
                  fail_if_missing=CS%Smagorinsky_Ah, do_not_log=.not.CS%Smagorinsky_Ah)
+
+  call get_param(param_file, mdl, "USE_BETA_IN_LEITH", CS%use_beta_in_Leith, &
+                 "If true, include the beta term in the Leith nonlinear eddy viscosity.", &
+                 default=CS%Leith_Kh, do_not_log=.not.(CS%Leith_Kh .or. CS%Leith_Ah) )
+  call get_param(param_file, mdl, "MODIFIED_LEITH", CS%modified_Leith, &
+                 "If true, add a term to Leith viscosity which is "//&
+                 "proportional to the gradient of divergence.", &
+                 default=.false., do_not_log=.not.(CS%Leith_Kh .or. CS%Leith_Ah) )
+  call get_param(param_file, mdl, "USE_QG_LEITH_VISC", CS%use_QG_Leith_visc, &
+                 "If true, use QG Leith nonlinear eddy viscosity.", &
+                 default=.false., do_not_log=.not.(CS%Leith_Kh .or. CS%Leith_Ah) )
+  if (CS%use_QG_Leith_visc .and. .not. (CS%Leith_Kh .or. CS%Leith_Ah) ) then
+                 call MOM_error(FATAL, "MOM_hor_visc.F90, hor_visc_init:"//&
+                 "LEITH_KH or LEITH_AH must be True when USE_QG_LEITH_VISC=True.")
+  endif
 
   call get_param(param_file, mdl, "BOUND_CORIOLIS", bound_Cor_def, default=.false.)
   call get_param(param_file, mdl, "BOUND_CORIOLIS_BIHARM", CS%bound_Coriolis, &
