@@ -182,6 +182,7 @@ type, public :: hor_visc_CS ; private
   ! 3D diagnostics hf_diffu(diffv) are commented because there is no clarity on proper remapping grid option.
   ! The code is retained for degugging purposes in the future.
 
+  integer :: num_smooth_gme !< number of smoothing passes for the GME fluxes.
   !>@{
   !! Diagnostic id
   integer :: id_grid_Re_Ah = -1, id_grid_Re_Kh   = -1
@@ -1449,9 +1450,6 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       enddo ; enddo
 
       ! Applying GME diagonal term.  This is linear and the arguments can be rescaled.
-      !### This smoothing is only applied at computational grid points, but is used in extra halo points!
-      !### There are blocking halo updates in the smooth_GME routines, which could be avoided by expanding
-      !    the loop ranges by a point in the code setting str_xx_GME and str_xy_GME a few lines above.
       call smooth_GME(CS, G, GME_flux_h=str_xx_GME)
       call smooth_GME(CS, G, GME_flux_q=str_xy_GME)
 
@@ -2063,17 +2061,22 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, MEKE, ADp)
                  "Use the split time stepping if true.", default=.true., do_not_log=.true.)
   if (CS%use_GME .and. .not.split) call MOM_error(FATAL,"ERROR: Currently, USE_GME = True "// &
                                            "cannot be used with SPLIT=False.")
-  call get_param(param_file, mdl, "GME_H0", CS%GME_h0, &
-                 "The strength of GME tapers quadratically to zero when the bathymetric "//&
-                 "depth is shallower than GME_H0.", &
-                 units="m", scale=US%m_to_Z, default=1000.0, do_not_log=.not.CS%use_GME)
-  call get_param(param_file, mdl, "GME_EFFICIENCY", CS%GME_efficiency, &
-                 "The nondimensional prefactor multiplying the GME coefficient.", &
-                 units="nondim", default=1.0, do_not_log=.not.CS%use_GME)
-  call get_param(param_file, mdl, "GME_LIMITER", CS%GME_limiter, &
-                 "The absolute maximum value the GME coefficient is allowed to take.", &
-                 units="m2 s-1", scale=US%m_to_L**2*US%T_to_s, default=1.0e7, &
-                 do_not_log=.not.CS%use_GME)
+
+  if (CS%use_GME) then
+    call get_param(param_file, mdl, "GME_NUM_SMOOTHINGS", CS%num_smooth_gme, &
+                   "Number of smoothing passes for the GME fluxes.", &
+                   units="nondim", default=1)
+    call get_param(param_file, mdl, "GME_H0", CS%GME_h0, &
+                   "The strength of GME tapers quadratically to zero when the bathymetric "//&
+                   "depth is shallower than GME_H0.", &
+                   units="m", scale=US%m_to_Z, default=1000.0)
+    call get_param(param_file, mdl, "GME_EFFICIENCY", CS%GME_efficiency, &
+                   "The nondimensional prefactor multiplying the GME coefficient.", &
+                   units="nondim", default=1.0)
+    call get_param(param_file, mdl, "GME_LIMITER", CS%GME_limiter, &
+                   "The absolute maximum value the GME coefficient is allowed to take.", &
+                   units="m2 s-1", scale=US%m_to_L**2*US%T_to_s, default=1.0e7)
+  endif
 
   if (CS%Laplacian .or. CS%biharmonic) then
     call get_param(param_file, mdl, "DT", dt, &
@@ -2608,11 +2611,11 @@ subroutine smooth_GME(CS,G,GME_flux_h,GME_flux_q)
   real, dimension(SZIB_(G),SZJB_(G)) :: GME_flux_q_original
   real :: wc, ww, we, wn, ws ! averaging weights for smoothing
   integer :: i, j, k, s
-  do s=1,1
-    ! Update halos
+
+  do s=1,CS%num_smooth_gme
     if (present(GME_flux_h)) then
-      !### Work on a wider halo to eliminate this blocking send!
-      call pass_var(GME_flux_h, G%Domain)
+      ! Update halos if needed
+      if (s >= 2) call pass_var(GME_flux_h, G%Domain)
       GME_flux_h_original(:,:) = GME_flux_h(:,:)
       ! apply smoothing on GME
       do j = G%jsc, G%jec
@@ -2624,20 +2627,18 @@ subroutine smooth_GME(CS,G,GME_flux_h,GME_flux_q)
           we = 0.125 * G%mask2dT(i+1,j)
           ws = 0.125 * G%mask2dT(i,j-1)
           wn = 0.125 * G%mask2dT(i,j+1)
-          wc = 1.0 - (ww+we+wn+ws)
-          !### Add parentheses to make this rotationally invariant.
+          wc = 1.0 - ((ww+we)+(wn+ws))
           GME_flux_h(i,j) =  wc * GME_flux_h_original(i,j)   &
-                           + ww * GME_flux_h_original(i-1,j) &
-                           + we * GME_flux_h_original(i+1,j) &
-                           + ws * GME_flux_h_original(i,j-1) &
-                           + wn * GME_flux_h_original(i,j+1)
+                           + ((ww * GME_flux_h_original(i-1,j) &
+                           + we * GME_flux_h_original(i+1,j)) &
+                           + (ws * GME_flux_h_original(i,j-1) &
+                           + wn * GME_flux_h_original(i,j+1)))
         enddo
       enddo
     endif
-    ! Update halos
     if (present(GME_flux_q)) then
-      !### Work on a wider halo to eliminate this blocking send!
-      call pass_var(GME_flux_q, G%Domain, position=CORNER, complete=.true.)
+      ! Update halos if needed
+      if (s >= 2) call pass_var(GME_flux_q, G%Domain, position=CORNER, complete=.true.)
       GME_flux_q_original(:,:) = GME_flux_q(:,:)
       ! apply smoothing on GME
       do J = G%JscB, G%JecB
@@ -2649,13 +2650,12 @@ subroutine smooth_GME(CS,G,GME_flux_h,GME_flux_q)
           we = 0.125 * G%mask2dBu(I+1,J)
           ws = 0.125 * G%mask2dBu(I,J-1)
           wn = 0.125 * G%mask2dBu(I,J+1)
-          wc = 1.0 - (ww+we+wn+ws)
-          !### Add parentheses to make this rotationally invariant.
+          wc = 1.0 - ((ww+we)+(wn+ws))
           GME_flux_q(I,J) =  wc * GME_flux_q_original(I,J)   &
-                           + ww * GME_flux_q_original(I-1,J) &
-                           + we * GME_flux_q_original(I+1,J) &
-                           + ws * GME_flux_q_original(I,J-1) &
-                           + wn * GME_flux_q_original(I,J+1)
+                           + ((ww * GME_flux_q_original(I-1,J) &
+                           + we * GME_flux_q_original(I+1,J)) &
+                           + (ws * GME_flux_q_original(I,J-1) &
+                           + wn * GME_flux_q_original(I,J+1)))
         enddo
       enddo
     endif
