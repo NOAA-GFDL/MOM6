@@ -2,12 +2,12 @@
 module MOM_hor_visc
 
 ! This file is part of MOM6. See LICENSE.md for the license.
-
-use MOM_checksums,             only : hchksum, Bchksum
+use MOM_checksums,             only : hchksum, Bchksum, uvchksum
 use MOM_coms,                  only : min_across_PEs
 use MOM_diag_mediator,         only : post_data, register_diag_field, safe_alloc_ptr
 use MOM_diag_mediator,         only : diag_ctrl, time_type
 use MOM_domains,               only : pass_var, CORNER, pass_vector, AGRID, BGRID_NE
+use MOM_domains,               only : To_All, Scalar_Pair
 use MOM_error_handler,         only : MOM_error, FATAL, WARNING, is_root_pe
 use MOM_file_parser,           only : get_param, log_version, param_file_type
 use MOM_grid,                  only : ocean_grid_type
@@ -495,6 +495,8 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
 
     call pass_vector(dudx_bt, dvdy_bt, G%Domain, stagger=BGRID_NE)
     call pass_vector(dvdx_bt, dudy_bt, G%Domain, stagger=AGRID)
+    call pass_var(boundary_mask_h, G%domain)
+    call pass_var(boundary_mask_q, G%domain, position=CORNER, complete=.true.)
 
     if (CS%no_slip) then
       do J=js-1,Jeq ; do I=is-1,Ieq
@@ -525,6 +527,9 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       htot(i,j) = htot(i,j) + GV%H_to_Z*h(i,j,k)
     enddo ; enddo ; enddo
 
+    call pass_var(grad_vel_mag_bt_q, G%domain, position=CORNER, complete=.true.)
+    call pass_var(htot, G%domain)
+
     I_GME_h0 = 1.0 / CS%GME_h0
     do j=Jsq-1,Jeq+2 ; do i=Isq-1,Ieq+2
       if (grad_vel_mag_bt_h(i,j)>0) then
@@ -547,9 +552,14 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       endif
     enddo ; enddo
 
+    call pass_var(GME_effic_q, G%domain, position=CORNER, complete=.true.)
+
     call thickness_diffuse_get_KH(TD, KH_u_GME, KH_v_GME, G, GV)
 
-    call pass_vector(KH_u_GME, KH_v_GME, G%Domain)
+    call pass_vector(KH_u_GME, KH_v_GME, G%Domain, To_All+Scalar_Pair)
+
+    if (CS%debug) &
+    call uvchksum("GME KH[u,v]_GME", KH_u_GME, KH_v_GME, G%HI, haloshift=2, scale=US%L_to_m**2*US%s_to_T)
 
   endif ! use_GME
 
@@ -1457,14 +1467,16 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
         str_xx(i,j) = (str_xx(i,j) + str_xx_GME(i,j)) * (h(i,j,k) * CS%reduction_xx(i,j))
       enddo ; enddo
 
-      do J=js-1,Jeq ; do I=is-1,Ieq
-        ! GME is applied below
-        if (CS%no_slip) then
+      ! GME is applied below
+      if (CS%no_slip) then
+        do J=js-1,Jeq ; do I=is-1,Ieq
           str_xy(I,J) = (str_xy(I,J) + str_xy_GME(I,J)) * (hq(I,J) * CS%reduction_xy(I,J))
-        else
+        enddo ; enddo
+      else
+        do J=js-1,Jeq ; do I=is-1,Ieq
           str_xy(I,J) = (str_xy(I,J) + str_xy_GME(I,J)) * (hq(I,J) * G%mask2dBu(I,J) * CS%reduction_xy(I,J))
-        endif
-      enddo ; enddo
+        enddo ; enddo
+      endif
 
       if (associated(MEKE%GME_snk)) then
         do j=js,je ; do i=is,ie
