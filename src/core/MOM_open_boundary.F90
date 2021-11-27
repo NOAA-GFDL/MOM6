@@ -3711,21 +3711,22 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   character(len=200) :: filename, OBC_file, inputdir ! Strings for file/path
   type(OBC_segment_type), pointer :: segment => NULL()
   integer, dimension(4) :: siz
-  real, dimension(:,:,:), pointer :: tmp_buffer_in => NULL()  ! Unrotated input
+  real, dimension(:,:,:), pointer :: tmp_buffer_in => NULL()  ! Unrotated input [various units]
   integer :: ni_seg, nj_seg  ! number of src gridpoints along the segments
   integer :: ni_buf, nj_buf  ! Number of filled values in tmp_buffer
   integer :: i2, j2          ! indices for referencing local domain array
   integer :: is_obc, ie_obc, js_obc, je_obc  ! segment indices within local domain
   integer :: ishift, jshift  ! offsets for staggered locations
-  real, dimension(:,:,:), allocatable, target :: tmp_buffer
-  real, dimension(:), allocatable :: h_stack ! A column of extrapolated thicknesses [H ~> m or kg m-2]
+  real, dimension(:,:,:), allocatable, target :: tmp_buffer ! A buffer for input data [various units]
+  real, dimension(:), allocatable :: h_stack  ! Thicknesses at corner points [H ~> m or kg m-2]
   integer :: is_obc2, js_obc2
-  real :: net_H_src, net_H_int ! Sums of thicknesses on the source and target points [H ~> m or kg m-2]
+  real :: net_H_src   ! Total thickness of the incoming flow in the source field [H ~> m or kg m-2]
+  real :: net_H_int   ! Total thickness of the incoming flow in the model [H ~> m or kg m-2]
   real :: scl_fac     ! A scaling factor to compensate for differences in total thicknesses [nondim]
   real :: tidal_vel   ! Interpolated tidal velocity at the OBC points [m s-1]
   real :: tidal_elev  ! Interpolated tidal elevation at the OBC points [m]
-  real, allocatable :: normal_trans_bt(:,:)   ! barotropic transport [H L2 T-1 ~> m3 s-1]
-  integer :: turns      ! Number of index quarter turns
+  real, allocatable :: normal_trans_bt(:,:) ! barotropic transport [H L2 T-1 ~> m3 s-1]
+  integer :: turns    ! Number of index quarter turns
   real :: time_delta  ! Time since tidal reference date [s]
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
@@ -5101,7 +5102,7 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
 
   integer :: i, j, k, is, ie, js, je, nz, contractions, dilations
   integer :: n
-  real, allocatable, dimension(:,:,:) :: eta ! Segment source data interface heights, [Z -> m]
+  real, allocatable, dimension(:,:,:) :: eta ! Segment source data interface heights [Z ~> m]
   real :: hTolerance = 0.1 !<  Tolerance to exceed adjustment criteria [Z ~> m]
   ! real :: dilate      ! A factor by which to dilate the water column [nondim]
   character(len=100) :: mesg

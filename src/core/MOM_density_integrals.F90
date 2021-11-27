@@ -801,7 +801,7 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
                                            !! subtracted out to reduce the magnitude of each of the integrals.
   real,                 intent(in)  :: rho_0 !< A density [R ~> kg m-3] or [kg m-3], that is used to calculate
                                            !! the pressure (as p~=-z*rho_0*G_e) used in the equation of state.
-  real,                 intent(in)  :: G_e !< The Earth's gravitational acceleration [m s-2]
+  real,                 intent(in)  :: G_e !< The Earth's gravitational acceleration [L2 Z-1 T-2 ~> m s-2]
   real,                 intent(in)  :: dz_subroundoff !< A minuscule thickness change [Z ~> m]
   real, dimension(SZI_(HI),SZJ_(HI)), &
                         intent(in)  :: bathyT !< The depth of the bathymetry [Z ~> m]
@@ -1459,7 +1459,7 @@ subroutine int_spec_vol_dp_generic_plm(T_t, T_b, S_t, S_b, p_t, p_b, alpha_ref, 
   real :: P_top, P_bot ! Horizontally interpolated pressure at the cell top and bottom,
                        ! scaled back to Pa as necessary [Pa]
 
-  real :: alpha_anom ! The depth averaged specific density anomaly [m3 kg-1]
+  real :: alpha_anom ! The depth averaged specific density anomaly [R-1 ~> m3 kg-1] or [m3 kg-1]
   real :: dp         ! The pressure change through a layer [R L2 T-2 ~> Pa]
   real :: dp_90(2:4) ! The pressure change through a layer divided by 90 [R L2 T-2 ~> Pa]
   real :: hWght      ! A pressure-thickness below topography [R L2 T-2 ~> Pa]
