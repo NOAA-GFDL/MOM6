@@ -588,7 +588,7 @@ subroutine controlled_forcing_init(Time, G, US, param_file, diag, CS)
          'Control Corrective Precipitation', 'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
   endif
 
-  ! Rescale if there are differences between the dimensional scaling of variables in 
+  ! Rescale if there are differences between the dimensional scaling of variables in
   ! restart files from those in use for this run.
   if ((US%J_kg_to_Q_restart*US%kg_m3_to_R_restart*US%m_to_Z_restart*US%s_to_T_restart /= 0.0) .and. &
       ((US%J_kg_to_Q * US%kg_m3_to_R * US%m_to_Z * US%s_to_T_restart) /= &
