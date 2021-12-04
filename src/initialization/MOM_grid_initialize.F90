@@ -102,13 +102,13 @@ subroutine set_grid_metrics(G, param_file, US)
   end select
   if (G%Rad_Earth_L <= 0.0) then
     ! The grid metrics were set with an option that does not explicitly initialize Rad_Earth.
-    ! ### Rad_Earth should be read as in:
+    ! ### Rad_Earth_L should be read as in:
     !   call get_param(param_file, mdl, "RAD_EARTH", G%Rad_Earth_L, &
     !               "The radius of the Earth.", units="m", default=6.378e6, scale=m_to_L)
     ! but for now it is being set via a hard-coded value to reproduce current behavior.
     G%Rad_Earth_L = 6.378e6*m_to_L
   endif
-  G%Rad_Earth = L_to_m*G%Rad_Earth_L
+  G%Rad_Earth_mks = L_to_m*G%Rad_Earth_L
 
   ! Calculate derived metrics (i.e. reciprocals and products)
   call callTree_enter("set_derived_metrics(), MOM_grid_initialize.F90")
