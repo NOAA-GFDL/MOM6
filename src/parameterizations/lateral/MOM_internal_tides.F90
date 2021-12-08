@@ -84,6 +84,7 @@ type, public :: int_tide_CS ; private
   real, allocatable, dimension(:,:,:,:,:) :: TKE_itidal_loss
                         !< energy lost due to small-scale wave drag [R Z3 T-3 ~> W m-2]
   real, allocatable, dimension(:,:,:,:,:) :: TKE_residual_loss
+  real, allocatable, dimension(:,:,:,:,:) :: local_dissip
 
   real, allocatable, dimension(:,:) :: tot_leak_loss !< Energy loss rates due to misc bakground processes,
                         !! summed over angle, frequency and mode [R Z3 T-3 ~> W m-2]
@@ -297,8 +298,11 @@ subroutine propagate_int_tide(h, tv, cn, TKE_itidal_input, vel_btTide, Nb, dt, &
 
   ! Propagate the waves.
   do m=1,CS%NMode ; do fr=1,CS%Nfreq
+
+    CS%local_dissip(:,:,:,fr,m) = 0.
+
     call propagate(CS%En(:,:,:,fr,m), cn(:,:,m), CS%frequency(fr), dt, &
-                   G, US, CS, CS%NAngle)
+                   G, US, CS, CS%NAngle, CS%local_dissip(:,:,:,fr,m))
   enddo ; enddo
 
   ! Check for En<0 - for debugging, delete later
@@ -515,10 +519,14 @@ subroutine propagate_int_tide(h, tv, cn, TKE_itidal_input, vel_btTide, Nb, dt, &
 
   ! loss from residual of reflection/transmission coefficients
   if (CS%apply_residual_drag) then
-    do m=1,CS%nMode ; do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
 
-    CS%TKE_residual_loss(i,j,a,fr,m)  = CS%En(i,j,a,fr,m) * CS%residual(i,j) * CS%decay_rate ! loss rate [R Z3 T-3 ~> W m-2] RD???
-    CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) / (1.0 + dt * CS%residual(i,j) * CS%decay_rate) ! implicit update
+    do m=1,CS%nMode ; do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
+      CS%TKE_residual_loss(i,j,a,fr,m) = CS%local_dissip(i,j,a,fr,m) !* CS%En(i,j,a,fr,m)
+      ! implicit
+      !CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) / (1.0 + &
+      !                    dt * CS%local_dissip(i,j,a,fr,m) / max(CS%En(i,j,a,fr,m), 1e-16))
+      ! explicit works
+      CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) - dt * CS%local_dissip(i,j,a,fr,m)
     enddo ; enddo ; enddo ; enddo ; enddo
   endif
 
@@ -1021,7 +1029,7 @@ subroutine PPM_angular_advect(En2d, CFL_ang, Flux_En, NAngle, dt, halo_ang)
 end subroutine PPM_angular_advect
 
 !> Propagates internal waves at a single frequency.
-subroutine propagate(En, cn, freq, dt, G, US, CS, NAngle)
+subroutine propagate(En, cn, freq, dt, G, US, CS, NAngle, local_dissip)
   type(ocean_grid_type), intent(inout) :: G    !< The ocean's grid structure.
   integer,               intent(in)    :: NAngle !< The number of wave orientations in the
                                                !! discretized wave energy spectrum.
@@ -1035,7 +1043,8 @@ subroutine propagate(En, cn, freq, dt, G, US, CS, NAngle)
   real,                  intent(in)    :: dt   !< Time step [T ~> s].
   type(unit_scale_type), intent(in)    :: US   !< A dimensional unit scaling type
   type(int_tide_CS),     intent(in)    :: CS   !< Internal tide control struct
-
+  real, dimension(G%isd:G%ied,G%jsd:G%jed,NAngle), &
+                         intent(inout) :: local_dissip
   ! Local variables
   real, dimension(G%IsdB:G%IedB,G%JsdB:G%JedB) :: &
     speed  ! The magnitude of the group velocity at the q points for corner adv [L T-1 ~> m s-1].
@@ -1126,18 +1135,19 @@ subroutine propagate(En, cn, freq, dt, G, US, CS, NAngle)
 
     ! Apply propagation in x-direction (reflection included)
     LB%jsh = jsh ; LB%jeh = jeh ; LB%ish = ish ; LB%ieh = ieh
-    call propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, CS%nAngle, CS, LB)
+    call propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, CS%nAngle, CS, LB, local_dissip)
 
     ! Check for energy conservation on computational domain (for debugging)
     !call sum_En(G, CS, En, 'post-propagate_x')
 
     ! Update halos
     call pass_var(En, G%domain)
+    call pass_var(local_dissip, G%domain)
 
     ! Apply propagation in y-direction (reflection included)
     ! LB%jsh = js ; LB%jeh = je ; LB%ish = is ; LB%ieh = ie ! Use if no teleport
     LB%jsh = jsh ; LB%jeh = jeh ; LB%ish = ish ; LB%ieh = ieh
-    call propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, CS%nAngle, CS, LB)
+    call propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, CS%nAngle, CS, LB, local_dissip)
 
     ! Check for energy conservation on computational domain (for debugging)
     !call sum_En(G, CS, En, 'post-propagate_y')
@@ -1412,7 +1422,7 @@ subroutine propagate_corner_spread(En, energized_wedge, NAngle, speed, dt, G, CS
 end subroutine propagate_corner_spread
 
 !> Propagates the internal wave energy in the logical x-direction.
-subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB)
+subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, local_dissip)
   type(ocean_grid_type),   intent(in)    :: G  !< The ocean's grid structure.
   integer,                 intent(in)    :: NAngle !< The number of wave orientations in the
                                                !! discretized wave energy spectrum.
@@ -1429,6 +1439,8 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB)
   type(unit_scale_type),   intent(in)    :: US !< A dimensional unit scaling type
   type(int_tide_CS),       intent(in)    :: CS !< Internal tide control struct
   type(loop_bounds_type),  intent(in)    :: LB !< A structure with the active energy loop bounds.
+  real, dimension(G%isd:G%ied,G%jsd:G%jed,Nangle),   &
+                           intent(inout) :: local_dissip
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
     EnL, EnR    ! Left and right face energy densities [R Z3 T-2 ~> J m-2].
@@ -1465,6 +1477,10 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB)
     do j=jsh,jeh ; do i=ish,ieh
       Fdt_m(i,j,a) = dt*flux_x(I-1,j) ! left face influx  [R Z3 L2 T-2 ~> J]
       Fdt_p(i,j,a) = -dt*flux_x(I,j)  ! right face influx [R Z3 L2 T-2 ~> J]
+
+      local_dissip(i,j,a) = local_dissip(i,j,a) + &
+                            abs(flux_x(I-1,j)) * CS%residual(i,j) * G%IareaT(i,j) + &
+                            abs(flux_x(I,j)) * CS%residual(i,j) * G%IareaT(i,j)
     enddo ; enddo
 
   enddo ! a-loop
@@ -1486,7 +1502,7 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB)
 end subroutine propagate_x
 
 !> Propagates the internal wave energy in the logical y-direction.
-subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB)
+subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB, local_dissip)
   type(ocean_grid_type),   intent(in)    :: G  !< The ocean's grid structure.
   integer,                 intent(in)    :: NAngle !< The number of wave orientations in the
                                                !! discretized wave energy spectrum.
@@ -1503,6 +1519,8 @@ subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB)
   type(unit_scale_type),   intent(in)    :: US !< A dimensional unit scaling type
   type(int_tide_CS),       intent(in)    :: CS !< Internal tide control struct
   type(loop_bounds_type),  intent(in)    :: LB !< A structure with the active energy loop bounds.
+  real, dimension(G%isd:G%ied,G%jsd:G%jed,Nangle),   &
+                           intent(inout) :: local_dissip
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
     EnL, EnR    ! South and north face energy densities [R Z3 T-2 ~> J m-2].
@@ -1540,6 +1558,11 @@ subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB)
     do j=jsh,jeh ; do i=ish,ieh
       Fdt_m(i,j,a) = dt*flux_y(i,J-1) ! south face influx [R Z3 L2 T-2 ~> J]
       Fdt_p(i,j,a) = -dt*flux_y(i,J)  ! north face influx [R Z3 L2 T-2 ~> J]
+
+      local_dissip(i,j,a) = local_dissip(i,j,a) + &
+                            abs(flux_y(i,J-1)) * CS%residual(i,j) * G%IareaT(i,j) + &
+                            abs(flux_y(i,J)) * CS%residual(i,j) * G%IareaT(i,j)
+
       !if ((En(i,j,a) + G%IareaT(i,j)*(Fdt_m(i,j,a) + Fdt_p(i,j,a))) < 0.0) then ! for debugging
       !  call MOM_error(WARNING, "propagate_y: OutFlux>Available prior to reflection", .true.)
       !  write(mesg,*) "flux_y_south=",flux_y(i,J-1),"flux_y_north=",flux_y(i,J),"En=",En(i,j,a), &
@@ -2340,6 +2363,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   allocate(CS%TKE_itidal_loss(isd:ied,jsd:jed,num_angle,num_freq,num_mode), source=0.0)
   allocate(CS%TKE_Froude_loss(isd:ied,jsd:jed,num_angle,num_freq,num_mode), source=0.0)
   allocate(CS%TKE_residual_loss(isd:ied,jsd:jed,num_angle,num_freq,num_mode), source=0.0)
+  allocate(CS%local_dissip(isd:ied,jsd:jed,num_angle,num_freq,num_mode), source=0.0)
   allocate(CS%tot_leak_loss(isd:ied,jsd:jed), source=0.0)
   allocate(CS%tot_quad_loss(isd:ied,jsd:jed), source=0.0)
   allocate(CS%tot_itidal_loss(isd:ied,jsd:jed), source=0.0)
