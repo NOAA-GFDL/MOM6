@@ -579,7 +579,7 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
     CS%id_col_thick = register_diag_field('ice_shelf_model','col_thick',CS%diag%axesT1, Time, &
        'ocean column thickness passed to ice model', 'm', conversion=US%Z_to_m)
     CS%id_visc_shelf = register_diag_field('ice_shelf_model','ice_visc',CS%diag%axesT1, Time, &
-       'vi-viscosity', 'Pa s-1 m', conversion=US%Z_to_m) !vertically integrated viscosity
+       'vi-viscosity', 'Pa s-1 m', conversion=US%RL2_T2_to_Pa*US%L_T_to_m_s) !vertically integrated viscosity
     CS%id_taub = register_diag_field('ice_shelf_model','taub_beta',CS%diag%axesT1, Time, &
        'taub', 'MPa', conversion=1e-6*US%RL2_T2_to_Pa)
     CS%id_OD_av = register_diag_field('ice_shelf_model','OD_av',CS%diag%axesT1, Time, &
@@ -710,21 +710,21 @@ subroutine update_ice_shelf(CS, ISS, G, US, time_step, Time, ocean_mass, coupled
      if (CS%id_v_shelf > 0) call post_data(CS%id_v_shelf, CS%v_shelf, CS%diag)
 !    if (CS%id_t_shelf > 0) call post_data(CS%id_t_shelf,CS%t_shelf,CS%diag)
      if (CS%id_taudx_shelf > 0) then
-        taud_x(:,:) = CS%taudx_shelf(:,:)/G%areaT(:,:)
+        taud_x(:,:) = CS%taudx_shelf(:,:)*G%IareaT(:,:)
         call post_data(CS%id_taudx_shelf,taud_x , CS%diag)
      endif
      if (CS%id_taudy_shelf > 0) then
-        taud_y(:,:) = CS%taudy_shelf(:,:)/G%areaT(:,:)
+        taud_y(:,:) = CS%taudy_shelf(:,:)*G%IareaT(:,:)
         call post_data(CS%id_taudy_shelf,taud_y , CS%diag)
      endif
      if (CS%id_ground_frac > 0) call post_data(CS%id_ground_frac, CS%ground_frac,CS%diag)
      if (CS%id_OD_av >0) call post_data(CS%id_OD_av, CS%OD_av,CS%diag)
      if (CS%id_visc_shelf > 0) then
-       ice_visc(:,:)=CS%ice_visc(:,:)/G%areaT(:,:)
+       ice_visc(:,:)=CS%ice_visc(:,:)*G%IareaT(:,:)
        call post_data(CS%id_visc_shelf, ice_visc,CS%diag)
      endif
      if (CS%id_taub > 0) then
-        basal_tr(:,:) = CS%basal_traction(:,:)/G%areaT(:,:)
+        basal_tr(:,:) = CS%basal_traction(:,:)*G%IareaT(:,:)
         call post_data(CS%id_taub, basal_tr,CS%diag)
      endif
 !!
@@ -2607,25 +2607,25 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
 
       do iq=1,2 ; do jq=1,2
 
-        ux = u_shlf(I-1,J-1) * Phi(1,2*(jq-1)+iq,i,j) + &
-             u_shlf(I,J-1) * Phi(3,2*(jq-1)+iq,i,j) + &
-             u_shlf(I-1,J) * Phi(5,2*(jq-1)+iq,i,j) + &
-             u_shlf(I,J) * Phi(7,2*(jq-1)+iq,i,j)
+        ux = ( (u_shlf(I-1,J-1) * Phi(1,2*(jq-1)+iq,i,j) + &
+                u_shlf(I,J) * Phi(7,2*(jq-1)+iq,i,j)) + &
+               (u_shlf(I-1,J) * Phi(5,2*(jq-1)+iq,i,j) + &
+                u_shlf(I,J-1) * Phi(3,2*(jq-1)+iq,i,j)) )
 
-        vx = v_shlf(I-1,J-1) * Phi(1,2*(jq-1)+iq,i,j) + &
-             v_shlf(I,J-1) * Phi(3,2*(jq-1)+iq,i,j) + &
-             v_shlf(I-1,J) * Phi(5,2*(jq-1)+iq,i,j) + &
-             v_shlf(I,J) * Phi(7,2*(jq-1)+iq,i,j)
+        vx = ( (v_shlf(I-1,J-1) * Phi(1,2*(jq-1)+iq,i,j) + &
+               v_shlf(I,J) * Phi(7,2*(jq-1)+iq,i,j)) + &
+               (v_shlf(I-1,J) * Phi(5,2*(jq-1)+iq,i,j) + &
+               v_shlf(I,J-1) * Phi(3,2*(jq-1)+iq,i,j)) )
 
-        uy = u_shlf(I-1,J-1) * Phi(2,2*(jq-1)+iq,i,j) + &
-             u_shlf(I,J-1) * Phi(4,2*(jq-1)+iq,i,j) + &
-             u_shlf(I-1,J) * Phi(6,2*(jq-1)+iq,i,j) + &
-             u_shlf(I,J) * Phi(8,2*(jq-1)+iq,i,j)
+        uy = ( (u_shlf(I-1,J-1) * Phi(2,2*(jq-1)+iq,i,j) + &
+               u_shlf(I,J) * Phi(8,2*(jq-1)+iq,i,j)) + &
+              (u_shlf(I-1,J) * Phi(6,2*(jq-1)+iq,i,j) + &
+               u_shlf(I,J-1) * Phi(4,2*(jq-1)+iq,i,j)) )
 
-        vy = v_shlf(I-1,j-1) * Phi(2,2*(jq-1)+iq,i,j) + &
-             v_shlf(I,J-1) * Phi(4,2*(jq-1)+iq,i,j) + &
-             v_shlf(I-1,J) * Phi(6,2*(jq-1)+iq,i,j) + &
-             v_shlf(I,J) * Phi(8,2*(jq-1)+iq,i,j)
+        vy = ( (v_shlf(I-1,j-1) * Phi(2,2*(jq-1)+iq,i,j) + &
+               v_shlf(I,J) * Phi(8,2*(jq-1)+iq,i,j)) + &
+              (v_shlf(I-1,J) * Phi(6,2*(jq-1)+iq,i,j) + &
+              v_shlf(I,J-1) * Phi(4,2*(jq-1)+iq,i,j)) )
      enddo ; enddo
 !        CS%ice_visc(i,j) =1e15*(G%areaT(i,j) * ISS%h_shelf(i,j)) ! constant viscocity for debugging
         CS%ice_visc(i,j) = 0.5 * Visc_coef * (G%areaT(i,j) * ISS%h_shelf(i,j)) * &
