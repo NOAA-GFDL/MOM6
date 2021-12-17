@@ -1461,10 +1461,10 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
     call get_param(param_file, mdl, "SPEAR_ECDA_SST_RESTORE_TFREEZE", CS%trestore_SPEAR_ECDA, &
                  "If true, modify SST restoring field using SSS state. This only modifies the "//&
                  "restoring data that is within 0.0001degC of -1.8degC.", default=.false.)
-    call get_param(param_file, mdl, "SPEAR_DTFREEZE_DS", CS%SPEAR_dTf_dS, &
+  endif
+  call get_param(param_file, mdl, "SPEAR_DTFREEZE_DS", CS%SPEAR_dTf_dS, &
                  "The derivative of the freezing temperature with salinity.", &
                  units="deg C PSU-1", default=-0.054, do_not_log=.not.CS%trestore_SPEAR_ECDA)
-  endif
 
   ! Optionally read tidal amplitude from input file [Z T-1 ~> m s-1] on model grid.
   ! Otherwise use default tidal amplitude for bottom frictionally-generated
