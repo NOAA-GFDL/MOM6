@@ -114,6 +114,7 @@ type, public :: surface_forcing_CS ; private
   real    :: Flux_const_salt                !< Piston velocity for surface salt restoring [Z T-1 ~> m s-1]
   real    :: Flux_const_temp                !< Piston velocity for surface temp restoring [Z T-1 ~> m s-1]
   logical :: trestore_SPEAR_ECDA            !< If true, modify restoring data wrt local SSS
+  real    :: SPEAR_dTf_dS                   !< The derivative of the freezing temperature with salinity.
   logical :: salt_restore_as_sflux          !< If true, SSS restore as salt flux instead of water flux
   logical :: adjust_net_srestore_to_zero    !< Adjust srestore to zero (for both salt_flux or vprec)
   logical :: adjust_net_srestore_by_scaling !< Adjust srestore w/o moving zero contour
@@ -404,7 +405,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     if ( CS%trestore_SPEAR_ECDA ) then
       do j=js,je ; do i=is,ie
         if (abs(data_restore(i,j)+1.8)<0.0001) then
-          data_restore(i,j) = -0.0539*sfc_state%SSS(i,j)
+          data_restore(i,j) = CS%SPEAR_dTf_dS*sfc_state%SSS(i,j)
         endif
       enddo ; enddo
     endif
@@ -1458,7 +1459,11 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "a mask for SST restoring.", default=.false.)
 
     call get_param(param_file, mdl, "SPEAR_ECDA_SST_RESTORE_TFREEZE", CS%trestore_SPEAR_ECDA, &
-                 "If true, modify SST restoring field using SSS state.", default=.false.)
+                 "If true, modify SST restoring field using SSS state. This only modifies the "//&
+                 "restoring data that is within 0.0001degC of -1.8degC.", default=.false.)
+    call get_param(param_file, mdl, "SPEAR_DTFREEZE_DS", CS%SPEAR_dTf_dS, &
+                 "The derivative of the freezing temperature with salinity.", &
+                 units="deg C PSU-1", default=-0.054, do_not_log=.not.CS%trestore_SPEAR_ECDA)
   endif
 
   ! Optionally read tidal amplitude from input file [Z T-1 ~> m s-1] on model grid.
