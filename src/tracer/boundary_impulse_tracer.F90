@@ -69,7 +69,7 @@ function register_boundary_impulse_tracer(HI, GV, param_file, CS, tr_Reg, restar
   type(tracer_registry_type),       pointer       :: tr_Reg !< A pointer that is set to point to the control
                                                           !! structure for the tracer advection and
                                                           !! diffusion module
-  type(MOM_restart_CS),             pointer       :: restart_CS !< A pointer to the restart control structure
+  type(MOM_restart_CS), target, intent(inout) :: restart_CS !< MOM restart control struct
 
   ! Local variables
   character(len=40)  :: mdl = "boundary_impulse_tracer" ! This module's name.
@@ -302,7 +302,7 @@ function boundary_impulse_stock(h, stocks, G, GV, CS, names, units, stock_index)
 ! is present, only the stock corresponding to that coded index is returned.
 
   ! Local variables
-  real :: stock_scale ! The dimensional scaling factor to convert stocks to kg [kg H-1 L-2 ~> kg m-3 or nondim]
+  real :: stock_scale ! The dimensional scaling factor to convert stocks to kg [kg H-1 L-2 ~> kg m-3 or 1]
   integer :: i, j, k, is, ie, js, je, nz, m
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 

@@ -102,7 +102,7 @@ contains
     type(MOM_generic_tracer_CS), pointer     :: CS         !< Pointer to the control structure for this module
     type(tracer_registry_type), pointer      :: tr_Reg     !< Pointer to the control structure for the tracer
                                                            !! advection and diffusion module.
-    type(MOM_restart_CS),       pointer      :: restart_CS !< Pointer to the restart control structure.
+    type(MOM_restart_CS), target, intent(inout)  :: restart_CS !< MOM restart control struct
 
 ! Local variables
     logical :: register_MOM_generic_tracer
@@ -583,7 +583,7 @@ contains
                                                                      !! number of stocks calculated here.
 
     ! Local variables
-    real :: stock_scale ! The dimensional scaling factor to convert stocks to kg [kg H-1 L-2 ~> kg m-3 or nondim]
+    real :: stock_scale ! The dimensional scaling factor to convert stocks to kg [kg H-1 L-2 ~> kg m-3 or 1]
     type(g_tracer_type), pointer  :: g_tracer, g_tracer_next
     real, dimension(:,:,:,:), pointer   :: tr_field
     real, dimension(:,:,:), pointer     :: tr_ptr
