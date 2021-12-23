@@ -84,8 +84,8 @@ function global_area_mean_u(var, G)
   tmpForSumming(:,:) = 0.
   do j=js,je ; do i=is,ie
     tmpForSumming(i,j) = G%areaT(i,j) * (var(I,j) * G%mask2dCu(I,j) + &
-                                         var(I-1,j) * G%mask2dCv(I-1,j)) &
-                         / max(1.e-20,G%mask2dCv(I,j)+G%mask2dCv(I-1,j))
+                                         var(I-1,j) * G%mask2dCu(I-1,j)) &
+                         / max(1.e-20,G%mask2dCu(I,j)+G%mask2dCu(I-1,j))
   enddo ; enddo
   global_area_mean_u = reproducing_sum(tmpForSumming) * G%IareaT_global
 
