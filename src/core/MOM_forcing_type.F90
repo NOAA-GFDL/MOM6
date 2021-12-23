@@ -3565,7 +3565,8 @@ subroutine homogenize_forcing(fluxes, G)
     call homogenize_field_t(fluxes%seaice_melt, G)
     call homogenize_field_t(fluxes%netMassOut, G)
     call homogenize_field_t(fluxes%netMassIn, G)
-    call homogenize_field_t(fluxes%netSalt, G)
+    !This was removed and I don't think replaced. Not needed?
+    !call homogenize_field_t(fluxes%netSalt, G) 
   endif
 
   if (do_heat) then
