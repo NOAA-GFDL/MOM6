@@ -1732,7 +1732,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
   real, allocatable, target :: frac_shelf_in(:,:) ! Initial fraction of the total cell area occupied
                                                   ! by an ice shelf [nondim]
   real, allocatable, target :: mass_shelf_in(:,:) ! Initial mass of ice shelf contained within a grid cell
-                                                  ! [RZ ~> kg m-2]
+                                                  ! [R Z ~> kg m-2]
   real, allocatable, target :: T_in(:,:,:) ! Initial temperatures [degC]
   real, allocatable, target :: S_in(:,:,:) ! Initial salinities [ppt]
 
@@ -2504,7 +2504,6 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
       allocate(CS%frac_shelf_h(isd:ied, jsd:jed), source=0.0)
       allocate(CS%mass_shelf(isd:ied, jsd:jed), source=0.0)
       call ice_shelf_query(ice_shelf_CSp,G,CS%frac_shelf_h, CS%mass_shelf)
-      CS%mass_shelf = CS%mass_shelf*US%kg_m3_to_R*US%m_to_Z
       ! MOM_initialize_state is using the  unrotated metric
       call rotate_array(CS%frac_shelf_h, -turns, frac_shelf_in)
       call rotate_array(CS%mass_shelf, -turns, mass_shelf_in)
@@ -2562,7 +2561,6 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
       allocate(CS%frac_shelf_h(isd:ied, jsd:jed), source=0.0)
       allocate(CS%mass_shelf(isd:ied, jsd:jed), source=0.0)
       call ice_shelf_query(ice_shelf_CSp,G,CS%frac_shelf_h, CS%mass_shelf)
-      CS%mass_shelf = CS%mass_shelf*US%kg_m3_to_R*US%m_to_Z
       call MOM_initialize_state(CS%u, CS%v, CS%h, CS%tv, Time, G, GV, US, &
           param_file, dirs, restart_CSp, CS%ALE_CSp, CS%tracer_Reg, &
           CS%sponge_CSp, CS%ALE_sponge_CSp,CS%oda_incupd_CSp, CS%OBC, Time_in, &
@@ -2583,7 +2581,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
 
   if (use_ice_shelf .and. CS%debug) then
     call hchksum(CS%frac_shelf_h, "MOM:frac_shelf_h", G%HI, haloshift=0)
-    call hchksum(CS%mass_shelf, "MOM:mass_shelf", G%HI, haloshift=0)
+    call hchksum(CS%mass_shelf, "MOM:mass_shelf", G%HI, haloshift=0,scale=US%RZ_to_kg_m2)
   endif
 
   call cpu_clock_end(id_clock_MOM_init)
