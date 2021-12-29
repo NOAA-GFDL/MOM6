@@ -2166,7 +2166,8 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
   call get_param(param_file, "MOM", "UPDATE_USTAR",CS%update_ustar, &
                  "If True, update ustar from homogenized tau when using the "//&
                  "HOMOGENIZE_FORCINGS option.  Note that this will not work "//&
-                 "with a non-zero gustiness factor.", default=.false.)
+                 "with a non-zero gustiness factor.", default=.false., &
+                 do_not_log=.not.CS%homogenize_forcings)
 
   ! Grid rotation test
   call get_param(param_file, "MOM", "ROTATE_INDEX", CS%rotate_index, &
