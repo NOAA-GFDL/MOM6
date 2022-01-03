@@ -59,6 +59,7 @@ use MOM_boundary_update,       only : call_OBC_register, OBC_register_end, updat
 use MOM_coord_initialization,  only : MOM_initialize_coord
 use MOM_diabatic_driver,       only : diabatic, diabatic_driver_init, diabatic_CS, extract_diabatic_member
 use MOM_diabatic_driver,       only : adiabatic, adiabatic_driver_init, diabatic_driver_end
+use MOM_stochastics,           only : stochastics_init, update_stochastics, stochastic_CS
 use MOM_diagnostics,           only : calculate_diagnostic_fields, MOM_diagnostics_init
 use MOM_diagnostics,           only : register_transport_diags, post_transport_diagnostics
 use MOM_diagnostics,           only : register_surface_diags, write_static_fields
@@ -409,6 +410,7 @@ type, public :: MOM_control_struct ; private
   real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_,NK_INTERFACE_) &
                             :: por_layer_widthV !< fractional open width of V-faces [nondim]
   type(particles), pointer :: particles => NULL() !<Lagrangian particles
+  type(stochastic_CS), pointer :: stoch_CS => NULL() !< a pointer to the stochastics control structure
 end type MOM_control_struct
 
 public initialize_MOM, finish_MOM_initialization, MOM_end
@@ -654,6 +656,8 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
       call disable_averaging(CS%diag)
     endif
   endif
+  ! advance the random pattern if stochastic physics is active
+  if (CS%stoch_CS%do_sppt .OR. CS%stoch_CS%pert_epbl) call update_stochastics(CS%stoch_CS)
 
   if (do_dyn) then
     if (G%nonblocking_updates) &
@@ -803,6 +807,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
                           (1.0-wt_beg) * CS%p_surf_prev(i,j)
         enddo ; enddo
       endif
+
 
       call step_MOM_dynamics(forces, CS%p_surf_begin, CS%p_surf_end, dt, &
                              dt_therm_here, bbl_time_int, CS, &
@@ -1372,7 +1377,7 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
     call cpu_clock_begin(id_clock_diabatic)
 
     call diabatic(u, v, h, tv, CS%Hml, fluxes, CS%visc, CS%ADp, CS%CDp, dtdia, &
-                  Time_end_thermo, G, GV, US, CS%diabatic_CSp, CS%OBC, Waves)
+                  Time_end_thermo, G, GV, US, CS%diabatic_CSp, CS%stoch_CS, CS%OBC, Waves)
     fluxes%fluxes_used = .true.
 
     if (showCallTree) call callTree_waypoint("finished diabatic (step_MOM_thermo)")
@@ -1727,7 +1732,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
   real, allocatable, target :: frac_shelf_in(:,:) ! Initial fraction of the total cell area occupied
                                                   ! by an ice shelf [nondim]
   real, allocatable, target :: mass_shelf_in(:,:) ! Initial mass of ice shelf contained within a grid cell
-                                                  ! [RZ ~> kg m-2]
+                                                  ! [R Z ~> kg m-2]
   real, allocatable, target :: T_in(:,:,:) ! Initial temperatures [degC]
   real, allocatable, target :: S_in(:,:,:) ! Initial salinities [ppt]
 
@@ -2499,7 +2504,6 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
       allocate(CS%frac_shelf_h(isd:ied, jsd:jed), source=0.0)
       allocate(CS%mass_shelf(isd:ied, jsd:jed), source=0.0)
       call ice_shelf_query(ice_shelf_CSp,G,CS%frac_shelf_h, CS%mass_shelf)
-      CS%mass_shelf = CS%mass_shelf*US%kg_m3_to_R*US%m_to_Z
       ! MOM_initialize_state is using the  unrotated metric
       call rotate_array(CS%frac_shelf_h, -turns, frac_shelf_in)
       call rotate_array(CS%mass_shelf, -turns, mass_shelf_in)
@@ -2557,7 +2561,6 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
       allocate(CS%frac_shelf_h(isd:ied, jsd:jed), source=0.0)
       allocate(CS%mass_shelf(isd:ied, jsd:jed), source=0.0)
       call ice_shelf_query(ice_shelf_CSp,G,CS%frac_shelf_h, CS%mass_shelf)
-      CS%mass_shelf = CS%mass_shelf*US%kg_m3_to_R*US%m_to_Z
       call MOM_initialize_state(CS%u, CS%v, CS%h, CS%tv, Time, G, GV, US, &
           param_file, dirs, restart_CSp, CS%ALE_CSp, CS%tracer_Reg, &
           CS%sponge_CSp, CS%ALE_sponge_CSp,CS%oda_incupd_CSp, CS%OBC, Time_in, &
@@ -2578,7 +2581,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
 
   if (use_ice_shelf .and. CS%debug) then
     call hchksum(CS%frac_shelf_h, "MOM:frac_shelf_h", G%HI, haloshift=0)
-    call hchksum(CS%mass_shelf, "MOM:mass_shelf", G%HI, haloshift=0)
+    call hchksum(CS%mass_shelf, "MOM:mass_shelf", G%HI, haloshift=0,scale=US%RZ_to_kg_m2)
   endif
 
   call cpu_clock_end(id_clock_MOM_init)
@@ -2908,6 +2911,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
   if (CS%ensemble_ocean) then
     call init_oda(Time, G, GV, CS%diag, CS%odaCS)
   endif
+
+  ! initialize stochastic physics
+  call stochastics_init(CS%dt_therm, CS%G, CS%GV, CS%stoch_CS, param_file, diag, Time)
 
   !### This could perhaps go here instead of in finish_MOM_initialization?
   ! call fix_restart_scaling(GV)

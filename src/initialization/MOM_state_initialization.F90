@@ -410,17 +410,17 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
 
   ! Calculate the initial surface displacement under ice shelf
 
-  if (new_sim) then
-    call get_param(PF, mdl, "DEPRESS_INITIAL_SURFACE", depress_sfc, &
-               "If true,  depress the initial surface to avoid huge "//&
-               "tsunamis when a large surface pressure is applied.", &
-               default=.false., do_not_log=just_read)
-    call get_param(PF, mdl, "TRIM_IC_FOR_P_SURF", trim_ic_for_p_surf, &
-               "If true, cuts way the top of the column for initial conditions "//&
-               "at the depth where the hydrostatic pressure matches the imposed "//&
-               "surface pressure which is read from file.", default=.false., &
-               do_not_log=just_read)
+  call get_param(PF, mdl, "DEPRESS_INITIAL_SURFACE", depress_sfc, &
+       "If true,  depress the initial surface to avoid huge "//&
+       "tsunamis when a large surface pressure is applied.", &
+       default=.false., do_not_log=just_read)
+  call get_param(PF, mdl, "TRIM_IC_FOR_P_SURF", trim_ic_for_p_surf, &
+       "If true, cuts way the top of the column for initial conditions "//&
+       "at the depth where the hydrostatic pressure matches the imposed "//&
+       "surface pressure which is read from file.", default=.false., &
+       do_not_log=just_read)
 
+  if (new_sim) then
     if (use_ice_shelf .and. present(mass_shelf) .and. .not. (trim_ic_for_p_surf .or. depress_sfc)) &
          call calc_sfc_displacement(PF, G, GV, US, mass_shelf, tv, h)
   endif
@@ -463,7 +463,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
 
   if (new_sim) call pass_vector(u, v, G%Domain)
   if (debug .and. new_sim) then
-    call uvchksum("MOM_initialize_state [uv]", u, v, G%HI, haloshift=1, scale=US%m_s_to_L_T)
+    call uvchksum("MOM_initialize_state [uv]", u, v, G%HI, haloshift=1, scale=US%L_T_to_m_s)
   endif
 
   ! Optionally convert the thicknesses from m to kg m-2.  This is particularly
@@ -1251,17 +1251,21 @@ subroutine calc_sfc_displacement(PF, G, GV, US, mass_shelf, tv, h)
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
-  tol = US%m_to_Z*0.001 ! 1mm tolerance
-  max_iter = 1e3
 
+  tol = 0.001 ! The initialization tolerance for ice shelf initialization (m)
+  call get_param(PF, mdl, "ICE_SHELF_INITIALIZATION_Z_TOLERANCE", tol, &
+                "A initialization tolerance for the calculation of the static "// &
+                "ice shelf displacement (m) using initial temperature and salinity profile.",&
+                 default=tol, units="m", scale=US%m_to_Z)
+  max_iter = 1e3
   call MOM_mesg("Started calculating initial interface position under ice shelf ")
   ! Convert thicknesses to interface heights.
   call find_eta(h, tv, G, GV, US, eta, dZref=G%Z_ref)
   do j = js, je ; do i = is, ie
-    iter=1
+    iter = 1
     z_top_shelf(i,j) = 0.0
     p_ref(:) = tv%p_ref
-    if (G%mask2dT(i,j) > 0. .and. mass_shelf(i,j) .gt. 0.) then
+    if (G%mask2dT(i,j) .gt. 0. .and. mass_shelf(i,j) .gt. 0.) then
       call calculate_density(tv%T(i,j,:), tv%S(i,j,:), P_Ref, rho_col, tv%eqn_of_state)
       z_top = min(max(-1.0*mass_shelf(i,j)/rho_col(1),-G%bathyT(i,j)),0.)
       h_tmp = 0.0
@@ -1271,29 +1275,29 @@ subroutine calc_sfc_displacement(PF, G, GV, US, mass_shelf, tv, h)
       do k=1,nz+1
         if (ei_tmp(k)<z_top) ei_tmp(k)=z_top
       enddo
-      mass_disp=0.0
+      mass_disp = 0.0
       do k=1,nz
-        h_tmp(k)=max(ei_tmp(k)-ei_tmp(k+1),GV%Angstrom_H)
+        h_tmp(k) = max(ei_tmp(k)-ei_tmp(k+1),GV%Angstrom_H)
         rho_h(k) = h_tmp(k) * rho_col(k)
         mass_disp = mass_disp + rho_h(k)
       enddo
       residual = mass_shelf(i,j) - mass_disp
-      do while (abs(residual)>tol .and. z_top>-G%bathyT(i,j) .and. iter .lt. max_iter)
+      do while (abs(residual) .gt. tol .and. z_top .gt. -G%bathyT(i,j) .and. iter .lt. max_iter)
         z_top=min(max(z_top-(residual*0.5e-3),-G%bathyT(i,j)),0.0)
         h_tmp = 0.0
         z_col = 0.0
-        ei_tmp(1:nz+1)=ei_orig(1:nz+1)
+        ei_tmp(1:nz+1) = ei_orig(1:nz+1)
         do k=1,nz+1
           if (ei_tmp(k)<z_top) ei_tmp(k)=z_top
         enddo
-        mass_disp=0.0
+        mass_disp = 0.0
         do k=1,nz
-          h_tmp(k)=max(ei_tmp(k)-ei_tmp(k+1),GV%Angstrom_H)
+          h_tmp(k) = max(ei_tmp(k)-ei_tmp(k+1),GV%Angstrom_H)
           rho_h(k) = h_tmp(k) * rho_col(k)
           mass_disp = mass_disp + rho_h(k)
         enddo
         residual = mass_shelf(i,j) - mass_disp
-        iter=iter+1
+        iter = iter+1
       end do
       if (iter .ge. max_iter) call MOM_mesg("Warning: calc_sfc_displacement too many iterations.")
       z_top_shelf(i,j) = z_top
