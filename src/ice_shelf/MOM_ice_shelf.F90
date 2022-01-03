@@ -2036,7 +2036,7 @@ subroutine ice_shelf_query(CS, G, frac_shelf_h, mass_shelf)
   type(ice_shelf_CS),         pointer    :: CS !< ice shelf control structure
   type(ocean_grid_type), intent(in)      :: G  !< A pointer to an ocean grid control structure.
   real, optional, dimension(SZI_(G),SZJ_(G)), intent(out)  :: frac_shelf_h !< Ice shelf area fraction [nodim].
-  real, optional, dimension(SZI_(G),SZJ_(G)), intent(out)  :: mass_shelf !<Ice shelf mass [RZ -> kg m-2]
+  real, optional, dimension(SZI_(G),SZJ_(G)), intent(out)  :: mass_shelf !<Ice shelf mass [R Z -> kg m-2]
 
 
   integer :: i, j

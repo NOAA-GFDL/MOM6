@@ -149,7 +149,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
                                                                !! by a floating ice shelf [nondim].
   real, dimension(SZI_(G),SZJ_(G)), &
                      optional, intent(in)   :: mass_shelf      !< The mass per unit area of the overlying
-                                                               !! ice shelf [ RZ ~> kg m-2 ]
+                                                               !! ice shelf [ R Z ~> kg m-2 ]
   ! Local variables
   real :: depth_tot(SZI_(G),SZJ_(G))  ! The nominal total depth of the ocean [Z ~> m]
   character(len=200) :: filename   ! The name of an input file.
@@ -1232,7 +1232,7 @@ subroutine calc_sfc_displacement(PF, G, GV, US, mass_shelf, tv, h)
   type(verticalGrid_type), intent(in)    :: GV !< Vertical grid structure
   type(unit_scale_type),   intent(in)    :: US !< A dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G)), &
-                           intent(in)    :: mass_shelf  !< Ice shelf mass [RZ ~> kg m-2]
+                           intent(in)    :: mass_shelf  !< Ice shelf mass [R Z ~> kg m-2]
   type(thermo_var_ptrs),   intent(inout) :: tv !< Thermodynamics structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                            intent(inout) :: h  !< Layer thickness [H ~> m or kg m-2]
@@ -1242,9 +1242,9 @@ subroutine calc_sfc_displacement(PF, G, GV, US, mass_shelf, tv, h)
                                    eta  ! The free surface height that the model should use [Z ~> m].
   ! temporary arrays
   real, dimension(SZK_(GV)) :: rho_col   ! potential density in the column for use in ice
-  real, dimension(SZK_(GV)) :: rho_h     ! potential density multiplied by thickness [RZ ~> kg m-2 ]
+  real, dimension(SZK_(GV)) :: rho_h     ! potential density multiplied by thickness [R Z ~> kg m-2 ]
   real, dimension(SZK_(GV)) :: h_tmp     ! temporary storage for thicknesses [H ~> m]
-  real, dimension(SZK_(GV)) :: p_ref     ! pressure for density [RZ ~> kg m-2]
+  real, dimension(SZK_(GV)) :: p_ref     ! pressure for density [R Z ~> kg m-2]
   real, dimension(SZK_(GV)+1) :: ei_tmp, ei_orig ! temporary storage for interface positions [Z ~> m]
   real :: z_top, z_col, mass_disp, residual, tol
   integer :: is, ie, js, je, k, nz, i, j, max_iter, iter
