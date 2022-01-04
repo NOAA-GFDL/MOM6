@@ -2323,7 +2323,7 @@ subroutine get_var_axes_info(filename, fieldname, axes_info)
   type(axis_info), dimension(4), intent(inout) :: axes_info !< A returned array of field axis information
 
   !! local variables
-  real ::  rcode
+  integer ::  rcode
   logical :: success
   integer ::  ncid, varid, ndims
   integer :: id, jd, kd
