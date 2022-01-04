@@ -911,6 +911,7 @@ subroutine read_variable_2d(filename, varname, var, start, nread, ncid_in)
   integer :: ncid, varid, ndims, rc
   character(len=*), parameter :: hdr = "read_variable_2d"
   character(len=128) :: msg
+  logical :: size_mismatch
 
   if (is_root_pe()) then
     if (present(ncid_in)) then
@@ -927,16 +928,20 @@ subroutine read_variable_2d(filename, varname, var, start, nread, ncid_in)
     if (rc /= NF90_NOERR) call MOM_error(FATAL, hdr // trim(nf90_strerror(rc)) //&
           " Difficulties reading "//trim(varname)//" from "//trim(filename))
 
-    ! NOTE: We could check additional information here (type, size, ...)
-    rc = nf90_get_var(ncid, varid, var, start, nread)
-    if (rc /= NF90_NOERR) call MOM_error(FATAL, hdr // trim(nf90_strerror(rc)) //&
-          " Difficulties reading "//trim(varname)//" from "//trim(filename))
+    size_mismatch = .false.
+    if (present(start)) size_mismatch = size_mismatch .or. size(start) /= ndims
+    if (present(nread)) size_mismatch = size_mismatch .or. size(nread) /= ndims
 
-    if (size(start) /= ndims .or. size(nread) /= ndims) then
+    if (size_mismatch) then
       write (msg, '("'// hdr //': size(start) ", i0, " and/or size(nread) ", &
         i0, " do not match ndims ", i0)') size(start), size(nread), ndims
       call MOM_error(FATAL, trim(msg))
     endif
+    ! NOTE: We could check additional information here (type, size, ...)
+
+    rc = nf90_get_var(ncid, varid, var, start, nread)
+    if (rc /= NF90_NOERR) call MOM_error(FATAL, hdr // trim(nf90_strerror(rc)) //&
+          " Difficulties reading "//trim(varname)//" from "//trim(filename))
 
     if (.not.present(ncid_in)) call close_file_to_read(ncid, filename)
   endif
