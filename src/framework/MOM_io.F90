@@ -928,8 +928,7 @@ subroutine read_variable_2d(filename, varname, var, start, nread, ncid_in)
           " Difficulties reading "//trim(varname)//" from "//trim(filename))
 
     ! NOTE: We could check additional information here (type, size, ...)
-
-    rc = nf90_get_var(ncid, varid, var)
+    rc = nf90_get_var(ncid, varid, var, start, nread)
     if (rc /= NF90_NOERR) call MOM_error(FATAL, hdr // trim(nf90_strerror(rc)) //&
           " Difficulties reading "//trim(varname)//" from "//trim(filename))
 
