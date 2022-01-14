@@ -337,8 +337,8 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
 
   real, pointer, dimension(:,:,:) :: &
     ! These pointers are used to alter which fields are passed to btstep with various options:
-    u_ptr => NULL(), &   ! A pointer to a zonal velocity [L T-1]
-    v_ptr => NULL(), &   ! A pointer to a meridional velocity [L T-1]
+    u_ptr => NULL(), &   ! A pointer to a zonal velocity [L T-1 ~> m s-1]
+    v_ptr => NULL(), &   ! A pointer to a meridional velocity [L T-1 ~> m s-1]
     uh_ptr => NULL(), &  ! A pointer to a zonal volume or mass transport [H L2 T-1 ~> m3 s-1 or kg s-1]
     vh_ptr => NULL(), &  ! A pointer to a meridional volume or mass transport [H L2 T-1 ~> m3 s-1 or kg s-1]
     ! These pointers are just used as shorthand for CS%u_av, CS%v_av, and CS%h_av.
@@ -374,7 +374,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   enddo
 
   ! Update CFL truncation value as function of time
-  call updateCFLtruncationValue(Time_local, CS%vertvisc_CSp)
+  call updateCFLtruncationValue(Time_local, CS%vertvisc_CSp, US)
 
   if (CS%debug) then
     call MOM_state_chksum("Start predictor ", u, v, h, uh, vh, G, GV, US, symmetric=sym)
@@ -395,7 +395,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
     if (CS%debug_OBC) call open_boundary_test_extern_h(G, GV, CS%OBC, h)
 
     ! Update OBC ramp value as function of time
-    call update_OBC_ramp(Time_local, CS%OBC)
+    call update_OBC_ramp(Time_local, CS%OBC, US)
 
     do k=1,nz ; do j=G%jsd,G%jed ; do I=G%IsdB,G%IedB
       u_old_rad_OBC(I,j,k) = u_av(I,j,k)
@@ -1207,20 +1207,20 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   call continuity_init(Time, G, GV, US, param_file, diag, CS%continuity_CSp)
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
-  if (use_tides) call tidal_forcing_init(Time, G, param_file, CS%tides_CSp)
+  if (use_tides) call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
   call PressureForce_init(Time, G, GV, US, param_file, diag, CS%PressureForce_CSp, &
                           CS%tides_CSp)
   call hor_visc_init(Time, G, GV, US, param_file, diag, CS%hor_visc, ADp=CS%ADp)
   call vertvisc_init(MIS, Time, G, GV, US, param_file, diag, CS%ADp, dirs, &
                      ntrunc, CS%vertvisc_CSp)
   CS%set_visc_CSp => set_visc
-  call updateCFLtruncationValue(Time, CS%vertvisc_CSp, &
+  call updateCFLtruncationValue(Time, CS%vertvisc_CSp, US, &
                                 activate=is_new_run(restart_CS) )
 
   if (associated(ALE_CSp)) CS%ALE_CSp => ALE_CSp
   if (associated(OBC)) then
     CS%OBC => OBC
-    if (OBC%ramp) call update_OBC_ramp(Time, CS%OBC, &
+    if (OBC%ramp) call update_OBC_ramp(Time, CS%OBC, US, &
                                 activate=is_new_run(restart_CS) )
   endif
   if (associated(update_OBC_CSp)) CS%update_OBC_CSp => update_OBC_CSp
@@ -1368,12 +1368,12 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   CS%id_h_PFu = register_diag_field('ocean_model', 'h_PFu', diag%axesCuL, Time, &
       'Thickness Multiplied Zonal Pressure Force Acceleration', &
       'm2 s-2', conversion=GV%H_to_m*US%L_T2_to_m_s2)
-  if(CS%id_h_PFu > 0) call safe_alloc_ptr(CS%ADp%diag_hu,IsdB,IedB,jsd,jed,nz)
+  if (CS%id_h_PFu > 0) call safe_alloc_ptr(CS%ADp%diag_hu,IsdB,IedB,jsd,jed,nz)
 
   CS%id_h_PFv = register_diag_field('ocean_model', 'h_PFv', diag%axesCvL, Time, &
       'Thickness Multiplied Meridional Pressure Force Acceleration', &
       'm2 s-2', conversion=GV%H_to_m*US%L_T2_to_m_s2)
-  if(CS%id_h_PFv > 0) call safe_alloc_ptr(CS%ADp%diag_hv,isd,ied,JsdB,JedB,nz)
+  if (CS%id_h_PFv > 0) call safe_alloc_ptr(CS%ADp%diag_hv,isd,ied,JsdB,JedB,nz)
 
   CS%id_intz_PFu_2d = register_diag_field('ocean_model', 'intz_PFu_2d', diag%axesCu1, Time, &
       'Depth-integral of Zonal Pressure Force Acceleration', &
@@ -1398,12 +1398,12 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   CS%id_h_CAu = register_diag_field('ocean_model', 'h_CAu', diag%axesCuL, Time, &
       'Thickness Multiplied Zonal Coriolis and Advective Acceleration', &
       'm2 s-2', conversion=GV%H_to_m*US%L_T2_to_m_s2)
-  if(CS%id_h_CAu > 0) call safe_alloc_ptr(CS%ADp%diag_hu,IsdB,IedB,jsd,jed,nz)
+  if (CS%id_h_CAu > 0) call safe_alloc_ptr(CS%ADp%diag_hu,IsdB,IedB,jsd,jed,nz)
 
   CS%id_h_CAv = register_diag_field('ocean_model', 'h_CAv', diag%axesCvL, Time, &
       'Thickness Multiplied Meridional Coriolis and Advective Acceleration', &
       'm2 s-2', conversion=GV%H_to_m*US%L_T2_to_m_s2)
-  if(CS%id_h_CAv > 0) call safe_alloc_ptr(CS%ADp%diag_hv,isd,ied,JsdB,JedB,nz)
+  if (CS%id_h_CAv > 0) call safe_alloc_ptr(CS%ADp%diag_hv,isd,ied,JsdB,JedB,nz)
 
   CS%id_intz_CAu_2d = register_diag_field('ocean_model', 'intz_CAu_2d', diag%axesCu1, Time, &
       'Depth-integral of Zonal Coriolis and Advective Acceleration', &
@@ -1448,12 +1448,12 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   CS%id_h_u_BT_accel = register_diag_field('ocean_model', 'h_u_BT_accel', diag%axesCuL, Time, &
       'Thickness Multiplied Barotropic Anomaly Zonal Acceleration', &
       'm2 s-2', conversion=GV%H_to_m*US%L_T2_to_m_s2)
-  if(CS%id_h_u_BT_accel > 0) call safe_alloc_ptr(CS%ADp%diag_hu,IsdB,IedB,jsd,jed,nz)
+  if (CS%id_h_u_BT_accel > 0) call safe_alloc_ptr(CS%ADp%diag_hu,IsdB,IedB,jsd,jed,nz)
 
   CS%id_h_v_BT_accel = register_diag_field('ocean_model', 'h_v_BT_accel', diag%axesCvL, Time, &
       'Thickness Multiplied Barotropic Anomaly Meridional Acceleration', &
       'm2 s-2', conversion=GV%H_to_m*US%L_T2_to_m_s2)
-  if(CS%id_h_v_BT_accel > 0) call safe_alloc_ptr(CS%ADp%diag_hv,isd,ied,JsdB,JedB,nz)
+  if (CS%id_h_v_BT_accel > 0) call safe_alloc_ptr(CS%ADp%diag_hv,isd,ied,JsdB,JedB,nz)
 
   CS%id_intz_u_BT_accel_2d = register_diag_field('ocean_model', 'intz_u_BT_accel_2d', diag%axesCu1, Time, &
       'Depth-integral of Barotropic Anomaly Zonal Acceleration', &
@@ -1472,7 +1472,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   CS%id_PFv_visc_rem = register_diag_field('ocean_model', 'PFv_visc_rem', diag%axesCvL, Time, &
       'Meridional Pressure Force Acceleration multiplied by the viscous remnant', &
       'm s-2', conversion=US%L_T2_to_m_s2)
-  if(CS%id_PFv_visc_rem > 0) call safe_alloc_ptr(CS%ADp%visc_rem_v,isd,ied,JsdB,JedB,nz)
+  if (CS%id_PFv_visc_rem > 0) call safe_alloc_ptr(CS%ADp%visc_rem_v,isd,ied,JsdB,JedB,nz)
 
   CS%id_CAu_visc_rem = register_diag_field('ocean_model', 'CAu_visc_rem', diag%axesCuL, Time, &
       'Zonal Coriolis and Advective Acceleration multiplied by the viscous remnant', &
@@ -1481,7 +1481,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   CS%id_CAv_visc_rem = register_diag_field('ocean_model', 'CAv_visc_rem', diag%axesCvL, Time, &
       'Meridional Coriolis and Advective Acceleration multiplied by the viscous remnant', &
       'm s-2', conversion=US%L_T2_to_m_s2)
-  if(CS%id_CAv_visc_rem > 0) call safe_alloc_ptr(CS%ADp%visc_rem_v,isd,ied,JsdB,JedB,nz)
+  if (CS%id_CAv_visc_rem > 0) call safe_alloc_ptr(CS%ADp%visc_rem_v,isd,ied,JsdB,JedB,nz)
 
   CS%id_u_BT_accel_visc_rem = register_diag_field('ocean_model', 'u_BT_accel_visc_rem', diag%axesCuL, Time, &
       'Barotropic Anomaly Zonal Acceleration multiplied by the viscous remnant', &
@@ -1490,7 +1490,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   CS%id_v_BT_accel_visc_rem = register_diag_field('ocean_model', 'v_BT_accel_visc_rem', diag%axesCvL, Time, &
       'Barotropic Anomaly Meridional Acceleration multiplied by the viscous remnant', &
       'm s-2', conversion=US%L_T2_to_m_s2)
-  if(CS%id_v_BT_accel_visc_rem > 0) call safe_alloc_ptr(CS%ADp%visc_rem_v,isd,ied,JsdB,JedB,nz)
+  if (CS%id_v_BT_accel_visc_rem > 0) call safe_alloc_ptr(CS%ADp%visc_rem_v,isd,ied,JsdB,JedB,nz)
 
   id_clock_Cor        = cpu_clock_id('(Ocean Coriolis & mom advection)', grain=CLOCK_MODULE)
   id_clock_continuity = cpu_clock_id('(Ocean continuity equation)',      grain=CLOCK_MODULE)

@@ -188,7 +188,8 @@ type, public :: ice_shelf_CS ; private
              id_h_shelf = -1, id_h_mask = -1, &
              id_surf_elev = -1, id_bathym = -1, &
              id_area_shelf_h = -1, &
-             id_ustar_shelf = -1, id_shelf_mass = -1, id_mass_flux = -1
+             id_ustar_shelf = -1, id_shelf_mass = -1, id_mass_flux = -1, &
+             id_shelf_sfc_mass_flux = -1
   !>@}
 
   integer :: id_read_mass !< An integer handle used in time interpolation of
@@ -753,6 +754,8 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step, CS)
   if (CS%id_shelf_mass > 0) call post_data(CS%id_shelf_mass, ISS%mass_shelf, CS%diag)
   if (CS%id_area_shelf_h > 0) call post_data(CS%id_area_shelf_h, ISS%area_shelf_h, CS%diag)
   if (CS%id_ustar_shelf > 0) call post_data(CS%id_ustar_shelf, fluxes%ustar_shelf, CS%diag)
+  if (CS%id_shelf_sfc_mass_flux > 0) call post_data(CS%id_shelf_sfc_mass_flux, fluxes%shelf_sfc_mass_flux, CS%diag)
+
   if (CS%id_melt > 0) call post_data(CS%id_melt, fluxes%iceshelf_melt, CS%diag)
   if (CS%id_thermal_driving > 0) call post_data(CS%id_thermal_driving, (sfc_state%sst-ISS%tfreeze), CS%diag)
   if (CS%id_Sbdry > 0) call post_data(CS%id_Sbdry, Sbdry, CS%diag)
@@ -1815,6 +1818,8 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces_in,
   if (CS%active_shelf_dynamics) then
     CS%id_h_mask = register_diag_field('ice_shelf_model', 'h_mask', CS%diag%axesT1, CS%Time, &
        'ice shelf thickness mask', 'none')
+    CS%id_shelf_sfc_mass_flux = register_diag_field('ice_shelf_model', 'sfc_mass_flux', CS%diag%axesT1, CS%Time, &
+       'ice shelf surface mass flux deposition from atmosphere', 'none')
   endif
   call MOM_IS_diag_mediator_close_registration(CS%diag)
 
@@ -1845,7 +1850,7 @@ subroutine initialize_ice_shelf_fluxes(CS, ocn_grid, US, fluxes_in)
    ! when SHELF_THERMO = True. These fluxes are necessary if one wants to
    ! use either ENERGETICS_SFC_PBL (ALE mode) or BULKMIXEDLAYER (layer mode).
     call allocate_forcing_type(CS%Grid_in, fluxes_in, ustar=.true., shelf=.true., &
-         press=.true., water=CS%isthermo, heat=CS%isthermo)
+         press=.true., water=CS%isthermo, heat=CS%isthermo, shelf_sfc_accumulation = CS%active_shelf_dynamics)
   else
     call MOM_mesg("MOM_ice_shelf.F90, initialize_ice_shelf: allocating fluxes in solo mode.")
     call allocate_forcing_type(CS%Grid_in, fluxes_in, ustar=.true., shelf=.true., press=.true.)
@@ -2032,11 +2037,12 @@ subroutine update_shelf_mass(G, US, CS, ISS, Time)
 end subroutine update_shelf_mass
 
 !> Save the ice shelf restart file
-subroutine ice_shelf_query(CS, G, frac_shelf_h)
+subroutine ice_shelf_query(CS, G, frac_shelf_h, mass_shelf)
   type(ice_shelf_CS),         pointer    :: CS !< ice shelf control structure
   type(ocean_grid_type), intent(in)      :: G  !< A pointer to an ocean grid control structure.
-  real, optional, dimension(SZI_(G),SZJ_(G))  :: frac_shelf_h !<
-                                      !< Ice shelf area fraction [nodim].
+  real, optional, dimension(SZI_(G),SZJ_(G)), intent(out)  :: frac_shelf_h !< Ice shelf area fraction [nodim].
+  real, optional, dimension(SZI_(G),SZJ_(G)), intent(out)  :: mass_shelf !<Ice shelf mass [R Z -> kg m-2]
+
 
   integer :: i, j
 
@@ -2044,6 +2050,13 @@ subroutine ice_shelf_query(CS, G, frac_shelf_h)
     do j=G%jsd,G%jed ; do i=G%isd,G%ied
       frac_shelf_h(i,j) = 0.0
       if (G%areaT(i,j)>0.) frac_shelf_h(i,j) = CS%ISS%area_shelf_h(i,j) / G%areaT(i,j)
+    enddo ; enddo
+  endif
+
+  if (present(mass_shelf)) then
+    do j=G%jsd,G%jed ; do i=G%isd,G%ied
+      mass_shelf(i,j) = 0.0
+      if (G%areaT(i,j)>0.) mass_shelf(i,j) = CS%ISS%mass_shelf(i,j)
     enddo ; enddo
   endif
 
