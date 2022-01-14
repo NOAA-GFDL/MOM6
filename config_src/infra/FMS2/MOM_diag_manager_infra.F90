@@ -169,18 +169,24 @@ end subroutine MOM_diag_manager_end
 integer function register_diag_field_infra_scalar(module_name, field_name, init_time, &
                         long_name, units, missing_value, range, standard_name, do_not_log, &
                         err_msg, area, volume)
-  character(len=*),              intent(in) :: module_name !< The name of the associated module
-  character(len=*),              intent(in) :: field_name !< The name of the field
-  type(time_type),     optional, intent(in) :: init_time !< The registration time
-  character(len=*),    optional, intent(in) :: long_name !< A long name for the field
-  character(len=*),    optional, intent(in) :: units     !< Field units
-  character(len=*),    optional, intent(in) :: standard_name !< A standard name for the field
-  real,                optional, intent(in) :: missing_value !< Missing value attribute
-  real,  dimension(2), optional, intent(in) :: range     !< A valid range of the field
-  logical,             optional, intent(in) :: do_not_log !< if TRUE, field information is not logged
-  character(len=*),    optional, intent(out):: err_msg   !< An error message to return
-  integer,             optional, intent(in) :: area      !< Diagnostic ID of the field containing the area attribute
-  integer,             optional, intent(in) :: volume    !< Diagnostic ID of the field containing the volume attribute
+  character(len=*),               intent(in) :: module_name !< The name of the associated module
+  character(len=*),               intent(in) :: field_name !< The name of the field
+  type(time_type),      optional, intent(in) :: init_time !< The registration time
+  character(len=*),     optional, intent(in) :: long_name !< A long name for the field
+  character(len=*),     optional, intent(in) :: units     !< Field units
+  character(len=*),     optional, intent(in) :: standard_name !< A standard name for the field
+  class(*),             optional, intent(in) :: missing_value !< Missing value attribute
+  class(*),dimension(:),optional, intent(in) :: range     !< A valid range of the field
+  logical,              optional, intent(in) :: do_not_log !< if TRUE, field information is not logged
+  character(len=*),     optional, intent(out):: err_msg   !< An error message to return
+  integer,              optional, intent(in) :: area      !< Diagnostic ID of the field containing the area attribute
+  integer,              optional, intent(in) :: volume    !< Diagnostic ID of the field containing the volume attribute
+
+  if ( present(range) ) then
+    if ( size(range) .ne. 2 ) then
+      call MOM_error(FATAL, "register_diag_field_infra_scalar called with a range of wrong extent.")
+    end if
+  end if
 
   register_diag_field_infra_scalar = register_diag_field_fms(module_name, field_name, init_time, &
         long_name, units, missing_value, range, standard_name, do_not_log, err_msg, area, volume)
@@ -191,24 +197,30 @@ end function register_diag_field_infra_scalar
 integer function register_diag_field_infra_array(module_name, field_name, axes, init_time, &
                         long_name, units, missing_value, range, mask_variant, standard_name, verbose, &
                         do_not_log, err_msg, interp_method, tile_count, area, volume)
-  character(len=*),             intent(in) :: module_name !< The name of the associated module
-  character(len=*),             intent(in) :: field_name !< The name of the field
-  integer, dimension(:),        intent(in) :: axes      !< Diagnostic IDs of axis attributes for the field
-  type(time_type),    optional, intent(in) :: init_time !< The registration time
-  character(len=*),   optional, intent(in) :: long_name !< A long name for the field
-  character(len=*),   optional, intent(in) :: units     !< Units of the field
-  real,               optional, intent(in) :: missing_value !< Missing value attribute
-  real, dimension(2), optional, intent(in) :: range     !< A valid range of the field
-  logical,            optional, intent(in) :: mask_variant !< If true, the field mask is varying in time
-  character(len=*),   optional, intent(in) :: standard_name !< A standard name for the field
-  logical,            optional, intent(in) :: verbose    !< If true, provide additional log information
-  logical,            optional, intent(in) :: do_not_log !< if TRUE, field information is not logged
-  character(len=*),   optional, intent(in) :: interp_method !< If 'none' indicates the field should
+  character(len=*),               intent(in) :: module_name !< The name of the associated module
+  character(len=*),               intent(in) :: field_name !< The name of the field
+  integer, dimension(:),          intent(in) :: axes      !< Diagnostic IDs of axis attributes for the field
+  type(time_type),      optional, intent(in) :: init_time !< The registration time
+  character(len=*),     optional, intent(in) :: long_name !< A long name for the field
+  character(len=*),     optional, intent(in) :: units     !< Units of the field
+  class(*),             optional, intent(in) :: missing_value !< Missing value attribute
+  class(*),dimension(:),optional, intent(in) :: range     !< A valid range of the field
+  logical,              optional, intent(in) :: mask_variant !< If true, the field mask is varying in time
+  character(len=*),     optional, intent(in) :: standard_name !< A standard name for the field
+  logical,              optional, intent(in) :: verbose    !< If true, provide additional log information
+  logical,              optional, intent(in) :: do_not_log !< if TRUE, field information is not logged
+  character(len=*),     optional, intent(in) :: interp_method !< If 'none' indicates the field should
                                                          !! not be interpolated as a scalar
-  integer,            optional, intent(in) :: tile_count !< The tile number for the current PE
-  character(len=*),   optional, intent(out):: err_msg   !< An error message to return
-  integer,            optional, intent(in) :: area      !< Diagnostic ID of the field containing the area attribute
-  integer,            optional, intent(in) :: volume    !< Diagnostic ID of the field containing the volume attribute
+  integer,              optional, intent(in) :: tile_count !< The tile number for the current PE
+  character(len=*),     optional, intent(out):: err_msg   !< An error message to return
+  integer,              optional, intent(in) :: area      !< Diagnostic ID of the field containing the area attribute
+  integer,              optional, intent(in) :: volume    !< Diagnostic ID of the field containing the volume attribute
+
+  if ( present(range) ) then
+    if ( size(range) .ne. 2 ) then
+      call MOM_error(FATAL, "register_diag_field_infra_array called with a range of wrong extent.")
+    end if
+  end if
 
   register_diag_field_infra_array = register_diag_field_fms(module_name, field_name, axes, init_time, &
         long_name, units, missing_value, range, mask_variant, standard_name, verbose, do_not_log, &
@@ -220,21 +232,27 @@ end function register_diag_field_infra_array
 integer function register_static_field_infra(module_name, field_name, axes, long_name, units, &
                         missing_value, range, mask_variant, standard_name, do_not_log, interp_method, &
                         tile_count, area, volume)
-  character(len=*),             intent(in) :: module_name !< The name of the associated module
-  character(len=*),             intent(in) :: field_name !< The name of the field
-  integer, dimension(:),        intent(in) :: axes      !< Diagnostic IDs of axis attributes for the field
-  character(len=*),   optional, intent(in) :: long_name !< A long name for the field
-  character(len=*),   optional, intent(in) :: units     !< Units of the field
-  real,               optional, intent(in) :: missing_value !< Missing value attribute
-  real, dimension(2), optional, intent(in) :: range     !< A valid range of the field
-  logical,            optional, intent(in) :: mask_variant !< If true, the field mask is varying in time
-  character(len=*),   optional, intent(in) :: standard_name !< A standard name for the field
-  logical,            optional, intent(in) :: do_not_log !< if TRUE, field information is not logged
-  character(len=*),   optional, intent(in) :: interp_method !< If 'none' indicates the field should
+  character(len=*),               intent(in) :: module_name !< The name of the associated module
+  character(len=*),               intent(in) :: field_name !< The name of the field
+  integer, dimension(:),          intent(in) :: axes      !< Diagnostic IDs of axis attributes for the field
+  character(len=*),     optional, intent(in) :: long_name !< A long name for the field
+  character(len=*),     optional, intent(in) :: units     !< Units of the field
+  class(*),             optional, intent(in) :: missing_value !< Missing value attribute
+  class(*),dimension(:),optional, intent(in) :: range     !< A valid range of the field
+  logical,              optional, intent(in) :: mask_variant !< If true, the field mask is varying in time
+  character(len=*),     optional, intent(in) :: standard_name !< A standard name for the field
+  logical,              optional, intent(in) :: do_not_log !< if TRUE, field information is not logged
+  character(len=*),     optional, intent(in) :: interp_method !< If 'none' indicates the field should
                                                          !! not be interpolated as a scalar
-  integer,            optional, intent(in) :: tile_count !< The tile number for the current PE
-  integer,            optional, intent(in) :: area      !< Diagnostic ID of the field containing the area attribute
-  integer,            optional, intent(in) :: volume    !< Diagnostic ID of the field containing the volume attribute
+  integer,              optional, intent(in) :: tile_count !< The tile number for the current PE
+  integer,              optional, intent(in) :: area      !< Diagnostic ID of the field containing the area attribute
+  integer,              optional, intent(in) :: volume    !< Diagnostic ID of the field containing the volume attribute
+
+  if ( present(range) ) then
+    if ( size(range) .ne. 2 ) then
+      call MOM_error(FATAL, "register_static_field_infra called with a range of wrong extent.")
+    end if
+  end if
 
   register_static_field_infra = register_static_field_fms(module_name, field_name, axes, long_name, units,&
        & missing_value, range, mask_variant, standard_name, dynamic=.false.,do_not_log=do_not_log, &
@@ -245,7 +263,7 @@ end function register_static_field_infra
 !! with the indicated unique reference id, false otherwise.
 logical function send_data_infra_0d(diag_field_id, field, time, err_msg)
   integer,                    intent(in)  :: diag_field_id !< The diagnostic manager identifier for this field
-  real,                       intent(in)  :: field   !< The value being recorded
+  class(*),                   intent(in)  :: field   !< The value being recorded
   TYPE(time_type),  optional, intent(in)  :: time    !< The time for the current record
   CHARACTER(len=*), optional, intent(out) :: err_msg !< An optional error message
 
@@ -256,13 +274,13 @@ end function send_data_infra_0d
 !!  with the indicated unique reference id, false otherwise.
 logical function send_data_infra_1d(diag_field_id, field, is_in, ie_in, time, mask, rmask, weight, err_msg)
   integer,                         intent(in) :: diag_field_id !< The diagnostic manager identifier for this field
-  real, dimension(:),              intent(in) :: field !< A 1-d array of values being recorded
+  class(*),dimension(:),           intent(in) :: field !< A 1-d array of values being recorded
   integer,               optional, intent(in) :: is_in !< The starting index for the data being recorded
   integer,               optional, intent(in) :: ie_in !< The end index for the data being recorded
   type(time_type),       optional, intent(in) :: time  !< The time for the current record
   logical, dimension(:), optional, intent(in) :: mask  !< An optional rank 1 logical mask
-  real, dimension(:),    optional, intent(in) :: rmask !< An optional rank 1 mask array
-  real,                  optional, intent(in) :: weight !< A scalar weight factor to apply to the current
+  class(*),dimension(:), optional, intent(in) :: rmask !< An optional rank 1 mask array
+  class(*),              optional, intent(in) :: weight !< A scalar weight factor to apply to the current
                                                        !! record if there is averaging in time
   character(len=*),      optional, intent(out) :: err_msg !< A log indicating the status of the post upon
                                                        !! returning to the calling routine
@@ -276,15 +294,15 @@ end function send_data_infra_1d
 logical function send_data_infra_2d(diag_field_id, field, is_in, ie_in, js_in, je_in, &
                                     time, mask, rmask, weight, err_msg)
   integer,                           intent(in) :: diag_field_id !< The diagnostic manager identifier for this field
-  real, dimension(:,:),              intent(in) :: field !< A 2-d array of values being recorded
+  class(*),dimension(:,:),           intent(in) :: field !< A 2-d array of values being recorded
   integer,                 optional, intent(in) :: is_in !< The starting i-index for the data being recorded
   integer,                 optional, intent(in) :: ie_in !< The end i-index for the data being recorded
   integer,                 optional, intent(in) :: js_in !< The starting j-index for the data being recorded
   integer,                 optional, intent(in) :: je_in !< The end j-index for the data being recorded
   type(time_type),         optional, intent(in) :: time  !< The time for the current record
   logical, dimension(:,:), optional, intent(in) :: mask  !< An optional 2-d logical mask
-  real, dimension(:,:),    optional, intent(in) :: rmask !< An optional 2-d mask array
-  real,                    optional, intent(in) :: weight !< A scalar weight factor to apply to the current
+  class(*),dimension(:,:), optional, intent(in) :: rmask !< An optional 2-d mask array
+  class(*),                optional, intent(in) :: weight !< A scalar weight factor to apply to the current
                                                          !! record if there is averaging in time
   character(len=*),        optional, intent(out) :: err_msg !< A log indicating the status of the post upon
                                                          !! returning to the calling routine
@@ -299,7 +317,7 @@ end function send_data_infra_2d
 logical function send_data_infra_3d(diag_field_id, field, is_in, ie_in, js_in, je_in, ks_in, ke_in, &
                                     time, mask, rmask, weight, err_msg)
   integer,                             intent(in) :: diag_field_id !< The diagnostic manager identifier for this field
-  real, dimension(:,:,:),              intent(in) :: field !< A rank 1 array of floating point values being recorded
+  class(*),dimension(:,:,:),           intent(in) :: field !< A rank 1 array of floating point values being recorded
   integer,                   optional, intent(in) :: is_in !< The starting i-index for the data being recorded
   integer,                   optional, intent(in) :: ie_in !< The end i-index for the data being recorded
   integer,                   optional, intent(in) :: js_in !< The starting j-index for the data being recorded
@@ -308,8 +326,8 @@ logical function send_data_infra_3d(diag_field_id, field, is_in, ie_in, js_in, j
   integer,                   optional, intent(in) :: ke_in !< The end k-index for the data being recorded
   type(time_type),           optional, intent(in) :: time  !< The time for the current record
   logical, dimension(:,:,:), optional, intent(in) :: mask  !< An optional 3-d logical mask
-  real, dimension(:,:,:),    optional, intent(in) :: rmask !< An optional 3-d mask array
-  real,                      optional, intent(in) :: weight !< A scalar weight factor to apply to the current
+  class(*),dimension(:,:,:), optional, intent(in) :: rmask !< An optional 3-d mask array
+  class(*),                  optional, intent(in) :: weight !< A scalar weight factor to apply to the current
                                                            !! record if there is averaging in time
   character(len=*),          optional, intent(out) :: err_msg !< A log indicating the status of the post upon
                                                            !! returning to the calling routine
