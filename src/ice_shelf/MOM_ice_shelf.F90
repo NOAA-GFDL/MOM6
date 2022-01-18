@@ -9,6 +9,7 @@ use MOM_constants, only : hlf
 use MOM_cpu_clock, only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock, only : CLOCK_COMPONENT, CLOCK_ROUTINE
 use MOM_coms,                 only : num_PEs
+use MOM_data_override,       only : data_override
 use MOM_diag_mediator, only    : MOM_diag_ctrl=>diag_ctrl
 use MOM_IS_diag_mediator, only : post_data=>post_IS_data
 use MOM_IS_diag_mediator, only : register_diag_field=>register_MOM_IS_diag_field, safe_alloc_ptr
@@ -321,6 +322,9 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step, CS)
 
   G => CS%grid ; US => CS%US
   ISS => CS%ISS
+
+  if (CS%active_shelf_dynamics) &
+       call data_override(G%Domain, 'shelf_sfc_mass_flux', fluxes_in%shelf_sfc_mass_flux, CS%Time, scale=US%kg_m3_to_R*US%m_to_Z)
 
   if (CS%rotate_index) then
     allocate(sfc_state)
