@@ -3007,10 +3007,13 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
 
   call myAlloc(fluxes%p_surf,isd,ied,jsd,jed, press)
 
-  call myAlloc(fluxes%frac_shelf_h,isd,ied,jsd,jed, shelf)
-  call myAlloc(fluxes%ustar_shelf,isd,ied,jsd,jed, shelf)
-  call myAlloc(fluxes%iceshelf_melt,isd,ied,jsd,jed, shelf)
-  call myAlloc(fluxes%shelf_sfc_mass_flux,isd,ied,jsd,jed, shelf_sfc_acc)
+  ! These fields should only be allocated if ice shelf is enabled.
+  if (present(shelf)) then; if (shelf) then
+    call myAlloc(fluxes%frac_shelf_h,isd,ied,jsd,jed, shelf)
+    call myAlloc(fluxes%ustar_shelf,isd,ied,jsd,jed, shelf)
+    call myAlloc(fluxes%iceshelf_melt,isd,ied,jsd,jed, shelf)
+    if (shelf_sfc_acc) call myAlloc(fluxes%shelf_sfc_mass_flux,isd,ied,jsd,jed, shelf_sfc_acc)
+  endif; endif
 
   !These fields should only on allocated when iceberg area is being passed through the coupler.
   call myAlloc(fluxes%ustar_berg,isd,ied,jsd,jed, iceberg)
