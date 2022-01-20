@@ -737,6 +737,15 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step, CS)
       call hchksum(ISS%mass_shelf, "mass_shelf after change thickness using melt", G%HI, haloshift=0, &
                    scale=US%RZ_to_kg_m2)
     endif
+
+   call change_thickness_using_precip(CS, ISS, G, US, fluxes,US%s_to_T*time_step, Time)
+
+   if (CS%debug) then
+     call hchksum(ISS%h_shelf, "h_shelf after change thickness using surf acc", G%HI, haloshift=0, scale=US%Z_to_m)
+     call hchksum(ISS%mass_shelf, "mass_shelf after change thickness using surf acc", G%HI, haloshift=0, &
+                  scale=US%RZ_to_kg_m2)
+   endif
+
   endif
 
   if (CS%debug) call MOM_forcing_chksum("Before add shelf flux", fluxes, G, CS%US, haloshift=0)
@@ -1986,6 +1995,57 @@ subroutine initialize_shelf_mass(G, param_file, CS, ISS, new_sim)
   end select
 
 end subroutine initialize_shelf_mass
+!> This subroutine applies net accumulation/ablation at the top surface to the dynamic ice shelf.
+!>>acc_rate[m-s]=surf_mass_flux/density_ice is ablation/accumulation rate
+!>>positive for accumulation negative for ablation
+subroutine change_thickness_using_precip(CS, ISS, G, US, fluxes,time_step, Time)
+  type(ice_shelf_CS),    intent(in)    :: CS  !< A pointer to the ice shelf control structure
+  type(ocean_grid_type), intent(inout) :: G  !< The ocean's grid structure.
+  type(ice_shelf_state), intent(inout) :: ISS !< A structure with elements that describe
+                                              !! the ice-shelf state
+  type(forcing),         intent(in)    :: fluxes  !< A structure of surface fluxes that
+                                                  !! includes surface mass flux
+  type(time_type),       intent(in)    :: Time !< The current model time
+  type(unit_scale_type), intent(in)    :: US   !< A dimensional unit scaling type
+  real,                  intent(in)    :: time_step !< The time step for this update [T ~> s].
+
+  ! locals
+  integer :: i, j
+  real ::I_rho_ice
+
+  I_rho_ice = 1.0 / CS%density_ice
+
+  !update time
+!  CS%Time = Time
+
+
+!    CS%time_step = time_step
+    ! update surface mass flux  rate
+!    if (CS%surf_mass_flux_from_file) call update_surf_mass_flux(G, US, CS, ISS, Time)
+
+  do j=G%jsc,G%jec ; do i=G%isc,G%iec
+    if ((ISS%hmask(i,j) == 1) .or. (ISS%hmask(i,j) == 2)) then
+
+      if (-fluxes%shelf_sfc_mass_flux(i,j) * time_step  < ISS%h_shelf(i,j)) then
+        ISS%h_shelf(i,j) = ISS%h_shelf(i,j) + fluxes%shelf_sfc_mass_flux(i,j) * time_step * I_rho_ice
+      else
+        ! the ice is about to ablate, so set thickness, area, and mask to zero
+        ! NOTE: this is not mass conservative should maybe scale salt & heat flux for this cell
+        ISS%h_shelf(i,j) = 0.0
+        ISS%hmask(i,j) = 0.0
+        ISS%area_shelf_h(i,j) = 0.0
+      endif
+      ISS%mass_shelf(i,j) = ISS%h_shelf(i,j) * CS%density_ice
+    endif
+  enddo ; enddo
+
+  call pass_var(ISS%area_shelf_h, G%domain)
+  call pass_var(ISS%h_shelf, G%domain)
+  call pass_var(ISS%hmask, G%domain)
+  call pass_var(ISS%mass_shelf, G%domain)
+
+end subroutine change_thickness_using_precip
+
 
 !> Updates the ice shelf mass using data from a file.
 subroutine update_shelf_mass(G, US, CS, ISS, Time)
