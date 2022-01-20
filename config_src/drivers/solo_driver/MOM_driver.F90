@@ -26,6 +26,7 @@ program MOM_main
 
   use MOM_cpu_clock,       only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
   use MOM_cpu_clock,       only : CLOCK_COMPONENT
+  use MOM_data_override,   only : data_override_init
   use MOM_diag_mediator,   only : enable_averaging, disable_averaging, diag_mediator_end
   use MOM_diag_mediator,   only : diag_ctrl, diag_mediator_close_registration
   use MOM,                 only : initialize_MOM, step_MOM, MOM_control_struct, MOM_end
@@ -302,6 +303,7 @@ program MOM_main
     ! when using an ice shelf
     call initialize_ice_shelf_fluxes(ice_shelf_CSp, grid, US, fluxes)
     call initialize_ice_shelf_forces(ice_shelf_CSp, grid, US, forces)
+    call data_override_init(Ocean_Domain_in=grid%domain%mpp_domain)
   endif
 
 

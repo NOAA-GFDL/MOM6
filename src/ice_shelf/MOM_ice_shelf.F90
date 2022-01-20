@@ -323,9 +323,10 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step, CS)
   G => CS%grid ; US => CS%US
   ISS => CS%ISS
 
-  if (CS%active_shelf_dynamics) &
+  if (CS%active_shelf_dynamics) then
        call data_override(G%Domain, 'shelf_sfc_mass_flux', fluxes_in%shelf_sfc_mass_flux, CS%Time, &
                           scale=US%kg_m3_to_R*US%m_to_Z)
+  endif
 
   if (CS%rotate_index) then
     allocate(sfc_state)
