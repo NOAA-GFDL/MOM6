@@ -161,6 +161,8 @@ type, public :: ice_shelf_CS ; private
                                          !! equation of state to use.
   logical :: active_shelf_dynamics       !< True if the ice shelf mass changes as a result
                                          !! the dynamic ice-shelf model.
+  logical :: data_override_shelf_fluxes  !< True if the ice shelf surface mass fluxes can be
+                                         !! written using the data_override feature (only for MOSAIC grids)
   logical :: override_shelf_movement     !< If true, user code specifies the shelf movement
                                          !! instead of using the dynamic ice-shelf mode.
   logical :: isthermo                    !< True if the ice shelf can exchange heat and
@@ -323,7 +325,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step, CS)
   G => CS%grid ; US => CS%US
   ISS => CS%ISS
 
-  if (CS%active_shelf_dynamics) then
+  if (CS%data_override_shelf_fluxes .and. CS%active_shelf_dynamics) then
        call data_override(G%Domain, 'shelf_sfc_mass_flux', fluxes_in%shelf_sfc_mass_flux, CS%Time, &
                           scale=US%kg_m3_to_R*US%m_to_Z)
   endif
@@ -1283,7 +1285,7 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces_in,
   allocate(CS%Grid)
   call MOM_domains_init(CS%Grid%domain, param_file, min_halo=wd_halos, symmetric=GRID_SYM_,&
        domain_name='MOM_Ice_Shelf_in')
-!  allocate(CS%Grid_in%HI)
+  !allocate(CS%Grid_in%HI)
   !call hor_index_init(CS%Grid%Domain, CS%Grid%HI, param_file, &
   !     local_indexing=.not.global_indexing)
   call MOM_grid_init(CS%Grid, param_file, CS%US)
@@ -1372,6 +1374,11 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces_in,
                  "If true, user provided code specifies the ice-shelf "//&
                  "movement instead of the dynamic ice model.", default=.false.)
     CS%active_shelf_dynamics = .not.CS%override_shelf_movement
+    call get_param(param_file, mdl, "DATA_OVERRIDE_SHELF_FLUXES", &
+                  CS%data_override_shelf_fluxes, &
+                 "If true, the data override feature is used to write "//&
+                 "the surface mass flux deposition. This option is only "//&
+                 "available for MOSAIC grid types.", default=.false.)
     call get_param(param_file, mdl, "GROUNDING_LINE_INTERPOLATE", CS%GL_regularize, &
                  "If true, regularize the floatation condition at the "//&
                  "grounding line as in Goldberg Holland Schoof 2009.", default=.false.)
@@ -2103,12 +2110,13 @@ subroutine update_shelf_mass(G, US, CS, ISS, Time)
 end subroutine update_shelf_mass
 
 !> Save the ice shelf restart file
-subroutine ice_shelf_query(CS, G, frac_shelf_h, mass_shelf)
+subroutine ice_shelf_query(CS, G, frac_shelf_h, mass_shelf, data_override_shelf_fluxes)
   type(ice_shelf_CS),         pointer    :: CS !< ice shelf control structure
   type(ocean_grid_type), intent(in)      :: G  !< A pointer to an ocean grid control structure.
   real, optional, dimension(SZI_(G),SZJ_(G)), intent(out)  :: frac_shelf_h !< Ice shelf area fraction [nodim].
   real, optional, dimension(SZI_(G),SZJ_(G)), intent(out)  :: mass_shelf !<Ice shelf mass [R Z -> kg m-2]
-
+  logical, optional                      :: data_override_shelf_fluxes !< If true, shelf fluxes can be written using
+                                               !! the data_override capability (only for MOSAIC grids)
 
   integer :: i, j
 
@@ -2124,6 +2132,11 @@ subroutine ice_shelf_query(CS, G, frac_shelf_h, mass_shelf)
       mass_shelf(i,j) = 0.0
       if (G%areaT(i,j)>0.) mass_shelf(i,j) = CS%ISS%mass_shelf(i,j)
     enddo ; enddo
+  endif
+
+  if (present(data_override_shelf_fluxes)) then
+     data_override_shelf_fluxes=.false.
+     if (CS%active_shelf_dynamics) data_override_shelf_fluxes = CS%data_override_shelf_fluxes
   endif
 
 end subroutine ice_shelf_query
