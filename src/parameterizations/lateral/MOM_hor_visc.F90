@@ -340,6 +340,8 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
                      ! viscosity. Here set equal to nondimensional Laplacian Leith constant.
                      ! This is set equal to zero if modified Leith is not used.
   real :: Shear_mag_bc  ! Shear_mag value in backscatter [T-1 ~> s-1]
+  real :: sh_xx_sq   ! Square of tension (sh_xx) [T-2 ~> s-2]
+  real :: sh_xy_sq   ! Square of shearing strain (sh_xy) [T-2 ~> s-2]
   real :: h2uq, h2vq ! temporary variables [H2 ~> m2 or kg2 m-4].
   real :: hu, hv     ! Thicknesses interpolated by arithmetic means to corner
                      ! points; these are first interpolated to u or v velocity
@@ -1458,8 +1460,8 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       enddo ; enddo
 
       ! Applying GME diagonal term.  This is linear and the arguments can be rescaled.
-      call smooth_GME(G, GME_flux_h=str_xx_GME)
-      call smooth_GME(G, GME_flux_q=str_xy_GME)
+      call smooth_GME(CS, G, GME_flux_h=str_xx_GME)
+      call smooth_GME(CS, G, GME_flux_q=str_xy_GME)
 
       do J=Jsq,Jeq+1 ; do i=Isq,Ieq+1
         str_xx(i,j) = (str_xx(i,j) + str_xx_GME(i,j)) * (h(i,j,k) * CS%reduction_xx(i,j))
@@ -2548,7 +2550,8 @@ end subroutine align_aniso_tensor_to_grid
 
 !> Apply a 1-1-4-1-1 Laplacian filter one time on GME diffusive flux to reduce any
 !! horizontal two-grid-point noise
-subroutine smooth_GME(G, GME_flux_h, GME_flux_q)
+subroutine smooth_GME(CS, G, GME_flux_h, GME_flux_q)
+  type(hor_visc_CS),                            intent(in)    :: CS        !< Control structure
   type(ocean_grid_type),                        intent(in)    :: G         !< Ocean grid
   real, dimension(SZI_(G),SZJ_(G)),   optional, intent(inout) :: GME_flux_h!< GME diffusive flux
                                                               !! at h points
