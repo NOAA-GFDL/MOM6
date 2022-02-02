@@ -195,6 +195,8 @@ type, public :: hor_visc_CS ; private
   integer :: id_Ah_h      = -1, id_Ah_q          = -1
   integer :: id_Kh_h      = -1, id_Kh_q          = -1
   integer :: id_GME_coeff_h = -1, id_GME_coeff_q = -1
+  integer :: id_dudx_bt = -1, id_dvdy_bt = -1
+  integer :: id_dudy_bt = -1, id_dvdx_bt = -1
   integer :: id_vort_xy_q = -1, id_div_xx_h      = -1
   integer :: id_sh_xy_q = -1,    id_sh_xx_h      = -1
   integer :: id_FrictWork = -1, id_FrictWorkIntz = -1
@@ -456,12 +458,13 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
                  (CS%bound_Kh .and. .not.CS%better_bound_Kh)
 
   if (CS%use_GME) then
+
     do j=Jsq-1,Jeq+2 ; do i=Isq-1,Ieq+2
       boundary_mask_h(i,j) = (G%mask2dCu(I,j) * G%mask2dCv(i,J) * G%mask2dCu(I-1,j) * G%mask2dCv(i,J-1))
     enddo ; enddo
 
-    do J=js-2,Jeq+1 ; do I=is-2,Ieq+1
-      boundary_mask_q(I,J) = (G%mask2dCv(i,J) * G%mask2dCv(i+1,J) * G%mask2dCu(I,j) * G%mask2dCu(I,j-1))
+    do J=Jsq-2,Jeq+1 ; do I=Isq-2,Ieq+1
+      boundary_mask_q(I,J) = (G%mask2dCv(i,J) * G%mask2dCv(i+1,J) * G%mask2dCu(I,j) * G%mask2dCu(I,j+1))
     enddo ; enddo
 
     ! initialize diag. array with zeros
@@ -472,53 +475,55 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
 
     ! Get barotropic velocities and their gradients
     call barotropic_get_tav(BT, ubtav, vbtav, G, US)
+
     call pass_vector(ubtav, vbtav, G%Domain)
 
-    do j=js-1,je+2 ; do i=is-1,ie+2
+    ! Calculate the barotropic horizontal tension
+    do j=Jsq-2,Jeq+2 ; do i=Isq-2,Ieq+2
       dudx_bt(i,j) = CS%DY_dxT(i,j)*(G%IdyCu(I,j) * ubtav(I,j) - &
                                      G%IdyCu(I-1,j) * ubtav(I-1,j))
       dvdy_bt(i,j) = CS%DX_dyT(i,j)*(G%IdxCv(i,J) * vbtav(i,J) - &
                                      G%IdxCv(i,J-1) * vbtav(i,J-1))
-    enddo ; enddo
-
-    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
       sh_xx_bt(i,j) = dudx_bt(i,j) - dvdy_bt(i,j)
     enddo ; enddo
 
     ! Components for the barotropic shearing strain
-    do J=js-2,Jeq+1 ; do I=is-2,Ieq+1
+    do J=Jsq-2,Jeq+2 ; do I=Isq-2,Ieq+2
       dvdx_bt(I,J) = CS%DY_dxBu(I,J)*(vbtav(i+1,J)*G%IdyCv(i+1,J) &
                                     - vbtav(i,J)*G%IdyCv(i,J))
       dudy_bt(I,J) = CS%DX_dyBu(I,J)*(ubtav(I,j+1)*G%IdxCu(I,j+1) &
                                     - ubtav(I,j)*G%IdxCu(I,j))
     enddo ; enddo
 
-    call pass_vector(dudx_bt, dvdy_bt, G%Domain, stagger=BGRID_NE)
-    call pass_vector(dvdx_bt, dudy_bt, G%Domain, stagger=AGRID)
-    call pass_var(boundary_mask_h, G%domain)
-    call pass_var(boundary_mask_q, G%domain, position=CORNER, complete=.true.)
+    ! post barotropic tension and strain
+    if (CS%id_dudx_bt > 0) call post_data(CS%id_dudx_bt, dudx_bt, CS%diag)
+    if (CS%id_dvdy_bt > 0) call post_data(CS%id_dvdy_bt, dvdy_bt, CS%diag)
+    if (CS%id_dudy_bt > 0) call post_data(CS%id_dudy_bt, dudy_bt, CS%diag)
+    if (CS%id_dvdx_bt > 0) call post_data(CS%id_dvdx_bt, dvdx_bt, CS%diag)
 
     if (CS%no_slip) then
-      do J=js-1,Jeq ; do I=is-1,Ieq
+      do J=Jsq-2,Jeq+2 ; do I=Isq-2,Ieq+2
         sh_xy_bt(I,J) = (2.0-G%mask2dBu(I,J)) * ( dvdx_bt(I,J) + dudy_bt(I,J) )
       enddo ; enddo
     else
-      do J=js-1,Jeq ; do I=is-1,Ieq
+      do J=Jsq-2,Jeq+2 ; do I=Isq-2,Ieq+2
         sh_xy_bt(I,J) = G%mask2dBu(I,J) * ( dvdx_bt(I,J) + dudy_bt(I,J) )
       enddo ; enddo
     endif
 
     do j=Jsq-1,Jeq+2 ; do i=Isq-1,Ieq+2
-      grad_vel_mag_bt_h(i,j) = boundary_mask_h(i,j) * (dudx_bt(i,j)**2 + dvdy_bt(i,j)**2 + &
+      grad_vel_mag_bt_h(i,j) = G%mask2dT(I,J) * boundary_mask_h(i,j) * (dudx_bt(i,j)**2 + dvdy_bt(i,j)**2 + &
             (0.25*((dvdx_bt(I,J)+dvdx_bt(I-1,J-1))+(dvdx_bt(I,J-1)+dvdx_bt(I-1,J))))**2 + &
             (0.25*((dudy_bt(I,J)+dudy_bt(I-1,J-1))+(dudy_bt(I,J-1)+dudy_bt(I-1,J))))**2)
     enddo ; enddo
 
-    do J=js-2,Jeq+1 ; do I=is-2,Ieq+1
-      grad_vel_mag_bt_q(I,J) = boundary_mask_q(I,J) * (dvdx_bt(I,J)**2 + dudy_bt(I,J)**2 + &
+    do J=Jsq-2,Jeq+1 ; do I=Isq-2,Ieq+1
+      grad_vel_mag_bt_q(I,J) = G%mask2dBu(I,J) * boundary_mask_q(I,J) * (dvdx_bt(I,J)**2 + dudy_bt(I,J)**2 + &
             (0.25*((dudx_bt(i,j)+dudx_bt(i+1,j+1))+(dudx_bt(i,j+1)+dudx_bt(i+1,j))))**2 + &
             (0.25*((dvdy_bt(i,j)+dvdy_bt(i+1,j+1))+(dvdy_bt(i,j+1)+dvdy_bt(i+1,j))))**2)
     enddo ; enddo
+
+    call pass_var(h, G%domain, halo=2)
 
     do j=js-2,je+2 ; do i=is-2,ie+2
       htot(i,j) = 0.0
@@ -527,36 +532,31 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       htot(i,j) = htot(i,j) + GV%H_to_Z*h(i,j,k)
     enddo ; enddo ; enddo
 
-    call pass_var(grad_vel_mag_bt_q, G%domain, position=CORNER, complete=.true.)
-    call pass_var(htot, G%domain)
-
     I_GME_h0 = 1.0 / CS%GME_h0
     do j=Jsq-1,Jeq+2 ; do i=Isq-1,Ieq+2
       if (grad_vel_mag_bt_h(i,j)>0) then
-        GME_effic_h(i,j) = CS%GME_efficiency * boundary_mask_h(i,j) * &
+        GME_effic_h(i,j) = CS%GME_efficiency * G%mask2dT(I,J) * &
             (MIN(htot(i,j) * I_GME_h0, 1.0)**2)
       else
         GME_effic_h(i,j) = 0.0
       endif
     enddo ; enddo
 
-    do J=js-2,Jeq+1 ; do I=is-2,Ieq+1
+    do J=Jsq-2,Jeq+1 ; do I=Isq-2,Ieq+1
       if (grad_vel_mag_bt_q(I,J)>0) then
         h_arith_q = 0.25 * ((htot(i,j) + htot(i+1,j+1)) + (htot(i+1,j) + htot(i,j+1)))
         I_hq = 1.0 / h_arith_q
         h_harm_q = 0.25 * h_arith_q * ((htot(i,j)*I_hq + htot(i+1,j+1)*I_hq) + &
                                        (htot(i+1,j)*I_hq + htot(i,j+1)*I_hq))
-        GME_effic_q(I,J) = CS%GME_efficiency * boundary_mask_q(I,J) * (MIN(h_harm_q * I_GME_h0, 1.0)**2)
+        GME_effic_q(I,J) = CS%GME_efficiency * G%mask2dBu(I,J) * (MIN(h_harm_q * I_GME_h0, 1.0)**2)
       else
         GME_effic_q(I,J) = 0.0
       endif
     enddo ; enddo
 
-    call pass_var(GME_effic_q, G%domain, position=CORNER, complete=.true.)
-
     call thickness_diffuse_get_KH(TD, KH_u_GME, KH_v_GME, G, GV)
 
-    call pass_vector(KH_u_GME, KH_v_GME, G%Domain, To_All+Scalar_Pair)
+    call pass_vector(KH_u_GME, KH_v_GME, G%domain, To_All+Scalar_Pair)
 
     if (CS%debug) &
     call uvchksum("GME KH[u,v]_GME", KH_u_GME, KH_v_GME, G%HI, haloshift=2, scale=US%L_to_m**2*US%s_to_T)
@@ -1450,7 +1450,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
         str_xx_GME(i,j) = GME_coeff * sh_xx_bt(i,j)
       enddo ; enddo
 
-      do J=js-2,Jeq+1 ; do I=is-2,Ieq+1
+      do J=Jsq-2,Jeq+1 ; do I=Isq-2,Ieq+1
         GME_coeff = GME_effic_q(I,J) * 0.25 * &
             ((KH_u_GME(I,j,k)+KH_u_GME(I,j+1,k)) + (KH_v_GME(i,J,k)+KH_v_GME(i+1,J,k)))
         GME_coeff = MIN(GME_coeff, CS%GME_limiter)
@@ -2564,6 +2564,18 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, MEKE, ADp)
       CS%min_grid_Kh = spacing(1.) * min_grid_sp_h2 * Idt
   endif
   if (CS%use_GME) then
+      CS%id_dudx_bt = register_diag_field('ocean_model', 'dudx_bt', diag%axesT1, Time, &
+        'Zonal component of the barotropic shearing strain at h points', 's-1', &
+        conversion=US%s_to_T)
+      CS%id_dudy_bt = register_diag_field('ocean_model', 'dudy_bt', diag%axesB1, Time, &
+        'Zonal component of the barotropic shearing strain at q points', 's-1', &
+        conversion=US%s_to_T)
+      CS%id_dvdy_bt = register_diag_field('ocean_model', 'dvdy_bt', diag%axesT1, Time, &
+        'Meridional component of the barotropic shearing strain at h points', 's-1', &
+        conversion=US%s_to_T)
+      CS%id_dvdx_bt = register_diag_field('ocean_model', 'dvdx_bt', diag%axesB1, Time, &
+        'Meridional component of the barotropic shearing strain at q points', 's-1', &
+        conversion=US%s_to_T)
       CS%id_GME_coeff_h = register_diag_field('ocean_model', 'GME_coeff_h', diag%axesTL, Time, &
         'GME coefficient at h Points', 'm2 s-1', conversion=US%L_to_m**2*US%s_to_T)
       CS%id_GME_coeff_q = register_diag_field('ocean_model', 'GME_coeff_q', diag%axesBL, Time, &
@@ -2616,15 +2628,18 @@ subroutine smooth_GME(CS,G,GME_flux_h,GME_flux_q)
   real, dimension(SZIB_(G),SZJB_(G)) :: GME_flux_q_original
   real :: wc, ww, we, wn, ws ! averaging weights for smoothing
   integer :: i, j, k, s
+  integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq
 
+  is  = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec
+  Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
   do s=1,CS%num_smooth_gme
     if (present(GME_flux_h)) then
       ! Update halos if needed
       if (s >= 2) call pass_var(GME_flux_h, G%Domain)
       GME_flux_h_original(:,:) = GME_flux_h(:,:)
       ! apply smoothing on GME
-      do j = G%jsc, G%jec
-        do i = G%isc, G%iec
+      do j = Jsq, Jeq+1
+        do i = Isq, Ieq+1
           ! skip land points
           if (G%mask2dT(i,j)==0.) cycle
           ! compute weights
@@ -2646,8 +2661,8 @@ subroutine smooth_GME(CS,G,GME_flux_h,GME_flux_q)
       if (s >= 2) call pass_var(GME_flux_q, G%Domain, position=CORNER, complete=.true.)
       GME_flux_q_original(:,:) = GME_flux_q(:,:)
       ! apply smoothing on GME
-      do J = G%JscB, G%JecB
-        do I = G%IscB, G%IecB
+      do J = Jsq-1, Jeq
+        do I = Isq-1, Ieq
           ! skip land points
           if (G%mask2dBu(I,J)==0.) cycle
           ! compute weights
