@@ -1478,12 +1478,6 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
         enddo ; enddo
       endif
 
-      if (allocated(MEKE%GME_snk)) then
-        do j=js,je ; do i=is,ie
-          FrictWork_GME(i,j,k) = GME_coeff_h(i,j,k) * h(i,j,k) * GV%H_to_kg_m2 * grad_vel_mag_bt_h(i,j)
-        enddo ; enddo
-      endif
-
     else ! .not. use_GME
       do J=Jsq,Jeq+1 ; do i=Isq,Ieq+1
         str_xx(i,j) = str_xx(i,j) * (h(i,j,k) * CS%reduction_xx(i,j))
@@ -1560,6 +1554,27 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
                    (u(I-1,j+1,k)-u(I-1,j,k))*G%IdyBu(I-1,J)      &
                   +(v(i,J,k)-v(i-1,J,k))*G%IdxBu(I-1,J) )        &
               +str_xy(I,J-1)*(                                   &
+                   (u(I,j,k)-u(I,j-1,k))*G%IdyBu(I,J-1)          &
+                  +(v(i+1,J-1,k)-v(i,J-1,k))*G%IdxBu(I,J-1) )) ) )
+    enddo ; enddo ; endif
+
+    if (CS%use_GME .and. associated(MEKE)) then
+      do j=js,je ; do i=is,ie
+        ! Diagnose   str_xx_GME*d_x u - str_yy_GME*d_y v + str_xy_GME*(d_y u + d_x v)
+        ! This is the old formulation that includes energy diffusion
+        FrictWork_GME(i,j,k) = GV%H_to_RZ * ( &
+              (str_xx_GME(i,j)*(u(I,j,k)-u(I-1,j,k))*G%IdxT(i,j)     &
+              -str_xx_GME(i,j)*(v(i,J,k)-v(i,J-1,k))*G%IdyT(i,j))    &
+         +0.25*((str_xy_GME(I,J)*(                                   &
+                   (u(I,j+1,k)-u(I,j,k))*G%IdyBu(I,J)            &
+                  +(v(i+1,J,k)-v(i,J,k))*G%IdxBu(I,J) )          &
+              +str_xy_GME(I-1,J-1)*(                             &
+                   (u(I-1,j,k)-u(I-1,j-1,k))*G%IdyBu(I-1,J-1)    &
+                  +(v(i,J-1,k)-v(i-1,J-1,k))*G%IdxBu(I-1,J-1) )) &
+             +(str_xy_GME(I-1,J)*(                               &
+                   (u(I-1,j+1,k)-u(I-1,j,k))*G%IdyBu(I-1,J)      &
+                  +(v(i,J,k)-v(i-1,J,k))*G%IdxBu(I-1,J) )        &
+              +str_xy_GME(I,J-1)*(                               &
                    (u(I,j,k)-u(I,j-1,k))*G%IdyBu(I,J-1)          &
                   +(v(i+1,J-1,k)-v(i,J-1,k))*G%IdxBu(I,J-1) )) ) )
     enddo ; enddo ; endif
@@ -2520,7 +2535,8 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
       'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
   endif
   CS%id_FrictWork = register_diag_field('ocean_model','FrictWork',diag%axesTL,Time,&
-      'Integral work done by lateral friction terms', &
+      'Integral work done by lateral friction terms. If GME is turned on, this ', & 
+      'includes the GME contribution.', &
       'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
   CS%id_FrictWorkIntz = register_diag_field('ocean_model','FrictWorkIntz',diag%axesT1,Time,      &
       'Depth integrated work done by lateral friction', &
