@@ -1558,7 +1558,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
                   +(v(i+1,J-1,k)-v(i,J-1,k))*G%IdxBu(I,J-1) )) ) )
     enddo ; enddo ; endif
 
-    if (CS%use_GME .and. associated(MEKE)) then
+    if (CS%use_GME) then
       do j=js,je ; do i=is,ie
         ! Diagnose   str_xx_GME*d_x u - str_yy_GME*d_y v + str_xy_GME*(d_y u + d_x v)
         ! This is the old formulation that includes energy diffusion
@@ -2535,7 +2535,7 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
       'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
   endif
   CS%id_FrictWork = register_diag_field('ocean_model','FrictWork',diag%axesTL,Time,&
-      'Integral work done by lateral friction terms. If GME is turned on, this ', & 
+      'Integral work done by lateral friction terms. If GME is turned on, this '//&
       'includes the GME contribution.', &
       'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
   CS%id_FrictWorkIntz = register_diag_field('ocean_model','FrictWorkIntz',diag%axesT1,Time,      &
