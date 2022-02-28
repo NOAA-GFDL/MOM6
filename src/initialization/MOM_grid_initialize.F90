@@ -1154,14 +1154,8 @@ subroutine extrapolate_metric(var, jh, missing)
 
   ! Fill in southern halo by extrapolating from the computational domain
   do j=lbound(var,2)+jh,lbound(var,2),-1 ; do i=lbound(var,1),ubound(var,1)
-    if ((var(i,j)==badval) .and. (2.0*var(i,j+1)-var(i,j+2) > 0.)) then
-       var(i,j) = 2.0*var(i,j+1)-var(i,j+2)
-    else
-      var(i,j) = var(i,j+1)
-    endif
-
+    if (var(i,j)==badval) var(i,j) = 2.0*var(i,j+1)-var(i,j+2)
   enddo ; enddo
-
 
   ! Fill in northern halo by extrapolating from the computational domain
   do j=ubound(var,2)-jh,ubound(var,2) ; do i=lbound(var,1),ubound(var,1)
