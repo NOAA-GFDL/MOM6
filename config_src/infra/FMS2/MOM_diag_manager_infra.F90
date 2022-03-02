@@ -289,8 +289,13 @@ logical function send_data_infra_2d(diag_field_id, field, is_in, ie_in, js_in, j
   character(len=*),        optional, intent(out) :: err_msg !< A log indicating the status of the post upon
                                                          !! returning to the calling routine
 
-  send_data_infra_2d = send_data_fms(diag_field_id, field, time, is_in, js_in, mask, &
-                                rmask, ie_in, je_in, weight, err_msg)
+  if(present(rmask) .or. present(weight)) then                                                         
+    send_data_infra_2d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, js_in=js_in, mask=mask, &
+                                rmask=rmask, ie_in=ie_in, je_in=je_in, weight=weight, err_msg=err_msg)
+  else
+    send_data_infra_2d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, js_in=js_in, mask=mask, &
+                                ie_in=ie_in, je_in=je_in, err_msg=err_msg)
+  endif
 
 end function send_data_infra_2d
 
