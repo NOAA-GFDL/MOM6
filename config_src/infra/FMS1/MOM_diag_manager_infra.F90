@@ -273,7 +273,17 @@ logical function send_data_infra_1d(diag_field_id, field, is_in, ie_in, time, ma
   character(len=*),      optional, intent(out) :: err_msg !< A log indicating the status of the post upon
                                                        !! returning to the calling routine
 
-  send_data_infra_1d = send_data_fms(diag_field_id, field, time, is_in, mask, rmask, ie_in, weight, err_msg)
+  if(present(rmask) .or. present(weight)) then
+   if(present(rmask) .and. present(weight)) then
+  send_data_infra_1d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, mask=mask, rmask=rmask, ie_in=ie_in, weight=weight, err_msg=err_msg)
+   elseif(present(rmask)) then
+  send_data_infra_1d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, mask=mask, rmask=rmask, ie_in=ie_in, err_msg=err_msg)
+   elseif(present(weight)) then
+  send_data_infra_1d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, ie_in=ie_in, weight=weight, err_msg=err_msg)
+   endif
+  else
+  send_data_infra_1d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, ie_in=ie_in, err_msg=err_msg)
+  endif
 
 end function send_data_infra_1d
 
@@ -295,9 +305,17 @@ logical function send_data_infra_2d(diag_field_id, field, is_in, ie_in, js_in, j
   character(len=*),        optional, intent(out) :: err_msg !< A log indicating the status of the post upon
                                                          !! returning to the calling routine
 
-  if(present(rmask) .or. present(weight)) then 
+  if(present(rmask) .or. present(weight)) then
+   if(present(rmask) .and. present(weight)) then
     send_data_infra_2d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, js_in=js_in, mask=mask, &
                                 rmask=rmask, ie_in=ie_in, je_in=je_in, weight=weight, err_msg=err_msg)
+   elseif(present(rmask)) then
+    send_data_infra_2d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, js_in=js_in, mask=mask, &
+                                rmask=rmask, ie_in=ie_in, je_in=je_in, err_msg=err_msg)
+   elseif(present(weight)) then
+    send_data_infra_2d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, js_in=js_in, mask=mask, &
+                                ie_in=ie_in, je_in=je_in, weight=weight, err_msg=err_msg)
+   endif
   else
     send_data_infra_2d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, js_in=js_in, mask=mask, &
                                 ie_in=ie_in, je_in=je_in, err_msg=err_msg)
