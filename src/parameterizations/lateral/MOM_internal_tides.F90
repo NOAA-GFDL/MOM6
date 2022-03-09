@@ -523,8 +523,11 @@ subroutine propagate_int_tide(h, tv, cn, TKE_itidal_input, vel_btTide, Nb, dt, &
 
     do m=1,CS%nMode ; do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
       ! implicit
-      CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) / (1.0 + dt * CS%TKE_residual_loss(i,j,a,fr,m) / &
-                                              (CS%En(i,j,a,fr,m) + en_subRO))
+      !CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) / (1.0 + dt * CS%TKE_residual_loss(i,j,a,fr,m) / &
+      !                                        (CS%En(i,j,a,fr,m) + en_subRO))
+      CS%En(i,j,a,fr,m) = (CS%En(i,j,a,fr,m) * (CS%En(i,j,a,fr,m) + en_subRO)) / &
+                         ((CS%En(i,j,a,fr,m) + en_subRO) + dt * CS%TKE_residual_loss(i,j,a,fr,m))
+
       ! explicit
       !CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) - dt * CS%TKE_residual_loss(i,j,a,fr,m)
     enddo ; enddo ; enddo ; enddo ; enddo
@@ -576,9 +579,9 @@ subroutine propagate_int_tide(h, tv, cn, TKE_itidal_input, vel_btTide, Nb, dt, &
       tot_residual_loss(i,j) = tot_residual_loss(i,j) + CS%TKE_residual_loss(i,j,a,fr,m)
     enddo ; enddo ; enddo ; enddo ; enddo
     do j=js,je ; do i=is,ie
-      tot_allprocesses_loss(i,j) = tot_leak_loss(i,j) + tot_quad_loss(i,j) + &
-                          tot_itidal_loss(i,j) + tot_Froude_loss(i,j) + &
-                          tot_residual_loss(i,j)
+      tot_allprocesses_loss(i,j) = ((((tot_leak_loss(i,j) + tot_quad_loss(i,j)) + &
+                          tot_itidal_loss(i,j)) + tot_Froude_loss(i,j)) + &
+                          tot_residual_loss(i,j))
     enddo ; enddo
     CS%tot_leak_loss         = tot_leak_loss
     CS%tot_quad_loss         = tot_quad_loss
@@ -613,9 +616,9 @@ subroutine propagate_int_tide(h, tv, cn, TKE_itidal_input, vel_btTide, Nb, dt, &
       do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
         itidal_loss_mode(i,j)       = itidal_loss_mode(i,j) + CS%TKE_itidal_loss(i,j,a,fr,m)
         allprocesses_loss_mode(i,j) = allprocesses_loss_mode(i,j) + &
-                                 CS%TKE_leak_loss(i,j,a,fr,m) + CS%TKE_quad_loss(i,j,a,fr,m) + &
-                                 CS%TKE_itidal_loss(i,j,a,fr,m) + CS%TKE_Froude_loss(i,j,a,fr,m) + &
-                                 CS%TKE_residual_loss(i,j,a,fr,m)
+                                 ((((CS%TKE_leak_loss(i,j,a,fr,m) + CS%TKE_quad_loss(i,j,a,fr,m)) + &
+                                 CS%TKE_itidal_loss(i,j,a,fr,m)) + CS%TKE_Froude_loss(i,j,a,fr,m)) + &
+                                 CS%TKE_residual_loss(i,j,a,fr,m))
       enddo ; enddo ; enddo
       call post_data(CS%id_itidal_loss_mode(fr,m), itidal_loss_mode, CS%diag)
       call post_data(CS%id_allprocesses_loss_mode(fr,m), allprocesses_loss_mode, CS%diag)
@@ -1481,8 +1484,8 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, res
       Fdt_p(i,j,a) = -dt*flux_x(I,j)  ! right face influx [R Z3 L2 T-2 ~> J]
 
       residual_loss(i,j,a) = residual_loss(i,j,a) + &
-                            abs(flux_x(I-1,j)) * CS%residual(i,j) * G%IareaT(i,j) + &
-                            abs(flux_x(I,j)) * CS%residual(i,j) * G%IareaT(i,j)
+                            (abs(flux_x(I-1,j)) * CS%residual(i,j) * G%IareaT(i,j) + &
+                             abs(flux_x(I,j)) * CS%residual(i,j) * G%IareaT(i,j))
     enddo ; enddo
 
   enddo ! a-loop
@@ -1563,8 +1566,8 @@ subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB, res
       Fdt_p(i,j,a) = -dt*flux_y(i,J)  ! north face influx [R Z3 L2 T-2 ~> J]
 
       residual_loss(i,j,a) = residual_loss(i,j,a) + &
-                            abs(flux_y(i,J-1)) * CS%residual(i,j) * G%IareaT(i,j) + &
-                            abs(flux_y(i,J)) * CS%residual(i,j) * G%IareaT(i,j)
+                            (abs(flux_y(i,J-1)) * CS%residual(i,j) * G%IareaT(i,j) + &
+                             abs(flux_y(i,J)) * CS%residual(i,j) * G%IareaT(i,j))
 
       !if ((En(i,j,a) + G%IareaT(i,j)*(Fdt_m(i,j,a) + Fdt_p(i,j,a))) < 0.0) then ! for debugging
       !  call MOM_error(WARNING, "propagate_y: OutFlux>Available prior to reflection", .true.)
