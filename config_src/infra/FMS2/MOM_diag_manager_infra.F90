@@ -238,8 +238,8 @@ integer function register_static_field_infra(module_name, field_name, axes, long
 
   if(present(missing_value) .or. present(range)) then
     register_static_field_infra = register_static_field_fms(module_name, field_name, axes, long_name, units,&
-       & missing_value, range, mask_variant=mask_variant, standard_name=standard_name, dynamic=.false.,do_not_log=do_not_log, &
-       interp_method=interp_method,tile_count=tile_count, area=area, volume=volume)
+       & missing_value, range, mask_variant=mask_variant, standard_name=standard_name, dynamic=.false.,&
+       do_not_log=do_not_log, interp_method=interp_method,tile_count=tile_count, area=area, volume=volume)
   else
     register_static_field_infra = register_static_field_fms(module_name, field_name, axes, long_name, units,&
        &  mask_variant=mask_variant, standard_name=standard_name, dynamic=.false.,do_not_log=do_not_log, &
@@ -275,11 +275,14 @@ logical function send_data_infra_1d(diag_field_id, field, is_in, ie_in, time, ma
 
   if(present(rmask) .or. present(weight)) then
    if(present(rmask) .and. present(weight)) then
-  send_data_infra_1d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, mask=mask, rmask=rmask, ie_in=ie_in, weight=weight, err_msg=err_msg)
+  send_data_infra_1d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, mask=mask, rmask=rmask, ie_in=ie_in,&
+                                     weight=weight, err_msg=err_msg)
    elseif(present(rmask)) then
-  send_data_infra_1d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, mask=mask, rmask=rmask, ie_in=ie_in, err_msg=err_msg)
+  send_data_infra_1d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, mask=mask, rmask=rmask, ie_in=ie_in,&
+                                     err_msg=err_msg)
    elseif(present(weight)) then
-  send_data_infra_1d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, ie_in=ie_in, weight=weight, err_msg=err_msg)
+  send_data_infra_1d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, ie_in=ie_in, weight=weight,&
+                                     err_msg=err_msg)
    endif
   else
   send_data_infra_1d = send_data_fms(diag_field_id, field, time=time, is_in=is_in, ie_in=ie_in, err_msg=err_msg)
