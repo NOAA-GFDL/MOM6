@@ -1056,7 +1056,7 @@ subroutine propagate(En, cn, freq, dt, G, US, CS, NAngle)
     speed(:,:) = 0.0
     do J=jsh-1,jeh ; do I=ish-1,ieh
       f2 = G%CoriolisBu(I,J)**2
-      speed(I,J) = 0.25*((cn(i,j) + cn(i+1,j)) + (cn(i+1,j+1) + cn(i,j+1))) * &
+      speed(I,J) = 0.25*((cn(i,j) + cn(i+1,j+1)) + (cn(i+1,j) + cn(i,j+1))) * &
                      sqrt(max(freq2 - f2, 0.0)) * Ifreq
     enddo ; enddo
     do a=1,na
