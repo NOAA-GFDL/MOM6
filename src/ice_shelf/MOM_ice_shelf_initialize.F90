@@ -453,8 +453,8 @@ subroutine initialize_ice_flow_from_file(bed_elev,u_shelf, v_shelf,float_cond,&
 
   floatfr_varname = "float_frac"
 
-! call MOM_read_data(filename, trim(ushelf_varname), u_shelf, G%Domain, position=CORNER,scale=1.0)
-! call MOM_read_data(filename,trim(vshelf_varname), v_shelf, G%Domain, position=CORNER,scale=1.0)
+ call MOM_read_data(filename, trim(ushelf_varname), u_shelf, G%Domain, position=CORNER,scale=1.0)
+ call MOM_read_data(filename,trim(vshelf_varname), v_shelf, G%Domain, position=CORNER,scale=1.0)
 ! call MOM_read_data(filename,trim(ice_visc_varname), ice_visc, G%Domain,position=CORNER,scale=1.0)
  call MOM_read_data(filename,trim(floatfr_varname), float_cond, G%Domain, scale=1.)
 
