@@ -379,7 +379,6 @@ type, public :: forcing_diags
   ! Iceberg + Ice shelf diagnostic handles
   integer :: id_ustar_ice_cover = -1
   integer :: id_frac_ice_cover = -1
-  integer :: id_shelf_sfc_mass_flux = -1
   ! wave forcing diagnostics handles.
   integer :: id_lamult = -1
   !>@}
@@ -2917,10 +2916,6 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
 
     if ((handles%id_ustar_ice_cover > 0) .and. associated(fluxes%ustar_shelf)) &
       call post_data(handles%id_ustar_ice_cover, fluxes%ustar_shelf, diag)
-
-    if ((handles%id_shelf_sfc_mass_flux > 0) &
-        .and. associated(fluxes%shelf_sfc_mass_flux)) &
-      call post_data(handles%id_shelf_sfc_mass_flux, fluxes%shelf_sfc_mass_flux, diag)
 
     ! wave forcing ===============================================================
     if (handles%id_lamult > 0)                                            &
