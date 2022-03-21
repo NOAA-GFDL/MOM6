@@ -2046,10 +2046,10 @@ subroutine change_thickness_using_precip(CS, ISS, G, US, fluxes,time_step, Time)
     endif
   enddo ; enddo
 
-  call pass_var(ISS%area_shelf_h, G%domain)
-  call pass_var(ISS%h_shelf, G%domain)
-  call pass_var(ISS%hmask, G%domain)
-  call pass_var(ISS%mass_shelf, G%domain)
+  call pass_var(ISS%area_shelf_h, G%domain, complete=.false.)
+  call pass_var(ISS%h_shelf, G%domain, complete=.false.)
+  call pass_var(ISS%hmask, G%domain, complete=.false.)
+  call pass_var(ISS%mass_shelf, G%domain, complete=.true.)
 
 end subroutine change_thickness_using_precip
 
