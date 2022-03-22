@@ -1715,7 +1715,7 @@ subroutine reflect(En, NAngle, CS, G, LB)
 
         if (ridge(i,j)) then
           ! if ray is not incident but in ridge cell, use complementary angle
-          if ((Nangle_d2 .lt. angle_to_wall) .and. (angle_to_wall .lt. Nangle)) then
+          if ((Nangle_d2 < angle_to_wall) .and. (angle_to_wall < Nangle)) then
             angle_wall0 = mod(angle_wall0 + (Nangle_d2 + Nangle), Nangle)
           endif
         endif
