@@ -491,7 +491,7 @@ subroutine register_ctrl_forcing_restarts(G, param_file, CS, restart_CS)
     call register_restart_field(CS%avg_time, "avg_time", .false., restart_CS, &
                   longname="Cyclical accumulated averaging time", units="sec", z_grid='1', t_grid=period_str)
     call register_restart_field(CS%avg_SST_anom, "avg_SST_anom", .false., restart_CS, &
-                  longname="Cyclical average SST Anomaly", units="deg C", z_grid='1', t_grid=period_str)
+                  longname="Cyclical average SST Anomaly", units="degC", z_grid='1', t_grid=period_str)
     call register_restart_field(CS%avg_SSS_anom, "avg_SSS_anom", .false., restart_CS, &
                   longname="Cyclical average SSS Anomaly", units="g kg-1", z_grid='1', t_grid=period_str)
   endif
