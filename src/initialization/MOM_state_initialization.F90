@@ -533,13 +533,13 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
         "MOM6 attempted to restart from a file from a different time than given by Time_in.")
       Time = Time_in
     endif
-    if ((GV%m_to_H_restart /= 0.0) .and. (GV%m_to_H_restart /= GV%m_to_H)) then
-      H_rescale = GV%m_to_H / GV%m_to_H_restart
+    if ((GV%m_to_H_restart /= 0.0) .and. (GV%m_to_H_restart /= 1.0)) then
+      H_rescale = 1.0 / GV%m_to_H_restart
       do k=1,nz ; do j=js,je ; do i=is,ie ; h(i,j,k) = H_rescale * h(i,j,k) ; enddo ; enddo ; enddo
     endif
     if ( (US%s_to_T_restart * US%m_to_L_restart /= 0.0) .and. &
-         ((US%m_to_L * US%s_to_T_restart) /= (US%m_to_L_restart * US%s_to_T)) ) then
-      vel_rescale = (US%m_to_L * US%s_to_T_restart) /  (US%m_to_L_restart * US%s_to_T)
+         (US%s_to_T_restart /= US%m_to_L_restart) ) then
+      vel_rescale = US%s_to_T_restart /  US%m_to_L_restart
       do k=1,nz ; do j=jsd,jed ; do I=IsdB,IeDB ; u(I,j,k) = vel_rescale * u(I,j,k) ; enddo ; enddo ; enddo
       do k=1,nz ; do J=JsdB,JedB ; do i=isd,ied ; v(i,J,k) = vel_rescale * v(i,J,k) ; enddo ; enddo ; enddo
     endif
@@ -691,6 +691,8 @@ subroutine initialize_thickness_from_file(h, depth_tot, G, GV, US, param_file, f
   real :: eta(SZI_(G),SZJ_(G),SZK_(GV)+1) ! Interface heights, in depth units [Z ~> m].
   integer :: inconsistent = 0
   logical :: correct_thickness
+  real    :: h_tolerance ! A parameter that controls the tolerance when adjusting the
+                         ! thickness to fit the bathymetry [Z ~> m].
   character(len=40)  :: mdl = "initialize_thickness_from_file" ! This subroutine's name.
   character(len=200) :: filename, thickness_file, inputdir, mesg ! Strings for file/path
   integer :: i, j, k, is, ie, js, je, nz
@@ -721,12 +723,18 @@ subroutine initialize_thickness_from_file(h, depth_tot, G, GV, US, param_file, f
                  "If true, all mass below the bottom removed if the "//&
                  "topography is shallower than the thickness input file "//&
                  "would indicate.", default=.false., do_not_log=just_read)
+    if (correct_thickness) then
+      call get_param(param_file, mdl, "THICKNESS_TOLERANCE", h_tolerance, &
+                 "A parameter that controls the tolerance when adjusting the "//&
+                 "thickness to fit the bathymetry. Used when ADJUST_THICKNESS=True.", &
+                 units="m", default=0.1, scale=US%m_to_Z, do_not_log=just_read)
+    endif
     if (just_read) return ! All run-time parameters have been read, so return.
 
     call MOM_read_data(filename, "eta", eta(:,:,:), G%Domain, scale=US%m_to_Z)
 
     if (correct_thickness) then
-      call adjustEtaToFitBathymetry(G, GV, US, eta, h, dZ_ref_eta=G%Z_ref)
+      call adjustEtaToFitBathymetry(G, GV, US, eta, h, h_tolerance, dZ_ref_eta=G%Z_ref)
     else
       do k=nz,1,-1 ; do j=js,je ; do i=is,ie
         if (eta(i,j,K) < (eta(i,j,K+1) + GV%Angstrom_Z)) then
@@ -760,31 +768,29 @@ end subroutine initialize_thickness_from_file
 !! layers are contracted to ANGSTROM thickness (which may be 0).
 !! If the bottom most interface is above the topography then the entire column
 !! is dilated (expanded) to fill the void.
-!!   @remark{There is a (hard-wired) "tolerance" parameter such that the
-!! criteria for adjustment must equal or exceed 10cm.}
-subroutine adjustEtaToFitBathymetry(G, GV, US, eta, h, dZ_ref_eta)
+subroutine adjustEtaToFitBathymetry(G, GV, US, eta, h, ht, dZ_ref_eta)
   type(ocean_grid_type),                       intent(in)    :: G   !< The ocean's grid structure
   type(verticalGrid_type),                     intent(in)    :: GV  !< The ocean's vertical grid structure
   type(unit_scale_type),                       intent(in)    :: US  !< A dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(inout) :: eta !< Interface heights [Z ~> m].
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),   intent(inout) :: h   !< Layer thicknesses [H ~> m or kg m-2]
+  real,                                        intent(in)    :: ht  !< Tolerance to exceed adjustment
+                                                                    !! criteria [Z ~> m]
   real,                              optional, intent(in)    :: dZ_ref_eta !< The difference between the
                                                                     !! reference heights for bathyT and
                                                                     !! eta [Z ~> m], 0 by default.
   ! Local variables
   integer :: i, j, k, is, ie, js, je, nz, contractions, dilations
-  real :: hTolerance = 0.1 !<  Tolerance to exceed adjustment criteria [Z ~> m]
   real :: dilate ! A factor by which the column is dilated [nondim]
   real :: dZ_ref ! The difference in the reference heights for G%bathyT and eta [Z ~> m]
   character(len=100) :: mesg
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
-  hTolerance = 0.1*US%m_to_Z
   dZ_ref = 0.0 ; if (present(dZ_ref_eta)) dZ_ref = dZ_ref_eta
 
   contractions = 0
   do j=js,je ; do i=is,ie
-    if (-eta(i,j,nz+1) > (G%bathyT(i,j) + dZ_ref) + hTolerance) then
+    if (-eta(i,j,nz+1) > (G%bathyT(i,j) + dZ_ref) + ht) then
       eta(i,j,nz+1) = -(G%bathyT(i,j) + dZ_ref)
       contractions = contractions + 1
     endif
@@ -814,7 +820,7 @@ subroutine adjustEtaToFitBathymetry(G, GV, US, eta, h, dZ_ref_eta)
     !   The whole column is dilated to accommodate deeper topography than
     ! the bathymetry would indicate.
     ! This should be...  if ((G%mask2dt(i,j)*(eta(i,j,1)-eta(i,j,nz+1)) > 0.0) .and. &
-    if (-eta(i,j,nz+1) < (G%bathyT(i,j) + dZ_ref) - hTolerance) then
+    if (-eta(i,j,nz+1) < (G%bathyT(i,j) + dZ_ref) - ht) then
       dilations = dilations + 1
       if (eta(i,j,1) <= eta(i,j,nz+1)) then
         do k=1,nz ; h(i,j,k) = (eta(i,j,1) + (G%bathyT(i,j) + dZ_ref)) / real(nz) ; enddo
@@ -1173,7 +1179,7 @@ subroutine trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read)
                  fail_if_missing=.not.just_read, do_not_log=just_read)
   call get_param(PF, mdl, "SURFACE_PRESSURE_VAR", p_surf_var, &
                  "The initial condition variable for the surface pressure exerted by ice.", &
-                 units="Pa", default="", do_not_log=just_read)
+                 default="", do_not_log=just_read)
   call get_param(PF, mdl, "INPUTDIR", inputdir, default=".", do_not_log=.true.)
   filename = trim(slasher(inputdir))//trim(p_surf_file)
   if (.not.just_read) call log_param(PF,  mdl, "!INPUTDIR/SURFACE_HEIGHT_IC_FILE", filename)
@@ -1889,10 +1895,9 @@ subroutine initialize_sponges_file(G, GV, US, use_temperature, tv, u, v, depth_t
   character(len=200) :: filename, inputdir ! Strings for file/path and path.
 
   logical :: use_ALE ! True if ALE is being used, False if in layered mode
-  logical :: time_space_interp_sponge ! True if using sponge data which
-  ! need to be interpolated from in both the horizontal dimension and in
-  ! time prior to vertical remapping.
-
+  logical :: new_sponge_param ! The value of a deprecated parameter.
+  logical :: time_space_interp_sponge ! If true use sponge data that need to be interpolated in both
+                              ! the horizontal dimension and in time prior to vertical remapping.
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
@@ -1945,20 +1950,34 @@ subroutine initialize_sponges_file(G, GV, US, use_temperature, tv, u, v, depth_t
                    "SPONGE_UV_DAMPING_FILE for the velocities.", default=Idamp_var)
   endif
   call get_param(param_file, mdl, "USE_REGRIDDING", use_ALE, do_not_log = .true.)
-  time_space_interp_sponge = .false.
-  call get_param(param_file, mdl, "NEW_SPONGES", time_space_interp_sponge, &
+
+  !### NEW_SPONGES should be obsoleted properly, rather than merely deprecated, at which
+  !    point only the else branch of the new_sponge_param block would be retained.
+  call get_param(param_file, mdl, "NEW_SPONGES", new_sponge_param, &
                  "Set True if using the newer sponging code which "//&
                  "performs on-the-fly regridding in lat-lon-time.",&
-                 "of sponge restoring data.", default=.false.)
-  if (time_space_interp_sponge) then
-    call MOM_error(WARNING, " initialize_sponges:  NEW_SPONGES has been deprecated. "//&
+                 "of sponge restoring data.", default=.false., do_not_log=.true.)
+  if (new_sponge_param) then
+    call get_param(param_file, mdl, "INTERPOLATE_SPONGE_TIME_SPACE", time_space_interp_sponge, &
+                 "If True, perform on-the-fly regridding in lat-lon-time of sponge restoring data.", &
+                 default=.true., do_not_log=.true.)
+    if (.not.time_space_interp_sponge) then
+      call MOM_error(FATAL, " initialize_sponges:  NEW_SPONGES has been deprecated, "//&
+                   "but is set to true inconsistently with INTERPOLATE_SPONGE_TIME_SPACE. "//&
+                   "Remove the NEW_SPONGES input line.")
+    else
+      call MOM_error(WARNING, " initialize_sponges:  NEW_SPONGES has been deprecated. "//&
                    "Please use INTERPOLATE_SPONGE_TIME_SPACE instead. Setting "//&
                    "INTERPOLATE_SPONGE_TIME_SPACE = True.")
+    endif
+    call log_param(param_file, mdl, "INTERPOLATE_SPONGE_TIME_SPACE", time_space_interp_sponge, &
+                 "If True, perform on-the-fly regridding in lat-lon-time of sponge restoring data.", &
+                 default=.true.)
+  else
+    call get_param(param_file, mdl, "INTERPOLATE_SPONGE_TIME_SPACE", time_space_interp_sponge, &
+                 "If True, perform on-the-fly regridding in lat-lon-time of sponge restoring data.", &
+                 default=.false.)
   endif
-  call get_param(param_file, mdl, "INTERPOLATE_SPONGE_TIME_SPACE", time_space_interp_sponge, &
-                 "Set True if using the newer sponging code which "//&
-                 "performs on-the-fly regridding in lat-lon-time.",&
-                 "of sponge restoring data.", default=time_space_interp_sponge)
 
 
   ! Read in sponge damping rate for tracers
@@ -2405,6 +2424,8 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
   real    :: dilate       ! A dilation factor to match topography [nondim]
   real    :: missing_value_temp, missing_value_salt
   logical :: correct_thickness
+  real    :: h_tolerance ! A parameter that controls the tolerance when adjusting the
+                         ! thickness to fit the bathymetry [Z ~> m].
   character(len=40) :: potemp_var, salin_var
   character(len=8)  :: laynum
 
@@ -2445,7 +2466,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
                                    ! extrapolating the densities at the bottom of unstable profiles
                                    ! from data when finding the initial interface locations in
                                    ! layered mode from a dataset of T and S.
-  character(len=10) :: remappingScheme
+  character(len=64) :: remappingScheme
   real :: tempAvg, saltAvg
   integer :: nPoints, ans
   integer :: id_clock_routine, id_clock_read, id_clock_interp, id_clock_fill, id_clock_ALE
@@ -2538,6 +2559,12 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
                  "If true, all mass below the bottom removed if the "//&
                  "topography is shallower than the thickness input file "//&
                  "would indicate.", default=.false., do_not_log=just_read)
+    if (correct_thickness) then
+      call get_param(PF, mdl, "THICKNESS_TOLERANCE", h_tolerance, &
+                 "A parameter that controls the tolerance when adjusting the "//&
+                 "thickness to fit the bathymetry. Used when ADJUST_THICKNESS=True.", &
+                 units="m", default=0.1, scale=US%m_to_Z, do_not_log=just_read)
+    endif
 
     call get_param(PF, mdl, "FIT_TO_TARGET_DENSITY_IC", adjust_temperature, &
                  "If true, all the interior layers are adjusted to "//&
@@ -2735,7 +2762,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
                          Hmix_depth, eps_z, eps_rho, density_extrap_bug)
 
     if (correct_thickness) then
-      call adjustEtaToFitBathymetry(G, GV, US, zi, h, dZ_ref_eta=G%Z_ref)
+      call adjustEtaToFitBathymetry(G, GV, US, zi, h, h_tolerance, dZ_ref_eta=G%Z_ref)
     else
       do k=nz,1,-1 ; do j=js,je ; do i=is,ie
         if (zi(i,j,K) < (zi(i,j,K+1) + GV%Angstrom_Z)) then
@@ -2764,7 +2791,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
 
     do k=1,nz
       nPoints = 0 ; tempAvg = 0. ; saltAvg = 0.
-      do j=js,je ; do i=is,ie ; if (G%mask2dT(i,j) >= 1.0) then
+      do j=js,je ; do i=is,ie ; if (G%mask2dT(i,j) > 0.0) then
         nPoints = nPoints + 1
         tempAvg = tempAvg + tv%T(i,j,k)
         saltAvg = saltAvg + tv%S(i,j,k)
@@ -2772,6 +2799,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
 
       ! Horizontally homogenize data to produce perfectly "flat" initial conditions
       if (homogenize) then
+        !### These averages will not reproduce across PE layouts or grid rotation.
         call sum_across_PEs(nPoints)
         call sum_across_PEs(tempAvg)
         call sum_across_PEs(saltAvg)

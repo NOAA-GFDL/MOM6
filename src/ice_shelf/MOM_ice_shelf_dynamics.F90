@@ -224,8 +224,9 @@ end function quad_area
 
 !> This subroutine is used to register any fields related to the ice shelf
 !! dynamics that should be written to or read from the restart file.
-subroutine register_ice_shelf_dyn_restarts(G, param_file, CS, restart_CS)
+subroutine register_ice_shelf_dyn_restarts(G, US, param_file, CS, restart_CS)
   type(ocean_grid_type),  intent(inout) :: G    !< The grid type describing the ice shelf grid.
+  type(unit_scale_type),  intent(in)    :: US   !< A structure containing unit conversion factors
   type(param_file_type),  intent(in)    :: param_file !< A structure to parse for run-time parameters
   type(ice_shelf_dyn_CS), pointer       :: CS !< A pointer to the ice shelf dynamics control structure
   type(MOM_restart_CS),   intent(inout) :: restart_CS !< MOM restart control struct
@@ -275,20 +276,24 @@ subroutine register_ice_shelf_dyn_restarts(G, param_file, CS, restart_CS)
     allocate( CS%h_bdry_val(isd:ied,jsd:jed), source=0.0 )
    ! additional restarts for ice shelf state
     call register_restart_field(CS%u_shelf, "u_shelf", .false., restart_CS, &
-                                "ice sheet/shelf u-velocity", "m s-1", hor_grid='Bu')
+                                "ice sheet/shelf u-velocity", &
+                                units="m s-1", conversion=US%L_T_to_m_s, hor_grid='Bu')
     call register_restart_field(CS%v_shelf, "v_shelf", .false., restart_CS, &
-                                "ice sheet/shelf v-velocity", "m s-1", hor_grid='Bu')
+                                "ice sheet/shelf v-velocity", &
+                                units="m s-1", conversion=US%L_T_to_m_s, hor_grid='Bu')
     call register_restart_field(CS%u_bdry_val, "u_bdry_val", .false., restart_CS, &
-                                "ice sheet/shelf boundary u-velocity", "m s-1", hor_grid='Bu')
+                                "ice sheet/shelf boundary u-velocity", &
+                                units="m s-1", conversion=US%L_T_to_m_s, hor_grid='Bu')
     call register_restart_field(CS%v_bdry_val, "v_bdry_val", .false., restart_CS, &
-                                "ice sheet/shelf boundary v-velocity", "m s-1", hor_grid='Bu')
+                                "ice sheet/shelf boundary v-velocity", &
+                                units="m s-1", conversion=US%L_T_to_m_s, hor_grid='Bu')
     call register_restart_field(CS%u_face_mask_bdry, "u_face_mask_bdry", .false., restart_CS, &
                                 "ice sheet/shelf boundary u-mask", "nondim", hor_grid='Bu')
     call register_restart_field(CS%v_face_mask_bdry, "v_face_mask_bdry", .false., restart_CS, &
                                 "ice sheet/shelf boundary v-mask", "nondim", hor_grid='Bu')
 
     call register_restart_field(CS%OD_av, "OD_av", .true., restart_CS, &
-                                "Average open ocean depth in a cell","m")
+                                "Average open ocean depth in a cell", "m", conversion=US%Z_to_m)
     call register_restart_field(CS%ground_frac, "ground_frac", .true., restart_CS, &
                                 "fractional degree of grounding", "nondim")
     call register_restart_field(CS%C_basal_friction, "C_basal_friction", .true., restart_CS, &
@@ -296,7 +301,7 @@ subroutine register_ice_shelf_dyn_restarts(G, param_file, CS, restart_CS)
     call register_restart_field(CS%AGlen_visc, "AGlen_visc", .true., restart_CS, &
                                 "ice-stiffness parameter", "Pa-3 s-1")
     call register_restart_field(CS%h_bdry_val, "h_bdry_val", .false., restart_CS, &
-                                "ice thickness at the boundary","m")
+                                "ice thickness at the boundary", "m", conversion=US%Z_to_m)
   endif
 
 end subroutine register_ice_shelf_dyn_restarts
@@ -462,16 +467,16 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
 
   ! Take additional initialization steps, for example of dependent variables.
   if (active_shelf_dynamics .and. .not.new_sim) then
-    if ((US%m_to_Z_restart /= 0.0) .and. (US%m_to_Z_restart /= US%m_to_Z)) then
-      Z_rescale = US%m_to_Z / US%m_to_Z_restart
+    if ((US%m_to_Z_restart /= 0.0) .and. (US%m_to_Z_restart /= 1.0)) then
+      Z_rescale = 1.0 / US%m_to_Z_restart
       do j=G%jsc,G%jec ; do i=G%isc,G%iec
         CS%OD_av(i,j) = Z_rescale * CS%OD_av(i,j)
       enddo ; enddo
     endif
 
     if ((US%m_to_L_restart*US%s_to_T_restart /= 0.0) .and. &
-        (US%m_to_L_restart /= US%m_s_to_L_T*US%s_to_T_restart)) then
-      vel_rescale = US%m_s_to_L_T*US%s_to_T_restart / US%m_to_L_restart
+        (US%m_to_L_restart /= US%s_to_T_restart)) then
+      vel_rescale = US%s_to_T_restart / US%m_to_L_restart
       do J=G%jsc-1,G%jec ; do I=G%isc-1,G%iec
         CS%u_shelf(I,J) = vel_rescale * CS%u_shelf(I,J)
         CS%v_shelf(I,J) = vel_rescale * CS%v_shelf(I,J)
@@ -895,7 +900,7 @@ end subroutine ice_shelf_advect
   enddo
 
   call calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, CS%OD_av)
-!  call pass_vector(taudx, taudy, G%domain, TO_ALL, BGRID_NE)
+  call pass_vector(taudx, taudy, G%domain, TO_ALL, BGRID_NE)
   ! This is to determine which cells contain the grounding line, the criterion being that the cell
   ! is ice-covered, with some nodes floating and some grounded flotation condition is estimated by
   ! assuming topography is cellwise constant and H is bilinear in a cell; floating where
@@ -1816,13 +1821,14 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
   real    :: dxh, dyh,Dx,Dy  ! Local grid spacing [L ~> m]
   real    :: grav      ! The gravitational acceleration [L2 Z-1 T-2 ~> m s-2]
 
-  integer :: i, j, iscq, iecq, jscq, jecq, isd, jsd, is, js, iegq, jegq
+  integer :: i, j, iscq, iecq, jscq, jecq, isd, jsd, ied, jed, is, js, iegq, jegq
   integer :: giec, gjec, gisc, gjsc, cnt, isc, jsc, iec, jec
   integer :: i_off, j_off
 
   isc = G%isc ; jsc = G%jsc ; iec = G%iec ; jec = G%jec
   iscq = G%iscB ; iecq = G%iecB ; jscq = G%jscB ; jecq = G%jecB
   isd = G%isd ; jsd = G%jsd
+  isd = G%isd ; jsd = G%jsd ; ied = G%ied ; jed = G%jed
   iegq = G%iegB ; jegq = G%jegB
 !  gisc = G%domain%nihalo+1 ; gjsc = G%domain%njhalo+1
   gisc = 1 ; gjsc = 1
@@ -1842,6 +1848,7 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
   BASE(:,:) = -CS%bed_elev(:,:) + OD(:,:)
   S(:,:) = -CS%bed_elev(:,:) + ISS%h_shelf(:,:)
   ! check whether the ice is floating or grounded
+
   do j=jsc-G%domain%njhalo,jec+G%domain%njhalo
     do i=isc-G%domain%nihalo,iec+G%domain%nihalo
       if (rhoi_rhow * ISS%h_shelf(i,j) - CS%bed_elev(i,j) <= 0) then
@@ -1851,6 +1858,13 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
       endif
     enddo
   enddo
+
+    call pass_var(S, G%domain)
+   allocate(Phi(1:8,1:4,isd:ied,jsd:jed), source=0.0)
+  do j=jscq,jecq ; do i=iscq,iecq
+    call bilinear_shape_fn_grid(G, i, j, Phi(:,:,i,j))
+  enddo ; enddo
+
   do j=jsc-1,jec+1
     do i=isc-1,iec+1
       cnt = 0
@@ -1996,6 +2010,8 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
       endif
     enddo
   enddo
+
+ deallocate(Phi)
 end subroutine calc_shelf_driving_stress
 
 subroutine init_boundary_values(CS, G, time, hmask, input_flux, input_thick, new_sim)
@@ -2592,7 +2608,8 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
 
   allocate(Phi(1:8,1:4,isd:ied,jsd:jed), source=0.0)
 
-  do j=jsc,jec ; do i=isc,iec
+!  do j=jsc,jec ; do i=isc,iec
+  do j=jscq,jecq ; do i=iscq,iecq
     call bilinear_shape_fn_grid(G, i, j, Phi(:,:,i,j))
   enddo ; enddo
 
