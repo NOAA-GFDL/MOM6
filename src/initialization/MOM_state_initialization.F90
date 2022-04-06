@@ -29,6 +29,7 @@ use MOM_open_boundary, only : update_OBC_segment_data
 !use MOM_open_boundary, only : set_3D_OBC_data
 use MOM_grid_initialize, only : initialize_masks, set_grid_metrics
 use MOM_restart, only : restore_state, is_new_run, MOM_restart_CS
+use MOM_restart, only : restart_registry_lock
 use MOM_sponge, only : set_up_sponge_field, set_up_sponge_ML_density
 use MOM_sponge, only : initialize_sponge, sponge_CS
 use MOM_ALE_sponge, only : set_up_ALE_sponge_field, set_up_ALE_sponge_vel_field
@@ -515,7 +516,9 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
                  "If true, oda incremental updates will be applied "//&
                  "everywhere in the domain.", default=.false.)
   if (use_oda_incupd) then
+    call restart_registry_lock(restart_CS, unlocked=.true.)
     call initialize_oda_incupd_fixed(G, GV, US, oda_incupd_CSp, restart_CS)
+    call restart_registry_lock(restart_CS)
   endif
 
   ! This is the end of the block of code that might have initialized fields
@@ -530,13 +533,13 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
         "MOM6 attempted to restart from a file from a different time than given by Time_in.")
       Time = Time_in
     endif
-    if ((GV%m_to_H_restart /= 0.0) .and. (GV%m_to_H_restart /= GV%m_to_H)) then
-      H_rescale = GV%m_to_H / GV%m_to_H_restart
+    if ((GV%m_to_H_restart /= 0.0) .and. (GV%m_to_H_restart /= 1.0)) then
+      H_rescale = 1.0 / GV%m_to_H_restart
       do k=1,nz ; do j=js,je ; do i=is,ie ; h(i,j,k) = H_rescale * h(i,j,k) ; enddo ; enddo ; enddo
     endif
     if ( (US%s_to_T_restart * US%m_to_L_restart /= 0.0) .and. &
-         ((US%m_to_L * US%s_to_T_restart) /= (US%m_to_L_restart * US%s_to_T)) ) then
-      vel_rescale = (US%m_to_L * US%s_to_T_restart) /  (US%m_to_L_restart * US%s_to_T)
+         (US%s_to_T_restart /= US%m_to_L_restart) ) then
+      vel_rescale = US%s_to_T_restart /  US%m_to_L_restart
       do k=1,nz ; do j=jsd,jed ; do I=IsdB,IeDB ; u(I,j,k) = vel_rescale * u(I,j,k) ; enddo ; enddo ; enddo
       do k=1,nz ; do J=JsdB,JedB ; do i=isd,ied ; v(i,J,k) = vel_rescale * v(i,J,k) ; enddo ; enddo ; enddo
     endif
@@ -1176,7 +1179,7 @@ subroutine trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read)
                  fail_if_missing=.not.just_read, do_not_log=just_read)
   call get_param(PF, mdl, "SURFACE_PRESSURE_VAR", p_surf_var, &
                  "The initial condition variable for the surface pressure exerted by ice.", &
-                 units="Pa", default="", do_not_log=just_read)
+                 default="", do_not_log=just_read)
   call get_param(PF, mdl, "INPUTDIR", inputdir, default=".", do_not_log=.true.)
   filename = trim(slasher(inputdir))//trim(p_surf_file)
   if (.not.just_read) call log_param(PF,  mdl, "!INPUTDIR/SURFACE_HEIGHT_IC_FILE", filename)
@@ -1892,10 +1895,9 @@ subroutine initialize_sponges_file(G, GV, US, use_temperature, tv, u, v, depth_t
   character(len=200) :: filename, inputdir ! Strings for file/path and path.
 
   logical :: use_ALE ! True if ALE is being used, False if in layered mode
-  logical :: time_space_interp_sponge ! True if using sponge data which
-  ! need to be interpolated from in both the horizontal dimension and in
-  ! time prior to vertical remapping.
-
+  logical :: new_sponge_param ! The value of a deprecated parameter.
+  logical :: time_space_interp_sponge ! If true use sponge data that need to be interpolated in both
+                              ! the horizontal dimension and in time prior to vertical remapping.
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
@@ -1948,20 +1950,34 @@ subroutine initialize_sponges_file(G, GV, US, use_temperature, tv, u, v, depth_t
                    "SPONGE_UV_DAMPING_FILE for the velocities.", default=Idamp_var)
   endif
   call get_param(param_file, mdl, "USE_REGRIDDING", use_ALE, do_not_log = .true.)
-  time_space_interp_sponge = .false.
-  call get_param(param_file, mdl, "NEW_SPONGES", time_space_interp_sponge, &
+
+  !### NEW_SPONGES should be obsoleted properly, rather than merely deprecated, at which
+  !    point only the else branch of the new_sponge_param block would be retained.
+  call get_param(param_file, mdl, "NEW_SPONGES", new_sponge_param, &
                  "Set True if using the newer sponging code which "//&
                  "performs on-the-fly regridding in lat-lon-time.",&
-                 "of sponge restoring data.", default=.false.)
-  if (time_space_interp_sponge) then
-    call MOM_error(WARNING, " initialize_sponges:  NEW_SPONGES has been deprecated. "//&
+                 "of sponge restoring data.", default=.false., do_not_log=.true.)
+  if (new_sponge_param) then
+    call get_param(param_file, mdl, "INTERPOLATE_SPONGE_TIME_SPACE", time_space_interp_sponge, &
+                 "If True, perform on-the-fly regridding in lat-lon-time of sponge restoring data.", &
+                 default=.true., do_not_log=.true.)
+    if (.not.time_space_interp_sponge) then
+      call MOM_error(FATAL, " initialize_sponges:  NEW_SPONGES has been deprecated, "//&
+                   "but is set to true inconsistently with INTERPOLATE_SPONGE_TIME_SPACE. "//&
+                   "Remove the NEW_SPONGES input line.")
+    else
+      call MOM_error(WARNING, " initialize_sponges:  NEW_SPONGES has been deprecated. "//&
                    "Please use INTERPOLATE_SPONGE_TIME_SPACE instead. Setting "//&
                    "INTERPOLATE_SPONGE_TIME_SPACE = True.")
+    endif
+    call log_param(param_file, mdl, "INTERPOLATE_SPONGE_TIME_SPACE", time_space_interp_sponge, &
+                 "If True, perform on-the-fly regridding in lat-lon-time of sponge restoring data.", &
+                 default=.true.)
+  else
+    call get_param(param_file, mdl, "INTERPOLATE_SPONGE_TIME_SPACE", time_space_interp_sponge, &
+                 "If True, perform on-the-fly regridding in lat-lon-time of sponge restoring data.", &
+                 default=.false.)
   endif
-  call get_param(param_file, mdl, "INTERPOLATE_SPONGE_TIME_SPACE", time_space_interp_sponge, &
-                 "Set True if using the newer sponging code which "//&
-                 "performs on-the-fly regridding in lat-lon-time.",&
-                 "of sponge restoring data.", default=time_space_interp_sponge)
 
 
   ! Read in sponge damping rate for tracers
@@ -2450,7 +2466,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
                                    ! extrapolating the densities at the bottom of unstable profiles
                                    ! from data when finding the initial interface locations in
                                    ! layered mode from a dataset of T and S.
-  character(len=10) :: remappingScheme
+  character(len=64) :: remappingScheme
   real :: tempAvg, saltAvg
   integer :: nPoints, ans
   integer :: id_clock_routine, id_clock_read, id_clock_interp, id_clock_fill, id_clock_ALE
@@ -2775,7 +2791,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
 
     do k=1,nz
       nPoints = 0 ; tempAvg = 0. ; saltAvg = 0.
-      do j=js,je ; do i=is,ie ; if (G%mask2dT(i,j) >= 1.0) then
+      do j=js,je ; do i=is,ie ; if (G%mask2dT(i,j) > 0.0) then
         nPoints = nPoints + 1
         tempAvg = tempAvg + tv%T(i,j,k)
         saltAvg = saltAvg + tv%S(i,j,k)
@@ -2783,6 +2799,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
 
       ! Horizontally homogenize data to produce perfectly "flat" initial conditions
       if (homogenize) then
+        !### These averages will not reproduce across PE layouts or grid rotation.
         call sum_across_PEs(nPoints)
         call sum_across_PEs(tempAvg)
         call sum_across_PEs(saltAvg)
