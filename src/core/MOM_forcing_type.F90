@@ -1509,7 +1509,7 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
       standard_name='rainfall_flux_area_averaged', &
       cmor_field_name='ave_pr', cmor_standard_name='rainfall_flux_area_averaged', &
       cmor_long_name='Rainfall Flux where Ice Free Ocean over Sea Area Averaged')
- 
+
   handles%id_fprec_ga = register_scalar_field('ocean_model', 'fprec_ga', Time, diag, &
       long_name='Area integrated frozen precip into ocean', &
       units='kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s, &
