@@ -217,11 +217,6 @@ subroutine initialize_ideal_age_tracer(restart, day, G, GV, US, h, diag, OBC, CS
 
   ! Local variables
   character(len=24) :: name     ! A variable's name in a NetCDF file.
-  character(len=72) :: longname ! The long name of that variable.
-  character(len=48) :: units    ! The dimensions of the variable.
-  character(len=48) :: flux_units ! The units for age tracer fluxes, either
-                                ! years m3 s-1 or years kg s-1.
-  character(len=72) :: cmorname ! The CMOR name of that variable.
   logical :: OK
   integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed, nz, m
   integer :: IsdB, IedB, JsdB, JedB
@@ -352,7 +347,7 @@ subroutine ideal_age_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, 
           exp((year-CS%tracer_start_year(m)) * CS%sfc_growth_rate(m))
     endif
     do k=1,CS%nkml ; do j=js,je ; do i=is,ie
-      if (G%mask2dT(i,j) > 0.5) then
+      if (G%mask2dT(i,j) > 0.0) then
         CS%tr(i,j,k,m) = sfc_val
       else
         CS%tr(i,j,k,m) = CS%land_val(m)
@@ -387,8 +382,7 @@ function ideal_age_stock(h, stocks, G, GV, CS, names, units, stock_index)
   integer                                           :: ideal_age_stock !< The number of stocks calculated here.
 
   ! Local variables
-  integer :: i, j, k, is, ie, js, je, nz, m
-  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+  integer :: m
 
   ideal_age_stock = 0
   if (.not.associated(CS)) return
@@ -447,8 +441,6 @@ end subroutine ideal_age_tracer_surface_state
 subroutine ideal_age_example_end(CS)
   type(ideal_age_tracer_CS), pointer :: CS !< The control structure returned by a previous
                                            !! call to register_ideal_age_tracer.
-
-  integer :: m
 
   if (associated(CS)) then
     if (associated(CS%tr)) deallocate(CS%tr)

@@ -129,7 +129,6 @@ program MOM_main
                                   ! representation of dt_forcing.
   real :: dt_forcing              ! The coupling time step [s].
   real :: dt                      ! The nominal baroclinic dynamics time step [s].
-  real :: dt_off                  ! Offline time step [s].
   integer :: ntstep               ! The number of baroclinic dynamics time steps
                                   ! within dt_forcing.
   real :: dt_therm                ! The thermodynamic timestep [s]
@@ -185,7 +184,7 @@ program MOM_main
     restart_CSp => NULL()     !< A pointer to the restart control structure
                               !! that will be used for MOM restart files.
   type(diag_ctrl),           pointer :: &
-       diag => NULL()         !< A pointer to the diagnostic regulatory structure
+    diag => NULL()            !< A pointer to the diagnostic regulatory structure
   !-----------------------------------------------------------------------
 
   character(len=4), parameter :: vers_num = 'v2.0'

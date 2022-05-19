@@ -205,7 +205,7 @@ subroutine remapping_core_h(CS, n0, h0, u0, n1, h1, u1, h_neglect, h_neglect_edg
   real, optional,      intent(in)  :: h_neglect_edge !< A negligibly small width
                                          !! for the purpose of edge value
                                          !! calculations in the same units as h0 [H]
-   logical, dimension(n0), optional, intent(in) :: PCM_cell !< If present, use PCM remapping for
+  logical, dimension(n0), optional, intent(in) :: PCM_cell !< If present, use PCM remapping for
                                          !! cells in the source grid where this is true.
 
   ! Local variables
@@ -213,8 +213,6 @@ subroutine remapping_core_h(CS, n0, h0, u0, n1, h1, u1, h_neglect, h_neglect_edg
   real, dimension(n0,2)           :: ppoly_r_E     ! Edge value of polynomial
   real, dimension(n0,2)           :: ppoly_r_S     ! Edge slope of polynomial
   real, dimension(n0,CS%degree+1) :: ppoly_r_coefs ! Coefficients of polynomial
-  real :: edges(n0,2)  ! Interpolation edge values [A]
-  real :: slope(n0)    ! Interpolation slopes per cell width [A]
   real :: h0tot, h0err ! Sum of source cell widths and round-off error in this sum [H]
   real :: h1tot, h1err ! Sum of target cell widths and round-off error in this sum [H]
   real :: u0tot, u0err ! Integrated values on the source grid and round-off error in this sum [H A]
@@ -298,7 +296,7 @@ subroutine remapping_core_w( CS, n0, h0, u0, n1, dx, u1, h_neglect, h_neglect_ed
   real, dimension(n0,2)           :: ppoly_r_S            !Edge slope of polynomial
   real, dimension(n0,CS%degree+1) :: ppoly_r_coefs !Coefficients of polynomial
   integer :: k
-  real :: eps, h0tot, h0err, h1tot, h1err
+  real :: h0tot, h0err, h1tot, h1err
   real :: u0tot, u0err, u0min, u0max, u1tot, u1err, u1min, u1max, uh_err
   real, dimension(n1) :: h1 !< Cell widths on target grid
   real :: hNeglect, hNeglect_edge
@@ -389,8 +387,6 @@ subroutine build_reconstructions_1d( CS, n0, h0, u0, ppoly_r_coefs, &
 
   ! Local variables
   integer :: local_remapping_scheme
-  integer :: remapping_scheme !< Remapping scheme
-  logical :: boundary_extrapolation !< Extrapolate at boundaries if true
   integer :: k, n
 
   ! Reset polynomial
@@ -516,13 +512,13 @@ subroutine check_reconstructions_1d(n0, h0, u0, deg, boundary_extrapolation, &
       u_min = min(u_l, u_c)
       u_max = max(u_l, u_c)
       if (ppoly_r_E(i0,1) < u_min) then
-        write(0,'(a,i4,5(x,a,1pe24.16))') 'Left edge undershoot at',i0,'u(i0-1)=',u_l,'u(i0)=',u_c, &
-                                          'edge=',ppoly_r_E(i0,1),'err=',ppoly_r_E(i0,1)-u_min
+        write(0,'(a,i4,5(1x,a,1pe24.16))') 'Left edge undershoot at',i0,'u(i0-1)=',u_l,'u(i0)=',u_c, &
+                                           'edge=',ppoly_r_E(i0,1),'err=',ppoly_r_E(i0,1)-u_min
         problem_detected = .true.
       endif
       if (ppoly_r_E(i0,1) > u_max) then
-        write(0,'(a,i4,5(x,a,1pe24.16))') 'Left edge overshoot at',i0,'u(i0-1)=',u_l,'u(i0)=',u_c, &
-                                          'edge=',ppoly_r_E(i0,1),'err=',ppoly_r_E(i0,1)-u_max
+        write(0,'(a,i4,5(1x,a,1pe24.16))') 'Left edge overshoot at',i0,'u(i0-1)=',u_l,'u(i0)=',u_c, &
+                                           'edge=',ppoly_r_E(i0,1),'err=',ppoly_r_E(i0,1)-u_max
         problem_detected = .true.
       endif
     endif
@@ -530,27 +526,27 @@ subroutine check_reconstructions_1d(n0, h0, u0, deg, boundary_extrapolation, &
       u_min = min(u_c, u_r)
       u_max = max(u_c, u_r)
       if (ppoly_r_E(i0,2) < u_min) then
-        write(0,'(a,i4,5(x,a,1pe24.16))') 'Right edge undershoot at',i0,'u(i0)=',u_c,'u(i0+1)=',u_r, &
-                                          'edge=',ppoly_r_E(i0,2),'err=',ppoly_r_E(i0,2)-u_min
+        write(0,'(a,i4,5(1x,a,1pe24.16))') 'Right edge undershoot at',i0,'u(i0)=',u_c,'u(i0+1)=',u_r, &
+                                           'edge=',ppoly_r_E(i0,2),'err=',ppoly_r_E(i0,2)-u_min
         problem_detected = .true.
       endif
       if (ppoly_r_E(i0,2) > u_max) then
-        write(0,'(a,i4,5(x,a,1pe24.16))') 'Right edge overshoot at',i0,'u(i0)=',u_c,'u(i0+1)=',u_r, &
-                                          'edge=',ppoly_r_E(i0,2),'err=',ppoly_r_E(i0,2)-u_max
+        write(0,'(a,i4,5(1x,a,1pe24.16))') 'Right edge overshoot at',i0,'u(i0)=',u_c,'u(i0+1)=',u_r, &
+                                           'edge=',ppoly_r_E(i0,2),'err=',ppoly_r_E(i0,2)-u_max
         problem_detected = .true.
       endif
     endif
     if (i0 > 1) then
       if ( (u_c-u_l)*(ppoly_r_E(i0,1)-ppoly_r_E(i0-1,2)) < 0.) then
-        write(0,'(a,i4,5(x,a,1pe24.16))') 'Non-monotonic edges at',i0,'u(i0-1)=',u_l,'u(i0)=',u_c, &
-                                          'right edge=',ppoly_r_E(i0-1,2),'left edge=',ppoly_r_E(i0,1)
-        write(0,'(5(a,1pe24.16,x))') 'u(i0)-u(i0-1)',u_c-u_l,'edge diff=',ppoly_r_E(i0,1)-ppoly_r_E(i0-1,2)
+        write(0,'(a,i4,5(1x,a,1pe24.16))') 'Non-monotonic edges at',i0,'u(i0-1)=',u_l,'u(i0)=',u_c, &
+                                           'right edge=',ppoly_r_E(i0-1,2),'left edge=',ppoly_r_E(i0,1)
+        write(0,'(5(a,1pe24.16,1x))') 'u(i0)-u(i0-1)',u_c-u_l,'edge diff=',ppoly_r_E(i0,1)-ppoly_r_E(i0-1,2)
         problem_detected = .true.
       endif
     endif
     if (problem_detected) then
       write(0,'(a,1p9e24.16)') 'Polynomial coeffs:',ppoly_r_coefs(i0,:)
-      write(0,'(3(a,1pe24.16,x))') 'u_l=',u_l,'u_c=',u_c,'u_r=',u_r
+      write(0,'(3(a,1pe24.16,1x))') 'u_l=',u_l,'u_c=',u_c,'u_r=',u_r
       write(0,'(a4,10a24)') 'i0','h0(i0)','u0(i0)','left edge','right edge','Polynomial coefficients'
       do n = 1, n0
         write(0,'(i4,1p10e24.16)') n,h0(n),u0(n),ppoly_r_E(n,1),ppoly_r_E(n,2),ppoly_r_coefs(n,:)
@@ -1960,7 +1956,7 @@ logical function test_answer(verbose, n, u, u_true, label, tol)
     if (abs(u(k) - u_true(k)) > tolerance) test_answer = .true.
   enddo
   if (test_answer .or. verbose) then
-    write(stdout,'(a4,2a24,x,a)') 'k','Calculated value','Correct value',label
+    write(stdout,'(a4,2a24,1x,a)') 'k','Calculated value','Correct value',label
     do k = 1, n
       if (abs(u(k) - u_true(k)) > tolerance) then
         write(stdout,'(i4,1p2e24.16,a,1pe24.16,a)') k,u(k),u_true(k),' err=',u(k)-u_true(k),' < wrong'
