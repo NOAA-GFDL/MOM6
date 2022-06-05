@@ -1771,10 +1771,7 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces_in,
     call hchksum(ISS%area_shelf_h, "IS init: area_shelf_h", G%HI, haloshift=0, scale=US%L_to_m*US%L_to_m)
   endif
 
-
-
   CS%Time = Time
-
 
   if (CS%active_shelf_dynamics .and. .not.CS%isthermo) then
     ISS%water_flux(:,:) = 0.0
@@ -1796,7 +1793,6 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces_in,
     call save_restart(dirs%output_directory, CS%Time, CS%Grid_in, CS%restart_CSp, &
                       filename=IC_file, write_ic=.true.)
   endif
-
 
   CS%id_area_shelf_h = register_diag_field('ice_shelf_model', 'area_shelf_h', CS%diag%axesT1, CS%Time, &
       'Ice Shelf Area in cell', 'meter-2', conversion=US%L_to_m**2)
