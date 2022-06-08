@@ -670,10 +670,14 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
 
     enddo
 
-  endif
+  endif ; enddo ! End of j-loop.
 
-
-  enddo ! End of j-loop.
+  ! Do user controlled underflow of the tracer concentrations.
+  do m=1,ntr ; if (Tr(m)%conc_underflow > 0.0) then
+    do j=js,je ; do i=is,ie
+      if (abs(Tr(m)%t(i,j,k)) < Tr(m)%conc_underflow) Tr(m)%t(i,j,k) = 0.0
+    enddo ; enddo
+  endif ; enddo
 
   ! compute ad2d_x diagnostic outside above j-loop so as to make the summation ordered when OMP is active.
 
@@ -1046,6 +1050,13 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
 
     enddo
   endif ; enddo ! End of j-loop.
+
+  ! Do user controlled underflow of the tracer concentrations.
+  do m=1,ntr ; if (Tr(m)%conc_underflow > 0.0) then
+    do j=js,je ; do i=is,ie
+      if (abs(Tr(m)%t(i,j,k)) < Tr(m)%conc_underflow) Tr(m)%t(i,j,k) = 0.0
+    enddo ; enddo
+  endif ; enddo
 
   ! compute ad2d_y diagnostic outside above j-loop so as to make the summation ordered when OMP is active.
 
