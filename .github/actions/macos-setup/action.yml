@@ -12,6 +12,7 @@ runs:
         echo "::group::Install packages"
         brew update
         brew install bash
+        brew install make
         brew install automake
         brew install gfortran
         brew install netcdf

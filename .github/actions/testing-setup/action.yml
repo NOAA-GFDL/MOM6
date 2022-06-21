@@ -32,7 +32,10 @@ runs:
       run: |
         echo "::group::Compile FMS library"
         cd .testing
-        make deps/lib/libFMS.a -s -j
+        #make deps/lib/libFMS.a -s -j
+        gmake deps/fms/build/Makefile
+        cat deps/fms/build/Makefile.dep
+        gmake deps/lib/libFMS.a -j
         echo "::endgroup::"
 
     - name: Store compiler flags used in Makefile
