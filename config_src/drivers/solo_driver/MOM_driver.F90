@@ -1,4 +1,4 @@
-program MOM_main
+program MOM6
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
@@ -286,14 +286,15 @@ program MOM_main
     Time = segment_start_time
     call initialize_MOM(Time, Start_time, param_file, dirs, MOM_CSp, restart_CSp, &
                         segment_start_time, offline_tracer_mode=offline_tracer_mode, &
-                        diag_ptr=diag, tracer_flow_CSp=tracer_flow_CSp, ice_shelf_CSp=ice_shelf_CSp)
+                        diag_ptr=diag, tracer_flow_CSp=tracer_flow_CSp, ice_shelf_CSp=ice_shelf_CSp, &
+                        waves_CSp=Waves_CSp)
   else
     ! In this case, the segment starts at a time read from the MOM restart file
     ! or is left at Start_time by MOM_initialize.
     Time = Start_time
     call initialize_MOM(Time, Start_time, param_file, dirs, MOM_CSp, restart_CSp, &
                         offline_tracer_mode=offline_tracer_mode, diag_ptr=diag, &
-                        tracer_flow_CSp=tracer_flow_CSp, ice_shelf_CSp=ice_shelf_CSp)
+                        tracer_flow_CSp=tracer_flow_CSp, ice_shelf_CSp=ice_shelf_CSp, waves_CSp=Waves_CSp)
   endif
 
   call get_MOM_state_elements(MOM_CSp, G=grid, GV=GV, US=US, C_p_scaled=fluxes%C_p)
@@ -692,4 +693,4 @@ subroutine initialize_ocean_only_ensembles()
   endif
 end subroutine initialize_ocean_only_ensembles
 
-end program MOM_main
+end program MOM6
