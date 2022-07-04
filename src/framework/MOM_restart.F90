@@ -599,8 +599,6 @@ function query_initialized_name(name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if ((n==CS%novars+1) .and. (is_root_pe())) &
     call MOM_error(NOTE,"MOM_restart: Unknown restart variable "//name// &
                         " queried for initialization.")
@@ -632,8 +630,6 @@ function query_initialized_0d(f_ptr, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
 
 end function query_initialized_0d
 
@@ -658,8 +654,6 @@ function query_initialized_1d(f_ptr, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
 
 end function query_initialized_1d
 
@@ -685,8 +679,6 @@ function query_initialized_2d(f_ptr, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
 
 end function query_initialized_2d
 
@@ -712,8 +704,6 @@ function query_initialized_3d(f_ptr, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
 
 end function query_initialized_3d
 
@@ -739,8 +729,6 @@ function query_initialized_4d(f_ptr, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
 
 end function query_initialized_4d
 
@@ -767,8 +755,6 @@ function query_initialized_0d_name(f_ptr, name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if (n==CS%novars+1) then
     if (is_root_pe()) &
       call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
@@ -802,8 +788,6 @@ function query_initialized_1d_name(f_ptr, name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if (n==CS%novars+1) then
     if (is_root_pe()) &
       call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
@@ -837,8 +821,6 @@ function query_initialized_2d_name(f_ptr, name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if (n==CS%novars+1) then
     if (is_root_pe()) &
       call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
@@ -872,8 +854,6 @@ function query_initialized_3d_name(f_ptr, name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if (n==CS%novars+1) then
     if (is_root_pe()) &
       call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
@@ -907,8 +887,6 @@ function query_initialized_4d_name(f_ptr, name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if (n==CS%novars+1) then
     if (is_root_pe()) &
       call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
