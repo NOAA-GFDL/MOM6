@@ -3922,10 +3922,10 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
             if (segment%field(m)%name == 'U' .or. segment%field(m)%name == 'DUDY' .or. &
                 segment%field(m)%name == 'Uamp' .or. segment%field(m)%name == 'Uphase') then
               segment%field(m)%buffer_src(:,js_obc,:) = &
-                   tmp_buffer(is_obc+j_seg_offset+1:ie_obc+j_seg_offset+1,1,:)
+                   tmp_buffer(is_obc+i_seg_offset+1:ie_obc+i_seg_offset+1,1,:)
             else
               segment%field(m)%buffer_src(:,js_obc,:) = &
-                   tmp_buffer(is_obc+j_seg_offset+1:ie_obc+j_seg_offset,1,:)
+                   tmp_buffer(is_obc+i_seg_offset+1:ie_obc+i_seg_offset,1,:)
             endif
           endif
         endif
