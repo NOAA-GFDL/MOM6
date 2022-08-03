@@ -329,9 +329,9 @@ type, public :: MOM_control_struct ; private
                                 !! if a bulk mixed layer is being used.
   logical :: check_bad_sfc_vals !< If true, scan surface state for ridiculous values.
   real    :: bad_val_ssh_max    !< Maximum SSH before triggering bad value message [Z ~> m]
-  real    :: bad_val_sst_max    !< Maximum SST before triggering bad value message [degC]
-  real    :: bad_val_sst_min    !< Minimum SST before triggering bad value message [degC]
-  real    :: bad_val_sss_max    !< Maximum SSS before triggering bad value message [ppt]
+  real    :: bad_val_sst_max    !< Maximum SST before triggering bad value message [C ~> degC]
+  real    :: bad_val_sst_min    !< Minimum SST before triggering bad value message [C ~> degC]
+  real    :: bad_val_sss_max    !< Maximum SSS before triggering bad value message [S ~> ppt]
   real    :: bad_val_col_thick  !< Minimum column thickness before triggering bad value message [Z ~> m]
   integer :: answer_date        !< The vintage of the expressions for the surface properties.  Values
                                 !! below 20190101 recover the answers from the end of 2018, while
@@ -2137,16 +2137,16 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
                  units="m", default=20.0, scale=US%m_to_Z)
     call get_param(param_file, "MOM", "BAD_VAL_SSS_MAX", CS%bad_val_sss_max, &
                  "The value of SSS above which a bad value message is "//&
-                 "triggered, if CHECK_BAD_SURFACE_VALS is true.", units="PPT", &
-                 default=45.0)
+                 "triggered, if CHECK_BAD_SURFACE_VALS is true.", &
+                 units="PPT", default=45.0, scale=US%ppt_to_S)
     call get_param(param_file, "MOM", "BAD_VAL_SST_MAX", CS%bad_val_sst_max, &
                  "The value of SST above which a bad value message is "//&
                  "triggered, if CHECK_BAD_SURFACE_VALS is true.", &
-                 units="deg C", default=45.0)
+                 units="deg C", default=45.0, scale=US%degC_to_C)
     call get_param(param_file, "MOM", "BAD_VAL_SST_MIN", CS%bad_val_sst_min, &
                  "The value of SST below which a bad value message is "//&
                  "triggered, if CHECK_BAD_SURFACE_VALS is true.", &
-                 units="deg C", default=-2.1)
+                 units="deg C", default=-2.1, scale=US%degC_to_C)
     call get_param(param_file, "MOM", "BAD_VAL_COLUMN_THICKNESS", CS%bad_val_col_thick, &
                  "The value of column thickness below which a bad value message is "//&
                  "triggered, if CHECK_BAD_SURFACE_VALS is true.", &
@@ -3350,8 +3350,8 @@ subroutine extract_surface_state(CS, sfc_state_in)
 
   if (CS%Hmix < 0.0) then  ! A bulk mixed layer is in use, so layer 1 has the properties
     if (use_temperature) then ; do j=js,je ; do i=is,ie
-      sfc_state%SST(i,j) = US%C_to_degC*CS%tv%T(i,j,1)
-      sfc_state%SSS(i,j) = US%S_to_ppt*CS%tv%S(i,j,1)
+      sfc_state%SST(i,j) = CS%tv%T(i,j,1)
+      sfc_state%SSS(i,j) = CS%tv%S(i,j,1)
     enddo ; enddo ; endif
     do j=js,je ; do I=is-1,ie
       sfc_state%u(I,j) = CS%u(I,j,1)
@@ -3386,8 +3386,8 @@ subroutine extract_surface_state(CS, sfc_state_in)
           dh = 0.0
         endif
         if (use_temperature) then
-          sfc_state%SST(i,j) = sfc_state%SST(i,j) + dh * US%C_to_degC*CS%tv%T(i,j,k)
-          sfc_state%SSS(i,j) = sfc_state%SSS(i,j) + dh * US%S_to_ppt*CS%tv%S(i,j,k)
+          sfc_state%SST(i,j) = sfc_state%SST(i,j) + dh * CS%tv%T(i,j,k)
+          sfc_state%SSS(i,j) = sfc_state%SSS(i,j) + dh * CS%tv%S(i,j,k)
         else
           sfc_state%sfc_density(i,j) = sfc_state%sfc_density(i,j) + dh * GV%Rlay(k)
         endif
@@ -3409,8 +3409,8 @@ subroutine extract_surface_state(CS, sfc_state_in)
             I_depth = 1.0 / (GV%H_subroundoff*H_rescale)
             missing_depth = GV%H_subroundoff*H_rescale - depth(i)
             if (use_temperature) then
-              sfc_state%SST(i,j) = (sfc_state%SST(i,j) + missing_depth*US%C_to_degC*CS%tv%T(i,j,1)) * I_depth
-              sfc_state%SSS(i,j) = (sfc_state%SSS(i,j) + missing_depth*US%S_to_ppt*CS%tv%S(i,j,1)) * I_depth
+              sfc_state%SST(i,j) = (sfc_state%SST(i,j) + missing_depth*CS%tv%T(i,j,1)) * I_depth
+              sfc_state%SSS(i,j) = (sfc_state%SSS(i,j) + missing_depth*CS%tv%S(i,j,1)) * I_depth
             else
               sfc_state%sfc_density(i,j) = (sfc_state%sfc_density(i,j) + &
                                             missing_depth*GV%Rlay(1)) * I_depth
@@ -3562,8 +3562,8 @@ subroutine extract_surface_state(CS, sfc_state_in)
     do j=js,je ; do k=1,nz ; do i=is,ie
       mass = GV%H_to_RZ*h(i,j,k)
       sfc_state%ocean_mass(i,j) = sfc_state%ocean_mass(i,j) + mass
-      sfc_state%ocean_heat(i,j) = sfc_state%ocean_heat(i,j) + mass * US%C_to_degC*CS%tv%T(i,j,k)
-      sfc_state%ocean_salt(i,j) = sfc_state%ocean_salt(i,j) + mass * (1.0e-3*US%S_to_ppt*CS%tv%S(i,j,k))
+      sfc_state%ocean_heat(i,j) = sfc_state%ocean_heat(i,j) + mass * CS%tv%T(i,j,k)
+      sfc_state%ocean_salt(i,j) = sfc_state%ocean_salt(i,j) + mass * (1.0e-3*CS%tv%S(i,j,k))
     enddo ; enddo ; enddo
   else
     if (allocated(sfc_state%ocean_mass)) then
@@ -3580,7 +3580,7 @@ subroutine extract_surface_state(CS, sfc_state_in)
       !$OMP parallel do default(shared) private(mass)
       do j=js,je ; do k=1,nz ; do i=is,ie
         mass = GV%H_to_RZ*h(i,j,k)
-        sfc_state%ocean_heat(i,j) = sfc_state%ocean_heat(i,j) + mass*US%C_to_degC*CS%tv%T(i,j,k)
+        sfc_state%ocean_heat(i,j) = sfc_state%ocean_heat(i,j) + mass * CS%tv%T(i,j,k)
       enddo ; enddo ; enddo
     endif
     if (allocated(sfc_state%ocean_salt)) then
@@ -3589,13 +3589,13 @@ subroutine extract_surface_state(CS, sfc_state_in)
       !$OMP parallel do default(shared) private(mass)
       do j=js,je ; do k=1,nz ; do i=is,ie
         mass = GV%H_to_RZ*h(i,j,k)
-        sfc_state%ocean_salt(i,j) = sfc_state%ocean_salt(i,j) + mass * (1.0e-3*US%S_to_ppt*CS%tv%S(i,j,k))
+        sfc_state%ocean_salt(i,j) = sfc_state%ocean_salt(i,j) + mass * (1.0e-3*CS%tv%S(i,j,k))
       enddo ; enddo ; enddo
     endif
   endif
 
   if (associated(CS%tracer_flow_CSp)) then
-    call call_tracer_surface_state(sfc_state, h, G, GV, CS%tracer_flow_CSp)
+    call call_tracer_surface_state(sfc_state, h, G, GV, US, CS%tracer_flow_CSp)
   endif
 
   if (CS%check_bad_sfc_vals) then
@@ -3622,7 +3622,7 @@ subroutine extract_surface_state(CS, sfc_state_in)
                 'lon=',G%geoLonT(i,j), 'lat=',G%geoLatT(i,j), &
                 'x=',G%gridLonT(ig), 'y=',G%gridLatT(jg), &
                 'D=',US%Z_to_m*(G%bathyT(i,j)+G%Z_ref), 'SSH=',US%Z_to_m*sfc_state%sea_lev(i,j), &
-                'SST=',sfc_state%SST(i,j), 'SSS=',sfc_state%SSS(i,j), &
+                'SST=',US%C_to_degC*sfc_state%SST(i,j), 'SSS=',US%S_to_ppt*sfc_state%SSS(i,j), &
                 'U-=',US%L_T_to_m_s*sfc_state%u(I-1,j), 'U+=',US%L_T_to_m_s*sfc_state%u(I,j), &
                 'V-=',US%L_T_to_m_s*sfc_state%v(i,J-1), 'V+=',US%L_T_to_m_s*sfc_state%v(i,J)
             else
@@ -3713,14 +3713,14 @@ subroutine get_MOM_state_elements(CS, G, GV, US, C_p, C_p_scaled, use_temp)
   type(unit_scale_type),   optional, pointer     :: US   !< A dimensional unit scaling type
   real,                    optional, intent(out) :: C_p  !< The heat capacity [J kg degC-1]
   real,                    optional, intent(out) :: C_p_scaled !< The heat capacity in scaled
-                                                         !! units [Q degC-1 ~> J kg-1 degC-1]
+                                                         !! units [Q C-1 ~> J kg-1 degC-1]
   logical,                 optional, intent(out) :: use_temp !< True if temperature is a state variable
 
   if (present(G)) G => CS%G_in
   if (present(GV)) GV => CS%GV
   if (present(US)) US => CS%US
   if (present(C_p)) C_p = CS%US%Q_to_J_kg*US%degC_to_C * CS%tv%C_p
-  if (present(C_p_scaled)) C_p_scaled = US%degC_to_C*CS%tv%C_p
+  if (present(C_p_scaled)) C_p_scaled = CS%tv%C_p
   if (present(use_temp)) use_temp = associated(CS%tv%T)
 end subroutine get_MOM_state_elements
 
