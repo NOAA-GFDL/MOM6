@@ -113,9 +113,8 @@ function register_OCMIP2_CFC(HI, GV, param_file, CS, tr_Reg, restart_CS)
   isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed ; nz = GV%ke
 
   if (associated(CS)) then
-    call MOM_error(WARNING, "register_OCMIP2_CFC called with an "// &
-                            "associated control structure.")
-    return
+    call MOM_error(FATAL, "register_OCMIP2_CFC called with an "// &
+                          "associated control structure.")
   endif
   allocate(CS)
 
@@ -524,13 +523,14 @@ end function OCMIP2_CFC_stock
 
 !> This subroutine extracts the surface CFC concentrations and other fields that
 !! are shared with the atmosphere to calculate CFC fluxes.
-subroutine OCMIP2_CFC_surface_state(sfc_state, h, G, GV, CS)
+subroutine OCMIP2_CFC_surface_state(sfc_state, h, G, GV, US, CS)
   type(ocean_grid_type),   intent(in)    :: G  !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)    :: GV !< The ocean's vertical grid structure
   type(surface),           intent(inout) :: sfc_state !< A structure containing fields that
                                                !! describe the surface state of the ocean.
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                            intent(in)    :: h  !< Layer thickness [H ~> m or kg m-2].
+  type(unit_scale_type),   intent(in)    :: US !< A dimensional unit scaling type
   type(OCMIP2_CFC_CS),     pointer       :: CS !< The control structure returned by a previous
                                                !! call to register_OCMIP2_CFC.
 
@@ -555,8 +555,8 @@ subroutine OCMIP2_CFC_surface_state(sfc_state, h, G, GV, CS)
   if (.not.associated(CS)) return
 
   do j=js,je ; do i=is,ie
-    ta = max(0.01, (sfc_state%SST(i,j) + 273.15) * 0.01) ! Why is this in hectoKelvin?
-    sal = sfc_state%SSS(i,j) ; SST = sfc_state%SST(i,j)
+    ta = max(0.01, (US%C_to_degC*sfc_state%SST(i,j) + 273.15) * 0.01) ! Why is this in hectoKelvin?
+    sal = US%S_to_ppt*sfc_state%SSS(i,j) ; SST = US%C_to_degC*sfc_state%SST(i,j)
     !    Calculate solubilities using Warner and Weiss (1985) DSR, vol 32.
     ! The final result is in mol/cm3/pptv (1 part per trillion 1e-12)
     ! Use Bullister and Wisegavger for CCl4.
