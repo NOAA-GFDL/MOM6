@@ -25,6 +25,8 @@ implicit none ; private
     character(len=fm_string_len) :: src_var_name !< Tracer source variable name
     character(len=fm_string_len) :: src_var_unit !< Tracer source variable units
     character(len=fm_string_len) :: src_var_gridspec !< Tracer source grid file name
+    character(len=fm_string_len) :: obc_src_file_name !< Boundary condition tracer source filename
+    character(len=fm_string_len) :: obc_src_field_name !< Boundary condition tracer source fieldname
     integer :: src_var_record !< Unknown
     logical :: requires_src_info = .false. !< Unknown
     real    :: src_var_unit_conversion = 1.0 !< This factor depends on the tracer. Ask Jasmin
@@ -61,6 +63,7 @@ implicit none ; private
   public :: g_tracer_get_next
   public :: g_tracer_is_prog
   public :: g_diag_type
+  public :: g_tracer_get_obc_segment_props
 
   !> Set the values of various (array) members of the tracer node g_tracer_type
   !!
@@ -283,6 +286,14 @@ contains
     type(g_tracer_type), pointer :: g_tracer !< Pointer to tracer node
     type(g_tracer_type), pointer :: g_tracer_next !< Pointer to the next tracer node in the list
   end subroutine g_tracer_get_next
+
+  subroutine g_tracer_get_obc_segment_props(g_tracer_list, name, obc_has, src_file, src_var_name)
+    type(g_tracer_type), pointer    :: g_tracer_list !< pointer to the head of the generic tracer list
+    type(g_tracer_type), pointer    :: g_tracer !< Pointer to tracer node
+    character(len=*),         intent(in) :: name
+    logical,                  intent(out):: obc_has                !<.true. if This tracer has OBC
+    character(len=*),optional,intent(out):: src_file, src_var_name !<OBC source file and variable in file
+  end subroutine g_tracer_get_obc_segment_props
 
   !>Vertical Diffusion of a tracer node
   !!

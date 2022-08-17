@@ -27,6 +27,7 @@ module MOM_generic_tracer
   use g_tracer_utils,   only: g_tracer_get_next,g_tracer_type,g_tracer_is_prog,g_tracer_flux_init
   use g_tracer_utils,   only: g_tracer_send_diag,g_tracer_get_values
   use g_tracer_utils,   only: g_tracer_get_pointer,g_tracer_get_alias,g_tracer_set_csdiag
+  use g_tracer_utils,   only: g_tracer_get_obc_segment_props
 
   use MOM_ALE_sponge, only : set_up_ALE_sponge_field, ALE_sponge_CS
   use MOM_coms, only : EFP_type, max_across_PEs, min_across_PEs, PE_here
@@ -39,6 +40,8 @@ module MOM_generic_tracer
   use MOM_hor_index, only : hor_index_type
   use MOM_io, only : file_exists, MOM_read_data, slasher
   use MOM_open_boundary, only : ocean_OBC_type
+  use MOM_open_boundary, only : register_obgc_segments, fill_obgc_segments
+  use MOM_open_boundary, only : set_obgc_segments_props
   use MOM_restart, only : register_restart_field, query_initialized, set_initialized, MOM_restart_CS
   use MOM_spatial_means, only : global_area_mean, global_mass_int_EFP
   use MOM_sponge, only : set_up_sponge_field, sponge_CS
@@ -79,7 +82,7 @@ module MOM_generic_tracer
     type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
                                                !! regulate the timing of diagnostic output.
     type(MOM_restart_CS), pointer :: restart_CSp => NULL() !< Restart control structure
-
+    type(ocean_OBC_type), pointer :: OBC => NULL()
     !> Pointer to the first element of the linked list of generic tracers.
     type(g_tracer_type), pointer :: g_tracer_list => NULL()
 
@@ -90,7 +93,7 @@ contains
   !> Initializes the generic tracer packages and adds their tracers to the list
   !! Adds the tracers in the list of generic tracers to the set of MOM tracers (i.e., MOM-register them)
   !! Register these tracers for restart
-  function register_MOM_generic_tracer(HI, GV, param_file, CS, tr_Reg, restart_CS)
+  function register_MOM_generic_tracer(HI, GV, param_file, CS, tr_Reg, restart_CS, OBC)
     type(hor_index_type),       intent(in)   :: HI         !< Horizontal index ranges
     type(verticalGrid_type),    intent(in)   :: GV         !< The ocean's vertical grid structure
     type(param_file_type),      intent(in)   :: param_file !< A structure to parse for run-time parameters
@@ -98,10 +101,11 @@ contains
     type(tracer_registry_type), pointer      :: tr_Reg     !< Pointer to the control structure for the tracer
                                                            !! advection and diffusion module.
     type(MOM_restart_CS), target, intent(inout)  :: restart_CS !< MOM restart control struct
-
+    type(ocean_OBC_type),       pointer      :: OBC        !< This open boundary condition type specifies whether,
+                                                           !! where, and what open boundary conditions are used.
     ! Local variables
     logical :: register_MOM_generic_tracer
-
+    logical :: obc_has
     ! This include declares and sets the variable "version".
 #   include "version_variable.h"
 
@@ -112,6 +116,8 @@ contains
     integer :: ntau, axes(3)
     type(g_tracer_type), pointer      :: g_tracer,g_tracer_next
     character(len=fm_string_len)      :: g_tracer_name,longname,units
+    character(len=fm_string_len)      :: obc_src_file_name,obc_src_field_name
+    real                              :: lfac_in,lfac_out
     real, dimension(:,:,:,:), pointer   :: tr_field
     real, dimension(:,:,:), pointer     :: tr_ptr
     real, dimension(HI%isd:HI%ied, HI%jsd:HI%jed,GV%ke)         :: grid_tmask
@@ -155,7 +161,7 @@ contains
                  "restart files of a restarted run.", default=.false.)
 
     CS%restart_CSp => restart_CS
-
+    CS%OBC => OBC
 
     ntau=1 ! MOM needs the fields at only one time step
 
@@ -201,6 +207,14 @@ contains
                              name=g_tracer_name, longname=longname, units=units, &
                              registry_diags=.false., &   !### CHANGE TO TRUE?
                              restart_CS=restart_CS, mandatory=.not.CS%tracers_may_reinit)
+        if (associated(CS%OBC)) then
+          call g_tracer_get_obc_segment_props(g_tracer,g_tracer_name,obc_has ,&
+                                   obc_src_file_name,obc_src_field_name,lfac_in,lfac_out)
+          if(obc_has) then
+            call set_obgc_segments_props(g_tracer_name,obc_src_file_name,obc_src_field_name,lfac_in,lfac_out)
+            call register_obgc_segments(GV, CS%OBC, tr_Reg, param_file, g_tracer_name)
+         endif
+        endif
       else
         call register_restart_field(tr_ptr, g_tracer_name, .not.CS%tracers_may_reinit, &
                                     restart_CS, longname=longname, units=units)
@@ -244,7 +258,7 @@ contains
                                                                  !! ALE sponges.
 
     character(len=128), parameter :: sub_name = 'initialize_MOM_generic_tracer'
-    logical :: OK
+    logical :: OK,obc_has
     integer :: i, j, k, isc, iec, jsc, jec, nk
     type(g_tracer_type), pointer    :: g_tracer,g_tracer_next
     character(len=fm_string_len)      :: g_tracer_name
@@ -348,6 +362,8 @@ contains
         call set_initialized(tr_ptr, g_tracer_name, CS%restart_CSp)
       endif
 
+      call g_tracer_get_obc_segment_props(g_tracer,g_tracer_name,obc_has )
+      if(obc_has .and. g_tracer_is_prog(g_tracer)) call fill_obgc_segments(G, GV, CS%OBC, tr_ptr, g_tracer_name)
       !traverse the linked list till hit NULL
       call g_tracer_get_next(g_tracer, g_tracer_next)
       if (.NOT. associated(g_tracer_next)) exit
