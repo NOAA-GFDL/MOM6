@@ -357,11 +357,11 @@ end type OBC_registry_type
 
 !> Type to carry OBC information needed for setting segments for OBGC tracers
 type, private :: external_tracers_segments_props
-   type(external_tracers_segments_props), pointer :: next => NULL()
-   character(len=128) :: tracer_name
-   character(len=128) :: tracer_src_file
-   character(len=128) :: tracer_src_field
-   real               :: lfac_in,lfac_out
+   type(external_tracers_segments_props), pointer :: next => NULL() !< pointer to the next node
+   character(len=128) :: tracer_name      !< tracer name
+   character(len=128) :: tracer_src_file  !< tracer source file for BC
+   character(len=128) :: tracer_src_field !< name of the field in source file to extract BC
+   real               :: lfac_in,lfac_out !< multiplicative factors for in and out tracer reservoir length scales
 end type external_tracers_segments_props
 type(external_tracers_segments_props), pointer, save :: obgc_segments_props => NULL() !< Linked-list of obgc tracers properties
 integer, save :: num_obgc_tracers = 0  !< Keeps the total number of obgc tracers

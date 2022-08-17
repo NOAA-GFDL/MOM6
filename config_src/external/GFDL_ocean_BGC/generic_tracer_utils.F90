@@ -287,11 +287,12 @@ contains
     type(g_tracer_type), pointer :: g_tracer_next !< Pointer to the next tracer node in the list
   end subroutine g_tracer_get_next
 
-  subroutine g_tracer_get_obc_segment_props(g_tracer_list, name, obc_has, src_file, src_var_name)
+  subroutine g_tracer_get_obc_segment_props(g_tracer_list, name, obc_has, src_file, src_var_name,lfac_in,lfac_out)
     type(g_tracer_type), pointer    :: g_tracer_list !< pointer to the head of the generic tracer list
     type(g_tracer_type), pointer    :: g_tracer !< Pointer to tracer node
     character(len=*),         intent(in) :: name
     logical,                  intent(out):: obc_has                !<.true. if This tracer has OBC
+    real,            optional,intent(out):: lfac_in,lfac_out       !<OBC reservoir inverse lengthscale factor
     character(len=*),optional,intent(out):: src_file, src_var_name !<OBC source file and variable in file
   end subroutine g_tracer_get_obc_segment_props
 
