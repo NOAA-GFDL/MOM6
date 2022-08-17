@@ -127,7 +127,7 @@ use MOM_tracer_registry,       only : preALE_tracer_diagnostics, postALE_tracer_
 use MOM_tracer_registry,       only : lock_tracer_registry, tracer_registry_end
 use MOM_tracer_flow_control,   only : call_tracer_register, tracer_flow_control_CS
 use MOM_tracer_flow_control,   only : tracer_flow_control_init, call_tracer_surface_state
-use MOM_tracer_flow_control,   only : tracer_flow_control_end
+use MOM_tracer_flow_control,   only : tracer_flow_control_end, call_tracer_register_obc_segments
 use MOM_transcribe_grid,       only : copy_dyngrid_to_MOM_grid, copy_MOM_grid_to_dyngrid
 use MOM_unit_scaling,          only : unit_scale_type, unit_scaling_init
 use MOM_unit_scaling,          only : unit_scaling_end, fix_restart_unit_scaling
@@ -2514,6 +2514,11 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
            CS%dyn_unsplit_CSp)
   endif
 
+  ! This subroutine calls user-specified tracer registration routines.
+  ! Additional calls can be added to MOM_tracer_flow_control.F90.
+  call call_tracer_register(HI, GV, US, param_file, CS%tracer_flow_CSp, &
+                            CS%tracer_Reg, restart_CSp)
+
   call MEKE_alloc_register_restart(HI, US, param_file, CS%MEKE, restart_CSp)
   call set_visc_register_restarts(HI, GV, US, param_file, CS%visc, restart_CSp)
   call mixedlayer_restrat_register_restarts(HI, GV, param_file, &
@@ -2542,13 +2547,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
     ! could occur with the call to update_OBC_data or after the main initialization.
     if (use_temperature) &
       call register_temp_salt_segments(GV, US, CS%OBC, CS%tracer_Reg, param_file)
+    !This is the equivalent call to register_temp_salt_segments for external tracers with OBC
+    call call_tracer_register_obc_segments(GV, param_file, CS%tracer_flow_CSp, CS%tracer_Reg, CS%OBC)
 
-    ! This subroutine calls user-specified tracer registration routines.
-    ! Additional calls can be added to MOM_tracer_flow_control.F90.
-    ! Needs to be after registering temperature and salinity OBCs above,
-    ! or else the user-specified tracers will be first.
-    call call_tracer_register(HI, GV, US, param_file, CS%tracer_flow_CSp, &
-                            CS%tracer_Reg, restart_CSp, CS%OBC)
     ! This needs the number of tracers and to have called any code that sets whether
     ! reservoirs are used.
     call open_boundary_register_restarts(HI, GV, US, CS%OBC, CS%tracer_Reg, &
