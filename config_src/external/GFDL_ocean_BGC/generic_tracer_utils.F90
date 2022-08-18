@@ -287,6 +287,7 @@ contains
     type(g_tracer_type), pointer :: g_tracer_next !< Pointer to the next tracer node in the list
   end subroutine g_tracer_get_next
 
+  !> get obc segment properties for each tracer
   subroutine g_tracer_get_obc_segment_props(g_tracer_list, name, obc_has, src_file, src_var_name,lfac_in,lfac_out)
     type(g_tracer_type), pointer    :: g_tracer_list !< pointer to the head of the generic tracer list
     type(g_tracer_type), pointer    :: g_tracer !< Pointer to tracer node
