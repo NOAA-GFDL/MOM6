@@ -289,7 +289,11 @@ type, public :: MOM_control_struct ; private
                                      !! barotropic time step [s]. If this is negative dtbt is never
                                      !! calculated, and if it is 0, dtbt is calculated every step.
   type(time_type) :: dtbt_reset_interval !< A time_time representation of dtbt_reset_period.
-  type(time_type) :: dtbt_reset_time !< The next time DTBT should be calculated.
+  type(time_type) :: dtbt_reset_time     !< The next time DTBT should be calculated.
+  real            :: dt_obc_seg_period   !< The time interval between OBC segment updates for OBGC tracers
+  type(time_type) :: dt_obc_seg_interval !< A time_time representation of dt_obc_seg_period.
+  type(time_type) :: dt_obc_seg_time     !< The next time OBC segment update is applied to OBGC tracers.
+
   real, dimension(:,:), pointer :: frac_shelf_h => NULL() !< fraction of total area occupied
   !! by ice shelf [nondim]
   real, dimension(:,:), pointer :: mass_shelf => NULL() !< Mass of ice shelf [R Z ~> kg m-2]
@@ -1110,6 +1114,17 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
     call disable_averaging(CS%diag)
   endif
 
+  !OBC segment data update for some fields can be less frequent than others
+  if(associated(CS%OBC)) then
+    CS%OBC%update_OBC_seg_data = .false.
+    if (CS%dt_obc_seg_period == 0.0) CS%OBC%update_OBC_seg_data = .true.
+    if (CS%dt_obc_seg_period > 0.0) then
+     if (Time_local >= CS%dt_obc_seg_time) then  !### Change >= to > here.
+      CS%OBC%update_OBC_seg_data = .true.
+      CS%dt_obc_seg_time = CS%dt_obc_seg_time + CS%dt_obc_seg_interval
+     endif
+    endif
+  endif
 
   if (CS%do_dynamics .and. CS%split) then !--------------------------- start SPLIT
     ! This section uses a split time stepping scheme for the dynamic equations,
@@ -2071,6 +2086,13 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
                  units="s", default=default_val, do_not_read=(dtbt > 0.0))
   endif
 
+  CS%dt_obc_seg_period = -1.0
+  call get_param(param_file, "MOM", "DT_OBC_SEG_UPDATE_OBGC", CS%dt_obc_seg_period, &
+               "The time between OBC segment data updates for OBGC tracers. "//&
+               "This must be an integer multiple of DT and DT_THERM. "//&
+               "The default is set to DT.", &
+               units="s", default=CS%dt)
+
   ! This is here in case these values are used inappropriately.
   use_frazil = .false. ; bound_salinity = .false.
   CS%tv%P_Ref = 2.0e7*US%kg_m3_to_R*US%m_s_to_L_T**2
@@ -2856,6 +2878,12 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
             CS%ADp, CS%CDp, MOM_internal_state, CS%OBC,                    &
             CS%update_OBC_CSp, CS%ALE_CSp, CS%set_visc_CSp, CS%visc, dirs, &
             CS%ntrunc, cont_stencil=CS%cont_stencil)
+  endif
+
+  !Set OBC segment data update period
+  if (associated(CS%OBC) .and. CS%dt_obc_seg_period > 0.0) then
+    CS%dt_obc_seg_interval = real_to_time(CS%dt_obc_seg_period)
+    CS%dt_obc_seg_time = Time + CS%dt_obc_seg_interval
   endif
 
   call callTree_waypoint("dynamics initialized (initialize_MOM)")

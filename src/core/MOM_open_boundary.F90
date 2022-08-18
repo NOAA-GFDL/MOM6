@@ -256,6 +256,8 @@ type, public :: ocean_OBC_type
   logical :: user_BCs_set_globally = .false.          !< True if any OBC_USER_CONFIG is set
                                                       !! for input from user directory.
   logical :: update_OBC = .false.                     !< Is OBC data time-dependent
+  logical :: update_OBC_seg_data = .false.            !< Is it the time for OBC segment data update for fields that
+                                                      !! require less frequent update
   logical :: needs_IO_for_data = .false.              !< Is any i/o needed for OBCs
   logical :: zero_vorticity = .false.                 !< If True, sets relative vorticity to zero on open boundaries.
   logical :: freeslip_vorticity = .false.             !< If True, sets normal gradient of tangential velocity to zero
@@ -3867,6 +3869,10 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
     allocate(h_stack(GV%ke), source=0.0)
     do m = 1,segment%num_fields
+      !This field may not require a high frequency OBC segment update and might be allowed
+      !a less frequent update as set by the parameter update_OBC_period_max in MOM.F90.
+      !Cycle if it is not the time to update OBC segment data for this field.
+      if (trim(segment%field(m)%genre) == 'obgc' .and. (.not. OBC%update_OBC_seg_data)) cycle
       if (segment%field(m)%fid > 0) then
         siz(1)=size(segment%field(m)%buffer_src,1)
         siz(2)=size(segment%field(m)%buffer_src,2)
@@ -4230,6 +4236,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
     ! Start second loop to update all fields now that data for all fields are available.
     ! (split because tides depend on multiple variables).
     do m = 1,segment%num_fields
+      !cycle if it is not the time to update OBGC tracers from source
+      if (trim(segment%field(m)%genre) == 'obgc' .and. (.not. OBC%update_OBC_seg_data)) cycle
       ! if (segment%field(m)%fid>0) then
       ! calculate external BT velocity and transport if needed
       if (trim(segment%field(m)%name) == 'U' .or. trim(segment%field(m)%name) == 'V') then
