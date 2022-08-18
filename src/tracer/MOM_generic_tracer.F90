@@ -83,7 +83,7 @@ module MOM_generic_tracer
     type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
                                                !! regulate the timing of diagnostic output.
     type(MOM_restart_CS), pointer :: restart_CSp => NULL() !< Restart control structure
-    type(ocean_OBC_type), pointer :: OBC => NULL()
+    type(ocean_OBC_type), pointer :: OBC => NULL() !<open boundary condition type
     !> Pointer to the first element of the linked list of generic tracers.
     type(g_tracer_type), pointer :: g_tracer_list => NULL()
 

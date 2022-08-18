@@ -361,7 +361,8 @@ type, private :: external_tracers_segments_props
    character(len=128) :: tracer_name      !< tracer name
    character(len=128) :: tracer_src_file  !< tracer source file for BC
    character(len=128) :: tracer_src_field !< name of the field in source file to extract BC
-   real               :: lfac_in,lfac_out !< multiplicative factors for in and out tracer reservoir length scales
+   real               :: lfac_in  !< multiplicative factor for inbound  tracer reservoir length scale
+   real               :: lfac_out !< multiplicative factor for outbound tracer reservoir length scale
 end type external_tracers_segments_props
 type(external_tracers_segments_props), pointer, save :: obgc_segments_props => NULL() !< Linked-list of obgc tracers properties
 integer, save :: num_obgc_tracers = 0  !< Keeps the total number of obgc tracers
@@ -4739,7 +4740,7 @@ subroutine set_obgc_segments_props(tr_name,obc_src_file_name,obc_src_field_name,
   character(len=*),  intent(in) :: tr_name            !< Tracer name
   character(len=*),  intent(in) :: obc_src_file_name  !< OBC source file name
   character(len=*),  intent(in) :: obc_src_field_name !< name of the field in the source file
-  real,              intent(in) :: lfac_in,lfac_out
+  real,              intent(in) :: lfac_in,lfac_out   !< factors for tracer reservoir length scales
   type(external_tracers_segments_props),pointer :: node_ptr => NULL()
   allocate(node_ptr)
   node_ptr%tracer_name = trim(tr_name)
@@ -4753,13 +4754,15 @@ subroutine set_obgc_segments_props(tr_name,obc_src_file_name,obc_src_field_name,
   num_obgc_tracers = num_obgc_tracers+1
 end subroutine set_obgc_segments_props
 
-!> Get the OBC properties of external obgc tracers, such as their source file, field name, reservoir length scale factors
+!> Get the OBC properties of external obgc tracers, such as their source file, field name, 
+!  reservoir length scale factors
 subroutine get_obgc_segments_props(node, tr_name,obc_src_file_name,obc_src_field_name,lfac_in,lfac_out)
-  type(external_tracers_segments_props),pointer :: node
+  type(external_tracers_segments_props),pointer :: node !< pointer to type that keeps the tracer segment properties
   character(len=*), intent(out) :: tr_name            !< Tracer name
   character(len=*), intent(out) :: obc_src_file_name  !< OBC source file name
   character(len=*), intent(out) :: obc_src_field_name !< name of the field in the source file
-  real,             intent(out) :: lfac_in,lfac_out   !< multiplicative factors for inverse reservoir length scale
+  real,             intent(out) :: lfac_in   !< multiplicative factor for inbound  reservoir length scale
+  real,             intent(out) :: lfac_out  !< multiplicative factor for outbound reservoir length scale
   tr_name=trim(node%tracer_name)
   obc_src_file_name=trim(node%tracer_src_file)
   obc_src_field_name=trim(node%tracer_src_field)
