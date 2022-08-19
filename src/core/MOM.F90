@@ -143,6 +143,9 @@ use MOM_wave_interface,        only : Update_Stokes_Drift
 
 use MOM_porous_barriers,      only : porous_widths
 
+! Database client used for machine-learning interface
+use MOM_database_comms,       only : dbcomms_CS_type, database_comms_init, dbclient_type
+
 ! ODA modules
 use MOM_oda_driver_mod,        only : ODA_CS, oda, init_oda, oda_end
 use MOM_oda_driver_mod,        only : set_prior_tracer, set_analysis_time, apply_oda_tracer_increments
@@ -251,6 +254,8 @@ type, public :: MOM_control_struct ; private
   logical :: offline_tracer_mode = .false.
                     !< If true, step_offline() is called instead of step_MOM().
                     !! This is intended for running MOM6 in offline tracer mode
+  logical :: MEKE_in_dynamics !< If .true. (default), MEKE is called in the dynamics routine otherwise
+                              !! it is called during the tracer dynamics
 
   type(time_type), pointer :: Time   !< pointer to the ocean clock
   real    :: dt                      !< (baroclinic) dynamics time step [T ~> s]
@@ -338,6 +343,7 @@ type, public :: MOM_control_struct ; private
                                 !! higher values use more appropriate expressions that differ at
                                 !! roundoff for non-Boussinesq cases.
   logical :: use_particles      !< Turns on the particles package
+  logical :: use_dbclient       !< Turns on the database client used for ML inference/analysis
   character(len=10) :: particle_type !< Particle types include: surface(default), profiling and sail drone.
 
   type(MOM_diag_IDs)       :: IDs      !<  Handles used for diagnostics.
@@ -404,15 +410,14 @@ type, public :: MOM_control_struct ; private
   type(ODA_CS), pointer :: odaCS => NULL() !< a pointer to the control structure for handling
                                 !! ensemble model state vectors and data assimilation
                                 !! increments and priors
+  type(dbcomms_CS_type)   :: dbcomms_CS !< Control structure for database client used for online ML/AI
   type(porous_barrier_ptrs) :: pbv !< porous barrier fractional cell metrics
-  real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_,NKMEM_) &
-                            :: por_face_areaU !< fractional open area of U-faces [nondim]
-  real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_,NKMEM_) &
-                            :: por_face_areaV !< fractional open area of V-faces [nondim]
-  real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_,NK_INTERFACE_) &
-                            :: por_layer_widthU !< fractional open width of U-faces [nondim]
-  real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_,NK_INTERFACE_) &
-                            :: por_layer_widthV !< fractional open width of V-faces [nondim]
+  real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_,NKMEM_) :: por_face_areaU !< fractional open area of U-faces [nondim]
+  real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_,NKMEM_) :: por_face_areaV !< fractional open area of V-faces [nondim]
+  real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_,NK_INTERFACE_) :: por_layer_widthU !< fractional open width
+                                                                                   !! of U-faces [nondim]
+  real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_,NK_INTERFACE_) :: por_layer_widthV !< fractional open width
+                                                                                   !! of V-faces [nondim]
   type(particles), pointer :: particles => NULL() !<Lagrangian particles
   type(stochastic_CS), pointer :: stoch_CS => NULL() !< a pointer to the stochastics control structure
 end type MOM_control_struct
@@ -1214,8 +1219,11 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
   ! for vertical remapping may need to be regenerated.
   call diag_update_remap_grids(CS%diag)
 
-  if (CS%useMEKE) call step_forward_MEKE(CS%MEKE, h, CS%VarMix%SN_u, CS%VarMix%SN_v, &
-                                         CS%visc, dt, G, GV, US, CS%MEKE_CSp, CS%uhtr, CS%vhtr)
+  if (CS%useMEKE .and. CS%MEKE_in_dynamics) then
+    call step_forward_MEKE(CS%MEKE, h, CS%VarMix%SN_u, CS%VarMix%SN_v, &
+                           CS%visc, dt, G, GV, US, CS%MEKE_CSp, CS%uhtr, CS%vhtr, &
+                           CS%u, CS%v, CS%tv, Time_local)
+  endif
   call disable_averaging(CS%diag)
 
   ! Advance the dynamics time by dt.
@@ -1319,6 +1327,12 @@ subroutine step_MOM_tracer_dyn(CS, G, GV, US, h, Time_local)
   CS%n_dyn_steps_in_adv = 0
   CS%t_dyn_rel_adv = 0.0
   call cpu_clock_end(id_clock_tracer) ; call cpu_clock_end(id_clock_thermo)
+
+  if (CS%useMEKE .and. (.not. CS%MEKE_in_dynamics)) then
+    call step_forward_MEKE(CS%MEKE, h, CS%VarMix%SN_u, CS%VarMix%SN_v, &
+                           CS%visc, CS%t_dyn_rel_adv, G, GV, US, CS%MEKE_CSp, CS%uhtr, CS%vhtr, &
+                           CS%u, CS%v, CS%tv, Time_local)
+  endif
 
   if (associated(CS%tv%T)) then
     call extract_diabatic_member(CS%diabatic_CSp, diabatic_halo=halo_sz)
@@ -2190,6 +2204,10 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
                  "vertical grid files. Other values are invalid.", default=1)
   if (write_geom<0 .or. write_geom>2) call MOM_error(FATAL,"MOM: "//&
          "WRITE_GEOM must be equal to 0, 1 or 2.")
+  call get_param(param_file, "MOM", "USE_DBCLIENT", CS%use_dbclient, &
+                 "If true, initialize a client to a remote database that can "//&
+                 "be used for online analysis and machine-learning inference.",&
+                 default=.false.)
 
   ! Check for inconsistent parameter settings.
   if (CS%use_ALE_algorithm .and. bulkmixedlayer) call MOM_error(FATAL, &
@@ -2794,7 +2812,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
   endif
   call cpu_clock_end(id_clock_MOM_init)
 
-  CS%useMEKE = MEKE_init(Time, G, US, param_file, diag, CS%MEKE_CSp, CS%MEKE, restart_CSp)
+  if (CS%use_dbclient) call database_comms_init(param_file, CS%dbcomms_CS)
+  CS%useMEKE = MEKE_init(Time, G, US, param_file, diag, CS%dbcomms_CS, CS%MEKE_CSp, CS%MEKE, &
+                         restart_CSp, CS%MEKE_in_dynamics)
 
   call VarMix_init(Time, G, GV, US, param_file, diag, CS%VarMix)
   call set_visc_init(Time, G, GV, US, param_file, diag, CS%visc, CS%set_visc_CSp, restart_CSp, CS%OBC)
