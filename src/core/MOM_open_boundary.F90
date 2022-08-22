@@ -4749,7 +4749,8 @@ subroutine set_obgc_segments_props(tr_name,obc_src_file_name,obc_src_field_name,
   character(len=*),  intent(in) :: tr_name            !< Tracer name
   character(len=*),  intent(in) :: obc_src_file_name  !< OBC source file name
   character(len=*),  intent(in) :: obc_src_field_name !< name of the field in the source file
-  real,              intent(in) :: lfac_in,lfac_out   !< factors for tracer reservoir length scales
+  real,              intent(in) :: lfac_in            !< factors for tracer reservoir length scales
+  real,              intent(in) :: lfac_out           !< factors for tracer reservoir length scales
 
   type(external_tracers_segments_props),pointer :: node_ptr => NULL() !pointer to type that keeps
                                                                     ! the tracer segment properties

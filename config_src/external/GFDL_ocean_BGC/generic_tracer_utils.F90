@@ -289,8 +289,7 @@ contains
 
   !> get obc segment properties for each tracer
   subroutine g_tracer_get_obc_segment_props(g_tracer_list, name, obc_has, src_file, src_var_name,lfac_in,lfac_out)
-    type(g_tracer_type), pointer    :: g_tracer_list !< pointer to the head of the generic tracer list
-    type(g_tracer_type), pointer    :: g_tracer !< Pointer to tracer node
+    type(g_tracer_type), pointer         :: g_tracer_list !< pointer to the head of the generic tracer list
     character(len=*),         intent(in) :: name                   !< tracer name
     logical,                  intent(out):: obc_has                !< .true. if This tracer has OBC
     real,            optional,intent(out):: lfac_in,lfac_out       !< OBC reservoir inverse lengthscale factor
