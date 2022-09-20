@@ -1751,7 +1751,7 @@ subroutine parse_for_tracer_reservoirs(OBC, PF, use_temperature)
   logical,                intent(in) :: use_temperature !< If true, T and S are used
 
   ! Local variables
-  integer :: n,m,num_fields
+  integer :: n,m,num_fields,na
   character(len=1024) :: segstr
   character(len=256) :: filename
   character(len=20)  :: segnam, suffix
@@ -1806,18 +1806,18 @@ subroutine parse_for_tracer_reservoirs(OBC, PF, use_temperature)
     !Add reservoirs for external/obgc tracers
     !There is a diconnect in the above logic between tracer index and reservoir index.
     !It arbitarily assigns reservoir indexes 1&2 to tracers T&S,
-    !so we need to start from 3 for the rest of tracers, hence the m+2 in the following.
+    !So we need to start from reservoir index for non-native tracers from 3, hence na=2 below.
     !num_fields is the number of vars in segstr (6 of them now,   U,V,SSH,TEMP,SALT,dye)
     !but OBC%tracer_x_reservoirs_used is allocated to size Reg%ntr, which is the total number of tracers
-    !(t,s,dye,obgc1,obcg2,obgc3,...  6 of them by chance)
+    na=2 !number of native MOM6 tracers (non-obgc) with reservoirs
     do m=1,num_obgc_tracers
        !This logic assumes all external tarcers need a reservoir
        !The segments for tracers are not initialized yet (that happens later in initialize_segment_data())
        !so we cannot query to determine if this tracer needs a reservoir.
        if (segment%is_E_or_W_2) then
-        OBC%tracer_x_reservoirs_used(m+2) = .true.
+        OBC%tracer_x_reservoirs_used(m+na) = .true.
        else
-        OBC%tracer_y_reservoirs_used(m+2) = .true.
+        OBC%tracer_y_reservoirs_used(m+na) = .true.
        endif
     enddo
   enddo
@@ -5289,7 +5289,15 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
                           ! For salinity the units would be [ppt S-1 ~> 1]
   integer :: i, j, k, m, n, ntr, nz
   integer :: ishift, idir, jshift, jdir
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV))  :: h1
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: uhr1
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: vhr1
 
+  h1=h
+  uhr1=uhr
+  vhr1=vhr
+  call pass_var(h1, G%Domain)
+  call pass_vector(uhr1,vhr1, G%Domain)
   nz = GV%ke
   ntr = Reg%ntr
 
@@ -5312,10 +5320,10 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
         do m=1,ntr
           I_scale = 1.0 ; if (segment%tr_Reg%Tr(m)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(m)%scale
           if (allocated(segment%tr_Reg%Tr(m)%tres)) then ; do k=1,nz
-            u_L_out = max(0.0, (idir*uhr(I,j,k))*segment%Tr_InvLscale_out*segment%field(m)%resrv_lfac_out / &
-                      ((h(i+ishift,j,k) + GV%H_subroundoff)*G%dyCu(I,j)))
-            u_L_in  = min(0.0, (idir*uhr(I,j,k))*segment%Tr_InvLscale_in*segment%field(m)%resrv_lfac_in  / &
-                      ((h(i+ishift,j,k) + GV%H_subroundoff)*G%dyCu(I,j)))
+            u_L_out = max(0.0, (idir*uhr1(I,j,k))*segment%Tr_InvLscale_out*segment%field(m)%resrv_lfac_out / &
+                      ((h1(i+ishift,j,k) + GV%H_subroundoff)*G%dyCu(I,j)))
+            u_L_in  = min(0.0, (idir*uhr1(I,j,k))*segment%Tr_InvLscale_in*segment%field(m)%resrv_lfac_in  / &
+                      ((h1(i+ishift,j,k) + GV%H_subroundoff)*G%dyCu(I,j)))
             fac1 = 1.0 + (u_L_out-u_L_in)
             segment%tr_Reg%Tr(m)%tres(I,j,k) = (1.0/fac1)*(segment%tr_Reg%Tr(m)%tres(I,j,k) + &
                               (u_L_out*Reg%Tr(m)%t(I+ishift,j,k) - &
@@ -5340,10 +5348,10 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
         do m=1,ntr
           I_scale = 1.0 ; if (segment%tr_Reg%Tr(m)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(m)%scale
           if (allocated(segment%tr_Reg%Tr(m)%tres)) then ; do k=1,nz
-            v_L_out = max(0.0, (jdir*vhr(i,J,k))*segment%Tr_InvLscale_out*segment%field(m)%resrv_lfac_out / &
-                      ((h(i,j+jshift,k) + GV%H_subroundoff)*G%dxCv(i,J)))
-            v_L_in  = min(0.0, (jdir*vhr(i,J,k))*segment%Tr_InvLscale_in*segment%field(m)%resrv_lfac_in  / &
-                      ((h(i,j+jshift,k) + GV%H_subroundoff)*G%dxCv(i,J)))
+            v_L_out = max(0.0, (jdir*vhr1(i,J,k))*segment%Tr_InvLscale_out*segment%field(m)%resrv_lfac_out / &
+                      ((h1(i,j+jshift,k) + GV%H_subroundoff)*G%dxCv(i,J)))
+            v_L_in  = min(0.0, (jdir*vhr1(i,J,k))*segment%Tr_InvLscale_in*segment%field(m)%resrv_lfac_in  / &
+                      ((h1(i,j+jshift,k) + GV%H_subroundoff)*G%dxCv(i,J)))
             fac1 = 1.0 + (v_L_out-v_L_in)
             segment%tr_Reg%Tr(m)%tres(i,J,k) = (1.0/fac1)*(segment%tr_Reg%Tr(m)%tres(i,J,k) + &
                               (v_L_out*Reg%Tr(m)%t(i,J+jshift,k) - &

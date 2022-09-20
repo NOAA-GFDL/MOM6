@@ -2091,7 +2091,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
                "The time between OBC segment data updates for OBGC tracers. "//&
                "This must be an integer multiple of DT and DT_THERM. "//&
                "The default is set to DT.", &
-               units="s", default=CS%dt)
+               units="s", default=US%T_to_s*CS%dt)
 
   ! This is here in case these values are used inappropriately.
   use_frazil = .false. ; bound_salinity = .false.
@@ -2882,7 +2882,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
 
   !Set OBC segment data update period
   if (associated(CS%OBC) .and. CS%dt_obc_seg_period > 0.0) then
-    CS%dt_obc_seg_interval = real_to_time(CS%dt_obc_seg_period)
+    CS%dt_obc_seg_interval = real_to_time(US%T_to_s*CS%dt_obc_seg_period)
     CS%dt_obc_seg_time = Time + CS%dt_obc_seg_interval
   endif
 
