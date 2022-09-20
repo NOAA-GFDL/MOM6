@@ -4817,6 +4817,7 @@ subroutine fill_obgc_segments(G, GV, OBC, tr_ptr, tr_name)
   integer :: isd, ied, IsdB, IedB, jsd, jed, JsdB, JedB, n, nz, nt
   integer :: i, j, k
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
+  real :: I_scale
 
   if (.not. associated(OBC)) return
   call pass_var(tr_ptr, G%Domain)
@@ -4832,6 +4833,8 @@ subroutine fill_obgc_segments(G, GV, OBC, tr_ptr, tr_name)
     jsd = segment%HI%jsd ; jed = segment%HI%jed
     IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
     JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
+    I_scale = 1.0
+    if (segment%tr_Reg%Tr(nt)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(nt)%scale
     ! Fill with Tracer values
     if (segment%is_E_or_W) then
       I=segment%HI%IsdB
@@ -4841,6 +4844,7 @@ subroutine fill_obgc_segments(G, GV, OBC, tr_ptr, tr_name)
         else
           segment%tr_Reg%Tr(nt)%t(I,j,k) = tr_ptr(i,j,k)
         endif
+        OBC%tres_x(I,j,k,nt) = I_scale * segment%tr_Reg%Tr(nt)%t(I,j,k)
       enddo ; enddo
     else
       J=segment%HI%JsdB
@@ -4850,11 +4854,11 @@ subroutine fill_obgc_segments(G, GV, OBC, tr_ptr, tr_name)
         else
           segment%tr_Reg%Tr(nt)%t(i,J,k) = tr_ptr(i,j,k)
         endif
+        OBC%tres_y(i,J,k,nt) = I_scale * segment%tr_Reg%Tr(nt)%t(i,J,k)
       enddo ; enddo
     endif
     segment%tr_Reg%Tr(nt)%tres(:,:,:) = segment%tr_Reg%Tr(nt)%t(:,:,:)
   enddo
-!  call setup_OBC_tracer_reservoirs(GV, OBC, .true.) ! Skip T and S to avoid restart bug
 end subroutine fill_obgc_segments
 
 subroutine fill_temp_salt_segments(G, GV, US, OBC, tv)
