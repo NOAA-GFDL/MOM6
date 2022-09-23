@@ -8,6 +8,3 @@ coverage:
             default:
                 threshold: 100%
                 base: parent
-comment:
-    # This must be set to the number of test cases (TCs)
-    after_n_builds: 8

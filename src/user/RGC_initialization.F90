@@ -21,7 +21,7 @@ use MOM_sponge, only : set_up_sponge_ML_density
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : thermo_var_ptrs
 use MOM_verticalGrid, only : verticalGrid_type
-use MOM_EOS, only : calculate_density, calculate_density_derivs, EOS_type, EOS_domain
+use MOM_EOS, only : calculate_density, EOS_domain
 implicit none ; private
 
 #include <MOM_memory.h>
@@ -58,8 +58,8 @@ subroutine RGC_initialize_sponges(G, GV, US, tv, u, v, depth_tot, PF, use_ALE, C
   type(ALE_sponge_CS),   pointer    :: ACSp !< ALE-mode sponge structure
 
   ! Local variables
-  real :: T(SZI_(G),SZJ_(G),SZK_(GV)) ! A temporary array for temperature [degC]
-  real :: S(SZI_(G),SZJ_(G),SZK_(GV)) ! A temporary array for salinity [ppt]
+  real :: T(SZI_(G),SZJ_(G),SZK_(GV)) ! A temporary array for temperature [C ~> degC]
+  real :: S(SZI_(G),SZJ_(G),SZK_(GV)) ! A temporary array for salinity [S ~> ppt]
   real :: U1(SZIB_(G),SZJ_(G),SZK_(GV)) ! A temporary array for u [L T-1 ~> m s-1]
   real :: V1(SZI_(G),SZJB_(G),SZK_(GV)) ! A temporary array for v [L T-1 ~> m s-1]
   real :: tmp(SZI_(G),SZJ_(G))        ! A temporary array for tracers.
@@ -158,8 +158,8 @@ subroutine RGC_initialize_sponges(G, GV, US, tv, u, v, depth_tot, PF, use_ALE, C
   filename = trim(inputdir)//trim(state_file)
   if (.not.file_exists(filename, G%Domain)) &
       call MOM_error(FATAL, " RGC_initialize_sponges: Unable to open "//trim(filename))
-  call MOM_read_data(filename, temp_var, T(:,:,:), G%Domain)
-  call MOM_read_data(filename, salt_var, S(:,:,:), G%Domain)
+  call MOM_read_data(filename, temp_var, T(:,:,:), G%Domain, scale=US%degC_to_C)
+  call MOM_read_data(filename, salt_var, S(:,:,:), G%Domain, scale=US%ppt_to_S)
   if (use_ALE) then
 
     call MOM_read_data(filename, h_var, h(:,:,:), G%Domain, scale=GV%m_to_H)
@@ -168,8 +168,10 @@ subroutine RGC_initialize_sponges(G, GV, US, tv, u, v, depth_tot, PF, use_ALE, C
     call initialize_ALE_sponge(Idamp, G, GV, PF, ACSp, h, nz)
 
     !  The remaining calls to set_up_sponge_field can be in any order.
-    if ( associated(tv%T) ) call set_up_ALE_sponge_field(T, G, GV, tv%T, ACSp)
-    if ( associated(tv%S) ) call set_up_ALE_sponge_field(S, G, GV, tv%S, ACSp)
+    if ( associated(tv%T) ) call set_up_ALE_sponge_field(T, G, GV, tv%T, ACSp, 'temp', &
+        sp_long_name='temperature', sp_unit='degC s-1')
+    if ( associated(tv%S) ) call set_up_ALE_sponge_field(S, G, GV, tv%S, ACSp, 'salt', &
+        sp_long_name='salinity', sp_unit='g kg-1 s-1')
 
     if (sponge_uv) then
       U1(:,:,:) = 0.0 ; V1(:,:,:) = 0.0

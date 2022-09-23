@@ -53,6 +53,7 @@ use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : surface
 use MOM_verticalGrid, only : verticalGrid_type
 use MOM_ice_shelf, only : initialize_ice_shelf, shelf_calc_flux, ice_shelf_CS
+use MOM_ice_shelf, only : initialize_ice_shelf_fluxes, initialize_ice_shelf_forces
 use MOM_ice_shelf, only : add_shelf_forces, ice_shelf_end, ice_shelf_save_restart
 use MOM_wave_interface, only: wave_parameters_CS, MOM_wave_interface_init
 use MOM_wave_interface, only: Update_Surface_Waves
@@ -274,9 +275,13 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, wind_stagger, gas
   if (.not.OS%is_ocean_pe) return
 
   OS%Time = Time_in ; OS%Time_dyn = Time_in
+  ! Call initialize MOM with an optional Ice Shelf CS which, if present triggers
+  ! initialization of ice shelf parameters and arrays.
+
   call initialize_MOM(OS%Time, Time_init, param_file, OS%dirs, OS%MOM_CSp, &
                       OS%restart_CSp, Time_in, offline_tracer_mode=OS%offline_tracer_mode, &
-                      diag_ptr=OS%diag, count_calls=.true.)
+                      diag_ptr=OS%diag, count_calls=.true., ice_shelf_CSp=OS%ice_shelf_CSp, &
+                      waves_CSp=OS%Waves)
   call get_MOM_state_elements(OS%MOM_CSp, G=OS%grid, GV=OS%GV, US=OS%US, C_p=OS%C_p, &
                               C_p_scaled=OS%fluxes%C_p, use_temp=use_temperature)
 
@@ -372,9 +377,10 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, wind_stagger, gas
   endif
 
   if (OS%use_ice_shelf)  then
-    call initialize_ice_shelf(param_file, OS%grid, OS%Time, OS%ice_shelf_CSp, &
-                              OS%diag, OS%forces, OS%fluxes)
+    call initialize_ice_shelf_fluxes(OS%ice_shelf_CSp, OS%grid, OS%US, OS%fluxes)
+    call initialize_ice_shelf_forces(OS%ice_shelf_CSp, OS%grid, OS%US, OS%forces)
   endif
+
   if (OS%icebergs_alter_ocean)  then
     call marine_ice_init(OS%Time, OS%grid, param_file, OS%diag, OS%marine_ice_CSp)
     if (.not. OS%use_ice_shelf) &
@@ -840,22 +846,22 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
   if (sfc_state%T_is_conT) then
     ! Convert the surface T from conservative T to potential T.
     do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
-      Ocean_sfc%t_surf(i,j) = gsw_pt_from_ct(sfc_state%SSS(i+i0,j+j0), &
-                               sfc_state%SST(i+i0,j+j0)) + CELSIUS_KELVIN_OFFSET
+      Ocean_sfc%t_surf(i,j) = gsw_pt_from_ct(US%S_to_ppt*sfc_state%SSS(i+i0,j+j0), &
+                               US%C_to_degC*sfc_state%SST(i+i0,j+j0)) + CELSIUS_KELVIN_OFFSET
     enddo ; enddo
   else
     do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
-      Ocean_sfc%t_surf(i,j) = sfc_state%SST(i+i0,j+j0) + CELSIUS_KELVIN_OFFSET
+      Ocean_sfc%t_surf(i,j) = US%C_to_degC*sfc_state%SST(i+i0,j+j0) + CELSIUS_KELVIN_OFFSET
     enddo ; enddo
   endif
   if (sfc_state%S_is_absS) then
     ! Convert the surface S from absolute salinity to practical salinity.
     do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
-      Ocean_sfc%s_surf(i,j) = gsw_sp_from_sr(sfc_state%SSS(i+i0,j+j0))
+      Ocean_sfc%s_surf(i,j) = gsw_sp_from_sr(US%S_to_ppt*sfc_state%SSS(i+i0,j+j0))
     enddo ; enddo
   else
     do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
-      Ocean_sfc%s_surf(i,j) = sfc_state%SSS(i+i0,j+j0)
+      Ocean_sfc%s_surf(i,j) = US%S_to_ppt*sfc_state%SSS(i+i0,j+j0)
     enddo ; enddo
   endif
 

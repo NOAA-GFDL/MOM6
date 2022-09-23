@@ -27,21 +27,12 @@ runs:
         env
         echo "::endgroup::"
 
-    - name: Install needed packages for compiling
-      shell: bash
-      run: |
-        echo "::group::Install linux packages"
-        sudo apt-get update
-        sudo apt-get install netcdf-bin libnetcdf-dev libnetcdff-dev mpich libmpich-dev
-        sudo apt-get install linux-tools-common
-        echo "::endgroup::"
-
     - name: Compile FMS library
       shell: bash
       run: |
         echo "::group::Compile FMS library"
         cd .testing
-        make deps/lib/libFMS.a -s -j
+        REPORT_ERROR_LOGS=true make deps/lib/libFMS.a -s -j
         echo "::endgroup::"
 
     - name: Store compiler flags used in Makefile
@@ -52,7 +43,6 @@ runs:
         echo "FCFLAGS_DEBUG=-g -O0 -Wextra -Wno-compare-reals -fbacktrace -ffpe-trap=invalid,zero,overflow -fcheck=bounds" >> config.mk
         echo "FCFLAGS_REPRO=-g -O2 -fbacktrace" >> config.mk
         echo "FCFLAGS_INIT=-finit-real=snan -finit-integer=2147483647 -finit-derived" >> config.mk
-        echo "FCFLAGS_COVERAGE=--coverage" >> config.mk
         cat config.mk
         echo "::endgroup::"
 

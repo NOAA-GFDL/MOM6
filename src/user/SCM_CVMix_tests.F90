@@ -38,9 +38,9 @@ type SCM_CVMix_tests_CS ; private
   logical :: UseDiurnalSW   !< True to use diurnal sw radiation
   real :: tau_x !< (Constant) Wind stress, X [R L Z T-2 ~> Pa]
   real :: tau_y !< (Constant) Wind stress, Y [R L Z T-2 ~> Pa]
-  real :: surf_HF !< (Constant) Heat flux [degC Z T-1 ~> m degC s-1]
+  real :: surf_HF !< (Constant) Heat flux [C Z T-1 ~> m degC s-1]
   real :: surf_evap !< (Constant) Evaporation rate [Z T-1 ~> m s-1]
-  real :: Max_sw !< maximum of diurnal sw radiation [degC Z T-1 ~> degC m s-1]
+  real :: Max_sw !< maximum of diurnal sw radiation [C Z T-1 ~> degC m s-1]
   real :: Rho0 !< reference density [R ~> kg m-3]
 end type
 
@@ -55,8 +55,8 @@ contains
 subroutine SCM_CVMix_tests_TS_init(T, S, h, G, GV, US, param_file, just_read)
   type(ocean_grid_type),                     intent(in)  :: G  !< Grid structure
   type(verticalGrid_type),                   intent(in)  :: GV !< Vertical grid structure
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(out) :: T  !< Potential temperature [degC]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(out) :: S  !< Salinity [ppt]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(out) :: T  !< Potential temperature [C ~> degC]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(out) :: S  !< Salinity [S ~> ppt]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(in)  :: h  !< Layer thickness [H ~> m or kg m-2]
   type(unit_scale_type),                     intent(in)  :: US !< A dimensional unit scaling type
   type(param_file_type),                     intent(in)  :: param_file !< Input parameter structure
@@ -65,13 +65,13 @@ subroutine SCM_CVMix_tests_TS_init(T, S, h, G, GV, US, param_file, just_read)
   ! Local variables
   real :: UpperLayerTempMLD !< Upper layer Temp MLD thickness [Z ~> m].
   real :: UpperLayerSaltMLD !< Upper layer Salt MLD thickness [Z ~> m].
-  real :: UpperLayerTemp !< Upper layer temperature (SST if thickness 0) [degC]
-  real :: UpperLayerSalt !< Upper layer salinity (SSS if thickness 0) [ppt]
-  real :: LowerLayerTemp !< Temp at top of lower layer [degC]
-  real :: LowerLayerSalt !< Salt at top of lower layer [ppt]
-  real :: LowerLayerdTdz !< Temp gradient in lower layer [degC Z-1 ~> degC m-1].
-  real :: LowerLayerdSdz !< Salt gradient in lower layer [ppt Z-1 ~> ppt m-1].
-  real :: LowerLayerMinTemp !< Minimum temperature in lower layer [degC]
+  real :: UpperLayerTemp !< Upper layer temperature (SST if thickness 0) [C ~> degC]
+  real :: UpperLayerSalt !< Upper layer salinity (SSS if thickness 0) [S ~> ppt]
+  real :: LowerLayerTemp !< Temp at top of lower layer [C ~> degC]
+  real :: LowerLayerSalt !< Salt at top of lower layer [S ~> ppt]
+  real :: LowerLayerdTdz !< Temp gradient in lower layer [C Z-1 ~> degC m-1].
+  real :: LowerLayerdSdz !< Salt gradient in lower layer [S Z-1 ~> ppt m-1].
+  real :: LowerLayerMinTemp !< Minimum temperature in lower layer [C ~> degC]
   real :: zC, DZ, top, bottom ! Depths and thicknesses [Z ~> m].
   integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed, nz
 
@@ -86,21 +86,21 @@ subroutine SCM_CVMix_tests_TS_init(T, S, h, G, GV, US, param_file, just_read)
                  'Initial salt mixed layer depth', &
                  units='m', default=0.0, scale=US%m_to_Z, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L1_SALT", UpperLayerSalt, &
-                 'Layer 2 surface salinity', units='1e-3', default=35.0, do_not_log=just_read)
+                 'Layer 2 surface salinity', units='1e-3', default=35.0, scale=US%ppt_to_S, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L1_TEMP", UpperLayerTemp, &
-                 'Layer 1 surface temperature', units='C', default=20.0, do_not_log=just_read)
+                 'Layer 1 surface temperature', units='C', default=20.0, scale=US%degC_to_C, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L2_SALT", LowerLayerSalt, &
-                 'Layer 2 surface salinity', units='1e-3', default=35.0, do_not_log=just_read)
+                 'Layer 2 surface salinity', units='1e-3', default=35.0, scale=US%ppt_to_S, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L2_TEMP", LowerLayerTemp, &
-                 'Layer 2 surface temperature', units='C', default=20.0, do_not_log=just_read)
+                 'Layer 2 surface temperature', units='C', default=20.0, scale=US%degC_to_C, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L2_DTDZ", LowerLayerdTdZ,     &
                  'Initial temperature stratification in layer 2', &
-                 units='C/m', default=0.0, scale=US%Z_to_m, do_not_log=just_read)
+                 units='C/m', default=0.0, scale=US%degC_to_C*US%Z_to_m, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L2_DSDZ", LowerLayerdSdZ,  &
                  'Initial salinity stratification in layer 2', &
-                 units='PPT/m', default=0.0, scale=US%Z_to_m, do_not_log=just_read)
+                 units='PPT/m', default=0.0, scale=US%ppt_to_S*US%Z_to_m, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L2_MINTEMP",LowerLayerMinTemp, &
-                 'Layer 2 minimum temperature', units='C', default=4.0, do_not_log=just_read)
+                 'Layer 2 minimum temperature', units='C', default=4.0, scale=US%degC_to_C, do_not_log=just_read)
 
   if (just_read) return ! All run-time parameters have been read, so return.
 
@@ -166,7 +166,7 @@ subroutine SCM_CVMix_tests_surface_forcing_init(Time, G, param_file, CS)
   if (CS%UseHeatFlux) then
     call get_param(param_file, mdl, "SCM_HEAT_FLUX", CS%surf_HF, &
                  "Constant surface heat flux used in the SCM CVMix test surface forcing.", &
-                 units='m K/s', scale=US%m_to_Z*US%T_to_s, fail_if_missing=.true.)
+                 units='m K/s', scale=US%m_to_Z*US%degC_to_C*US%T_to_s, fail_if_missing=.true.)
   endif
   if (CS%UseEvaporation) then
     call get_param(param_file, mdl, "SCM_EVAPORATION", CS%surf_evap, &
@@ -176,7 +176,7 @@ subroutine SCM_CVMix_tests_surface_forcing_init(Time, G, param_file, CS)
   if (CS%UseDiurnalSW) then
     call get_param(param_file, mdl, "SCM_DIURNAL_SW_MAX", CS%Max_sw, &
                  "Maximum diurnal sw radiation used in the SCM CVMix test surface forcing.", &
-                 units='m K/s', scale=US%m_to_Z*US%T_to_s, fail_if_missing=.true.)
+                 units='m K/s', scale=US%m_to_Z*US%degC_to_C*US%T_to_s, fail_if_missing=.true.)
   endif
   call get_param(param_file, mdl, "RHO_0", CS%Rho0, &
                  "The mean ocean density used with BOUSSINESQ true to "//&
@@ -242,8 +242,8 @@ subroutine SCM_CVMix_tests_buoyancy_forcing(sfc_state, fluxes, day, G, US, CS)
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
 
   if (CS%UseHeatFlux) then
-    ! Note CVMix test inputs give Heat flux in [m K/s]
-    ! therefore must convert to W/m2 by multiplying
+    ! Note CVMix test inputs give Heat flux in [Z C T-1 ~> m K/s]
+    ! therefore must convert to [Q R Z T-1 ~> W m-2] by multiplying
     ! by Rho0*Cp
     do J=Jsq,Jeq ; do i=is,ie
       fluxes%sens(i,J) = CS%surf_HF * CS%Rho0 * fluxes%C_p
@@ -252,7 +252,7 @@ subroutine SCM_CVMix_tests_buoyancy_forcing(sfc_state, fluxes, day, G, US, CS)
 
   if (CS%UseEvaporation) then
     do J=Jsq,Jeq ; do i=is,ie
-    ! Note CVMix test inputs give evaporation in [m s-1]
+    ! Note CVMix test inputs give evaporation in [Z T-1 ~> m s-1]
     ! This therefore must be converted to mass flux in [R Z T-1 ~> kg m-2 s-1]
     ! by multiplying by density and some unit conversion factors.
       fluxes%evap(i,J) = CS%surf_evap * CS%Rho0
@@ -261,8 +261,8 @@ subroutine SCM_CVMix_tests_buoyancy_forcing(sfc_state, fluxes, day, G, US, CS)
 
   if (CS%UseDiurnalSW) then
     do J=Jsq,Jeq ; do i=is,ie
-    ! Note CVMix test inputs give max sw rad in [m degC/s]
-    ! therefore must convert to W/m2 by multiplying by Rho0*Cp
+    ! Note CVMix test inputs give max sw rad in [Z C T-1 ~> m degC s-1]
+    ! therefore must convert to [Q R Z T-1 ~> W m-2] by multiplying by Rho0*Cp
     ! Note diurnal cycle peaks at Noon.
       fluxes%sw(i,J) = CS%Max_sw *  max(0.0, cos(2*PI*(time_type_to_real(DAY)/86400.0 - 0.5))) * CS%RHO0 * fluxes%C_p
     enddo ; enddo

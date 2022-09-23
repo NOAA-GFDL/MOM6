@@ -124,8 +124,9 @@ logical function lateral_boundary_diffusion_init(Time, G, GV, param_file, diag, 
                  "for vertical remapping for all variables. "//&
                  "It can be one of the following schemes: "//&
                  trim(remappingSchemesDoc), default=remappingDefaultScheme)
+  !### Revisit this hard-coded answer_date.
   call initialize_remapping( CS%remap_CS, string, boundary_extrapolation = boundary_extrap ,&
-       check_reconstruction=.false., check_remapping=.false., answers_2018=.false.)
+       check_reconstruction=.false., check_remapping=.false., answer_date=20190101)
   call extract_member_remapping_CS(CS%remap_CS, degree=CS%deg)
   call get_param(param_file, mdl, "LBD_DEBUG", CS%debug, &
                  "If true, write out verbose debugging data in the LBD module.", &
@@ -230,6 +231,13 @@ subroutine lateral_boundary_diffusion(G, GV, US, h, Coef_x, Coef_y, dt, Reg, CS)
         endif
       endif
     enddo ; enddo ; enddo
+
+    ! Do user controlled underflow of the tracer concentrations.
+    if (tracer%conc_underflow > 0.0) then
+      do k=1,GV%ke ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
+        if (abs(tracer%t(i,j,k)) < tracer%conc_underflow) tracer%t(i,j,k) = 0.0
+      enddo ; enddo ; enddo
+    endif
 
     if (CS%debug) then
       call hchksum(tracer%t, "after LBD "//tracer%name,G%HI)

@@ -14,7 +14,7 @@ use MOM_hor_index,       only : hor_index_type
 use MOM_io,              only : file_exists, MOM_read_data, slasher
 use MOM_io,              only : vardesc, var_desc, query_vardesc
 use MOM_open_boundary,   only : ocean_OBC_type
-use MOM_restart,         only : query_initialized, MOM_restart_CS
+use MOM_restart,         only : query_initialized, set_initialized, MOM_restart_CS
 use MOM_spatial_means,   only : global_mass_int_EFP
 use MOM_sponge,          only : set_up_sponge_field, sponge_CS
 use MOM_time_manager,    only : time_type, time_type_to_real
@@ -98,9 +98,8 @@ function register_oil_tracer(HI, GV, US, param_file, CS, tr_Reg, restart_CS)
   isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed ; nz = GV%ke
 
   if (associated(CS)) then
-    call MOM_error(WARNING, "register_oil_tracer called with an "// &
-                             "associated control structure.")
-    return
+    call MOM_error(FATAL, "register_oil_tracer called with an "// &
+                          "associated control structure.")
   endif
   allocate(CS)
 
@@ -278,7 +277,7 @@ subroutine initialize_oil_tracer(restart, day, G, GV, US, h, diag, OBC, CS, &
           endif
         enddo ; enddo ; enddo
       endif
-
+      call set_initialized(CS%tr(:,:,:,m), name, CS%restart_CSp)
     endif ! restart
   enddo ! Tracer loop
 
@@ -362,7 +361,8 @@ subroutine oil_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, GV, US
       if (CS%oil_decay_rate(m)>0.) then
         CS%tr(i,j,k,m) = G%mask2dT(i,j)*max(1. - dt*CS%oil_decay_rate(m),0.)*CS%tr(i,j,k,m) ! Safest
       elseif (CS%oil_decay_rate(m)<0.) then
-        decay_timescale = (12.*(3.0**(-(tv%T(i,j,k)-20.)/10.))) * (86400.*US%s_to_T) ! Timescale [s ~> T]
+        decay_timescale = (12.0 * (3.0**(-(tv%T(i,j,k)-20.0*US%degC_to_C)/10.0*US%degC_to_C))) * &
+                          (86400.0*US%s_to_T) ! Timescale [s ~> T]
         ldecay = 1. / decay_timescale ! Rate [T-1 ~> s-1]
         CS%tr(i,j,k,m) = G%mask2dT(i,j)*max(1. - dt*ldecay,0.)*CS%tr(i,j,k,m)
       endif

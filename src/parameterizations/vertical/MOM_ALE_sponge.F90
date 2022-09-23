@@ -78,8 +78,12 @@ type :: p2d
   integer :: id !< id for FMS external time interpolator
   integer :: nz_data !< The number of vertical levels in the input field
   integer :: num_tlevs !< The number of time records contained in the file
+  real :: scale = 1.0  !< A multiplicative factor by which to rescale input data
   real, dimension(:,:), pointer :: p => NULL() !< pointer the data.
   real, dimension(:,:), pointer :: h => NULL() !< pointer the data grid.
+  character(len=:), allocatable  :: name  !< The name of the input field
+  character(len=:), allocatable  :: long_name !< The long name of the input field
+  character(len=:), allocatable  :: unit !< The unit of the input field
 end type p2d
 
 !> ALE sponge control structure
@@ -117,12 +121,14 @@ type, public :: ALE_sponge_CS ; private
                                    !! timing of diagnostic output.
 
   type(remapping_cs) :: remap_cs   !< Remapping parameters and work arrays
-  logical :: remap_answers_2018    !< If true, use the order of arithmetic and expressions that
-                                   !! recover the answers for remapping from the end of 2018.
-                                   !! Otherwise, use more robust forms of the same expressions.
-  logical :: hor_regrid_answers_2018 !< If true, use the order of arithmetic for horizontal regridding
-                                   !! that recovers the answers from the end of 2018.  Otherwise, use
-                                   !! rotationally symmetric forms of the same expressions.
+  integer :: remap_answer_date     !< The vintage of the order of arithmetic and expressions to use
+                                   !! for remapping.  Values below 20190101 recover the remapping
+                                   !! answers from 2018, while higher values use more robust
+                                   !! forms of the same remapping expressions.
+  integer :: hor_regrid_answer_date !< The vintage of the order of arithmetic and expressions to use
+                                   !! for horizontal regridding.  Values below 20190101 recover the
+                                   !! answers from 2018, while higher values use expressions that have
+                                   !! been rearranged for rotational invariance.
 
   logical :: time_varying_sponges  !< True if using newer sponge code
   logical :: spongeDataOngrid !< True if the sponge data are on the model horizontal grid
@@ -131,7 +137,7 @@ type, public :: ALE_sponge_CS ; private
   logical :: tripolar_N !< grid is folded at its north edge
 
   !>@{ Diagnostic IDs
-  integer, dimension(2) :: id_sp_tendency      !< Diagnostic ids for temperature and salinity
+  integer, dimension(MAX_FIELDS_) :: id_sp_tendency      !< Diagnostic ids for tracers
                                                !! tendency due to sponges
   integer :: id_sp_u_tendency                  !< Diagnostic id for zonal momentum tendency due to
                                                !! Rayleigh damping
@@ -172,7 +178,16 @@ subroutine initialize_ALE_sponge_fixed(Iresttime, G, GV, param_file, CS, data_h,
   character(len=64)  :: remapScheme
   logical :: use_sponge
   logical :: bndExtrapolation = .true. ! If true, extrapolate boundaries
-  logical :: default_2018_answers
+  integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
+  logical :: default_2018_answers ! The default setting for the various 2018_ANSWERS flags.
+  logical :: remap_answers_2018   ! If true, use the order of arithmetic and expressions that
+                                  ! recover the remapping answers from 2018.  If false, use more
+                                  ! robust forms of the same remapping expressions.
+  integer :: default_remap_ans_date ! The default setting for remap_answer_date
+  logical :: hor_regrid_answers_2018 ! If true, use the order of arithmetic for horizontal regridding
+                                  ! that recovers the answers from the end of 2018.  Otherwise, use
+                                  ! rotationally symmetric forms of the same expressions.
+  integer :: default_hor_reg_ans_date ! The default setting for hor_regrid_answer_date
   integer :: i, j, k, col, total_sponge_cols, total_sponge_cols_u, total_sponge_cols_v
 
   if (associated(CS)) then
@@ -207,17 +222,41 @@ subroutine initialize_ALE_sponge_fixed(Iresttime, G, GV, param_file, CS, data_h,
                  "than PCM. E.g., if PPM is used for remapping, a "//&
                  "PPM reconstruction will also be used within boundary cells.", &
                  default=.false., do_not_log=.true.)
+  call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
+                 "This sets the default value for the various _ANSWER_DATE parameters.", &
+                 default=99991231)
   call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &
                  "This sets the default value for the various _2018_ANSWERS parameters.", &
-                 default=.false.)
-  call get_param(param_file, mdl, "REMAPPING_2018_ANSWERS", CS%remap_answers_2018, &
+                 default=(default_answer_date<20190101))
+  call get_param(param_file, mdl, "REMAPPING_2018_ANSWERS", remap_answers_2018, &
                  "If true, use the order of arithmetic and expressions that recover the "//&
                  "answers from the end of 2018.  Otherwise, use updated and more robust "//&
                  "forms of the same expressions.", default=default_2018_answers)
-  call get_param(param_file, mdl, "HOR_REGRID_2018_ANSWERS", CS%hor_regrid_answers_2018, &
+  ! Revise inconsistent default answer dates for remapping.
+  default_remap_ans_date = default_answer_date
+  if (remap_answers_2018 .and. (default_remap_ans_date >= 20190101)) default_remap_ans_date = 20181231
+  if (.not.remap_answers_2018 .and. (default_remap_ans_date < 20190101)) default_remap_ans_date = 20190101
+  call get_param(param_file, mdl, "REMAPPING_ANSWER_DATE", CS%remap_answer_date, &
+                 "The vintage of the expressions and order of arithmetic to use for remapping.  "//&
+                 "Values below 20190101 result in the use of older, less accurate expressions "//&
+                 "that were in use at the end of 2018.  Higher values result in the use of more "//&
+                 "robust and accurate forms of mathematically equivalent expressions.  "//&
+                 "If both REMAPPING_2018_ANSWERS and REMAPPING_ANSWER_DATE are specified, the "//&
+                 "latter takes precedence.", default=default_remap_ans_date)
+  call get_param(param_file, mdl, "HOR_REGRID_2018_ANSWERS", hor_regrid_answers_2018, &
                  "If true, use the order of arithmetic for horizontal regridding that recovers "//&
                  "the answers from the end of 2018.  Otherwise, use rotationally symmetric "//&
                  "forms of the same expressions.", default=default_2018_answers)
+  ! Revise inconsistent default answer dates for horizontal regridding.
+  default_hor_reg_ans_date = default_answer_date
+  if (hor_regrid_answers_2018 .and. (default_hor_reg_ans_date >= 20190101)) default_hor_reg_ans_date = 20181231
+  if (.not.hor_regrid_answers_2018 .and. (default_hor_reg_ans_date < 20190101)) default_hor_reg_ans_date = 20190101
+  call get_param(param_file, mdl, "HOR_REGRID_ANSWER_DATE", CS%hor_regrid_answer_date, &
+                 "The vintage of the order of arithmetic for horizontal regridding.  "//&
+                 "Dates before 20190101 give the same answers as the code did in late 2018, "//&
+                 "while later versions add parentheses for rotational symmetry.  "//&
+                 "If both HOR_REGRID_2018_ANSWERS and HOR_REGRID_ANSWER_DATE are specified, the "//&
+                 "latter takes precedence.", default=default_hor_reg_ans_date)
   call get_param(param_file, mdl, "REENTRANT_X", CS%reentrant_x, &
                  "If true, the domain is zonally reentrant.", default=.true.)
   call get_param(param_file, mdl, "TRIPOLAR_N", CS%tripolar_N, &
@@ -260,7 +299,7 @@ subroutine initialize_ALE_sponge_fixed(Iresttime, G, GV, param_file, CS, data_h,
 
 ! Call the constructor for remapping control structure
   call initialize_remapping(CS%remap_cs, remapScheme, boundary_extrapolation=bndExtrapolation, &
-                            answers_2018=CS%remap_answers_2018)
+                            answer_date=CS%remap_answer_date)
 
   call log_param(param_file, mdl, "!Total sponge columns at h points", total_sponge_cols, &
                  "The total number of columns where sponges are applied at h points.", like_default=.true.)
@@ -433,7 +472,16 @@ subroutine initialize_ALE_sponge_varying(Iresttime, G, GV, param_file, CS, Irest
   character(len=64)  :: remapScheme
   logical :: use_sponge
   logical :: bndExtrapolation = .true. ! If true, extrapolate boundaries
-  logical :: default_2018_answers
+  integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
+  logical :: default_2018_answers ! The default setting for the various 2018_ANSWERS flags.
+  logical :: remap_answers_2018   ! If true, use the order of arithmetic and expressions that
+                                  ! recover the remapping answers from 2018.  If false, use more
+                                  ! robust forms of the same remapping expressions.
+  integer :: default_remap_ans_date ! The default setting for remap_answer_date
+  logical :: hor_regrid_answers_2018 ! If true, use the order of arithmetic for horizontal regridding
+                                  ! that recovers the answers from the end of 2018.  Otherwise, use
+                                  ! rotationally symmetric forms of the same expressions.
+  integer :: default_hor_reg_ans_date ! The default setting for hor_regrid_answer_date
   integer :: i, j, col, total_sponge_cols, total_sponge_cols_u, total_sponge_cols_v
 
   if (associated(CS)) then
@@ -462,19 +510,43 @@ subroutine initialize_ALE_sponge_varying(Iresttime, G, GV, param_file, CS, Irest
                  "than PCM. E.g., if PPM is used for remapping, a "//&
                  "PPM reconstruction will also be used within boundary cells.", &
                  default=.false., do_not_log=.true.)
+  call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
+                 "This sets the default value for the various _ANSWER_DATE parameters.", &
+                 default=99991231)
   call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &
                  "This sets the default value for the various _2018_ANSWERS parameters.", &
-                 default=.false.)
-  call get_param(param_file, mdl, "REMAPPING_2018_ANSWERS", CS%remap_answers_2018, &
+                 default=(default_answer_date<20190101))
+  call get_param(param_file, mdl, "REMAPPING_2018_ANSWERS", remap_answers_2018, &
                  "If true, use the order of arithmetic and expressions that recover the "//&
                  "answers from the end of 2018.  Otherwise, use updated and more robust "//&
                  "forms of the same expressions.", default=default_2018_answers)
-  call get_param(param_file, mdl, "HOR_REGRID_2018_ANSWERS", CS%hor_regrid_answers_2018, &
+  ! Revise inconsistent default answer dates for remapping.
+  default_remap_ans_date = default_answer_date
+  if (remap_answers_2018 .and. (default_remap_ans_date >= 20190101)) default_remap_ans_date = 20181231
+  if (.not.remap_answers_2018 .and. (default_remap_ans_date < 20190101)) default_remap_ans_date = 20190101
+  call get_param(param_file, mdl, "REMAPPING_ANSWER_DATE", CS%remap_answer_date, &
+                 "The vintage of the expressions and order of arithmetic to use for remapping.  "//&
+                 "Values below 20190101 result in the use of older, less accurate expressions "//&
+                 "that were in use at the end of 2018.  Higher values result in the use of more "//&
+                 "robust and accurate forms of mathematically equivalent expressions.  "//&
+                 "If both REMAPPING_2018_ANSWERS and REMAPPING_ANSWER_DATE are specified, the "//&
+                 "latter takes precedence.", default=default_remap_ans_date)
+  call get_param(param_file, mdl, "HOR_REGRID_2018_ANSWERS", hor_regrid_answers_2018, &
                  "If true, use the order of arithmetic for horizontal regridding that recovers "//&
                  "the answers from the end of 2018 and retain a bug in the 3-dimensional mask "//&
                  "returned in certain cases.  Otherwise, use rotationally symmetric "//&
                  "forms of the same expressions and initialize the mask properly.", &
                  default=default_2018_answers)
+  ! Revise inconsistent default answer dates for horizontal regridding.
+  default_hor_reg_ans_date = default_answer_date
+  if (hor_regrid_answers_2018 .and. (default_hor_reg_ans_date >= 20190101)) default_hor_reg_ans_date = 20181231
+  if (.not.hor_regrid_answers_2018 .and. (default_hor_reg_ans_date < 20190101)) default_hor_reg_ans_date = 20190101
+  call get_param(param_file, mdl, "HOR_REGRID_ANSWER_DATE", CS%hor_regrid_answer_date, &
+                 "The vintage of the order of arithmetic for horizontal regridding.  "//&
+                 "Dates before 20190101 give the same answers as the code did in late 2018, "//&
+                 "while later versions add parentheses for rotational symmetry.  "//&
+                 "If both HOR_REGRID_2018_ANSWERS and HOR_REGRID_ANSWER_DATE are specified, the "//&
+                 "latter takes precedence.", default=default_hor_reg_ans_date)
   call get_param(param_file, mdl, "SPONGE_DATA_ONGRID", CS%spongeDataOngrid, &
                  "When defined, the incoming sponge data are "//&
                  "assumed to be on the model grid " , &
@@ -513,7 +585,7 @@ subroutine initialize_ALE_sponge_varying(Iresttime, G, GV, param_file, CS, Irest
 
 ! Call the constructor for remapping control structure
   call initialize_remapping(CS%remap_cs, remapScheme, boundary_extrapolation=bndExtrapolation, &
-                            answers_2018=CS%remap_answers_2018)
+                            answer_date=CS%remap_answer_date)
   call log_param(param_file, mdl, "!Total sponge columns at h points", total_sponge_cols, &
                  "The total number of columns where sponges are applied at h points.", like_default=.true.)
   if (CS%sponge_uv) then
@@ -597,15 +669,19 @@ subroutine init_ALE_sponge_diags(Time, G, diag, CS, US)
                                                  !! output.
   type(ALE_sponge_CS),     intent(inout) :: CS   !< ALE sponge control structure
   type(unit_scale_type),   intent(in)    :: US   !< A dimensional unit scaling type
+  ! Local Variables
+  integer :: m
 
   CS%diag => diag
 
-  CS%id_sp_tendency(1) = -1
-  CS%id_sp_tendency(1) = register_diag_field('ocean_model', 'sp_tendency_temp', diag%axesTL, Time, &
-       'Time tendency due to temperature restoring', 'degC s-1', conversion=US%s_to_T)
-  CS%id_sp_tendency(2) = -1
-  CS%id_sp_tendency(2) = register_diag_field('ocean_model', 'sp_tendency_salt', diag%axesTL, Time, &
-       'Time tendency due to salinity restoring', 'g kg-1 s-1', conversion=US%s_to_T)
+  do m=1,CS%fldno
+    CS%id_sp_tendency(m) = -1
+    CS%id_sp_tendency(m) = register_diag_field('ocean_model', &
+      'sp_tendency_' // CS%Ref_val(m)%name, diag%axesTL, Time, &
+      'Time tendency due to restoring ' // CS%Ref_val(m)%long_name, &
+      CS%Ref_val(m)%unit, conversion=US%s_to_T)
+  enddo
+
   CS%id_sp_u_tendency = -1
   CS%id_sp_u_tendency = register_diag_field('ocean_model', 'sp_tendency_u', diag%axesCuL, Time, &
        'Zonal acceleration due to sponges', 'm s-2', conversion=US%L_T2_to_m_s2)
@@ -617,7 +693,8 @@ end subroutine init_ALE_sponge_diags
 
 !> This subroutine stores the reference profile at h points for the variable
 !! whose address is given by f_ptr.
-subroutine set_up_ALE_sponge_field_fixed(sp_val, G, GV, f_ptr, CS)
+subroutine set_up_ALE_sponge_field_fixed(sp_val, G, GV, f_ptr, CS,  &
+                                           sp_name, sp_long_name, sp_unit, scale)
   type(ocean_grid_type),   intent(in) :: G  !< Grid structure
   type(verticalGrid_type), intent(in) :: GV !< ocean vertical grid structure
   type(ALE_sponge_CS),     pointer    :: CS !< ALE sponge control structure (in/out).
@@ -626,11 +703,27 @@ subroutine set_up_ALE_sponge_field_fixed(sp_val, G, GV, f_ptr, CS)
                                             !! arbitrary number of layers.
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                    target, intent(in) :: f_ptr !< Pointer to the field to be damped
+  character(len=*),        intent(in) :: sp_name  !< The name of the tracer field
+  character(len=*),        optional, &
+                           intent(in) :: sp_long_name !< The long name of the tracer field
+                                                      !! if not given, use the sp_name
+  character(len=*),        optional, &
+                           intent(in) :: sp_unit !< The unit of the tracer field
+                                                 !! if not given, use the none
+  real,          optional, intent(in) :: scale !< A factor by which to rescale the input data, including any
+                                               !! contributions due to dimensional rescaling.  The default is 1.
 
+  real :: scale_fac  ! A factor by which to scale sp_val before storing it.
   integer :: k, col
   character(len=256) :: mesg ! String for error messages
+  character(len=256) :: long_name ! The long name of the tracer field
+  character(len=256) :: unit ! The unit of the tracer field
 
   if (.not.associated(CS)) return
+
+  scale_fac = 1.0 ; if (present(scale)) scale_fac = scale
+  long_name = sp_name; if (present(sp_long_name)) long_name = sp_long_name
+  unit = 'none'; if (present(sp_unit)) unit = sp_unit
 
   CS%fldno = CS%fldno + 1
   if (CS%fldno > MAX_FIELDS_) then
@@ -642,10 +735,13 @@ subroutine set_up_ALE_sponge_field_fixed(sp_val, G, GV, f_ptr, CS)
 
   ! stores the reference profile
   CS%Ref_val(CS%fldno)%nz_data = CS%nz_data
+  CS%Ref_val(CS%fldno)%name = sp_name
+  CS%Ref_val(CS%fldno)%long_name = long_name
+  CS%Ref_val(CS%fldno)%unit = unit
   allocate(CS%Ref_val(CS%fldno)%p(CS%nz_data,CS%num_col), source=0.0)
   do col=1,CS%num_col
     do k=1,CS%nz_data
-      CS%Ref_val(CS%fldno)%p(k,col) = sp_val(CS%col_i(col),CS%col_j(col),k)
+      CS%Ref_val(CS%fldno)%p(k,col) = scale_fac*sp_val(CS%col_i(col),CS%col_j(col),k)
     enddo
   enddo
 
@@ -655,7 +751,8 @@ end subroutine set_up_ALE_sponge_field_fixed
 
 !> This subroutine stores the reference profile at h points for the variable
 !! whose address is given by filename and fieldname.
-subroutine set_up_ALE_sponge_field_varying(filename, fieldname, Time, G, GV, US, f_ptr, CS)
+subroutine set_up_ALE_sponge_field_varying(filename, fieldname, Time, G, GV, US, f_ptr, CS,  &
+                                             sp_name, sp_long_name, sp_unit, scale)
   character(len=*),        intent(in) :: filename !< The name of the file with the
                                                   !! time varying field data
   character(len=*),        intent(in) :: fieldname !< The name of the field in the file
@@ -667,12 +764,26 @@ subroutine set_up_ALE_sponge_field_varying(filename, fieldname, Time, G, GV, US,
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                    target, intent(in) :: f_ptr !< Pointer to the field to be damped (in).
   type(ALE_sponge_CS),     pointer    :: CS    !< Sponge control structure (in/out).
+  character(len=*),        intent(in) :: sp_name  !< The name of the tracer field
+  character(len=*),        optional,  &
+                           intent(in) :: sp_long_name !< The long name of the tracer field
+                                                      !! if not given, use the sp_name
+  character(len=*),        optional,  &
+                           intent(in) :: sp_unit !< The unit of the tracer field
+                                                 !! if not given, use 'none'
+  real,          optional, intent(in) :: scale !< A factor by which to rescale the input data, including any
+                                               !! contributions due to dimensional rescaling.  The default is 1.
 
   ! Local variables
   integer :: isd, ied, jsd, jed
   integer, dimension(4) :: fld_sz
   integer :: nz_data !< the number of vertical levels in this input field
   character(len=256) :: mesg ! String for error messages
+  character(len=256) :: long_name ! The long name of the tracer field
+  character(len=256) :: unit ! The unit of the tracer field
+  long_name = sp_name; if (present(sp_long_name)) long_name = sp_long_name
+  unit = 'none'; if (present(sp_unit)) unit = sp_unit
+
   ! Local variables for ALE remapping
 
   if (.not.associated(CS)) return
@@ -692,11 +803,15 @@ subroutine set_up_ALE_sponge_field_varying(filename, fieldname, Time, G, GV, US,
   else
     CS%Ref_val(CS%fldno)%id = init_external_field(filename, fieldname)
   endif
+  CS%Ref_val(CS%fldno)%name = sp_name
+  CS%Ref_val(CS%fldno)%long_name = long_name
+  CS%Ref_val(CS%fldno)%unit = unit
   fld_sz(1:4) = -1
   call get_external_field_info(CS%Ref_val(CS%fldno)%id, size=fld_sz)
   nz_data = fld_sz(3)
   CS%Ref_val(CS%fldno)%nz_data = nz_data !< individual sponge fields may reside on a different vertical grid
   CS%Ref_val(CS%fldno)%num_tlevs = fld_sz(4)
+  CS%Ref_val(CS%fldno)%scale = 1.0 ; if (present(scale)) CS%Ref_val(CS%fldno)%scale = scale
   ! initializes the target profile array for this field
   ! for all columns which will be masked
   allocate(CS%Ref_val(CS%fldno)%p(nz_data,CS%num_col), source=0.0)
@@ -707,7 +822,7 @@ end subroutine set_up_ALE_sponge_field_varying
 
 !> This subroutine stores the reference profile at u and v points for the variable
 !! whose address is given by u_ptr and v_ptr.
-subroutine set_up_ALE_sponge_vel_field_fixed(u_val, v_val, G, GV, u_ptr, v_ptr, CS)
+subroutine set_up_ALE_sponge_vel_field_fixed(u_val, v_val, G, GV, u_ptr, v_ptr, CS, scale)
   type(ocean_grid_type),   intent(in) :: G     !< Grid structure (in).
   type(verticalGrid_type), intent(in) :: GV    !< ocean vertical grid structure
   type(ALE_sponge_CS),     pointer    :: CS    !< Sponge structure (in/out).
@@ -721,23 +836,28 @@ subroutine set_up_ALE_sponge_vel_field_fixed(u_val, v_val, G, GV, u_ptr, v_ptr, 
                                                !! have fewer layers than the model itself, but not more.
   real, target, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in) :: u_ptr !< u-field to be damped [L T-1 ~> m s-1]
   real, target, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in) :: v_ptr !< v-field to be damped [L T-1 ~> m s-1]
+  real,          optional, intent(in) :: scale !< A factor by which to rescale the input data, including any
+                                               !! contributions due to dimensional rescaling.  The default is 1.
 
+  real :: scale_fac
   integer :: k, col
 
   if (.not.associated(CS)) return
+
+  scale_fac = 1.0 ; if (present(scale)) scale_fac = scale
 
   ! stores the reference profile
   allocate(CS%Ref_val_u%p(CS%nz_data,CS%num_col_u), source=0.0)
   do col=1,CS%num_col_u
     do k=1,CS%nz_data
-      CS%Ref_val_u%p(k,col) = u_val(CS%col_i_u(col),CS%col_j_u(col),k)
+      CS%Ref_val_u%p(k,col) = scale_fac*u_val(CS%col_i_u(col),CS%col_j_u(col),k)
     enddo
   enddo
   CS%var_u%p => u_ptr
   allocate(CS%Ref_val_v%p(CS%nz_data,CS%num_col_v), source=0.0)
   do col=1,CS%num_col_v
     do k=1,CS%nz_data
-      CS%Ref_val_v%p(k,col) = v_val(CS%col_i_v(col),CS%col_j_v(col),k)
+      CS%Ref_val_v%p(k,col) = scale_fac*v_val(CS%col_i_v(col),CS%col_j_v(col),k)
     enddo
   enddo
   CS%var_v%p => v_ptr
@@ -747,7 +867,7 @@ end subroutine set_up_ALE_sponge_vel_field_fixed
 !> This subroutine stores the reference profile at u and v points for the variable
 !! whose address is given by u_ptr and v_ptr.
 subroutine set_up_ALE_sponge_vel_field_varying(filename_u, fieldname_u, filename_v, fieldname_v, &
-                                               Time, G, GV, US, CS, u_ptr, v_ptr)
+                                               Time, G, GV, US, CS, u_ptr, v_ptr, scale)
   character(len=*), intent(in)    :: filename_u  !< File name for u field
   character(len=*), intent(in)    :: fieldname_u !< Name of u variable in file
   character(len=*), intent(in)    :: filename_v  !< File name for v field
@@ -759,6 +879,9 @@ subroutine set_up_ALE_sponge_vel_field_varying(filename_u, fieldname_u, filename
   type(ALE_sponge_CS),     pointer    :: CS      !< Sponge structure (in/out).
   real, target, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in) :: u_ptr !< u-field to be damped [L T-1 ~> m s-1]
   real, target, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in) :: v_ptr !< v-field to be damped [L T-1 ~> m s-1]
+  real,          optional, intent(in) :: scale   !< A factor by which to rescale the input data, including any
+                                                 !! contributions due to dimensional rescaling.  For varying
+                                                 !! velocities the default is the same using US%m_s_to_L_T.
 
   ! Local variables
   logical :: override
@@ -783,6 +906,7 @@ subroutine set_up_ALE_sponge_vel_field_varying(filename_u, fieldname_u, filename
   call get_external_field_info(CS%Ref_val_u%id, size=fld_sz)
   CS%Ref_val_u%nz_data = fld_sz(3)
   CS%Ref_val_u%num_tlevs = fld_sz(4)
+  CS%Ref_val_u%scale = US%m_s_to_L_T ; if (present(scale)) CS%Ref_val_u%scale = scale
 
   if (CS%spongeDataOngrid) then
     CS%Ref_val_v%id = init_external_field(filename_v, fieldname_v, domain=G%Domain%mpp_domain)
@@ -793,6 +917,7 @@ subroutine set_up_ALE_sponge_vel_field_varying(filename_u, fieldname_u, filename
   call get_external_field_info(CS%Ref_val_v%id, size=fld_sz)
   CS%Ref_val_v%nz_data = fld_sz(3)
   CS%Ref_val_v%num_tlevs = fld_sz(4)
+  CS%Ref_val_v%scale = US%m_s_to_L_T ; if (present(scale)) CS%Ref_val_v%scale = scale
 
   ! stores the reference profile
   allocate(CS%Ref_val_u%p(fld_sz(3),CS%num_col_u), source=0.0)
@@ -849,7 +974,7 @@ subroutine apply_ALE_sponge(h, dt, G, GV, US, CS, Time)
 
   Idt = 1.0/dt
 
-  if (.not.CS%remap_answers_2018) then
+  if (CS%remap_answer_date >= 20190101) then
     h_neglect = GV%H_subroundoff ; h_neglect_edge = GV%H_subroundoff
   elseif (GV%Boussinesq) then
     h_neglect = GV%m_to_H*1.0e-30 ; h_neglect_edge = GV%m_to_H*1.0e-10
@@ -860,10 +985,10 @@ subroutine apply_ALE_sponge(h, dt, G, GV, US, CS, Time)
   if (CS%time_varying_sponges) then
     do m=1,CS%fldno
       nz_data = CS%Ref_val(m)%nz_data
-      call horiz_interp_and_extrap_tracer(CS%Ref_val(m)%id, Time, 1.0, G, sp_val, mask_z, z_in, &
-                     z_edges_in,  missing_value, CS%reentrant_x, CS%tripolar_N, .false., &
+      call horiz_interp_and_extrap_tracer(CS%Ref_val(m)%id, Time, CS%Ref_val(m)%scale, G, sp_val, &
+                     mask_z, z_in, z_edges_in,  missing_value, CS%reentrant_x, CS%tripolar_N, .false., &
                      spongeOnGrid=CS%SpongeDataOngrid, m_to_Z=US%m_to_Z, &
-                     answers_2018=CS%hor_regrid_answers_2018)
+                     answer_date=CS%hor_regrid_answer_date)
       allocate( hsrc(nz_data) )
       allocate( tmpT1d(nz_data) )
       do c=1,CS%num_col
@@ -944,10 +1069,10 @@ subroutine apply_ALE_sponge(h, dt, G, GV, US, CS, Time)
     if (CS%time_varying_sponges) then
       nz_data = CS%Ref_val_u%nz_data
       ! Interpolate from the external horizontal grid and in time
-      call horiz_interp_and_extrap_tracer(CS%Ref_val_u%id, Time, US%m_s_to_L_T, G, sp_val, mask_z, z_in, &
-                                          z_edges_in, missing_value, CS%reentrant_x, CS%tripolar_N, .false., &
-                                          spongeOnGrid=CS%SpongeDataOngrid, m_to_Z=US%m_to_Z,&
-                                          answers_2018=CS%hor_regrid_answers_2018)
+      call horiz_interp_and_extrap_tracer(CS%Ref_val_u%id, Time, CS%Ref_val_u%scale, G, sp_val, &
+                          mask_z, z_in, z_edges_in, missing_value, CS%reentrant_x, CS%tripolar_N, .false., &
+                          spongeOnGrid=CS%SpongeDataOngrid, m_to_Z=US%m_to_Z,&
+                          answer_date=CS%hor_regrid_answer_date)
 
       ! Initialize mask_z halos to zero before pass_var, in case of no update
       mask_z(G%isc-1, G%jsc:G%jec, :) = 0.
@@ -993,10 +1118,10 @@ subroutine apply_ALE_sponge(h, dt, G, GV, US, CS, Time)
       deallocate(sp_val, mask_u, mask_z, hsrc)
       nz_data = CS%Ref_val_v%nz_data
       ! Interpolate from the external horizontal grid and in time
-      call horiz_interp_and_extrap_tracer(CS%Ref_val_v%id, Time, US%m_s_to_L_T, G, sp_val, mask_z, z_in, &
-                                          z_edges_in, missing_value, CS%reentrant_x, CS%tripolar_N, .false., &
-                                          spongeOnGrid=CS%SpongeDataOngrid, m_to_Z=US%m_to_Z,&
-                                          answers_2018=CS%hor_regrid_answers_2018)
+      call horiz_interp_and_extrap_tracer(CS%Ref_val_v%id, Time, CS%Ref_val_v%scale, G, sp_val, &
+                          mask_z, z_in, z_edges_in, missing_value, CS%reentrant_x, CS%tripolar_N, .false., &
+                          spongeOnGrid=CS%SpongeDataOngrid, m_to_Z=US%m_to_Z,&
+                          answer_date=CS%hor_regrid_answer_date)
       ! Initialize mask_z halos to zero before pass_var, in case of no update
       mask_z(G%isc:G%iec, G%jsc-1, :) = 0.
       mask_z(G%isc:G%iec, G%jec+1, :) = 0.
@@ -1203,7 +1328,8 @@ subroutine rotate_ALE_sponge(sponge_in, G_in, sponge, G, GV, turns, param_file)
       call rotate_array(sp_val_in, turns, sp_val)
 
       ! NOTE: This points sp_val with the unrotated field.  See note below.
-      call set_up_ALE_sponge_field(sp_val, G, GV, sp_ptr, sponge)
+      call set_up_ALE_sponge_field(sp_val, G, GV, sp_ptr, sponge, &
+             sponge_in%Ref_val(n)%name, sp_long_name=sponge_in%Ref_val(n)%long_name, sp_unit=sponge_in%Ref_val(n)%unit)
 
       deallocate(sp_val_in)
     else

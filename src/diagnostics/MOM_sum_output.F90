@@ -683,7 +683,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
   if (CS%use_temperature) then
     Temp_int(:,:) = 0.0 ; Salt_int(:,:) = 0.0
     do k=1,nz ; do j=js,je ; do i=is,ie
-      Salt_int(i,j) = Salt_int(i,j) + tv%S(i,j,k) * &
+      Salt_int(i,j) = Salt_int(i,j) + US%S_to_ppt*tv%S(i,j,k) * &
                       (h(i,j,k)*(HL2_to_kg * areaTm(i,j)))
       Temp_int(i,j) = Temp_int(i,j) + (US%Q_to_J_kg*tv%C_p * tv%T(i,j,k)) * &
                       (h(i,j,k)*(HL2_to_kg * areaTm(i,j)))
@@ -756,9 +756,11 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
   mass_chg = EFP_to_real(mass_chg_EFP)
 
   if (CS%use_temperature) then
-    salin = Salt / mass_tot ; salin_anom = Salt_anom / mass_tot
+    salin = Salt / mass_tot
+    salin_anom = Salt_anom / mass_tot
    ! salin_chg = Salt_chg / mass_tot
-    temp = heat / (mass_tot*US%Q_to_J_kg*tv%C_p) ; temp_anom = Heat_anom / (mass_tot*US%Q_to_J_kg*tv%C_p)
+    temp = heat / (mass_tot*US%Q_to_J_kg*US%degC_to_C*tv%C_p)
+    temp_anom = Heat_anom / (mass_tot*US%Q_to_J_kg*US%degC_to_C*tv%C_p)
   endif
   En_mass = toten / mass_tot
 
@@ -993,20 +995,27 @@ subroutine accumulate_net_input(fluxes, sfc_state, tv, dt, G, US, CS)
 !    enddo ; enddo ; endif
 
     ! smg: old code
-    if (associated(tv%TempxPmE)) then
+    if (associated(fluxes%heat_content_evap)) then
       do j=js,je ; do i=is,ie
-        heat_in(i,j) = heat_in(i,j) + (fluxes%C_p * QRZL2_to_J*G%areaT(i,j)) * tv%TempxPmE(i,j)
+        heat_in(i,j) = heat_in(i,j) + dt * QRZL2_to_J * G%areaT(i,j) * &
+                       (fluxes%heat_content_evap(i,j) + fluxes%heat_content_lprec(i,j) + &
+                        fluxes%heat_content_cond(i,j) + fluxes%heat_content_fprec(i,j) + &
+                        fluxes%heat_content_lrunoff(i,j) + fluxes%heat_content_frunoff(i,j))
+      enddo ; enddo
+    elseif (associated(tv%TempxPmE)) then
+      do j=js,je ; do i=is,ie
+        heat_in(i,j) = heat_in(i,j) + (tv%C_p * QRZL2_to_J*G%areaT(i,j)) * tv%TempxPmE(i,j)
       enddo ; enddo
     elseif (associated(fluxes%evap)) then
       do j=js,je ; do i=is,ie
-        heat_in(i,j) = heat_in(i,j) + (US%Q_to_J_kg*fluxes%C_p * sfc_state%SST(i,j)) * FW_in(i,j)
+        heat_in(i,j) = heat_in(i,j) + (US%Q_to_J_kg*tv%C_p * sfc_state%SST(i,j)) * FW_in(i,j)
       enddo ; enddo
     endif
 
     ! The following heat sources may or may not be used.
     if (associated(tv%internal_heat)) then
       do j=js,je ; do i=is,ie
-        heat_in(i,j) = heat_in(i,j) + (fluxes%C_p * QRZL2_to_J*G%areaT(i,j)) * tv%internal_heat(i,j)
+        heat_in(i,j) = heat_in(i,j) + (tv%C_p * QRZL2_to_J*G%areaT(i,j)) * tv%internal_heat(i,j)
       enddo ; enddo
     endif
     if (associated(tv%frazil)) then ; do j=js,je ; do i=is,ie
@@ -1357,7 +1366,7 @@ subroutine get_depth_list_checksums(G, US, depth_chksum, area_chksum)
 
   ! Depth checksum
   do j=G%jsc,G%jec ; do i=G%isc,G%iec
-    field(i,j) = G%bathyT(i,j) + G%Z_ref
+    field(i,j) = US%Z_to_m*(G%bathyT(i,j) + G%Z_ref)
   enddo ; enddo
   write(depth_chksum, '(Z16)') field_chksum(field(:,:))
 

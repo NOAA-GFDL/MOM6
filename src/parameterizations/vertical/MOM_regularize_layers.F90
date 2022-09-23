@@ -13,7 +13,7 @@ use MOM_grid, only : ocean_grid_type
 use MOM_unit_scaling,  only : unit_scale_type
 use MOM_variables, only : thermo_var_ptrs
 use MOM_verticalGrid, only : verticalGrid_type
-use MOM_EOS, only : calculate_density, calculate_density_derivs, EOS_domain
+use MOM_EOS, only : calculate_density, EOS_domain
 
 implicit none ; private
 
@@ -50,9 +50,10 @@ type, public :: regularize_layers_CS ; private
   type(time_type), pointer :: Time => NULL() !< A pointer to the ocean model's clock.
   type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
                              !! regulate the timing of diagnostic output.
-  logical :: answers_2018    !< If true, use the order of arithmetic and expressions that recover the
-                             !! answers from the end of 2018.  Otherwise, use updated and more robust
-                             !! forms of the same expressions.
+  integer :: answer_date     !< The vintage of the order of arithmetic and expressions in this module's
+                             !! calculations.  Values below 20190101 recover the answers from the
+                             !! end of 2018, while higher values use updated and more robust forms
+                             !! of the same expressions.
   logical :: debug           !< If true, do more thorough checks for debugging purposes.
 
   integer :: id_def_rat = -1 !< A diagnostic ID
@@ -133,12 +134,12 @@ subroutine regularize_surface(h, tv, dt, ea, eb, G, GV, US, CS)
     e_filt, e_2d  ! The interface depths [H ~> m or kg m-2], positive upward.
   real, dimension(SZI_(G),SZK_(GV)) :: &
     h_2d, &     !   A 2-d version of h [H ~> m or kg m-2].
-    T_2d, &     !   A 2-d version of tv%T [degC].
-    S_2d, &     !   A 2-d version of tv%S [ppt].
+    T_2d, &     !   A 2-d version of tv%T [C ~> degC].
+    S_2d, &     !   A 2-d version of tv%S [S ~> ppt].
     Rcv, &      !   A 2-d version of the coordinate density [R ~> kg m-3].
     h_2d_init, &  ! The initial value of h_2d [H ~> m or kg m-2].
-    T_2d_init, &  ! THe initial value of T_2d [degC].
-    S_2d_init, &  ! The initial value of S_2d [ppt].
+    T_2d_init, &  ! THe initial value of T_2d [C ~> degC].
+    S_2d_init, &  ! The initial value of S_2d [S ~> ppt].
     d_eb, &     !   The downward increase across a layer in the entrainment from
                 ! below [H ~> m or kg m-2].  The sign convention is that positive values of
                 ! d_eb correspond to a gain in mass by a layer by upward motion.
@@ -164,7 +165,9 @@ subroutine regularize_surface(h, tv, dt, ea, eb, G, GV, US, CS)
   real :: h_neglect ! A thickness that is so small it is usually lost
                     ! in roundoff and can be neglected [H ~> m or kg m-2].
   real, dimension(SZK_(GV)+1) :: &
-    int_flux, int_Tflux, int_Sflux, int_Rflux
+    int_flux, &     ! Mass flux across the interfaces [H ~> m or kg m-2]
+    int_Tflux, &    ! Temperature flux across the interfaces [C H ~> degC m or degC kg m-2]
+    int_Sflux       ! Salinity flux across the interfaces [S H ~> ppt m or ppt kg m-2]
   real :: h_add
   real :: h_det_tot
   real :: max_def_rat
@@ -227,8 +230,6 @@ subroutine regularize_surface(h, tv, dt, ea, eb, G, GV, US, CS)
   !$OMP                                     e,I_dtol,h,tv,debug,h_neglect,p_ref_cv,ea, &
   !$OMP                                     eb,nkml,EOSdom)
   do j=js,je ; if (do_j(j)) then
-
-!  call calculate_density_derivs(T(:,1), S(:,1), p_ref_cv, dRcv_dT, dRcv_dS, tv%eqn_of_state, EOSdom)
 
     do k=1,nz ; do i=is,ie ; d_ea(i,k) = 0.0 ; d_eb(i,k) = 0.0 ; enddo ; enddo
     kmax_d_ea = 0
@@ -303,7 +304,7 @@ subroutine regularize_surface(h, tv, dt, ea, eb, G, GV, US, CS)
             else
               h_add = e_2d(i,nkmb+1) - e_filt(i,nkmb+1)
               h_2d(i,k) = h_2d(i,k) - h_add
-              if (CS%answers_2018) then
+              if (CS%answer_date < 20190101) then
                 e_2d(i,nkmb+1) = e_2d(i,nkmb+1) - h_add
               else
                 e_2d(i,nkmb+1) = e_filt(i,nkmb+1)
@@ -468,7 +469,7 @@ subroutine regularize_surface(h, tv, dt, ea, eb, G, GV, US, CS)
       k1 = 1 ; k2 = 1
       int_top = 0.0
       do k=1,nkmb+1
-        int_flux(k) = 0.0 ; int_Rflux(k) = 0.0
+        int_flux(k) = 0.0
         int_Tflux(k) = 0.0 ; int_Sflux(k) = 0.0
       enddo
       do k=1,2*nkmb
@@ -709,9 +710,13 @@ subroutine regularize_layers_init(Time, G, GV, param_file, diag, CS)
                                                  !! diagnostic output.
   type(regularize_layers_CS), intent(inout) :: CS !< Regularize layer control struct
 
-#include "version_variable.h"
+# include "version_variable.h"
   character(len=40)  :: mdl = "MOM_regularize_layers"  ! This module's name.
-  logical :: default_2018_answers
+  integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags
+  logical :: default_2018_answers ! The default setting for the various 2018_ANSWERS flags
+  logical :: answers_2018  ! If true, use the order of arithmetic and expressions that recover the
+                           ! answers from the end of 2018.  Otherwise, use updated and more robust
+                           ! forms of the same expressions.
   logical :: just_read
   integer :: isd, ied, jsd, jed
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
@@ -741,13 +746,26 @@ subroutine regularize_layers_init(Time, G, GV, param_file, diag, CS)
                  "densities during detrainment when regularizing the near-surface layers.  The "//&
                  "default of 0.6 gives 20% overlaps in density", &
                  units="nondim", default=0.6, do_not_log=just_read)
+    call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
+                 "This sets the default value for the various _ANSWER_DATE parameters.", &
+                 default=99991231, do_not_log=just_read)
     call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &
                  "This sets the default value for the various _2018_ANSWERS parameters.", &
-                 default=.false., do_not_log=just_read)
-    call get_param(param_file, mdl, "REGULARIZE_LAYERS_2018_ANSWERS", CS%answers_2018, &
+                 default=(default_answer_date<20190101), do_not_log=just_read)
+    call get_param(param_file, mdl, "REGULARIZE_LAYERS_2018_ANSWERS", answers_2018, &
                  "If true, use the order of arithmetic and expressions that recover the answers "//&
                  "from the end of 2018.  Otherwise, use updated and more robust forms of the "//&
                  "same expressions.", default=default_2018_answers, do_not_log=just_read)
+    ! Revise inconsistent default answer dates.
+    if (answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
+    if (.not.answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
+    call get_param(param_file, mdl, "REGULARIZE_LAYERS_ANSWER_DATE", CS%answer_date, &
+                 "The vintage of the order of arithmetic and expressions in the regularize "//&
+                 "layers calculations.  Values below 20190101 recover the answers from the "//&
+                 "end of 2018, while higher values use updated and more robust forms of the "//&
+                 "same expressions.  If both REGULARIZE_LAYERS_2018_ANSWERS and "//&
+                 "REGULARIZE_LAYERS_ANSWER_DATE are specified, the latter takes precedence.", &
+                 default=default_answer_date)
   endif
 
   call get_param(param_file, mdl, "HMIX_MIN", CS%Hmix_min, &

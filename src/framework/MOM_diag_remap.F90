@@ -115,21 +115,24 @@ type :: diag_remap_ctrl
                                            !! variables [H ~> m or kg m-2]
   integer :: interface_axes_id = 0 !< Vertical axes id for remapping at interfaces
   integer :: layer_axes_id = 0 !< Vertical axes id for remapping on layers
-  logical :: answers_2018      !< If true, use the order of arithmetic and expressions for remapping
-                               !! that recover the answers from the end of 2018. Otherwise, use
-                               !! updated more robust forms of the same expressions.
+  integer :: answer_date      !< The vintage of the order of arithmetic and expressions
+                              !! to use for remapping.  Values below 20190101 recover
+                              !! the answers from 2018, while higher values use more
+                              !! robust forms of the same remapping expressions.
+
 end type diag_remap_ctrl
 
 contains
 
 !> Initialize a diagnostic remapping type with the given vertical coordinate.
-subroutine diag_remap_init(remap_cs, coord_tuple, answers_2018)
+subroutine diag_remap_init(remap_cs, coord_tuple, answer_date)
   type(diag_remap_ctrl), intent(inout) :: remap_cs !< Diag remapping control structure
   character(len=*),      intent(in)    :: coord_tuple !< A string in form of
                                                       !! MODULE_SUFFIX PARAMETER_SUFFIX COORDINATE_NAME
-  logical,               intent(in)    :: answers_2018 !< If true, use the order of arithmetic and expressions
-                                                      !! for remapping that recover the answers from the end of 2018.
-                                                      !! Otherwise, use more robust forms of the same expressions.
+  integer,               intent(in)    :: answer_date !< The vintage of the order of arithmetic and expressions
+                                                      !! to use for remapping.  Values below 20190101 recover
+                                                      !! the answers from 2018, while higher values use more
+                                                      !! robust forms of the same remapping expressions.
 
   remap_cs%diag_module_suffix = trim(extractWord(coord_tuple, 1))
   remap_cs%diag_coord_name = trim(extractWord(coord_tuple, 2))
@@ -138,7 +141,7 @@ subroutine diag_remap_init(remap_cs, coord_tuple, answers_2018)
   remap_cs%configured = .false.
   remap_cs%initialized = .false.
   remap_cs%used = .false.
-  remap_cs%answers_2018 = answers_2018
+  remap_cs%answer_date = answer_date
   remap_cs%nz = 0
 
 end subroutine diag_remap_init
@@ -217,7 +220,7 @@ subroutine diag_remap_configure_axes(remap_cs, GV, US, param_file)
   allocate(interfaces(remap_cs%nz+1))
   allocate(layers(remap_cs%nz))
 
-  interfaces(:) = getCoordinateInterfaces(remap_cs%regrid_cs)
+  interfaces(:) = getCoordinateInterfaces(remap_cs%regrid_cs, undo_scaling=.true.)
   layers(:) = 0.5 * ( interfaces(1:remap_cs%nz) + interfaces(2:remap_cs%nz+1) )
 
   remap_cs%interface_axes_id = MOM_diag_axis_init(lowercase(trim(remap_cs%diag_coord_name))//'_i', &
@@ -273,8 +276,8 @@ subroutine diag_remap_update(remap_cs, G, GV, US, h, T, S, eqn_of_state, h_targe
   type(verticalGrid_type), intent(in) :: GV !< ocean vertical grid structure
   type(unit_scale_type),   intent(in) :: US !< A dimensional unit scaling type
   real, dimension(:,:,:),  intent(in) :: h  !< New thickness [H ~> m or kg m-2]
-  real, dimension(:,:,:),  intent(in) :: T  !< New temperatures [degC]
-  real, dimension(:,:,:),  intent(in) :: S  !< New salinities [ppt]
+  real, dimension(:,:,:),  intent(in) :: T  !< New temperatures [C ~> degC]
+  real, dimension(:,:,:),  intent(in) :: S  !< New salinities [S ~> ppt]
   type(EOS_type),          intent(in) :: eqn_of_state !< A pointer to the equation of state
   real, dimension(:,:,:),  intent(inout) :: h_target  !< The new diagnostic thicknesses [H ~> m or kg m-2]
 
@@ -289,7 +292,7 @@ subroutine diag_remap_update(remap_cs, G, GV, US, h, T, S, eqn_of_state, h_targe
     return
   endif
 
-  if (.not.remap_cs%answers_2018) then
+  if (remap_cs%answer_date >= 20190101) then
     h_neglect = GV%H_subroundoff ; h_neglect_edge = GV%H_subroundoff
   elseif (GV%Boussinesq) then
     h_neglect = GV%m_to_H*1.0e-30 ; h_neglect_edge = GV%m_to_H*1.0e-10
@@ -301,7 +304,7 @@ subroutine diag_remap_update(remap_cs, G, GV, US, h, T, S, eqn_of_state, h_targe
   if (.not. remap_cs%initialized) then
     ! Initialize remapping and regridding on the first call
     call initialize_remapping(remap_cs%remap_cs, 'PPM_IH4', boundary_extrapolation=.false., &
-                              answers_2018=remap_cs%answers_2018)
+                              answer_date=remap_cs%answer_date)
     remap_cs%initialized = .true.
   endif
 
@@ -367,7 +370,7 @@ subroutine diag_remap_do_remap(remap_cs, G, GV, h, staggered_in_x, staggered_in_
   call assert(size(field, 3) == size(h, 3), &
               'diag_remap_do_remap: Remap field and thickness z-axes do not match.')
 
-  if (.not.remap_cs%answers_2018) then
+  if (remap_cs%answer_date >= 20190101) then
     h_neglect = GV%H_subroundoff ; h_neglect_edge = GV%H_subroundoff
   elseif (GV%Boussinesq) then
     h_neglect = GV%m_to_H*1.0e-30 ; h_neglect_edge = GV%m_to_H*1.0e-10

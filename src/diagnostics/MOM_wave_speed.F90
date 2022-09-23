@@ -11,7 +11,7 @@ use MOM_remapping, only : remapping_CS, initialize_remapping, remapping_core_h
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : thermo_var_ptrs
 use MOM_verticalGrid, only : verticalGrid_type
-use MOM_EOS, only : calculate_density, calculate_density_derivs
+use MOM_EOS, only : calculate_density_derivs
 
 implicit none ; private
 
@@ -46,9 +46,11 @@ type, public :: wave_speed_CS ; private
                                        !! speeds [nondim]
   type(remapping_CS) :: remapping_CS   !< Used for vertical remapping when calculating equivalent barotropic
                                        !! mode structure.
-  logical :: remap_answers_2018 = .true.  !< If true, use the order of arithmetic and expressions that
-                                       !! recover the remapping answers from 2018.  If false, use more
-                                       !! robust forms of the same remapping expressions.
+  integer :: remap_answer_date = 20181231 !< The vintage of the order of arithmetic and expressions to use
+                                       !! for remapping.  Values below 20190101 recover the remapping
+                                       !! answers from 2018, while higher values use more robust
+                                       !! forms of the same remapping expressions.
+                      !### Change to 99991231?
   type(diag_ctrl), pointer :: diag     !< Diagnostics control structure
 end type wave_speed_CS
 
@@ -80,11 +82,11 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, full_halos, use_ebt_mode, mono_
 
   ! Local variables
   real, dimension(SZK_(GV)+1) :: &
-    dRho_dT, &    ! Partial derivative of density with temperature [R degC-1 ~> kg m-3 degC-1]
-    dRho_dS, &    ! Partial derivative of density with salinity [R ppt-1 ~> kg m-3 ppt-1]
+    dRho_dT, &    ! Partial derivative of density with temperature [R C-1 ~> kg m-3 degC-1]
+    dRho_dS, &    ! Partial derivative of density with salinity [R S-1 ~> kg m-3 ppt-1]
     pres, &       ! Interface pressure [R L2 T-2 ~> Pa]
-    T_int, &      ! Temperature interpolated to interfaces [degC]
-    S_int, &      ! Salinity interpolated to interfaces [ppt]
+    T_int, &      ! Temperature interpolated to interfaces [C ~> degC]
+    S_int, &      ! Salinity interpolated to interfaces [S ~> ppt]
     H_top, &      ! The distance of each filtered interface from the ocean surface [Z ~> m]
     H_bot, &      ! The distance of each filtered interface from the bottom [Z ~> m]
     gprime        ! The reduced gravity across each interface [L2 Z-1 T-2 ~> m s-2].
@@ -93,14 +95,14 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, full_halos, use_ebt_mode, mono_
                   ! the thickness of the layer below (Igl) or above (Igu) it, in [T2 L-2 ~> s2 m-2].
   real, dimension(SZK_(GV),SZI_(G)) :: &
     Hf, &         ! Layer thicknesses after very thin layers are combined [Z ~> m]
-    Tf, &         ! Layer temperatures after very thin layers are combined [degC]
-    Sf, &         ! Layer salinities after very thin layers are combined [ppt]
+    Tf, &         ! Layer temperatures after very thin layers are combined [C ~> degC]
+    Sf, &         ! Layer salinities after very thin layers are combined [S ~> ppt]
     Rf            ! Layer densities after very thin layers are combined [R ~> kg m-3]
   real, dimension(SZK_(GV)) :: &
-    Hc, &         ! A column of layer thicknesses after convective istabilities are removed [Z ~> m]
-    Tc, &         ! A column of layer temperatures after convective istabilities are removed [degC]
-    Sc, &         ! A column of layer salinites after convective istabilities are removed [ppt]
-    Rc, &         ! A column of layer densities after convective istabilities are removed [R ~> kg m-3]
+    Hc, &         ! A column of layer thicknesses after convective instabilities are removed [Z ~> m]
+    Tc, &         ! A column of layer temperatures after convective instabilities are removed [C ~> degC]
+    Sc, &         ! A column of layer salinities after convective instabilities are removed [S ~> ppt]
+    Rc, &         ! A column of layer densities after convective instabilities are removed [R ~> kg m-3]
     Hc_H          ! Hc(:) rescaled from Z to thickness units [H ~> m or kg m-2]
   real :: I_Htot  ! The inverse of the total filtered thicknesses [Z ~> m]
   real :: det, ddet
@@ -112,8 +114,8 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, full_halos, use_ebt_mode, mono_
   real, dimension(SZI_(G)) :: &
     htot, hmin, &  ! Thicknesses [Z ~> m]
     H_here, &      ! A thickness [Z ~> m]
-    HxT_here, &    ! A layer integrated temperature [degC Z ~> degC m]
-    HxS_here, &    ! A layer integrated salinity [ppt Z ~> ppt m]
+    HxT_here, &    ! A layer integrated temperature [C Z ~> degC m]
+    HxS_here, &    ! A layer integrated salinity [S Z ~> ppt m]
     HxR_here       ! A layer integrated density [R Z ~> kg m-2]
   real :: speed2_tot ! overestimate of the mode-1 speed squared [L2 T-2 ~> m2 s-2]
   real :: cg1_min2 ! A floor in the squared first mode speed below which 0 is returned [L2 T-2 ~> m2 s-2]
@@ -203,7 +205,7 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, full_halos, use_ebt_mode, mono_
 !$OMP                                  better_est,cg1_min2,tol_merge,tol_solve,c2_scale) &
 !$OMP                          private(htot,hmin,kf,H_here,HxT_here,HxS_here,HxR_here, &
 !$OMP                                  Hf,Tf,Sf,Rf,pres,T_int,S_int,drho_dT,drho_dS,   &
-!$OMP                                  drxh_sum,kc,Hc,Hc_H,tC,sc,I_Hnew,gprime,&
+!$OMP                                  drxh_sum,kc,Hc,Hc_H,Tc,Sc,I_Hnew,gprime,&
 !$OMP                                  Rc,speed2_tot,Igl,Igu,lam0,lam,lam_it,dlam, &
 !$OMP                                  mode_struct,sum_hc,N2min,gp,hw,                 &
 !$OMP                                  ms_min,ms_max,ms_sq,H_top,H_bot,I_Htot,merge,   &
@@ -558,7 +560,7 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, full_halos, use_ebt_mode, mono_
             do k = 1,kc
               Hc_H(k) = GV%Z_to_H * Hc(k)
             enddo
-            if (CS%remap_answers_2018) then
+            if (CS%remap_answer_date < 20190101) then
               call remapping_core_h(CS%remapping_CS, kc, Hc_H(:), mode_struct, &
                                     nz, h(i,j,:), modal_structure(i,j,:), &
                                     1.0e-30*GV%m_to_H, 1.0e-10*GV%m_to_H)
@@ -581,7 +583,7 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, full_halos, use_ebt_mode, mono_
 
 end subroutine wave_speed
 
-!> Solve a non-symmetric tridiagonal problem with the sum of the upper and lower diagnonals minus a
+!> Solve a non-symmetric tridiagonal problem with the sum of the upper and lower diagonals minus a
 !! scalar contribution as the leading diagonal.
 !! This uses the Thomas algorithm rather than the Hallberg algorithm since the matrix is not symmetric.
 subroutine tdma6(n, a, c, lam, y)
@@ -646,26 +648,26 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, full_halos)
 
   ! Local variables
   real, dimension(SZK_(GV)+1) :: &
-    dRho_dT, &    ! Partial derivative of density with temperature [R degC-1 ~> kg m-3 degC-1]
-    dRho_dS, &    ! Partial derivative of density with salinity [R ppt-1 ~> kg m-3 ppt-1]
+    dRho_dT, &    ! Partial derivative of density with temperature [R C-1 ~> kg m-3 degC-1]
+    dRho_dS, &    ! Partial derivative of density with salinity [R S-1 ~> kg m-3 ppt-1]
     pres, &       ! Interface pressure [R L2 T-2 ~> Pa]
-    T_int, &      ! Temperature interpolated to interfaces [degC]
-    S_int, &      ! Salinity interpolated to interfaces [ppt]
+    T_int, &      ! Temperature interpolated to interfaces [C ~> degC]
+    S_int, &      ! Salinity interpolated to interfaces [S ~> ppt]
     H_top, &      ! The distance of each filtered interface from the ocean surface [Z ~> m]
     H_bot, &      ! The distance of each filtered interface from the bottom [Z ~> m]
     gprime        ! The reduced gravity across each interface [L2 Z-1 T-2 ~> m s-2].
   real, dimension(SZK_(GV),SZI_(G)) :: &
     Hf, &         ! Layer thicknesses after very thin layers are combined [Z ~> m]
-    Tf, &         ! Layer temperatures after very thin layers are combined [degC]
-    Sf, &         ! Layer salinities after very thin layers are combined [ppt]
+    Tf, &         ! Layer temperatures after very thin layers are combined [C ~> degC]
+    Sf, &         ! Layer salinities after very thin layers are combined [S ~> ppt]
     Rf            ! Layer densities after very thin layers are combined [R ~> kg m-3]
   real, dimension(SZK_(GV)) :: &
     Igl, Igu, &   ! The inverse of the reduced gravity across an interface times
                   ! the thickness of the layer below (Igl) or above (Igu) it, in [T2 L-2 ~> s2 m-2].
-    Hc, &         ! A column of layer thicknesses after convective istabilities are removed [Z ~> m]
-    Tc, &         ! A column of layer temperatures after convective istabilities are removed [degC]
-    Sc, &         ! A column of layer salinites after convective istabilities are removed [ppt]
-    Rc            ! A column of layer densities after convective istabilities are removed [R ~> kg m-3]
+    Hc, &         ! A column of layer thicknesses after convective instabilities are removed [Z ~> m]
+    Tc, &         ! A column of layer temperatures after convective instabilities are removed [C ~> degC]
+    Sc, &         ! A column of layer salinities after convective instabilities are removed [S ~> ppt]
+    Rc            ! A column of layer densities after convective instabilities are removed [R ~> kg m-3]
   real :: I_Htot  ! The inverse of the total filtered thicknesses [Z ~> m]
   real :: c1_thresh  ! if c1 is below this value, don't bother calculating
                      ! cn values for higher modes [L T-1 ~> m s-1]
@@ -692,8 +694,8 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, full_halos)
   real, dimension(SZI_(G)) :: &
     htot, hmin, &  ! Thicknesses [Z ~> m]
     H_here, &      ! A thickness [Z ~> m]
-    HxT_here, &    ! A layer integrated temperature [degC Z ~> degC m]
-    HxS_here, &    ! A layer integrated salinity [ppt Z ~> ppt m]
+    HxT_here, &    ! A layer integrated temperature [C Z ~> degC m]
+    HxS_here, &    ! A layer integrated salinity [S Z ~> ppt m]
     HxR_here       ! A layer integrated density [R Z ~> kg m-2]
   real :: speed2_tot ! overestimate of the mode-1 speed squared [L2 T-2 ~> m2 s-2]
   real :: speed2_min ! minimum mode speed (squared) to consider in root searching [L2 T-2 ~> m2 s-2]
@@ -702,7 +704,6 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, full_halos)
                      ! A factor used in setting speed2_min [nondim]
   real :: I_Hnew   ! The inverse of a new layer thickness [Z-1 ~> m-1]
   real :: drxh_sum ! The sum of density differences across interfaces times thicknesses [R Z ~> kg m-2]
-  real, pointer, dimension(:,:,:) :: T => NULL(), S => NULL()
   real :: g_Rho0   ! G_Earth/Rho0 [L2 T-2 Z-1 R-1 ~> m4 s-2 kg-1].
   real :: tol_Hfrac  ! Layers that together are smaller than this fraction of
                      ! the total water column can be merged for efficiency.
@@ -735,7 +736,6 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, full_halos)
     is = G%isd ; ie = G%ied ; js = G%jsd ; je = G%jed
   endif ; endif
 
-  S => tv%S ; T => tv%T
   g_Rho0 = GV%g_Earth / GV%Rho0
   ! Simplifying the following could change answers at roundoff.
   Z_to_pres = GV%Z_to_H * (GV%H_to_RZ * GV%g_Earth)
@@ -757,7 +757,7 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, full_halos)
   cn(:,:,:) = 0.0
 
   min_h_frac = tol_Hfrac / real(nz)
-  !$OMP parallel do default(private) shared(is,ie,js,je,nz,h,G,GV,US,min_h_frac,use_EOS,T,S, &
+  !$OMP parallel do default(private) shared(is,ie,js,je,nz,h,G,GV,US,min_h_frac,use_EOS, &
   !$OMP                                     Z_to_pres,tv,cn,g_Rho0,nmodes,cg1_min2,better_est, &
   !$OMP                                     c1_thresh,tol_solve,tol_merge,c2_scale)
   do j=js,je
@@ -781,12 +781,12 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, full_halos)
 
           ! Start a new layer
           H_here(i) = h(i,j,k)*GV%H_to_Z
-          HxT_here(i) = (h(i,j,k)*GV%H_to_Z)*T(i,j,k)
-          HxS_here(i) = (h(i,j,k)*GV%H_to_Z)*S(i,j,k)
+          HxT_here(i) = (h(i,j,k)*GV%H_to_Z)*tv%T(i,j,k)
+          HxS_here(i) = (h(i,j,k)*GV%H_to_Z)*tv%S(i,j,k)
         else
           H_here(i) = H_here(i) + h(i,j,k)*GV%H_to_Z
-          HxT_here(i) = HxT_here(i) + (h(i,j,k)*GV%H_to_Z)*T(i,j,k)
-          HxS_here(i) = HxS_here(i) + (h(i,j,k)*GV%H_to_Z)*S(i,j,k)
+          HxT_here(i) = HxT_here(i) + (h(i,j,k)*GV%H_to_Z)*tv%T(i,j,k)
+          HxS_here(i) = HxS_here(i) + (h(i,j,k)*GV%H_to_Z)*tv%S(i,j,k)
         endif
       enddo ; enddo
       do i=is,ie ; if (H_here(i) > 0.0) then
@@ -1170,7 +1170,7 @@ end subroutine tridiag_det
 
 !> Initialize control structure for MOM_wave_speed
 subroutine wave_speed_init(CS, use_ebt_mode, mono_N2_column_fraction, mono_N2_depth, remap_answers_2018, &
-                           better_speed_est, min_speed, wave_speed_tol)
+                           remap_answer_date, better_speed_est, min_speed, wave_speed_tol)
   type(wave_speed_CS), intent(inout) :: CS  !< Wave speed control struct
   logical, optional, intent(in) :: use_ebt_mode  !< If true, use the equivalent
                                      !! barotropic mode instead of the first baroclinic mode.
@@ -1183,6 +1183,10 @@ subroutine wave_speed_init(CS, use_ebt_mode, mono_N2_column_fraction, mono_N2_de
   logical, optional, intent(in) :: remap_answers_2018 !< If true, use the order of arithmetic and expressions
                                      !! that recover the remapping answers from 2018.  Otherwise
                                      !! use more robust but mathematically equivalent expressions.
+  integer, optional, intent(in) :: remap_answer_date  !< The vintage of the order of arithmetic and expressions
+                                      !! to use for remapping.  Values below 20190101 recover the remapping
+                                      !! answers from 2018, while higher values use more robust
+                                      !! forms of the same remapping expressions.
   logical, optional, intent(in) :: better_speed_est !< If true, use a more robust estimate of the first
                                      !! mode speed as the starting point for iterations.
   real,    optional, intent(in) :: min_speed !< If present, set a floor in the first mode speed
@@ -1201,15 +1205,17 @@ subroutine wave_speed_init(CS, use_ebt_mode, mono_N2_column_fraction, mono_N2_de
 
   call wave_speed_set_param(CS, use_ebt_mode=use_ebt_mode, mono_N2_column_fraction=mono_N2_column_fraction, &
                             better_speed_est=better_speed_est, min_speed=min_speed, wave_speed_tol=wave_speed_tol)
+  !### Uncomment this?      remap_answers_2018=remap_answers_2018, remap_answer_date=remap_answer_date)
 
+  !### The remap_answers_2018 argument is irrelevant, because remapping is hard-coded to use PLM.
   call initialize_remapping(CS%remapping_CS, 'PLM', boundary_extrapolation=.false., &
-                            answers_2018=CS%remap_answers_2018)
+                            answer_date=CS%remap_answer_date)
 
 end subroutine wave_speed_init
 
 !> Sets internal parameters for MOM_wave_speed
 subroutine wave_speed_set_param(CS, use_ebt_mode, mono_N2_column_fraction, mono_N2_depth, remap_answers_2018, &
-                                better_speed_est, min_speed, wave_speed_tol)
+                                remap_answer_date, better_speed_est, min_speed, wave_speed_tol)
   type(wave_speed_CS), intent(inout)  :: CS
                                       !< Control structure for MOM_wave_speed
   logical, optional, intent(in) :: use_ebt_mode  !< If true, use the equivalent
@@ -1223,6 +1229,10 @@ subroutine wave_speed_set_param(CS, use_ebt_mode, mono_N2_column_fraction, mono_
   logical, optional, intent(in) :: remap_answers_2018 !< If true, use the order of arithmetic and expressions
                                       !! that recover the remapping answers from 2018.  Otherwise
                                       !! use more robust but mathematically equivalent expressions.
+  integer, optional, intent(in) :: remap_answer_date  !< The vintage of the order of arithmetic and expressions
+                                      !! to use for remapping.  Values below 20190101 recover the remapping
+                                      !! answers from 2018, while higher values use more robust
+                                      !! forms of the same remapping expressions.
   logical, optional, intent(in) :: better_speed_est !< If true, use a more robust estimate of the first
                                      !! mode speed as the starting point for iterations.
   real,    optional, intent(in) :: min_speed !< If present, set a floor in the first mode speed
@@ -1233,7 +1243,14 @@ subroutine wave_speed_set_param(CS, use_ebt_mode, mono_N2_column_fraction, mono_
   if (present(use_ebt_mode)) CS%use_ebt_mode = use_ebt_mode
   if (present(mono_N2_column_fraction)) CS%mono_N2_column_fraction = mono_N2_column_fraction
   if (present(mono_N2_depth)) CS%mono_N2_depth = mono_N2_depth
-  if (present(remap_answers_2018)) CS%remap_answers_2018 = remap_answers_2018
+  if (present(remap_answers_2018)) then
+    if (remap_answers_2018) then
+      CS%remap_answer_date = 20181231
+    else
+      CS%remap_answer_date = 20190101
+    endif
+  endif
+  if (present(remap_answer_date)) CS%remap_answer_date = remap_answer_date
   if (present(better_speed_est)) CS%better_cg1_est = better_speed_est
   if (present(min_speed)) CS%min_speed2 = min_speed**2
   if (present(wave_speed_tol)) CS%wave_speed_tol = wave_speed_tol

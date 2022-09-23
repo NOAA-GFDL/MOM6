@@ -3,7 +3,7 @@ module MOM_dynamics_split_RK2
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
-use MOM_variables,    only : vertvisc_type, thermo_var_ptrs, porous_barrier_ptrs
+use MOM_variables,    only : vertvisc_type, thermo_var_ptrs, porous_barrier_type
 use MOM_variables,    only : BT_cont_type, alloc_bt_cont_type, dealloc_bt_cont_type
 use MOM_variables,    only : accel_diag_ptrs, ocean_internal_state, cont_diag_ptrs
 use MOM_forcing_type, only : mech_forcing
@@ -30,7 +30,7 @@ use MOM_file_parser,       only : get_param, log_version, param_file_type
 use MOM_get_input,         only : directories
 use MOM_io,                only : vardesc, var_desc
 use MOM_restart,           only : register_restart_field, register_restart_pair
-use MOM_restart,           only : query_initialized, save_restart
+use MOM_restart,           only : query_initialized, set_initialized, save_restart
 use MOM_restart,           only : restart_init, is_new_run, MOM_restart_CS
 use MOM_time_manager,      only : time_type, time_type_to_real, operator(+)
 use MOM_time_manager,      only : operator(-), operator(>), operator(*), operator(/)
@@ -67,7 +67,7 @@ use MOM_vert_friction,         only : vertvisc_init, vertvisc_end, vertvisc_CS
 use MOM_vert_friction,         only : updateCFLtruncationValue
 use MOM_verticalGrid,          only : verticalGrid_type, get_thickness_units
 use MOM_verticalGrid,          only : get_flux_units, get_tr_flux_units
-use MOM_wave_interface, only: wave_parameters_CS
+use MOM_wave_interface,        only: wave_parameters_CS, Stokes_PGF
 
 implicit none ; private
 
@@ -78,11 +78,13 @@ type, public :: MOM_dyn_split_RK2_CS ; private
   real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_,NKMEM_) :: &
     CAu, &    !< CAu = f*v - u.grad(u) [L T-2 ~> m s-2]
     PFu, &    !< PFu = -dM/dx [L T-2 ~> m s-2]
+    PFu_Stokes, & !< PFu_Stokes = -d/dx int_r (u_L*duS/dr) [L T-2 ~> m s-2]
     diffu     !< Zonal acceleration due to convergence of the along-isopycnal stress tensor [L T-2 ~> m s-2]
 
   real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_,NKMEM_) :: &
     CAv, &    !< CAv = -f*u - u.grad(v) [L T-2 ~> m s-2]
     PFv, &    !< PFv = -dM/dy [L T-2 ~> m s-2]
+    PFv_Stokes, & !< PFv_Stokes = -d/dy int_r (v_L*dvS/dr) [L T-2 ~> m s-2]
     diffv     !< Meridional acceleration due to convergence of the along-isopycnal stress tensor [L T-2 ~> m s-2]
 
   real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_,NKMEM_) :: visc_rem_u
@@ -295,7 +297,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   type(MEKE_type),                   intent(inout) :: MEKE         !< MEKE fields
   type(thickness_diffuse_CS),        intent(inout) :: thickness_diffuse_CSp !< Pointer to a structure containing
                                                                    !! interface height diffusivities
-  type(porous_barrier_ptrs),         intent(in)    :: pbv          !< porous barrier fractional cell metrics
+  type(porous_barrier_type),         intent(in)    :: pbv          !< porous barrier fractional cell metrics
   type(wave_parameters_CS), optional, pointer      :: Waves        !< A pointer to a structure containing
                                                                    !! fields related to the surface wave conditions
 
@@ -355,6 +357,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   logical :: BT_cont_BT_thick ! If true, use the BT_cont_type to estimate the
                               ! relative weightings of the layers in calculating
                               ! the barotropic accelerations.
+  logical :: Use_Stokes_PGF ! If true, add Stokes PGF to hydrostatic PGF
   !---For group halo pass
   logical :: showCallTree, sym
 
@@ -452,6 +455,31 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
       eta_PF_start(i,j) = CS%eta_PF(i,j) - pres_to_eta * (p_surf_begin(i,j) - p_surf_end(i,j))
     enddo ; enddo
   endif
+  ! Stokes shear force contribution to pressure gradient
+  Use_Stokes_PGF = present(Waves)
+  if (Use_Stokes_PGF) then
+    Use_Stokes_PGF = associated(Waves)
+    if (Use_Stokes_PGF) Use_Stokes_PGF = Waves%Stokes_PGF
+    if (Use_Stokes_PGF) then
+      call Stokes_PGF(G, GV, h, u, v, CS%PFu_Stokes, CS%PFv_Stokes, Waves)
+
+      ! We are adding Stokes_PGF to hydrostatic PGF here.  The diag PFu/PFv
+      ! will therefore report the sum total PGF and we avoid other
+      ! modifications in the code.  The PFu_Stokes is output within the waves routines.
+      if (.not.Waves%Passive_Stokes_PGF) then
+        do k=1,nz
+          do j=js,je ; do I=Isq,Ieq
+            CS%PFu(I,j,k) = CS%PFu(I,j,k) + CS%PFu_Stokes(I,j,k)
+          enddo ; enddo
+        enddo
+        do k=1,nz
+          do J=Jsq,Jeq ; do i=is,ie
+             CS%PFv(i,J,k) = CS%PFv(i,J,k) + CS%PFv_Stokes(i,J,k)
+          enddo ; enddo
+        enddo
+      endif
+    endif
+  endif
   call cpu_clock_end(id_clock_pres)
   call disable_averaging(CS%diag)
   if (showCallTree) call callTree_wayPoint("done with PressureForce (step_MOM_dyn_split_RK2)")
@@ -468,7 +496,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
 ! CAu = -(f+zeta_av)/h_av vh + d/dx KE_av
   call cpu_clock_begin(id_clock_Cor)
   call CorAdCalc(u_av, v_av, h_av, uh, vh, CS%CAu, CS%CAv, CS%OBC, CS%ADp, &
-                 G, Gv, US, CS%CoriolisAdv, pbv)
+                 G, Gv, US, CS%CoriolisAdv, pbv, Waves=Waves)
   call cpu_clock_end(id_clock_Cor)
   if (showCallTree) call callTree_wayPoint("done with CorAdCalc (step_MOM_dyn_split_RK2)")
 
@@ -687,6 +715,27 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
     call cpu_clock_begin(id_clock_pres)
     call PressureForce(hp, tv, CS%PFu, CS%PFv, G, GV, US, CS%PressureForce_CSp, &
                        CS%ALE_CSp, p_surf, CS%pbce, CS%eta_PF)
+    ! Stokes shear force contribution to pressure gradient
+    Use_Stokes_PGF = present(Waves)
+    if (Use_Stokes_PGF) then
+      Use_Stokes_PGF = associated(Waves)
+      if (Use_Stokes_PGF) Use_Stokes_PGF = Waves%Stokes_PGF
+      if (Use_Stokes_PGF) then
+        call Stokes_PGF(G, GV, h, u, v, CS%PFu_Stokes, CS%PFv_Stokes, Waves)
+        if (.not.Waves%Passive_Stokes_PGF) then
+          do k=1,nz
+            do j=js,je ; do I=Isq,Ieq
+              CS%PFu(I,j,k) = CS%PFu(I,j,k) + CS%PFu_Stokes(I,j,k)
+            enddo ; enddo
+          enddo
+          do k=1,nz
+            do J=Jsq,Jeq ; do i=is,ie
+              CS%PFv(i,J,k) = CS%PFv(i,J,k) + CS%PFv_Stokes(i,J,k)
+            enddo ; enddo
+          enddo
+        endif
+      endif
+    endif
     call cpu_clock_end(id_clock_pres)
     if (showCallTree) call callTree_wayPoint("done with PressureForce[hp=(1-b).h+b.h] (step_MOM_dyn_split_RK2)")
   endif
@@ -721,7 +770,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
 ! CAu = -(f+zeta_av)/h_av vh + d/dx KE_av
   call cpu_clock_begin(id_clock_Cor)
   call CorAdCalc(u_av, v_av, h_av, uh, vh, CS%CAu, CS%CAv, CS%OBC, CS%ADp, &
-                 G, GV, US, CS%CoriolisAdv, pbv)
+                 G, GV, US, CS%CoriolisAdv, pbv, Waves=Waves)
   call cpu_clock_end(id_clock_Cor)
   if (showCallTree) call callTree_wayPoint("done with CorAdCalc (step_MOM_dyn_split_RK2)")
 
@@ -1082,7 +1131,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   type(param_file_type),            intent(in)    :: param_file !< parameter file for parsing
   type(diag_ctrl),          target, intent(inout) :: diag       !< to control diagnostics
   type(MOM_dyn_split_RK2_CS),       pointer       :: CS         !< module control structure
-  type(MOM_restart_CS),             intent(in)    :: restart_CS !< MOM restart control structure
+  type(MOM_restart_CS),             intent(inout) :: restart_CS !< MOM restart control structure
   real,                             intent(in)    :: dt         !< time step [T ~> s]
   type(accel_diag_ptrs),    target, intent(inout) :: Accel_diag !< points to momentum equation terms for
                                                                 !! budget analysis
@@ -1103,7 +1152,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
                                                                 !! the number of times the velocity is
                                                                 !! truncated (this should be 0).
   logical,                          intent(out)   :: calc_dtbt  !< If true, recalculate the barotropic time step
-  type(porous_barrier_ptrs),        intent(in)    :: pbv        !< porous barrier fractional cell metrics
+  type(porous_barrier_type),        intent(in)    :: pbv        !< porous barrier fractional cell metrics
   integer,                          intent(out)   :: cont_stencil !< The stencil for thickness
                                                                 !! from the continuity solver.
 
@@ -1187,6 +1236,8 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
 
   ALLOC_(CS%u_accel_bt(IsdB:IedB,jsd:jed,nz)) ; CS%u_accel_bt(:,:,:) = 0.0
   ALLOC_(CS%v_accel_bt(isd:ied,JsdB:JedB,nz)) ; CS%v_accel_bt(:,:,:) = 0.0
+  ALLOC_(CS%PFu_Stokes(IsdB:IedB,jsd:jed,nz)) ; CS%PFu_Stokes(:,:,:) = 0.0
+  ALLOC_(CS%PFv_Stokes(isd:ied,JsdB:JedB,nz)) ; CS%PFv_Stokes(:,:,:) = 0.0
 
   MIS%diffu      => CS%diffu
   MIS%diffv      => CS%diffv
@@ -1253,6 +1304,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
     do k=1,nz ; do j=js,je ; do i=is,ie
       CS%eta(i,j) = CS%eta(i,j) + h(i,j,k)
     enddo ; enddo ; enddo
+    call set_initialized(CS%eta, trim(eta_rest_name), restart_CS)
   elseif ((GV%m_to_H_restart /= 0.0) .and. (GV%m_to_H_restart /= 1.0)) then
     H_rescale = 1.0 / GV%m_to_H_restart
     do j=js,je ; do i=is,ie ; CS%eta(i,j) = H_rescale * CS%eta(i,j) ; enddo ; enddo
@@ -1264,10 +1316,12 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
                        CS%barotropic_CSp, restart_CS, calc_dtbt, CS%BT_cont, &
                        CS%tides_CSp)
 
-  if (.not. query_initialized(CS%diffu,"diffu",restart_CS) .or. &
-      .not. query_initialized(CS%diffv,"diffv",restart_CS)) then
+  if (.not. query_initialized(CS%diffu, "diffu", restart_CS) .or. &
+      .not. query_initialized(CS%diffv, "diffv", restart_CS)) then
     call horizontal_viscosity(u, v, h, CS%diffu, CS%diffv, MEKE, VarMix, G, GV, US, CS%hor_visc, &
                               OBC=CS%OBC, BT=CS%barotropic_CSp, TD=thickness_diffuse_CSp)
+    call set_initialized(CS%diffu, "diffu", restart_CS)
+    call set_initialized(CS%diffv, "diffv", restart_CS)
   else
     if ( (US%s_to_T_restart * US%m_to_L_restart /= 0.0) .and. &
          (US%s_to_T_restart**2 /= US%m_to_L_restart) ) then
@@ -1281,10 +1335,12 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
     endif
   endif
 
-  if (.not. query_initialized(CS%u_av,"u2", restart_CS) .or. &
-      .not. query_initialized(CS%u_av,"v2", restart_CS)) then
+  if (.not. query_initialized(CS%u_av, "u2", restart_CS) .or. &
+      .not. query_initialized(CS%v_av, "v2", restart_CS)) then
     do k=1,nz ; do j=jsd,jed ; do I=IsdB,IedB ; CS%u_av(I,j,k) = u(I,j,k) ; enddo ; enddo ; enddo
     do k=1,nz ; do J=JsdB,JedB ; do i=isd,ied ; CS%v_av(i,J,k) = v(i,J,k) ; enddo ; enddo ; enddo
+    call set_initialized(CS%u_av, "u2", restart_CS)
+    call set_initialized(CS%v_av, "v2", restart_CS)
   elseif ( (US%s_to_T_restart * US%m_to_L_restart /= 0.0) .and. &
            (US%s_to_T_restart /= US%m_to_L_restart) ) then
     vel_rescale = US%s_to_T_restart / US%m_to_L_restart
@@ -1293,17 +1349,21 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   endif
 
   ! This call is just here to initialize uh and vh.
-  if (.not. query_initialized(uh,"uh",restart_CS) .or. &
-      .not. query_initialized(vh,"vh",restart_CS)) then
+  if (.not. query_initialized(uh, "uh", restart_CS) .or. &
+      .not. query_initialized(vh, "vh", restart_CS)) then
     do k=1,nz ; do j=jsd,jed ; do i=isd,ied ; h_tmp(i,j,k) = h(i,j,k) ; enddo ; enddo ; enddo
     call continuity(u, v, h, h_tmp, uh, vh, dt, G, GV, US, CS%continuity_CSp, CS%OBC, pbv)
     call pass_var(h_tmp, G%Domain, clock=id_clock_pass_init)
     do k=1,nz ; do j=jsd,jed ; do i=isd,ied
       CS%h_av(i,j,k) = 0.5*(h(i,j,k) + h_tmp(i,j,k))
     enddo ; enddo ; enddo
+    call set_initialized(uh, "uh", restart_CS)
+    call set_initialized(vh, "vh", restart_CS)
+    call set_initialized(CS%h_av, "h2", restart_CS)
   else
-    if (.not. query_initialized(CS%h_av,"h2",restart_CS)) then
+    if (.not. query_initialized(CS%h_av, "h2", restart_CS)) then
       CS%h_av(:,:,:) = h(:,:,:)
+      call set_initialized(CS%h_av, "h2", restart_CS)
     elseif ((GV%m_to_H_restart /= 0.0) .and. (GV%m_to_H_restart /= 1.0)) then
       H_rescale = 1.0 / GV%m_to_H_restart
       do k=1,nz ; do j=js,je ; do i=is,ie ; CS%h_av(i,j,k) = H_rescale * CS%h_av(i,j,k) ; enddo ; enddo ; enddo

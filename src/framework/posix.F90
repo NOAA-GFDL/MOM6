@@ -19,7 +19,7 @@ implicit none
 !! and any information required to restore the process state.
 type, bind(c) :: jmp_buf
   private
-  character(kind=c_char) :: state(JMP_BUF_SIZE)
+  character(kind=c_char) :: state(SIZEOF_JMP_BUF)
     !< Unstructured array of bytes used to store the process state
 end type jmp_buf
 
@@ -28,7 +28,7 @@ end type jmp_buf
 !! In addition to the content stored by `jmp_buf`, it also stores signal state.
 type, bind(c) :: sigjmp_buf
   private
-  character(kind=c_char) :: state(SIGJMP_BUF_SIZE)
+  character(kind=c_char) :: state(SIZEOF_SIGJMP_BUF)
     !< Unstructured array of bytes used to store the process state
 end type sigjmp_buf
 
@@ -343,5 +343,23 @@ subroutine siglongjmp(env, val)
   val_c = int(val, kind=c_int)
   call siglongjmp_posix(env, val_c)
 end subroutine siglongjmp
+
+!> Placeholder function for a missing or unconfigured sigsetjmp
+!!
+!! The symbol for sigsetjmp can be platform-dependent and may not exist if
+!! defined as a macro.  This function allows compilation, and reports a runtime
+!! error if used in the program.
+function sigsetjmp_missing(env, savesigs) result(rc) bind(c)
+  type(sigjmp_buf), intent(in) :: env
+    !< Current process state (unused)
+  integer(kind=c_int), value, intent(in) :: savesigs
+    !< Enable signal state flag (unused)
+  integer(kind=c_int) :: rc
+    !< Function return code (unused)
+
+  print '(a)', 'ERROR: sigsetjmp() is not implemented in this build.'
+  print '(a)', 'Recompile with autoconf or -DSIGSETJMP_NAME=\"<symbol name>\".'
+  error stop
+end function sigsetjmp_missing
 
 end module posix

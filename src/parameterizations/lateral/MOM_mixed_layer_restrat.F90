@@ -48,6 +48,7 @@ type, public :: mixedlayer_restrat_CS ; private
   logical :: MLE_use_PBL_MLD       !< If true, use the MLD provided by the PBL parameterization.
                                    !! if false, MLE will calculate a MLD based on a density difference
                                    !! based on the parameter MLE_DENSITY_DIFF.
+  real    :: vonKar                !< The von Karman constant as used for mixed layer viscosity [nomdim]
   real    :: MLE_MLD_decay_time    !< Time-scale to use in a running-mean when MLD is retreating [T ~> s].
   real    :: MLE_MLD_decay_time2   !< Time-scale to use in a running-mean when filtered MLD is retreating [T ~> s].
   real    :: MLE_density_diff      !< Density difference used in detecting mixed-layer depth [R ~> kg m-3].
@@ -59,6 +60,7 @@ type, public :: mixedlayer_restrat_CS ; private
   logical :: debug = .false.       !< If true, calculate checksums of fields for debugging.
   type(diag_ctrl), pointer :: diag !< A structure that is used to regulate the
                                    !! timing of diagnostic output.
+  logical :: use_stanley_ml        !< If true, use the Stanley parameterization of SGS T variance
 
   real, dimension(:,:), allocatable :: &
          MLD_filtered, &           !< Time-filtered MLD [H ~> m or kg m-2]
@@ -178,6 +180,8 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
   real, dimension(SZI_(G)) :: dK, dKm1 ! Depths of layer centers [H ~> m or kg m-2].
   real, dimension(SZI_(G)) :: pRef_MLD ! A reference pressure for calculating the mixed layer
                                        ! densities [R L2 T-2 ~> Pa].
+  real, dimension(SZI_(G)) :: covTS, & !SGS TS covariance in Stanley param; currently 0 [degC ppt]
+                              varS     !SGS S variance in Stanley param; currently 0    [ppt2]
   real :: aFac, bFac ! Nondimensional ratios [nondim]
   real :: ddRho     ! A density difference [R ~> kg m-3]
   real :: hAtVel    ! Thickness at the velocity points [H ~> m or kg m-2]
@@ -186,6 +190,8 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
   real :: dh        ! Portion of the layer thickness that is in the mixed layer [H ~> m or kg m-2]
   real :: res_scaling_fac ! The resolution-dependent scaling factor [nondim]
   real :: I_LFront ! The inverse of the frontal length scale [L-1 ~> m-1]
+  real :: vonKar_x_pi2    ! A scaling constant that is approximately the von Karman constant times
+                          ! pi squared [nondim]
   logical :: line_is_empty, keep_going, res_upscale
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
@@ -194,6 +200,10 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
 
   h_min = 0.5*GV%Angstrom_H ! This should be GV%Angstrom_H, but that value would change answers.
+  covTS(:)=0.0 !!Functionality not implemented yet; in future, should be passed in tv
+  varS(:)=0.0
+
+  vonKar_x_pi2 = CS%vonKar * 9.8696
 
   if (.not.associated(tv%eqn_of_state)) call MOM_error(FATAL, "MOM_mixedlayer_restrat: "// &
          "An equation of state must be used with this module.")
@@ -207,7 +217,12 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
     EOSdom(:) = EOS_domain(G%HI, halo=1)
     do j = js-1, je+1
       dK(:) = 0.5 * h(:,j,1) ! Depth of center of surface layer
-      call calculate_density(tv%T(:,j,1), tv%S(:,j,1), pRef_MLD, rhoSurf, tv%eqn_of_state, EOSdom)
+      if (CS%use_stanley_ml) then
+        call calculate_density(tv%T(:,j,1), tv%S(:,j,1), pRef_MLD, tv%varT(:,j,1), covTS, varS, &
+          rhoSurf, tv%eqn_of_state, EOSdom)
+      else
+        call calculate_density(tv%T(:,j,1), tv%S(:,j,1), pRef_MLD, rhoSurf, tv%eqn_of_state, EOSdom)
+      endif
       deltaRhoAtK(:) = 0.
       MLD_fast(:,j) = 0.
       do k = 2, nz
@@ -215,7 +230,12 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
         dK(:) = dK(:) + 0.5 * ( h(:,j,k) + h(:,j,k-1) ) ! Depth of center of layer K
         ! Mixed-layer depth, using sigma-0 (surface reference pressure)
         deltaRhoAtKm1(:) = deltaRhoAtK(:) ! Store value from previous iteration of K
-        call calculate_density(tv%T(:,j,k), tv%S(:,j,k), pRef_MLD, deltaRhoAtK, tv%eqn_of_state, EOSdom)
+        if (CS%use_stanley_ml) then
+          call calculate_density(tv%T(:,j,k), tv%S(:,j,k), pRef_MLD, tv%varT(:,j,k), covTS, varS, &
+            deltaRhoAtK, tv%eqn_of_state, EOSdom)
+        else
+          call calculate_density(tv%T(:,j,k), tv%S(:,j,k), pRef_MLD, deltaRhoAtK, tv%eqn_of_state, EOSdom)
+        endif
         do i = is-1,ie+1
           deltaRhoAtK(i) = deltaRhoAtK(i) - rhoSurf(i) ! Density difference between layer K and surface
         enddo
@@ -312,7 +332,12 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
         h_avail(i,j,k) = max(I4dt*G%areaT(i,j)*(h(i,j,k)-GV%Angstrom_H),0.0)
       enddo
       if (keep_going) then
-        call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p0, rho_ml(:), tv%eqn_of_state, EOSdom)
+        if (CS%use_stanley_ml) then
+          call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p0, tv%varT(:,j,k), covTS, varS, &
+            rho_ml(:), tv%eqn_of_state, EOSdom)
+        else
+          call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p0, rho_ml(:), tv%eqn_of_state, EOSdom)
+        endif
         line_is_empty = .true.
         do i=is-1,ie+1
           if (htot_fast(i,j) < MLD_fast(i,j)) then
@@ -360,11 +385,10 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
           ( sqrt( 0.5 * ( G%dxCu(I,j)**2 + G%dyCu(I,j)**2 ) ) * I_LFront ) &
           * min( 1., 0.5*( VarMix%Rd_dx_h(i,j) + VarMix%Rd_dx_h(i+1,j) ) )
 
-    ! peak ML visc: u_star * 0.41 * (h_ml*u_star)/(absf*h_ml + 4.0*u_star)
+    ! peak ML visc: u_star * von_Karman * (h_ml*u_star)/(absf*h_ml + 4.0*u_star)
     ! momentum mixing rate: pi^2*visc/h_ml^2
-    ! 0.41 is the von Karmen constant, 9.8696 = pi^2.
     h_vel = 0.5*((htot_fast(i,j) + htot_fast(i+1,j)) + h_neglect) * GV%H_to_Z
-    mom_mixrate = (0.41*9.8696)*u_star**2 / &
+    mom_mixrate = vonKar_x_pi2*u_star**2 / &
                   (absf*h_vel**2 + 4.0*(h_vel+dz_neglect)*u_star)
     timescale = 0.0625 * (absf + 2.0*mom_mixrate) / (absf**2 + mom_mixrate**2)
     timescale = timescale * CS%ml_restrat_coef
@@ -373,7 +397,7 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
         (Rml_av_fast(i+1,j)-Rml_av_fast(i,j)) * (h_vel**2 * GV%Z_to_H)
     ! As above but using the slow filtered MLD
     h_vel = 0.5*((htot_slow(i,j) + htot_slow(i+1,j)) + h_neglect) * GV%H_to_Z
-    mom_mixrate = (0.41*9.8696)*u_star**2 / &
+    mom_mixrate = vonKar_x_pi2*u_star**2 / &
                   (absf*h_vel**2 + 4.0*(h_vel+dz_neglect)*u_star)
     timescale = 0.0625 * (absf + 2.0*mom_mixrate) / (absf**2 + mom_mixrate**2)
     timescale = timescale * CS%ml_restrat_coef2
@@ -436,11 +460,10 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
           ( sqrt( 0.5 * ( (G%dxCv(i,J))**2 + (G%dyCv(i,J))**2 ) ) * I_LFront ) &
           * min( 1., 0.5*( VarMix%Rd_dx_h(i,j) + VarMix%Rd_dx_h(i,j+1) ) )
 
-    ! peak ML visc: u_star * 0.41 * (h_ml*u_star)/(absf*h_ml + 4.0*u_star)
+    ! peak ML visc: u_star * von_Karman * (h_ml*u_star)/(absf*h_ml + 4.0*u_star)
     ! momentum mixing rate: pi^2*visc/h_ml^2
-    ! 0.41 is the von Karmen constant, 9.8696 = pi^2.
     h_vel = 0.5*((htot_fast(i,j) + htot_fast(i,j+1)) + h_neglect) * GV%H_to_Z
-    mom_mixrate = (0.41*9.8696)*u_star**2 / &
+    mom_mixrate = vonKar_x_pi2*u_star**2 / &
                   (absf*h_vel**2 + 4.0*(h_vel+dz_neglect)*u_star)
     timescale = 0.0625 * (absf + 2.0*mom_mixrate) / (absf**2 + mom_mixrate**2)
     timescale = timescale * CS%ml_restrat_coef
@@ -449,7 +472,7 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
         (Rml_av_fast(i,j+1)-Rml_av_fast(i,j)) * (h_vel**2 * GV%Z_to_H)
     ! As above but using the slow filtered MLD
     h_vel = 0.5*((htot_slow(i,j) + htot_slow(i,j+1)) + h_neglect) * GV%H_to_Z
-    mom_mixrate = (0.41*9.8696)*u_star**2 / &
+    mom_mixrate = vonKar_x_pi2*u_star**2 / &
                   (absf*h_vel**2 + 4.0*(h_vel+dz_neglect)*u_star)
     timescale = 0.0625 * (absf + 2.0*mom_mixrate) / (absf**2 + mom_mixrate**2)
     timescale = timescale * CS%ml_restrat_coef2
@@ -597,6 +620,8 @@ subroutine mixedlayer_restrat_BML(h, uhtr, vhtr, tv, forces, dt, G, GV, US, CS)
   real :: h_vel           ! htot interpolated onto velocity points [Z ~> m]. (The units are not H.)
   real :: absf            ! absolute value of f, interpolated to velocity points [T-1 ~> s-1]
   real :: u_star          ! surface friction velocity, interpolated to velocity points [Z T-1 ~> m s-1].
+  real :: vonKar_x_pi2    ! A scaling constant that is approximately the von Karman constant times
+                          ! pi squared [nondim]
   real :: mom_mixrate     ! rate at which momentum is homogenized within mixed layer [T-1 ~> s-1]
   real :: timescale       ! mixing growth timescale [T ~> s]
   real :: h_min           ! The minimum layer thickness [H ~> m or kg m-2].  h_min could be 0.
@@ -628,16 +653,22 @@ subroutine mixedlayer_restrat_BML(h, uhtr, vhtr, tv, forces, dt, G, GV, US, CS)
 
   if ((nkml<2) .or. (CS%ml_restrat_coef<=0.0)) return
 
+
   h_min = 0.5*GV%Angstrom_H ! This should be GV%Angstrom_H, but that value would change answers.
   uDml(:)    = 0.0 ; vDml(:) = 0.0
   I4dt       = 0.25 / dt
   g_Rho0     = GV%g_Earth / GV%Rho0
+  vonKar_x_pi2 = CS%vonKar * 9.8696
   use_EOS    = associated(tv%eqn_of_state)
   h_neglect  = GV%H_subroundoff
   dz_neglect = GV%H_subroundoff*GV%H_to_Z
 
   if (.not.use_EOS) call MOM_error(FATAL, "MOM_mixedlayer_restrat: "// &
          "An equation of state must be used with this module.")
+
+  if (CS%use_stanley_ml) call MOM_error(FATAL, &
+       "MOM_mixedlayer_restrat: The Stanley parameterization is not"//&
+       "available with the BML.")
 
   ! Fix this later for nkml >= 3.
 
@@ -676,10 +707,9 @@ subroutine mixedlayer_restrat_BML(h, uhtr, vhtr, tv, forces, dt, G, GV, US, CS)
 
     u_star = 0.5*(forces%ustar(i,j) + forces%ustar(i+1,j))
     absf = 0.5*(abs(G%CoriolisBu(I,J-1)) + abs(G%CoriolisBu(I,J)))
-    ! peak ML visc: u_star * 0.41 * (h_ml*u_star)/(absf*h_ml + 4.0*u_star)
+    ! peak ML visc: u_star * von_Karman * (h_ml*u_star)/(absf*h_ml + 4.0*u_star)
     ! momentum mixing rate: pi^2*visc/h_ml^2
-    ! 0.41 is the von Karmen constant, 9.8696 = pi^2.
-    mom_mixrate = (0.41*9.8696)*u_star**2 / &
+    mom_mixrate = vonKar_x_pi2*u_star**2 / &
                   (absf*h_vel**2 + 4.0*(h_vel+dz_neglect)*u_star)
     timescale = 0.0625 * (absf + 2.0*mom_mixrate) / (absf**2 + mom_mixrate**2)
 
@@ -723,10 +753,9 @@ subroutine mixedlayer_restrat_BML(h, uhtr, vhtr, tv, forces, dt, G, GV, US, CS)
 
     u_star = 0.5*(forces%ustar(i,j) + forces%ustar(i,j+1))
     absf = 0.5*(abs(G%CoriolisBu(I-1,J)) + abs(G%CoriolisBu(I,J)))
-    ! peak ML visc: u_star * 0.41 * (h_ml*u_star)/(absf*h_ml + 4.0*u_star)
+    ! peak ML visc: u_star * von_Karman * (h_ml*u_star)/(absf*h_ml + 4.0*u_star)
     ! momentum mixing rate: pi^2*visc/h_ml^2
-    ! 0.41 is the von Karmen constant, 9.8696 = pi^2.
-    mom_mixrate = (0.41*9.8696)*u_star**2 / &
+    mom_mixrate = vonKar_x_pi2*u_star**2 / &
                   (absf*h_vel**2 + 4.0*(h_vel+dz_neglect)*u_star)
     timescale = 0.0625 * (absf + 2.0*mom_mixrate) / (absf**2 + mom_mixrate**2)
 
@@ -849,6 +878,12 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
              "geostrophic kinetic energy or 1 plus the square of the "//&
              "grid spacing over the deformation radius, as detailed "//&
              "by Fox-Kemper et al. (2010)", units="nondim", default=0.0)
+  call get_param(param_file, mdl, "USE_STANLEY_ML", CS%use_stanley_ml, &
+                 "If true, turn on Stanley SGS T variance parameterization "// &
+                 "in ML restrat code.", default=.false.)
+  call get_param(param_file, mdl, 'VON_KARMAN_CONST', CS%vonKar, &
+                 'The value the von Karman constant as used for mixed layer viscosity.', &
+                 units='nondim', default=0.41)
   ! We use GV%nkml to distinguish between the old and new implementation of MLE.
   ! The old implementation only works for the layer model with nkml>0.
   if (GV%nkml==0) then
