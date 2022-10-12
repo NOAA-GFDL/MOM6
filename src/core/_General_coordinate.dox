@@ -138,7 +138,7 @@ continuous-in-the-vertical form for brevity; the exact discretization
 is detailed in \cite adcroft2008 and
 \cite Griffies_Adcroft_Hallberg2020.  The \f$1/h\f$ and \f$h\f$ appearing in
 the horizontal momentum equation are carefully handled in the code to
-ensure proper cancellation even when the layer thickness goes to zero;
+ensure proper cancellation even when the layer thickness goes to zero
 i.e., l'Hospital's rule is respected.
 
 The MOM6 time-stepping algorithm integrates the above layer-averaged
