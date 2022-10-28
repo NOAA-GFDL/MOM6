@@ -13,7 +13,6 @@ module MOM_ALE
 use MOM_debugging,        only : check_column_integrals
 use MOM_diag_mediator,    only : register_diag_field, post_data, diag_ctrl
 use MOM_diag_mediator,    only : time_type, diag_update_remap_grids, query_averaging_enabled
-use MOM_diag_vkernels,    only : interpolate_column, reintegrate_column
 use MOM_domains,          only : create_group_pass, do_group_pass, group_pass_type
 use MOM_error_handler,    only : MOM_error, FATAL, WARNING
 use MOM_error_handler,    only : callTree_showQuery
@@ -40,6 +39,7 @@ use MOM_regridding,       only : getStaticThickness
 use MOM_remapping,        only : initialize_remapping, end_remapping
 use MOM_remapping,        only : remapping_core_h, remapping_core_w
 use MOM_remapping,        only : remappingSchemesDoc, remappingDefaultScheme
+use MOM_remapping,        only : interpolate_column, reintegrate_column
 use MOM_remapping,        only : remapping_CS, dzFromH1H2
 use MOM_string_functions, only : uppercase, extractWord, extract_integer
 use MOM_tracer_registry,  only : tracer_registry_type, tracer_type, MOM_tracer_chkinv
@@ -536,7 +536,7 @@ subroutine ALE_offline_inputs(CS, G, GV, h, tv, Reg, uhtr, vhtr, Kd, debug, OBC)
     if (G%mask2dCu(i,j)>0.) then
       h_src(:) = 0.5 * (h(i,j,:) + h(i+1,j,:))
       h_dest(:) = 0.5 * (h_new(i,j,:) + h_new(i+1,j,:))
-      call reintegrate_column(nk, h_src, uhtr(I,j,:), nk, h_dest, 0., temp_vec)
+      call reintegrate_column(nk, h_src, uhtr(I,j,:), nk, h_dest, temp_vec)
       uhtr(I,j,:) = temp_vec
     endif
   enddo ; enddo
@@ -544,7 +544,7 @@ subroutine ALE_offline_inputs(CS, G, GV, h, tv, Reg, uhtr, vhtr, Kd, debug, OBC)
     if (G%mask2dCv(i,j)>0.) then
       h_src(:) = 0.5 * (h(i,j,:) + h(i,j+1,:))
       h_dest(:) = 0.5 * (h_new(i,j,:) + h_new(i,j+1,:))
-      call reintegrate_column(nk, h_src, vhtr(I,j,:), nk, h_dest, 0., temp_vec)
+      call reintegrate_column(nk, h_src, vhtr(I,j,:), nk, h_dest, temp_vec)
       vhtr(I,j,:) = temp_vec
     endif
   enddo ; enddo
@@ -554,7 +554,7 @@ subroutine ALE_offline_inputs(CS, G, GV, h, tv, Reg, uhtr, vhtr, Kd, debug, OBC)
       if (check_column_integrals(nk, h_src, nk, h_dest)) then
         call MOM_error(FATAL, "ALE_offline_inputs: Kd interpolation columns do not match")
       endif
-      call interpolate_column(nk, h(i,j,:), Kd(i,j,:), nk, h_new(i,j,:), 0., Kd(i,j,:))
+      call interpolate_column(nk, h(i,j,:), Kd(i,j,:), nk, h_new(i,j,:), Kd(i,j,:))
     endif
   enddo ; enddo
 
