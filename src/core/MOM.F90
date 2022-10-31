@@ -1140,10 +1140,10 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
     CS%OBC%update_OBC_seg_data = .false.
     if (CS%dt_obc_seg_period == 0.0) CS%OBC%update_OBC_seg_data = .true.
     if (CS%dt_obc_seg_period > 0.0) then
-     if (Time_local >= CS%dt_obc_seg_time) then  !### Change >= to > here.
-      CS%OBC%update_OBC_seg_data = .true.
-      CS%dt_obc_seg_time = CS%dt_obc_seg_time + CS%dt_obc_seg_interval
-     endif
+      if (Time_local >= CS%dt_obc_seg_time) then
+        CS%OBC%update_OBC_seg_data = .true.
+        CS%dt_obc_seg_time = CS%dt_obc_seg_time + CS%dt_obc_seg_interval
+      endif
     endif
   endif
 
