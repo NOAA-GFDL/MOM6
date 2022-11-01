@@ -697,7 +697,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   real :: I_sum_wt_accel ! The inverse of the sum of the raw weights used to find average accelerations [nondim]
   real :: I_sum_wt_trans ! The inverse of the sum of the raw weights used to find average transports [nondim]
   real :: dt_filt     ! The half-width of the barotropic filter [T ~> s].
-  real :: trans_wt1, trans_wt2 ! The weights used to compute ubt_trans and vbt_trans
+  real :: trans_wt1, trans_wt2 ! The weights used to compute ubt_trans and vbt_trans [nondim]
   integer :: nfilter
 
   logical :: apply_OBCs, apply_OBC_flather, apply_OBC_open
@@ -1060,6 +1060,30 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       gtot_S(i,j+1) = gtot_S(i,j+1) + pbce(i,j+1,k) * wt_v(i,J,k)
     enddo ; enddo
   enddo
+
+  if (apply_OBCs) then
+    do n=1,OBC%number_of_segments
+      if (.not. OBC%segment(n)%on_pe) cycle
+      I = OBC%segment(n)%HI%IsdB ; J = OBC%segment(n)%HI%JsdB
+      if (OBC%segment(n)%is_N_or_S .and. (J >= Jsq-1) .and. (J <= Jeq+1)) then
+        do i = max(Isq-1,OBC%segment(n)%HI%isd), min(Ieq+2,OBC%segment(n)%HI%ied)
+          if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
+            gtot_S(i,j+1) = gtot_S(i,j)
+          else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
+            gtot_N(i,j) = gtot_N(i,j+1)
+          endif
+        enddo
+      elseif (OBC%segment(n)%is_E_or_W .and. (I >= Isq-1) .and. (I <= Ieq+1)) then
+        do j = max(Jsq-1,OBC%segment(n)%HI%jsd), min(Jeq+2,OBC%segment(n)%HI%jed)
+          if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
+            gtot_W(i+1,j) = gtot_W(i,j)
+          else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
+            gtot_E(i,j) = gtot_E(i+1,j)
+          endif
+        enddo
+      endif
+    enddo
+  endif
 
   if (CS%tides) then
     call tidal_forcing_sensitivity(G, CS%tides_CSp, det_de)
@@ -2889,7 +2913,7 @@ subroutine apply_velocity_OBCs(OBC, ubt, vbt, uhbt, vhbt, ubt_trans, vbt_trans, 
   integer,                               intent(in)    :: halo    !< The extra halo size to use here.
   real,                                  intent(in)    :: dtbt    !< The time step [T ~> s].
   real,                                  intent(in)    :: bebt    !< The fractional weighting of the future velocity
-                                                                  !! in determining the transport.
+                                                                  !! in determining the transport [nondim]
   logical,                               intent(in)    :: use_BT_cont !< If true, use the BT_cont_types to calculate
                                                                   !! transports.
   logical,                               intent(in)    :: integral_BT_cont !< If true, update the barotropic continuity
@@ -4299,7 +4323,7 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   real :: mean_SL     ! The mean sea level that is used along with the bathymetry to estimate the
                       ! geometry when LINEARIZED_BT_CORIOLIS is true or BT_NONLIN_STRESS is false [Z ~> m].
   real :: det_de      ! The partial derivative due to self-attraction and loading of the reference
-                      ! geopotential with the sea surface height when tides are enabled.
+                      ! geopotential with the sea surface height when tides are enabled [nondim].
                       ! This is typically ~0.09 or less.
   real, allocatable :: lin_drag_h(:,:)  ! A spatially varying linear drag coefficient at tracer points
                                         ! that acts on the barotropic flow [Z T-1 ~> m s-1].
