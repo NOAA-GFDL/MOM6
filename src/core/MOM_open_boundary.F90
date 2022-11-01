@@ -300,6 +300,9 @@ type, public :: ocean_OBC_type
   ! Which segment object describes the current point.
   integer, allocatable :: segnum_u(:,:) !< Segment number of u-points.
   integer, allocatable :: segnum_v(:,:) !< Segment number of v-points.
+  ! Keep the OBC segment properties for external BGC tracers
+  type(external_tracers_segments_props), pointer :: obgc_segments_props => NULL() !< obgc segment properties
+  integer :: num_obgc_tracers = 0       !< The total number of obgc tracers
 
   ! The following parameters are used in the baroclinic radiation code:
   real :: gamma_uv !< The relative weighting for the baroclinic radiation
@@ -366,9 +369,6 @@ type, private :: external_tracers_segments_props
    real               :: lfac_in  !< multiplicative factor for inbound  tracer reservoir length scale
    real               :: lfac_out !< multiplicative factor for outbound tracer reservoir length scale
 end type external_tracers_segments_props
-!> Keeps the OBC segment properties for external tracers
-type(external_tracers_segments_props), pointer, save :: obgc_segments_props => NULL() !< properties
-integer, save :: num_obgc_tracers = 0  !< Keeps the total number of obgc tracers
 integer :: id_clock_pass !< A CPU time clock
 
 character(len=40)  :: mdl = "MOM_open_boundary" !< This module's name.
@@ -772,8 +772,8 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
       cycle ! cycle to next segment
     endif
 
-    !There are num_obgc_tracers obgc tracers are there that are not listed in param file
-    segment%num_fields = num_fields +num_obgc_tracers
+    !There are OBC%num_obgc_tracers obgc tracers are there that are not listed in param file
+    segment%num_fields = num_fields + OBC%num_obgc_tracers
     allocate(segment%field(segment%num_fields))
 
     segment%temp_segment_data_exists = .false.
@@ -787,21 +787,27 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
     IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
     JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
 
-    obgc_segments_props_list => obgc_segments_props !Get a pointer to the saved type
+    obgc_segments_props_list => OBC%obgc_segments_props !pointer to the head node
     do m=1,segment%num_fields
       if(m .le. num_fields) then
+        !These are tracers with segments specified in MOM6 style override files
         call parse_segment_data_str(trim(segstr), m, trim(fields(m)), value, filename, fieldname)
       else
-       segment%field(m)%genre='obgc'
-       call get_obgc_segments_props(obgc_segments_props_list,fields(m),filename,fieldname,&
-                                    segment%field(m)%resrv_lfac_in,segment%field(m)%resrv_lfac_out)
-       do mm=1,num_fields
+        !These are obgc tracers with segments specified by external modules.
+        !Set a flag so that these can be distinguished from native tracers as they may need
+        !extra steps for preparation and handling.
+        segment%field(m)%genre='obgc'
+        !Query the obgc segment properties by traversing the linkedlist
+        call get_obgc_segments_props(obgc_segments_props_list,fields(m),filename,fieldname,&
+                                     segment%field(m)%resrv_lfac_in,segment%field(m)%resrv_lfac_out)
+        !Make sure the obgc tracer is not specified in the MOM6 param file too.
+        do mm=1,num_fields
           if(trim(fields(m))==trim(fields(mm))) then
             if(is_root_pe()) &
               call MOM_error(FATAL,"MOM_open_boundary:initialize_segment_data(): obgc tracer " //trim(fields(m))// &
                                " appears in OBC_SEGMENT_XXX_DATA string in MOM6 param file. This is not supported!")
           endif
-       enddo
+        enddo
       endif
       if (trim(filename) /= 'none') then
         OBC%update_OBC = .true. ! Data is assumed to be time-dependent if we are reading from file
@@ -1809,8 +1815,8 @@ subroutine parse_for_tracer_reservoirs(OBC, PF, use_temperature)
     !So we need to start from reservoir index for non-native tracers from 3, hence na=2 below.
     !num_fields is the number of vars in segstr (6 of them now,   U,V,SSH,TEMP,SALT,dye)
     !but OBC%tracer_x_reservoirs_used is allocated to size Reg%ntr, which is the total number of tracers
-    na=2 !number of native MOM6 tracers (non-obgc) with reservoirs
-    do m=1,num_obgc_tracers
+    na=2 !number of native MOM6 tracers (T&S) with reservoirs
+    do m=1,OBC%num_obgc_tracers
        !This logic assumes all external tarcers need a reservoir
        !The segments for tracers are not initialized yet (that happens later in initialize_segment_data())
        !so we cannot query to determine if this tracer needs a reservoir.
@@ -4745,7 +4751,8 @@ subroutine register_temp_salt_segments(GV, US, OBC, tr_Reg, param_file)
 end subroutine register_temp_salt_segments
 
 !> Sets the OBC properties of external obgc tracers, such as their source file and field name
-subroutine set_obgc_segments_props(tr_name,obc_src_file_name,obc_src_field_name,lfac_in,lfac_out)
+subroutine set_obgc_segments_props(OBC,tr_name,obc_src_file_name,obc_src_field_name,lfac_in,lfac_out)
+  type(ocean_OBC_type),pointer  :: OBC                !< Open boundary structure
   character(len=*),  intent(in) :: tr_name            !< Tracer name
   character(len=*),  intent(in) :: obc_src_file_name  !< OBC source file name
   character(len=*),  intent(in) :: obc_src_field_name !< name of the field in the source file
@@ -4761,9 +4768,9 @@ subroutine set_obgc_segments_props(tr_name,obc_src_file_name,obc_src_field_name,
   node_ptr%lfac_in  = lfac_in
   node_ptr%lfac_out = lfac_out
   !Reversed Linked List implementation! Make this new node to be the head of the list.
-  node_ptr%next => obgc_segments_props
-  obgc_segments_props => node_ptr
-  num_obgc_tracers = num_obgc_tracers+1
+  node_ptr%next => OBC%obgc_segments_props
+  OBC%obgc_segments_props => node_ptr
+  OBC%num_obgc_tracers = OBC%num_obgc_tracers+1
 end subroutine set_obgc_segments_props
 
 !> Get the OBC properties of external obgc tracers, such as their source file, field name,
