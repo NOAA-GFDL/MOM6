@@ -117,6 +117,9 @@ type, public :: ice_shelf_dyn_CS ; private
   real :: g_Earth      !< The gravitational acceleration [L2 Z-1 T-2 ~> m s-2].
   real :: density_ice  !< A typical density of ice [R ~> kg m-3].
 
+  character(len=40) :: ice_viscosity_compute !< Specifies whether the ice viscosity is computed internally
+                                   !! according to Glen's flow law; is constant (for debugging purposes)
+                                   !! or using observed strain rates and read from a file
   logical :: GL_regularize  !< Specifies whether to regularize the floatation condition
                             !! at the grounding line as in Goldberg Holland Schoof 2009
   integer :: n_sub_regularize
@@ -429,6 +432,10 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
     call get_param(param_file, mdl, "CALVE_TO_MASK", CS%calve_to_mask, &
                  "If true, do not allow an ice shelf where prohibited by a mask.", &
                  default=.false.)
+    call get_param(param_file, mdl, "ICE_VISCOSITY_COMPUTE", CS%ice_viscosity_compute, &
+                 "If MODEL, compute ice viscosity internally, if OBS read from a file,"//&
+                 "if CONSTANT a constant value (for debugging).", &
+                 default="MODEL")
 
   endif
   call get_param(param_file, mdl, "MIN_THICKNESS_SIMPLE_CALVE", CS%min_thickness_simple_calve, &
@@ -1961,13 +1968,13 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
                 taudy(I,J) = taudy(I,J) - .25 * rho * grav * ISS%h_shelf(i,j) * sy * G%areaT(i,j)
         endif
         if (CS%ground_frac(i,j) == 1) then
-!          neumann_val = (.5 * grav * (rho * ISS%h_shelf(i,j)**2 - rhow * CS%bed_elev(i,j)**2))
-          neumann_val = .5 * grav * (1-rho/rhow) * rho * ISS%h_shelf(i,j)**2
+          neumann_val = (.5 * grav * (rho * ISS%h_shelf(i,j)**2 - rhow * CS%bed_elev(i,j)**2))
+!          neumann_val = (.5 * grav * (1-rho/rhow) * rho * ISS%h_shelf(i,j)**2)
         else
           neumann_val = (.5 * grav * (1-rho/rhow) * rho * ISS%h_shelf(i,j)**2)
         endif
 
-        if ((CS%u_face_mask(I-1,j) == 2) .OR. (ISS%hmask(i-1,j) == 0) .OR. (ISS%hmask(i-1,j) == 2) ) then
+        if ((CS%u_face_mask_bdry(I-1,j) == 2) .OR. (ISS%hmask(i-1,j) == 0) .OR. (ISS%hmask(i-1,j) == 2) ) then
           ! left face of the cell is at a stress boundary
           ! the depth-integrated longitudinal stress is equal to the difference of depth-integrated
           ! pressure on either side of the face
@@ -1981,19 +1988,19 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
           taudx(I-1,J) = taudx(I-1,J) - .5 * dyh * neumann_val
         endif
 
-        if ((CS%u_face_mask(I,j) == 2) .OR. (ISS%hmask(i+1,j) == 0) .OR. (ISS%hmask(i+1,j) == 2) ) then
+        if ((CS%u_face_mask_bdry(I,j) == 2) .OR. (ISS%hmask(i+1,j) == 0) .OR. (ISS%hmask(i+1,j) == 2) ) then
           ! east face of the cell is at a stress boundary
           taudx(I,J-1) = taudx(I,J-1) + .5 * dyh * neumann_val
           taudx(I,J) = taudx(I,J) + .5 * dyh * neumann_val
         endif
 
-        if ((CS%v_face_mask(i,J-1) == 2) .OR. (ISS%hmask(i,j-1) == 0) .OR. (ISS%hmask(i,j-1) == 2) ) then
+        if ((CS%v_face_mask_bdry(i,J-1) == 2) .OR. (ISS%hmask(i,j-1) == 0) .OR. (ISS%hmask(i,j-1) == 2) ) then
           ! south face of the cell is at a stress boundary
           taudy(I-1,J-1) = taudy(I-1,J-1) - .5 * dxh * neumann_val
           taudy(I,J-1) = taudy(I,J-1) - .5 * dxh * neumann_val
         endif
 
-        if ((CS%v_face_mask(i,J) == 2) .OR. (ISS%hmask(i,j+1) == 0) .OR. (ISS%hmask(i,j+1) == 2) ) then
+        if ((CS%v_face_mask_bdry(i,J) == 2) .OR. (ISS%hmask(i,j+1) == 0) .OR. (ISS%hmask(i,j+1) == 2) ) then
           ! north face of the cell is at a stress boundary
           taudy(I-1,J) = taudy(I-1,J) + .5 * dxh * neumann_val
           taudy(I,J) = taudy(I,J) + .5 * dxh * neumann_val
@@ -2560,7 +2567,7 @@ subroutine apply_boundary_values(CS, ISS, G, US, time, Phisub, H_node, ice_visc,
 end subroutine apply_boundary_values
 
 
-!> Update depth integrated viscosity, based on horizontal strain rates, and also update the
+!> Update depth integrated viscosity, based on horizontal strain rates
 subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
   type(ice_shelf_dyn_CS), intent(inout) :: CS !< A pointer to the ice shelf control structure
   type(ice_shelf_state),  intent(in)    :: ISS !< A structure with elements that describe
@@ -2575,7 +2582,6 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
                                                 ! quadrature points surrounding the cell vertices [L-1 ~> m-1].
 ! update DEPTH_INTEGRATED viscosity, based on horizontal strain rates - this is for bilinear FEM solve
 
-! also this subroutine updates the nonlinear part of the basal traction
 
 ! this may be subject to change later... to make it "hybrid"
 !  real, dimension(SZDIB_(G),SZDJB_(G)) ::  eII, ux, uy, vx, vy
@@ -2633,14 +2639,22 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
               (v_shlf(I-1,J) * Phi(6,2*(jq-1)+iq,i,j) + &
               v_shlf(I,J-1) * Phi(4,2*(jq-1)+iq,i,j)) )
       enddo ; enddo
-!      CS%ice_visc(i,j) =1e15*(G%areaT(i,j) * ISS%h_shelf(i,j)) ! constant viscocity for debugging
-      CS%ice_visc(i,j) = 0.5 * Visc_coef * (G%areaT(i,j) * ISS%h_shelf(i,j)) * &
-             (US%s_to_T**2 * (ux**2 + vy**2 + ux*vy + 0.25*(uy+vx)**2 + eps_min**2))**((1.-n_g)/(2.*n_g))
-    endif
+       if (trim(CS%ice_viscosity_compute)=="CONSTANT") then
+          CS%ice_visc(i,j) =1e15*(G%areaT(i,j) * ISS%h_shelf(i,j)) ! constant viscocity for debugging
+       elseif (trim(CS%ice_viscosity_compute)=="MODEL") then
+          CS%ice_visc(i,j) = 0.5 * Visc_coef * (G%areaT(i,j) * ISS%h_shelf(i,j)) * &
+              (US%s_to_T**2 * (ux**2 + vy**2 + ux*vy + 0.25*(uy+vx)**2 + eps_min**2))**((1.-n_g)/(2.*n_g))
+       elseif(trim(CS%ice_viscosity_compute)=="OBS") then
+        if (CS%AGlen_visc(i,j) >0) CS%ice_visc(i,j) =CS%AGlen_visc(i,j)*(G%areaT(i,j) * ISS%h_shelf(i,j))
+       ! Here CS%Aglen_visc(i,j) is the ice viscocity [Pa s-1] computed from obs and read from a file
+       endif
+   endif
   enddo ; enddo
   deallocate(Phi)
 end subroutine calc_shelf_visc
 
+
+!> Update basal shear
 subroutine calc_shelf_taub(CS, ISS, G, US, u_shlf, v_shlf)
   type(ice_shelf_dyn_CS), intent(inout) :: CS !< A pointer to the ice shelf control structure
   type(ice_shelf_state),  intent(in)    :: ISS !< A structure with elements that describe
