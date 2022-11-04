@@ -252,7 +252,7 @@ contains
       if (g_tracer_is_prog(g_tracer)) then
           call g_tracer_get_obc_segment_props(g_tracer,g_tracer_name,obc_has ,&
                                    obc_src_file_name,obc_src_field_name,lfac_in,lfac_out)
-          if(obc_has) then
+          if (obc_has) then
             call set_obgc_segments_props(OBC,g_tracer_name,obc_src_file_name,obc_src_field_name,lfac_in,lfac_out)
             call register_obgc_segments(GV, OBC, tr_Reg, param_file, g_tracer_name)
           endif

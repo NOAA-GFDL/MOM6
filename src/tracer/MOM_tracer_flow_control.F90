@@ -360,7 +360,7 @@ subroutine tracer_flow_control_init(restart, day, G, GV, US, h, param_file, diag
 end subroutine tracer_flow_control_init
 
 !> This subroutine calls all registered tracers to register their OBC segments
-!  similar to register_temp_salt_segments for T&S
+!! similar to register_temp_salt_segments for T&S
 subroutine call_tracer_register_obc_segments(GV, param_file, CS, tr_Reg, OBC)
   type(verticalGrid_type),      intent(in) :: GV         !< The ocean's vertical grid structure.
   type(param_file_type),        intent(in) :: param_file !< A structure to parse for run-time

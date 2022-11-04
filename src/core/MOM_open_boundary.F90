@@ -813,20 +813,20 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
 
     obgc_segments_props_list => OBC%obgc_segments_props !pointer to the head node
     do m=1,segment%num_fields
-      if(m .le. num_fields) then
+      if (m .le. num_fields) then
         !These are tracers with segments specified in MOM6 style override files
         call parse_segment_data_str(trim(segstr), m, trim(fields(m)), value, filename, fieldname)
       else
         !These are obgc tracers with segments specified by external modules.
         !Set a flag so that these can be distinguished from native tracers as they may need
         !extra steps for preparation and handling.
-        segment%field(m)%genre='obgc'
+        segment%field(m)%genre = 'obgc'
         !Query the obgc segment properties by traversing the linkedlist
         call get_obgc_segments_props(obgc_segments_props_list,fields(m),filename,fieldname,&
                                      segment%field(m)%resrv_lfac_in,segment%field(m)%resrv_lfac_out)
         !Make sure the obgc tracer is not specified in the MOM6 param file too.
         do mm=1,num_fields
-          if(trim(fields(m))==trim(fields(mm))) then
+          if(trim(fields(m)) == trim(fields(mm))) then
             if(is_root_pe()) &
               call MOM_error(FATAL,"MOM_open_boundary:initialize_segment_data(): obgc tracer " //trim(fields(m))// &
                                " appears in OBC_SEGMENT_XXX_DATA string in MOM6 param file. This is not supported!")
@@ -4779,14 +4779,14 @@ subroutine set_obgc_segments_props(OBC,tr_name,obc_src_file_name,obc_src_field_n
   node_ptr%tracer_src_field = trim(obc_src_field_name)
   node_ptr%lfac_in  = lfac_in
   node_ptr%lfac_out = lfac_out
-  !Reversed Linked List implementation! Make this new node to be the head of the list.
+  ! Reversed Linked List implementation! Make this new node to be the head of the list.
   node_ptr%next => OBC%obgc_segments_props
   OBC%obgc_segments_props => node_ptr
   OBC%num_obgc_tracers = OBC%num_obgc_tracers+1
 end subroutine set_obgc_segments_props
 
 !> Get the OBC properties of external obgc tracers, such as their source file, field name,
-!  reservoir length scale factors
+!! reservoir length scale factors
 subroutine get_obgc_segments_props(node, tr_name,obc_src_file_name,obc_src_field_name,lfac_in,lfac_out)
   type(external_tracers_segments_props),pointer :: node !< pointer to tracer segment properties
   character(len=*), intent(out) :: tr_name            !< Tracer name
@@ -4794,12 +4794,11 @@ subroutine get_obgc_segments_props(node, tr_name,obc_src_file_name,obc_src_field
   character(len=*), intent(out) :: obc_src_field_name !< name of the field in the source file
   real,             intent(out) :: lfac_in   !< multiplicative factor for inbound  reservoir length scale
   real,             intent(out) :: lfac_out  !< multiplicative factor for outbound reservoir length scale
-  tr_name=trim(node%tracer_name)
-  obc_src_file_name=trim(node%tracer_src_file)
-  obc_src_field_name=trim(node%tracer_src_field)
-  lfac_in =node%lfac_in
-  lfac_out=node%lfac_out
-  !pop the head.
+  tr_name = trim(node%tracer_name)
+  obc_src_file_name = trim(node%tracer_src_file)
+  obc_src_field_name = trim(node%tracer_src_field)
+  lfac_in = node%lfac_in
+  lfac_out = node%lfac_out
   node => node%next
 end subroutine get_obgc_segments_props
 
