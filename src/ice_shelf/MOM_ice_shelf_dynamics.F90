@@ -77,7 +77,8 @@ type, public :: ice_shelf_dyn_CS ; private
   real, pointer, dimension(:,:) :: t_shelf => NULL() !< Vertically integrated temperature in the ice shelf/stream,
                                                      !! on corner-points (B grid) [C ~> degC]
   real, pointer, dimension(:,:) :: tmask => NULL()   !< A mask on tracer points that is 1 where there is ice.
-  real, pointer, dimension(:,:) :: ice_visc => NULL()   !< Glen's law ice viscosity (Pa s), often in [R L2 T-1 ~> kg m-1 s-1].
+  real, pointer, dimension(:,:) :: ice_visc => NULL()   !< Glen's law ice viscosity (Pa s),
+                                                       !!  in [R L2 T-1 ~> kg m-1 s-1].
   real, pointer, dimension(:,:) :: AGlen_visc => NULL() !< Ice-stiffness parameter in Glen's law ice viscosity,
                                                       !! often in [kg-1/3 m-1/3 s-1].
   real, pointer, dimension(:,:) :: thickness_bdry_val => NULL() !< The ice thickness at an inflowing boundary [Z ~> m].
@@ -2639,7 +2640,8 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
               v_shlf(I,J-1) * Phi(4,2*(jq-1)+iq,i,j)) )
       enddo ; enddo
        if (trim(CS%ice_viscosity_compute)=="CONSTANT") then
-          CS%ice_visc(i,j) =1e15 * US%kg_m3_to_R*US%m_to_L*US%m_s_to_L_T * (G%areaT(i,j) * ISS%h_shelf(i,j)) ! constant viscocity for debugging
+          CS%ice_visc(i,j) =1e15 * US%kg_m3_to_R*US%m_to_L*US%m_s_to_L_T * (G%areaT(i,j) * ISS%h_shelf(i,j))
+           ! constant viscocity for debugging
          elseif (trim(CS%ice_viscosity_compute)=="MODEL") then
             CS%ice_visc(i,j) = 0.5 * Visc_coef * (G%areaT(i,j) * ISS%h_shelf(i,j)) * &
               (US%s_to_T**2 * (ux**2 + vy**2 + ux*vy + 0.25*(uy+vx)**2 + eps_min**2))**((1.-n_g)/(2.*n_g))
