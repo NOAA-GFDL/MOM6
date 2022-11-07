@@ -77,7 +77,7 @@ type, public :: ice_shelf_dyn_CS ; private
   real, pointer, dimension(:,:) :: t_shelf => NULL() !< Vertically integrated temperature in the ice shelf/stream,
                                                      !! on corner-points (B grid) [C ~> degC]
   real, pointer, dimension(:,:) :: tmask => NULL()   !< A mask on tracer points that is 1 where there is ice.
-  real, pointer, dimension(:,:) :: ice_visc => NULL()   !< Glen's law ice viscosity, often in [R L4 Z T-1 ~> kg m2 s-1].
+  real, pointer, dimension(:,:) :: ice_visc => NULL()   !< Glen's law ice viscosity (Pa s), often in [R L2 T-1 ~> kg m-1 s-1].
   real, pointer, dimension(:,:) :: AGlen_visc => NULL() !< Ice-stiffness parameter in Glen's law ice viscosity,
                                                       !! often in [kg-1/3 m-1/3 s-1].
   real, pointer, dimension(:,:) :: thickness_bdry_val => NULL() !< The ice thickness at an inflowing boundary [Z ~> m].
@@ -94,7 +94,7 @@ type, public :: ice_shelf_dyn_CS ; private
                                                        !! Sign convention: positive below sea-level, negative above.
 
   real, pointer, dimension(:,:) :: basal_traction => NULL() !< The area integrated nonlinear part of "linearized"
-                                                            !! basal stress [R Z L2 T-1 ~> kg s-1].
+                                                            !! basal stress (Pa) [R L2 T-2 ~> Pa].
                 !!  The exact form depends on basal law exponent and/or whether flow is "hybridized" a la Goldberg 2011
   real, pointer, dimension(:,:) :: C_basal_friction => NULL()!< Coefficient in sliding law tau_b = C u^(n_basal_fric),
                                                             !!  units= Pa (m yr-1)-(n_basal_fric)
@@ -264,7 +264,7 @@ subroutine register_ice_shelf_dyn_restarts(G, US, param_file, CS, restart_CS)
     allocate( CS%t_shelf(isd:ied,jsd:jed), source=-10.0*US%degC_to_C ) ! [C ~> degC]
     allocate( CS%ice_visc(isd:ied,jsd:jed), source=0.0 )
     allocate( CS%AGlen_visc(isd:ied,jsd:jed), source=2.261e-25 ) ! [Pa-3 s-1]
-    allocate( CS%basal_traction(isd:ied,jsd:jed), source=0.0 )
+    allocate( CS%basal_traction(isd:ied,jsd:jed), source=0.0 )   ! [Pa]
     allocate( CS%C_basal_friction(isd:ied,jsd:jed), source=5.0e10 ) ! [Pa (m-1 s)^n_sliding]
     allocate( CS%OD_av(isd:ied,jsd:jed), source=0.0 )
     allocate( CS%ground_frac(isd:ied,jsd:jed), source=0.0 )
@@ -588,7 +588,7 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
     CS%id_col_thick = register_diag_field('ice_shelf_model','col_thick',CS%diag%axesT1, Time, &
        'ocean column thickness passed to ice model', 'm', conversion=US%Z_to_m)
     CS%id_visc_shelf = register_diag_field('ice_shelf_model','ice_visc',CS%diag%axesT1, Time, &
-       'vi-viscosity', 'Pa s-1 m', conversion=US%RL2_T2_to_Pa*US%L_T_to_m_s) !vertically integrated viscosity
+       'vi-viscosity', 'Pa m s', conversion=US%RL2_T2_to_Pa*US%Z_to_m*US%T_to_s) !vertically integrated viscosity
     CS%id_taub = register_diag_field('ice_shelf_model','taub_beta',CS%diag%axesT1, Time, &
        'taub', 'MPa', conversion=1e-6*US%RL2_T2_to_Pa)
     CS%id_OD_av = register_diag_field('ice_shelf_model','OD_av',CS%diag%axesT1, Time, &
@@ -1969,7 +1969,6 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
         endif
         if (CS%ground_frac(i,j) == 1) then
           neumann_val = (.5 * grav * (rho * ISS%h_shelf(i,j)**2 - rhow * CS%bed_elev(i,j)**2))
-!          neumann_val = (.5 * grav * (1-rho/rhow) * rho * ISS%h_shelf(i,j)**2)
         else
           neumann_val = (.5 * grav * (1-rho/rhow) * rho * ISS%h_shelf(i,j)**2)
         endif
@@ -2615,8 +2614,8 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
   do j=jsc,jec ; do i=isc,iec
 
     if ((ISS%hmask(i,j) == 1) .OR. (ISS%hmask(i,j) == 3)) then
-      Visc_coef = US%kg_m2s_to_RZ_T*US%m_to_L*US%Z_to_L*(CS%AGlen_visc(i,j))**(-1./CS%n_glen)
-
+      Visc_coef = ( (US%RL2_T2_to_Pa)**(-CS%n_glen)*US%T_to_s )**(-1./CS%n_glen) * (CS%AGlen_visc(i,j))**(-1./CS%n_glen)
+                  ! Units of Aglen_visc [Pa-3 s-1]
       do iq=1,2 ; do jq=1,2
 
         ux = ( (u_shlf(I-1,J-1) * Phi(1,2*(jq-1)+iq,i,j) + &
@@ -2640,15 +2639,15 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
               v_shlf(I,J-1) * Phi(4,2*(jq-1)+iq,i,j)) )
       enddo ; enddo
        if (trim(CS%ice_viscosity_compute)=="CONSTANT") then
-          CS%ice_visc(i,j) =1e15*(G%areaT(i,j) * ISS%h_shelf(i,j)) ! constant viscocity for debugging
-       elseif (trim(CS%ice_viscosity_compute)=="MODEL") then
-          CS%ice_visc(i,j) = 0.5 * Visc_coef * (G%areaT(i,j) * ISS%h_shelf(i,j)) * &
+          CS%ice_visc(i,j) =1e15 * US%kg_m3_to_R*US%m_to_L*US%m_s_to_L_T * (G%areaT(i,j) * ISS%h_shelf(i,j)) ! constant viscocity for debugging
+         elseif (trim(CS%ice_viscosity_compute)=="MODEL") then
+            CS%ice_visc(i,j) = 0.5 * Visc_coef * (G%areaT(i,j) * ISS%h_shelf(i,j)) * &
               (US%s_to_T**2 * (ux**2 + vy**2 + ux*vy + 0.25*(uy+vx)**2 + eps_min**2))**((1.-n_g)/(2.*n_g))
-       elseif(trim(CS%ice_viscosity_compute)=="OBS") then
-        if (CS%AGlen_visc(i,j) >0) CS%ice_visc(i,j) =CS%AGlen_visc(i,j)*(G%areaT(i,j) * ISS%h_shelf(i,j))
-       ! Here CS%Aglen_visc(i,j) is the ice viscocity [Pa s-1] computed from obs and read from a file
+         elseif(trim(CS%ice_viscosity_compute)=="OBS") then
+           if (CS%AGlen_visc(i,j) >0) CS%ice_visc(i,j) =CS%AGlen_visc(i,j)*(G%areaT(i,j) * ISS%h_shelf(i,j))
+            ! Here CS%Aglen_visc(i,j) is the ice viscocity [Pa s-1] computed from obs and read from a file
        endif
-   endif
+     endif
   enddo ; enddo
   deallocate(Phi)
 end subroutine calc_shelf_visc
