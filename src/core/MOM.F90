@@ -2172,7 +2172,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
                "The time between OBC segment data updates for OBGC tracers. "//&
                "This must be an integer multiple of DT and DT_THERM. "//&
                "The default is set to DT.", &
-               units="s", default=US%T_to_s*CS%dt)
+               units="s", default=US%T_to_s*CS%dt, do_not_log=.not.associated(CS%OBC))
 
   ! This is here in case these values are used inappropriately.
   use_frazil = .false. ; bound_salinity = .false.
