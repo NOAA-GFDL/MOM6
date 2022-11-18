@@ -115,7 +115,8 @@ use MOM_set_visc,              only : set_visc_init, set_visc_end
 use MOM_shared_initialization, only : write_ocean_geometry_file
 use MOM_sponge,                only : init_sponge_diags, sponge_CS
 use MOM_state_initialization,  only : MOM_initialize_state
-use MOM_stoch_eos,             only : MOM_stoch_eos_init,MOM_stoch_eos_run,MOM_stoch_eos_CS,mom_calc_varT
+use MOM_stoch_eos,             only : MOM_stoch_eos_init, MOM_stoch_eos_run, MOM_stoch_eos_CS
+use MOM_stoch_eos,             only : post_stoch_eos_diags, mom_calc_varT
 use MOM_sum_output,            only : write_energy, accumulate_net_input
 use MOM_sum_output,            only : MOM_sum_output_init, MOM_sum_output_end
 use MOM_sum_output,            only : sum_output_CS
@@ -285,6 +286,7 @@ type, public :: MOM_control_struct ; private
   logical :: thickness_diffuse_first !< If true, diffuse thickness before dynamics.
   logical :: mixedlayer_restrat      !< If true, use submesoscale mixed layer restratifying scheme.
   logical :: useMEKE                 !< If true, call the MEKE parameterization.
+  logical :: use_stochastic_EOS      !< If true, use the stochastic EOS parameterizations.
   logical :: useWaves                !< If true, update Stokes drift
   logical :: use_p_surf_in_EOS       !< If true, always include the surface pressure contributions
                                      !! in equation of state calculations.
@@ -295,7 +297,10 @@ type, public :: MOM_control_struct ; private
                                      !! calculated, and if it is 0, dtbt is calculated every step.
   type(time_type) :: dtbt_reset_interval !< A time_time representation of dtbt_reset_period.
   type(time_type) :: dtbt_reset_time     !< The next time DTBT should be calculated.
-  real            :: dt_obc_seg_period   !< The time interval between OBC segment updates for OBGC tracers
+  real            :: dt_obc_seg_period   !< The time interval between OBC segment updates for OBGC
+                                         !! tracers [T ~> s], or a negative value if the segment
+                                         !! data are time-invarant, or zero to update the OBGC
+                                         !! segment data with every call to update_OBC_segment_data.
   type(time_type) :: dt_obc_seg_interval !< A time_time representation of dt_obc_seg_period.
   type(time_type) :: dt_obc_seg_time     !< The next time OBC segment update is applied to OBGC tracers.
 
@@ -1076,12 +1081,12 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
 
   call cpu_clock_begin(id_clock_dynamics)
   call cpu_clock_begin(id_clock_stoch)
-  if (CS%stoch_eos_CS%use_stoch_eos) call MOM_stoch_eos_run(G,u,v,dt,Time_local,CS%stoch_eos_CS,CS%diag)
+  if (CS%use_stochastic_EOS) call MOM_stoch_eos_run(G, u, v, dt, Time_local, CS%stoch_eos_CS)
   call cpu_clock_end(id_clock_stoch)
   call cpu_clock_begin(id_clock_varT)
-  if (CS%stoch_eos_CS%stanley_coeff >= 0.0) then
-    call MOM_calc_varT(G,GV,h,CS%tv,CS%stoch_eos_CS,dt)
-    call pass_var(CS%tv%varT, G%Domain,clock=id_clock_pass,halo=1)
+  if (CS%use_stochastic_EOS) then
+    call MOM_calc_varT(G, GV, h, CS%tv, CS%stoch_eos_CS, dt)
+    if (associated(CS%tv%varT)) call pass_var(CS%tv%varT, G%Domain, clock=id_clock_pass, halo=1)
   endif
   call cpu_clock_end(id_clock_varT)
 
@@ -1294,9 +1299,7 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
   if (IDs%id_u > 0) call post_data(IDs%id_u, u, CS%diag)
   if (IDs%id_v > 0) call post_data(IDs%id_v, v, CS%diag)
   if (IDs%id_h > 0) call post_data(IDs%id_h, h, CS%diag)
-  if (CS%stoch_eos_CS%id_stoch_eos > 0) call post_data(CS%stoch_eos_CS%id_stoch_eos, CS%stoch_eos_CS%pattern, CS%diag)
-  if (CS%stoch_eos_CS%id_stoch_phi > 0) call post_data(CS%stoch_eos_CS%id_stoch_phi, CS%stoch_eos_CS%phi, CS%diag)
-  if (CS%stoch_eos_CS%id_tvar_sgs > 0) call post_data(CS%stoch_eos_CS%id_tvar_sgs, CS%tv%varT, CS%diag)
+  if (CS%use_stochastic_EOS) call post_stoch_eos_diags(CS%stoch_eos_CS, CS%tv, CS%diag)
   call disable_averaging(CS%diag)
   call cpu_clock_end(id_clock_diagnostics) ; call cpu_clock_end(id_clock_other)
 
@@ -2167,12 +2170,11 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
                  units="s", default=default_val, do_not_read=(dtbt > 0.0))
   endif
 
-  CS%dt_obc_seg_period = -1.0
   call get_param(param_file, "MOM", "DT_OBC_SEG_UPDATE_OBGC", CS%dt_obc_seg_period, &
                "The time between OBC segment data updates for OBGC tracers. "//&
                "This must be an integer multiple of DT and DT_THERM. "//&
                "The default is set to DT.", &
-               units="s", default=US%T_to_s*CS%dt, do_not_log=.not.associated(CS%OBC))
+               units="s", default=US%T_to_s*CS%dt, scale=US%s_to_T, do_not_log=.not.associated(CS%OBC))
 
   ! This is here in case these values are used inappropriately.
   use_frazil = .false. ; bound_salinity = .false.
@@ -2947,7 +2949,11 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
     call interface_filter_init(Time, G, GV, US, param_file, diag, CS%CDp, CS%interface_filter_CSp)
 
   new_sim = is_new_run(restart_CSp)
-  call MOM_stoch_eos_init(G,Time,param_file,CS%stoch_eos_CS,restart_CSp,diag)
+  if (use_temperature) then
+    CS%use_stochastic_EOS = MOM_stoch_eos_init(Time, G, US, param_file, diag, CS%stoch_eos_CS, restart_CSp)
+  else
+    CS%use_stochastic_EOS = .false.
+  endif
 
   if (CS%use_porbar) &
     call porous_barriers_init(Time, US, param_file, diag, CS%por_bar_CS)
