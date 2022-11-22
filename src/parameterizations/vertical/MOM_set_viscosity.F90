@@ -4,37 +4,39 @@ module MOM_set_visc
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
-use MOM_debugging, only : uvchksum, hchksum
-use MOM_cpu_clock, only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_ROUTINE
+use MOM_ALE,           only : ALE_CS, ALE_remap_velocities, ALE_remap_interface_vals, ALE_remap_vertex_vals
+use MOM_cpu_clock,     only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_ROUTINE
+use MOM_debugging,     only : uvchksum, hchksum
 use MOM_diag_mediator, only : post_data, register_diag_field, safe_alloc_ptr
 use MOM_diag_mediator, only : diag_ctrl, time_type
-use MOM_domains, only : pass_var, CORNER
+use MOM_domains,       only : pass_var, CORNER
 use MOM_error_handler, only : MOM_error, FATAL, WARNING
-use MOM_file_parser, only : get_param, log_param, log_version, param_file_type
-use MOM_forcing_type, only : forcing, mech_forcing
-use MOM_grid, only : ocean_grid_type
-use MOM_hor_index, only : hor_index_type
-use MOM_io, only : slasher, MOM_read_data
-use MOM_kappa_shear, only : kappa_shear_is_used, kappa_shear_at_vertex
-use MOM_cvmix_shear, only : cvmix_shear_is_used
-use MOM_cvmix_conv,  only : cvmix_conv_is_used
-use MOM_CVMix_ddiff, only : CVMix_ddiff_is_used
-use MOM_restart, only : register_restart_field, query_initialized, MOM_restart_CS
-use MOM_restart, only : register_restart_field_as_obsolete
-use MOM_safe_alloc, only : safe_alloc_ptr, safe_alloc_alloc
-use MOM_unit_scaling, only : unit_scale_type
-use MOM_variables, only : thermo_var_ptrs, vertvisc_type, porous_barrier_type
-use MOM_verticalGrid, only : verticalGrid_type
-use MOM_EOS, only : calculate_density, calculate_density_derivs
+use MOM_file_parser,   only : get_param, log_param, log_version, param_file_type
+use MOM_forcing_type,  only : forcing, mech_forcing
+use MOM_grid,          only : ocean_grid_type
+use MOM_hor_index,     only : hor_index_type
+use MOM_io,            only : slasher, MOM_read_data
+use MOM_kappa_shear,   only : kappa_shear_is_used, kappa_shear_at_vertex
+use MOM_cvmix_shear,   only : cvmix_shear_is_used
+use MOM_cvmix_conv,    only : cvmix_conv_is_used
+use MOM_CVMix_ddiff,   only : CVMix_ddiff_is_used
+use MOM_restart,       only : register_restart_field, query_initialized, MOM_restart_CS
+use MOM_restart,       only : register_restart_field_as_obsolete
+use MOM_safe_alloc,    only : safe_alloc_ptr, safe_alloc_alloc
+use MOM_unit_scaling,  only : unit_scale_type
+use MOM_variables,     only : thermo_var_ptrs, vertvisc_type, porous_barrier_type
+use MOM_verticalGrid,  only : verticalGrid_type
+use MOM_EOS,           only : calculate_density, calculate_density_derivs
 use MOM_open_boundary, only : ocean_OBC_type, OBC_NONE, OBC_DIRECTION_E
 use MOM_open_boundary, only : OBC_DIRECTION_W, OBC_DIRECTION_N, OBC_DIRECTION_S
 use MOM_open_boundary, only : OBC_segment_type
+
 implicit none ; private
 
 #include <MOM_memory.h>
 
 public set_viscous_BBL, set_viscous_ML, set_visc_init, set_visc_end
-public set_visc_register_restarts
+public set_visc_register_restarts, remap_vertvisc_aux_vars
 
 ! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
 ! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
@@ -77,7 +79,7 @@ type, public :: set_visc_CS ; private
   logical :: Channel_drag   !< If true, the drag is exerted directly on each layer
                             !! according to what fraction of the bottom they overlie.
   real    :: Chan_drag_max_vol !< The maximum bottom boundary layer volume within which the
-                            !! channel drag is applied, normalized by the the full cell area,
+                            !! channel drag is applied, normalized by the full cell area,
                             !! or a negative value to apply no maximum [H ~> m or kg m-2].
   logical :: correct_BBL_bounds !< If true, uses the correct bounds on the BBL thickness and
                             !! viscosity so that the bottom layer feels the intended drag.
@@ -134,7 +136,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
                             intent(in)    :: h    !< Layer thicknesses [H ~> m or kg m-2].
   type(thermo_var_ptrs),    intent(in)    :: tv   !< A structure containing pointers to any
                                                   !! available thermodynamic fields. Absent fields
-                                                  !! have NULL ptrs.
+                                                  !! have NULL pointers.
   type(vertvisc_type),      intent(inout) :: visc !< A structure containing vertical viscosities and
                                                   !! related fields.
   type(set_visc_CS),        intent(inout) :: CS   !< The control structure returned by a previous
@@ -1192,7 +1194,7 @@ subroutine set_viscous_ML(u, v, h, tv, forces, visc, dt, G, GV, US, CS)
                            intent(in)    :: h    !< Layer thicknesses [H ~> m or kg m-2].
   type(thermo_var_ptrs),   intent(in)    :: tv   !< A structure containing pointers to any available
                                                  !! thermodynamic fields. Absent fields have
-                                                 !! NULL ptrs.
+                                                 !! NULL pointers.
   type(mech_forcing),      intent(in)    :: forces !< A structure with the driving mechanical forces
   type(vertvisc_type),     intent(inout) :: visc !< A structure containing vertical viscosities and
                                                  !! related fields.
@@ -1236,7 +1238,7 @@ subroutine set_viscous_ML(u, v, h, tv, forces, visc, dt, G, GV, US, CS)
                 ! viscous mixed layer.
   real :: Uh2   ! The squared magnitude of the difference between the velocity
                 ! integrated through the mixed layer and the velocity of the
-                ! interior layer layer times the depth of the the mixed layer
+                ! interior layer layer times the depth of the mixed layer
                 ! [H2 L2 T-2 ~> m4 s-2 or kg2 m-2 s-2].
   real :: htot_vel  ! Sum of the layer thicknesses up to some point [H ~> m or kg m-2].
   real :: hwtot     ! Sum of the thicknesses used to calculate
@@ -1253,8 +1255,8 @@ subroutine set_viscous_ML(u, v, h, tv, forces, visc, dt, G, GV, US, CS)
   real :: S_lay     ! The layer salinity at velocity points [S ~> ppt].
   real :: Rlay      ! The layer potential density at velocity points [R ~> kg m-3].
   real :: Rlb       ! The potential density of the layer below [R ~> kg m-3].
-  real :: v_at_u    ! The meridonal velocity at a zonal velocity point [L T-1 ~> m s-1].
-  real :: u_at_v    ! The zonal velocity at a meridonal velocity point [L T-1 ~> m s-1].
+  real :: v_at_u    ! The meridional velocity at a zonal velocity point [L T-1 ~> m s-1].
+  real :: u_at_v    ! The zonal velocity at a meridional velocity point [L T-1 ~> m s-1].
   real :: gHprime   ! The mixed-layer internal gravity wave speed squared, based
                     ! on the mixed layer thickness and density difference across
                     ! the base of the mixed layer [L2 T-2 ~> m2 s-2].
@@ -1863,7 +1865,7 @@ subroutine set_visc_register_restarts(HI, GV, US, param_file, visc, restart_CS)
   type(vertvisc_type),     intent(inout) :: visc       !< A structure containing vertical
                                                        !! viscosities and related fields.
                                                        !! Allocated here.
-  type(MOM_restart_CS),    intent(inout) :: restart_CS !< MOM restart control struct
+  type(MOM_restart_CS),    intent(inout) :: restart_CS !< MOM restart control structure
   ! Local variables
   logical :: use_kappa_shear, KS_at_vertex
   logical :: adiabatic, useKPP, useEPBL
@@ -1942,6 +1944,34 @@ subroutine set_visc_register_restarts(HI, GV, US, param_file, visc, restart_CS)
 
 end subroutine set_visc_register_restarts
 
+!> This subroutine does remapping for the auxiliary restart variables in a vertvisc_type
+!! that are used across timesteps
+subroutine remap_vertvisc_aux_vars(G, GV, visc, h_old, h_new, ALE_CSp, OBC)
+  type(ocean_grid_type),            intent(inout) :: G        !< ocean grid structure
+  type(verticalGrid_type),          intent(in)    :: GV       !< ocean vertical grid structure
+  type(vertvisc_type),              intent(inout) :: visc     !< A structure containing vertical
+                                                              !! viscosities and related fields.
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                                    intent(in)    :: h_old    !< Thickness of source grid  [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                                    intent(in)    :: h_new    !< Thickness of destination grid [H ~> m or kg m-2]
+  type(ALE_CS),                     pointer       :: ALE_CSp  !< ALE control structure to use when remapping
+  type(ocean_OBC_type),             pointer       :: OBC      !< Open boundary structure
+
+  if (associated(visc%Kd_shear)) then
+    call ALE_remap_interface_vals(ALE_CSp, G, GV, h_old, h_new, visc%Kd_shear)
+  endif
+
+  if (associated(visc%Kv_shear)) then
+    call ALE_remap_interface_vals(ALE_CSp, G, GV, h_old, h_new, visc%Kv_shear)
+  endif
+
+  if (associated(visc%Kv_shear_Bu)) then
+    call ALE_remap_vertex_vals(ALE_CSp, G, GV, h_old, h_new, visc%Kv_shear_Bu)
+  endif
+
+end subroutine remap_vertvisc_aux_vars
+
 !> Initializes the MOM_set_visc control structure
 subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS, OBC)
   type(time_type), target, intent(in)    :: Time !< The current model time.
@@ -1953,15 +1983,15 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
   type(diag_ctrl), target, intent(inout) :: diag !< A structure that is used to regulate diagnostic
                                                  !! output.
   type(vertvisc_type),     intent(inout) :: visc !< A structure containing vertical viscosities and
-                                                 !! related fields.  Allocated here.
-  type(set_visc_CS),       intent(inout) :: CS   !< Vertical viscosity control struct
-  type(MOM_restart_CS),    intent(inout) :: restart_CS !< MOM restart control struct
+                                                 !! related fields.
+  type(set_visc_CS),       intent(inout) :: CS   !< Vertical viscosity control structure
+  type(MOM_restart_CS),    intent(inout) :: restart_CS !< MOM restart control structure
   type(ocean_OBC_type),    pointer       :: OBC  !< A pointer to an open boundary condition structure
 
   ! Local variables
   real    :: Csmag_chan_dflt ! The default value for SMAG_CONST_CHANNEL [nondim]
   real    :: smag_const1     ! The default value for the Smagorinsky Laplacian coefficient [nondim]
-  real    :: TKE_decay_dflt  ! The default value of a coeficient scaling the vertical decay
+  real    :: TKE_decay_dflt  ! The default value of a coefficient scaling the vertical decay
                              ! rate of TKE [nondim]
   real    :: bulk_Ri_ML_dflt ! The default bulk Richardson number for a bulk mixed layer [nondim]
   real    :: Kv_background   ! The background kinematic viscosity in the interior [m2 s-1]
@@ -1989,7 +2019,8 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
                              ! isopycnal or stacked shallow water mode.
   logical :: use_temperature ! If true, temperature and salinity are used as state variables.
   logical :: use_EOS         ! If true, density calculated from T & S using an equation of state.
-  character(len=200) :: filename, tideamp_file
+  character(len=200) :: filename, tideamp_file ! Input file names or paths
+  character(len=80)  :: tideamp_var ! Input file variable names
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_set_visc"  ! This module's name.
@@ -2090,7 +2121,7 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
                    "scale for turbulence.", default=.false., do_not_log=.true.)
     omega_frac_dflt = 0.0
     if (use_omega) then
-      call MOM_error(WARNING, "ML_USE_OMEGA is depricated; use ML_OMEGA_FRAC=1.0 instead.")
+      call MOM_error(WARNING, "ML_USE_OMEGA is deprecated; use ML_OMEGA_FRAC=1.0 instead.")
       omega_frac_dflt = 1.0
     endif
     call get_param(param_file, mdl, "ML_OMEGA_FRAC", CS%omega_frac, &
@@ -2130,6 +2161,9 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
       call get_param(param_file, mdl, "TIDEAMP_FILE", tideamp_file, &
                    "The path to the file containing the spatially varying "//&
                    "tidal amplitudes with INT_TIDE_DISSIPATION.", default="tideamp.nc")
+      call get_param(param_file, mdl, "TIDEAMP_VARNAME", tideamp_var, &
+                   "The name of the tidal amplitude variable in the input file.", &
+                   default="tideamp")
     else
       call get_param(param_file, mdl, "DRAG_BG_VEL", CS%drag_bg_vel, &
                    "DRAG_BG_VEL is either the assumed bottom velocity (with "//&
@@ -2223,7 +2257,7 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
   CS%BBL_thick_min = CS%BBL_thick_min * GV%m_to_H ! Rescale
 
   if (CS%RiNo_mix .and. kappa_shear_at_vertex(param_file)) then
-    ! This is necessary for reproduciblity across restarts in non-symmetric mode.
+    ! This is necessary for reproducibility across restarts in non-symmetric mode.
     call pass_var(visc%Kv_shear_Bu, G%Domain, position=CORNER, complete=.true.)
   endif
 
@@ -2257,7 +2291,7 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
       allocate(CS%tideamp(isd:ied,jsd:jed), source=0.0)
       filename = trim(CS%inputdir) // trim(tideamp_file)
       call log_param(param_file, mdl, "INPUTDIR/TIDEAMP_FILE", filename)
-      call MOM_read_data(filename, 'tideamp', CS%tideamp, G%domain, scale=US%m_to_Z*US%T_to_s)
+      call MOM_read_data(filename, tideamp_var, CS%tideamp, G%domain, scale=US%m_to_Z*US%T_to_s)
       call pass_var(CS%tideamp,G%domain)
     endif
   endif
