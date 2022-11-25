@@ -1267,7 +1267,7 @@ logical function MEKE_init(Time, G, US, param_file, diag, dbcomms_CS, CS, MEKE, 
   call get_param(param_file, mdl, "MEKE_RD_MAX_SCALE", CS%Rd_as_max_scale, &
                  "If true, the length scale used by MEKE is the minimum of "//&
                  "the deformation radius or grid-spacing. Only used if "//&
-                 "MEKE_OLD_LSCALE=True", units="nondim", default=.false.)
+                 "MEKE_OLD_LSCALE=True", default=.false.)
   call get_param(param_file, mdl, "MEKE_VISCOSITY_COEFF_KU", CS%viscosity_coeff_Ku, &
                  "If non-zero, is the scaling coefficient in the expression for"//&
                  "viscosity used to parameterize harmonic lateral momentum mixing by"//&
@@ -1522,7 +1522,8 @@ subroutine ML_MEKE_init(diag, G, US, Time, param_file, dbcomms_CS, CS)
   call get_param(param_file, mdl, "EKE_MODEL", model_filename, &
                  "Filename of the a saved pyTorch model to use", fail_if_missing = .true.)
   call get_param(param_file, mdl, "EKE_MAX", CS%eke_max, &
-                 "Maximum value of EKE allowed when inferring EKE", default=2., scale=US%L_T_to_m_s**2)
+                 "Maximum value of EKE allowed when inferring EKE", &
+                 units="m2 s-2", default=2., scale=US%L_T_to_m_s**2)
 
   ! Set the machine learning model
   if (dbcomms_CS%colocated) then
