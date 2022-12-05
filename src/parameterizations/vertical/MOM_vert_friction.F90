@@ -66,7 +66,7 @@ type, public :: vertvisc_CS ; private
                              !! [L2 T-1 ~> m2 s-1]
   logical :: read_kappa_gl90 !< If true, read a file containing the spatially varying kappa_gl90
   real    :: alpha_gl90      !< Coefficient used to compute a depth-independent GL90 vertical
-                             !! viscosity via Kv_gl90 = alpha_gl90 * f2. Note that the implied
+                             !! viscosity via Kv_gl90 = alpha_gl90 * f^2. Note that the implied
                              !! Kv_gl90 corresponds to a kappa_gl90 that scales as N^2 with depth.
                              !! [L2 T ~> m2 s]
   real    :: maxvel          !< Velocity components greater than maxvel are truncated [L T-1 ~> m s-1].
@@ -181,7 +181,8 @@ contains
 !! but in a TWA (thickness-weighted averaged) set of equations. The vertical viscosity coefficient nu is computed
 !! from kappa_GM via thermal wind balance, and the following relation:
 !! nu = kappa_GM * f^2 / N^2.
-!! In the following subroutine kappa_GM is assumed either (a) constant or (b) as having an EBT structure.
+!! In the following subroutine kappa_GM is assumed either (a) constant or (b) horizontally varying. In both cases,
+!! (a) and  (b), one can additionally impose an EBT structure in the vertical for kappa_GM.
 !! A third possible formulation of nu is depth-independent:
 !! nu = f^2 * alpha
 !! The latter formulation would be equivalent to a kappa_GM that varies as N^2 with depth.
