@@ -58,8 +58,8 @@ type, public :: vertvisc_CS ; private
 
   logical :: use_GL90_in_SSW !< If true, use the GL90 parameterization in stacked shallow water mode (SSW).
                              !! The calculation of the GL90 viscosity coefficient uses the fact that in SSW
-                             !! we simply have 1/N^2 = h/g'. This identity does not generalize to non-SSW
-                             !! setups.
+                             !! we simply have 1/N^2 = h/g^prime, where g^prime is the reduced gravity.
+                             !! This identity does not generalize to non-SSW setups.
   logical :: use_GL90_N2     !< If true, use GL90 vertical viscosity coefficient that is depth-independent;
                              !! this corresponds to a kappa_GM that scales as N^2 with depth.
   real    :: kappa_gl90      !< The scalar diffusivity used in the GL90 vertical viscosity scheme
