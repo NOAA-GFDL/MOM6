@@ -156,11 +156,13 @@ type, public :: vertvisc_CS ; private
   real, allocatable, dimension(:,:) :: kappa_gl90_2d !< 2D kappa_gl90 at h-points [L2 T-1 ~> m2 s-1]
 
   !>@{ Diagnostic identifiers
-  integer :: id_du_dt_visc = -1, id_dv_dt_visc = -1, id_au_vv = -1, id_av_vv = -1
+  integer :: id_du_dt_visc = -1, id_dv_dt_visc = -1
+  integer :: id_au_vv = -1, id_av_vv = -1, id_au_gl90_vv = -1, id_av_gl90_vv = -1
   integer :: id_du_dt_str = -1, id_dv_dt_str = -1
   integer :: id_h_u = -1, id_h_v = -1, id_hML_u = -1 , id_hML_v = -1
   integer :: id_taux_bot = -1, id_tauy_bot = -1
   integer :: id_Kv_slow = -1, id_Kv_u = -1, id_Kv_v = -1
+  integer :: id_Kv_gl90_u = -1, id_Kv_gl90_v = -1
   ! integer :: id_hf_du_dt_visc    = -1, id_hf_dv_dt_visc    = -1
   integer :: id_h_du_dt_visc    = -1, id_h_dv_dt_visc    = -1
   integer :: id_hf_du_dt_visc_2d = -1, id_hf_dv_dt_visc_2d = -1
@@ -868,6 +870,8 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
   real, allocatable, dimension(:,:) :: hML_v ! Diagnostic of the mixed layer depth at v points [H ~> m or kg m-2].
   real, allocatable, dimension(:,:,:) :: Kv_u !< Total vertical viscosity at u-points [Z2 T-1 ~> m2 s-1].
   real, allocatable, dimension(:,:,:) :: Kv_v !< Total vertical viscosity at v-points [Z2 T-1 ~> m2 s-1].
+  real, allocatable, dimension(:,:,:) :: Kv_gl90_u !< GL90 vertical viscosity at u-points [Z2 T-1 ~> m2 s-1].
+  real, allocatable, dimension(:,:,:) :: Kv_gl90_v !< GL90 vertical viscosity at v-points [Z2 T-1 ~> m2 s-1].
   real :: zcol(SZI_(G)) ! The height of an interface at h-points [H ~> m or kg m-2].
   real :: botfn   ! A function which goes from 1 at the bottom to 0 much more
                   ! than Hbbl into the interior [nondim].
@@ -908,6 +912,10 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
   if (CS%id_Kv_u > 0) allocate(Kv_u(G%IsdB:G%IedB,G%jsd:G%jed,GV%ke), source=0.0)
 
   if (CS%id_Kv_v > 0) allocate(Kv_v(G%isd:G%ied,G%JsdB:G%JedB,GV%ke), source=0.0)
+
+  if (CS%id_Kv_gl90_u > 0) allocate(Kv_gl90_u(G%IsdB:G%IedB,G%jsd:G%jed,GV%ke), source=0.0)
+
+  if (CS%id_Kv_gl90_v > 0) allocate(Kv_gl90_v(G%isd:G%ied,G%JsdB:G%JedB,GV%ke), source=0.0)
 
   if (CS%debug .or. (CS%id_hML_u > 0)) allocate(hML_u(G%IsdB:G%IedB,G%jsd:G%jed), source=0.0)
   if (CS%debug .or. (CS%id_hML_v > 0)) allocate(hML_v(G%isd:G%ied,G%JsdB:G%JedB), source=0.0)
@@ -1104,7 +1112,12 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
         if (do_i(I)) Kv_u(I,j,k) = 0.5 * GV%H_to_Z*(CS%a_u(I,j,K)+CS%a_u(I,j,K+1)) * CS%h_u(I,j,k)
       enddo ; enddo
     endif
-
+    ! Diagnose GL90 Kv at u-points
+    if (CS%id_Kv_gl90_u > 0) then
+      do k=1,nz ; do I=Isq,Ieq
+        if (do_i(I)) Kv_gl90_u(I,j,k) = 0.5 * GV%H_to_Z*(CS%a_u_gl90(I,j,K)+CS%a_u_gl90(I,j,K+1)) * CS%h_u(I,j,k)
+      enddo ; enddo
+    endif
   enddo
 
 
@@ -1295,7 +1308,12 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
         if (do_i(I)) Kv_v(i,J,k) = 0.5 * GV%H_to_Z*(CS%a_v(i,J,K)+CS%a_v(i,J,K+1)) * CS%h_v(i,J,k)
       enddo ; enddo
     endif
-
+    ! Diagnose GL90 Kv at v-points
+    if (CS%id_Kv_gl90_v > 0) then
+      do k=1,nz ; do i=is,ie
+        if (do_i(I)) Kv_gl90_v(i,J,k) = 0.5 * GV%H_to_Z*(CS%a_v_gl90(i,J,K)+CS%a_v_gl90(i,J,K+1)) * CS%h_v(i,J,k)
+      enddo ; enddo
+    endif
   enddo ! end of v-point j loop
 
   if (CS%debug) then
@@ -1314,8 +1332,12 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
         call post_data(CS%id_Kv_slow, visc%Kv_slow, CS%diag)
     if (CS%id_Kv_u > 0) call post_data(CS%id_Kv_u, Kv_u, CS%diag)
     if (CS%id_Kv_v > 0) call post_data(CS%id_Kv_v, Kv_v, CS%diag)
+    if (CS%id_Kv_gl90_u > 0) call post_data(CS%id_Kv_gl90_u, Kv_gl90_u, CS%diag)
+    if (CS%id_Kv_gl90_v > 0) call post_data(CS%id_Kv_gl90_v, Kv_gl90_v, CS%diag)
     if (CS%id_au_vv > 0) call post_data(CS%id_au_vv, CS%a_u, CS%diag)
     if (CS%id_av_vv > 0) call post_data(CS%id_av_vv, CS%a_v, CS%diag)
+    if (CS%id_au_gl90_vv > 0) call post_data(CS%id_au_gl90_vv, CS%a_u_gl90, CS%diag)
+    if (CS%id_av_gl90_vv > 0) call post_data(CS%id_av_gl90_vv, CS%a_v_gl90, CS%diag)
     if (CS%id_h_u > 0) call post_data(CS%id_h_u, CS%h_u, CS%diag)
     if (CS%id_h_v > 0) call post_data(CS%id_h_v, CS%h_v, CS%diag)
     if (CS%id_hML_u > 0) call post_data(CS%id_hML_u, hML_u, CS%diag)
@@ -2287,11 +2309,23 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
   CS%id_Kv_v = register_diag_field('ocean_model', 'Kv_v', diag%axesCvL, Time, &
       'Total vertical viscosity at v-points', 'm2 s-1', conversion=US%Z2_T_to_m2_s)
 
+  CS%id_Kv_gl90_u = register_diag_field('ocean_model', 'Kv_gl90_u', diag%axesCuL, Time, &
+      'GL90 vertical viscosity at u-points', 'm2 s-1', conversion=US%Z2_T_to_m2_s)
+
+  CS%id_Kv_gl90_v = register_diag_field('ocean_model', 'Kv_gl90_v', diag%axesCvL, Time, &
+      'GL90 vertical viscosity at v-points', 'm2 s-1', conversion=US%Z2_T_to_m2_s)
+
   CS%id_au_vv = register_diag_field('ocean_model', 'au_visc', diag%axesCui, Time, &
       'Zonal Viscous Vertical Coupling Coefficient', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
 
   CS%id_av_vv = register_diag_field('ocean_model', 'av_visc', diag%axesCvi, Time, &
       'Meridional Viscous Vertical Coupling Coefficient', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
+
+  CS%id_au_gl90_vv = register_diag_field('ocean_model', 'au_gl90_visc', diag%axesCui, Time, &
+      'Zonal Viscous Vertical GL90 Coupling Coefficient', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
+
+  CS%id_av_gl90_vv = register_diag_field('ocean_model', 'av_gl90_visc', diag%axesCvi, Time, &
+      'Meridional Viscous Vertical GL90 Coupling Coefficient', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
 
   CS%id_h_u = register_diag_field('ocean_model', 'Hu_visc', diag%axesCuL, Time, &
       'Thickness at Zonal Velocity Points for Viscosity', &
