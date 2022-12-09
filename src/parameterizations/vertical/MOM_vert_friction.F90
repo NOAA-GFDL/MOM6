@@ -7,6 +7,8 @@ use MOM_diag_mediator, only : post_data, register_diag_field, safe_alloc_ptr
 use MOM_diag_mediator, only : post_product_u, post_product_sum_u
 use MOM_diag_mediator, only : post_product_v, post_product_sum_v
 use MOM_diag_mediator, only : diag_ctrl, query_averaging_enabled
+use MOM_domains,       only : create_group_pass, do_group_pass, group_pass_type
+use MOM_domains,       only : To_North, To_East
 use MOM_debugging,     only : uvchksum, hchksum
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, NOTE
 use MOM_file_parser,   only : get_param, log_param, log_version, param_file_type
@@ -157,6 +159,7 @@ type, public :: vertvisc_CS ; private
 
   !>@{ Diagnostic identifiers
   integer :: id_du_dt_visc = -1, id_dv_dt_visc = -1, id_du_dt_visc_gl90 = -1, id_dv_dt_visc_gl90 = -1
+  integer :: id_GLwork = -1
   integer :: id_au_vv = -1, id_av_vv = -1, id_au_gl90_vv = -1, id_av_gl90_vv = -1
   integer :: id_du_dt_str = -1, id_dv_dt_str = -1
   integer :: id_h_u = -1, id_h_v = -1, id_hML_u = -1 , id_hML_v = -1
@@ -173,6 +176,7 @@ type, public :: vertvisc_CS ; private
   type(PointAccel_CS), pointer :: PointAccel_CSp => NULL() !< A pointer to the control structure
                               !! for recording accelerations leading to velocity truncations
 
+  type(group_pass_type) :: pass_KE_uv !< A handle used for group halo passes
 end type vertvisc_CS
 
 contains
@@ -361,6 +365,12 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   real :: zDS, hfr, h_a    ! Temporary variables used with direct_stress.
   real :: surface_stress(SZIB_(G))! The same as stress, unless the wind stress
                            ! stress is applied as a body force [H L T-1 ~> m2 s-1 or kg m-1 s-1].
+  real, allocatable, dimension(:,:,:) :: KE_term ! A term in the kinetic energy budget
+                                                 ! [H L2 T-3 ~> m3 s-3 or W m-2]
+  real, allocatable, dimension(:,:,:) :: KE_u ! The area integral of a KE term in a layer at u-points
+                                              ! [H L4 T-3 ~> m5 s-3 or kg m2 s-3]
+  real, allocatable, dimension(:,:,:) :: KE_v ! The area integral of a KE term in a layer at v-points
+                                              ! [H L4 T-3 ~> m5 s-3 or kg m2 s-3]
 
   logical :: do_i(SZIB_(G))
   logical :: DoStokesMixing
@@ -374,6 +384,14 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
 
   if (.not.CS%initialized) call MOM_error(FATAL,"MOM_vert_friction(visc): "// &
          "Module must be initialized before it is used.")
+
+  if (CS%id_GLwork > 0) then
+    allocate(KE_u(G%IsdB:G%IedB,G%jsd:G%jed,GV%ke), source=0.0)
+    allocate(KE_v(G%isd:G%ied,G%JsdB:G%JedB,GV%ke), source=0.0)
+    allocate(KE_term(G%isd:G%ied,G%jsd:G%jed,GV%ke), source=0.0)
+    if (.not.G%symmetric) &
+      call create_group_pass(CS%pass_KE_uv, KE_u, KE_v, G%Domain, To_North+To_East)
+  endif
 
   if (CS%direct_stress) then
     Hmix = CS%Hmix_stress
@@ -508,7 +526,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     ! compute vertical velocity tendency that arises from GL90 viscosity;
     ! follow tridiagonal solve method as above; to avoid corrupting u,
     ! use ADp%du_dt_visc_gl90 as a placeholder for updated u (due to GL90) until last do loop
-    if (CS%id_du_dt_visc_gl90 > 0) then
+    if ((CS%id_du_dt_visc_gl90 > 0) .or. (CS%id_GLwork > 0)) then
       if (associated(ADp%du_dt_visc_gl90)) then
         do I=Isq,Ieq ; if (do_i(I)) then
           b_denom_1 = CS%h_u(I,j,1)  ! CS%a_u_gl90(I,j,1) is zero
@@ -535,6 +553,13 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
           ADp%du_dt_visc_gl90(I,j,k) = (ADp%du_dt_visc_gl90(I,j,k) - ADp%du_dt_visc(I,j,k))*Idt
           if (abs(ADp%du_dt_visc_gl90(I,j,k)) < accel_underflow) ADp%du_dt_visc_gl90(I,j,k) = 0.0
         endif ; enddo ; enddo ;
+        ! to compute energetics, we need to multiply by u*h, where u is original velocity before
+        ! velocity update; note that ADp%du_dt_visc(I,j,k) holds the original velocity value u(I,j,k)
+        if (CS%id_GLwork > 0) then
+          do k=1,nz; do I=Isq,Ieq ; if (do_i(I)) then
+              KE_u(I,j,k) = ADp%du_dt_visc(I,j,k) * CS%h_u(I,j,k) * G%areaCu(I,j) * ADp%du_dt_visc_gl90(I,j,k)
+          endif ; enddo ; enddo
+        endif
       endif
     endif
 
@@ -643,7 +668,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     ! compute vertical velocity tendency that arises from GL90 viscosity;
     ! follow tridiagonal solve method as above; to avoid corrupting v,
     ! use ADp%dv_dt_visc_gl90 as a placeholder for updated u (due to GL90) until last do loop
-    if (CS%id_dv_dt_visc_gl90 > 0) then
+    if ((CS%id_dv_dt_visc_gl90 > 0) .or. (CS%id_GLwork > 0)) then
       if (associated(ADp%dv_dt_visc_gl90)) then
         do i=is,ie ; if (do_i(i)) then
           b_denom_1 = CS%h_v(i,J,1)  ! CS%a_v_gl90(i,J,1) is zero
@@ -670,6 +695,14 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
           ADp%dv_dt_visc_gl90(i,J,k) = (ADp%dv_dt_visc_gl90(i,J,k) - ADp%dv_dt_visc(i,J,k))*Idt
           if (abs(ADp%dv_dt_visc_gl90(i,J,k)) < accel_underflow) ADp%dv_dt_visc_gl90(i,J,k) = 0.0
         endif ; enddo ; enddo ;
+        ! to compute energetics, we need to multiply by v*h, where u is original velocity before
+        ! velocity update; note that ADp%dv_dt_visc(I,j,k) holds the original velocity value v(i,J,k)
+        if (CS%id_GLwork > 0) then
+          do k=1,nz ; do i=is,ie ; if (do_i(i)) then
+              ! note that on RHS: ADp%dv_dt_visc(I,j,k) holds the original velocity value v(I,j,k)
+              KE_v(I,j,k) = ADp%dv_dt_visc(i,J,k) * CS%h_v(i,J,k) * G%areaCv(i,J) * ADp%dv_dt_visc_gl90(i,J,k)
+          endif ; enddo ; enddo
+        endif
       endif
     endif
 
@@ -697,6 +730,23 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     enddo ; enddo ; endif
 
   enddo ! end of v-component J loop
+
+  ! Calculate the KE source from GL90 vertical viscosity [H L2 T-3 ~> m3 s-3].
+  ! We do the KE-rate calculation here (rather than in MOM_diagnostics) to ensure
+  ! a sign-definite term. MOM_diagnostics does not have access to the velocities
+  ! and thicknesses used in the vertical solver, but rather uses a time-mean
+  ! barotropic transport [uv]h.
+  if (CS%id_GLwork > 0) then
+    if (.not.G%symmetric) &
+      call do_group_pass(CS%pass_KE_uv, G%domain)
+    do k=1,nz
+      do j=js,je ; do i=is,ie
+        KE_term(i,j,k) = 0.5 * G%IareaT(i,j) &
+            * (KE_u(I,j,k) + KE_u(I-1,j,k) + KE_v(i,J,k) + KE_v(i,J-1,k))
+      enddo ; enddo
+    enddo
+    call post_data(CS%id_GLwork, KE_term, CS%diag)
+  endif
 
   call vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS)
 
@@ -2425,15 +2475,18 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
   CS%id_dv_dt_visc = register_diag_field('ocean_model', 'dv_dt_visc', diag%axesCvL, Time, &
       'Meridional Acceleration from Vertical Viscosity', 'm s-2', conversion=US%L_T2_to_m_s2)
   if (CS%id_dv_dt_visc > 0) call safe_alloc_ptr(ADp%dv_dt_visc,isd,ied,JsdB,JedB,nz)
+  CS%id_GLwork = register_diag_field('ocean_model', 'GLwork', diag%axesTL, Time, &
+      'Kinetic Energy Source from GL90 Vertical Viscosity', &
+      'm3 s-3', conversion=GV%H_to_m*(US%L_T_to_m_s**2)*US%s_to_T)
   CS%id_du_dt_visc_gl90 = register_diag_field('ocean_model', 'du_dt_visc_gl90', diag%axesCuL, Time, &
       'Zonal Acceleration from GL90 Vertical Viscosity', 'm s-2', conversion=US%L_T2_to_m_s2)
-  if (CS%id_du_dt_visc_gl90 > 0) then
+  if ((CS%id_du_dt_visc_gl90 > 0) .or. (CS%id_GLwork > 0)) then
     call safe_alloc_ptr(ADp%du_dt_visc_gl90,IsdB,IedB,jsd,jed,nz)
     call safe_alloc_ptr(ADp%du_dt_visc,IsdB,IedB,jsd,jed,nz)
   endif
   CS%id_dv_dt_visc_gl90 = register_diag_field('ocean_model', 'dv_dt_visc_gl90', diag%axesCvL, Time, &
       'Meridional Acceleration from GL90 Vertical Viscosity', 'm s-2', conversion=US%L_T2_to_m_s2)
-  if (CS%id_dv_dt_visc_gl90 > 0) then
+  if ((CS%id_dv_dt_visc_gl90 > 0) .or. (CS%id_GLwork > 0)) then
     call safe_alloc_ptr(ADp%dv_dt_visc_gl90,isd,ied,JsdB,JedB,nz)
     call safe_alloc_ptr(ADp%dv_dt_visc,isd,ied,JsdB,JedB,nz)
   endif
