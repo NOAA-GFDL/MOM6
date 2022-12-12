@@ -13,6 +13,7 @@ use MOM_EOS,                   only : calculate_density, calculate_density_deriv
 use MOM_EOS,                   only : calculate_density_second_derivs
 use MOM_file_parser,           only : get_param, log_version, param_file_type
 use MOM_grid,                  only : ocean_grid_type
+use MOM_io,                    only : MOM_read_data, slasher
 use MOM_interface_heights,     only : find_eta
 use MOM_isopycnal_slopes,      only : vert_fill_TS
 use MOM_lateral_mixing_coeffs, only : VarMix_CS
@@ -72,9 +73,10 @@ type, public :: thickness_diffuse_CS ; private
                                  !! the GEOMETRIC thickness diffusion [nondim]
   real    :: MEKE_GEOMETRIC_epsilon !< Minimum Eady growth rate for the GEOMETRIC thickness
                                  !! diffusivity [T-1 ~> s-1].
-  logical :: MEKE_GEOM_answers_2018  !< If true, use expressions in the MEKE_GEOMETRIC calculation
-                                 !! that recover the answers from the original implementation.
-                                 !! Otherwise, use expressions that satisfy rotational symmetry.
+  integer :: MEKE_GEOM_answer_date  !< The vintage of the expressions in the MEKE_GEOMETRIC
+                                 !! calculation.  Values below 20190101 recover the answers from the
+                                 !! original implementation, while higher values use expressions that
+                                 !! satisfy rotational symmetry.
   logical :: Use_KH_in_MEKE      !< If true, uses the thickness diffusivity calculated here to diffuse MEKE.
   logical :: GM_src_alt          !< If true, use the GM energy conversion form S^2*N^2*kappa rather
                                  !! than the streamfunction for the GM source term.
@@ -83,6 +85,8 @@ type, public :: thickness_diffuse_CS ; private
   real :: Stanley_det_coeff      !< The coefficient correlating SGS temperature variance with the mean
                                  !! temperature gradient in the deterministic part of the Stanley parameterization.
                                  !! Negative values disable the scheme. [nondim]
+  logical :: read_khth           !< If true, read a file containing the spatially varying horizontal
+                                 !! thickness diffusivity
   logical :: use_stanley_gm      !< If true, also use the Stanley parameterization in MOM_thickness_diffuse
 
   type(diag_ctrl), pointer :: diag => NULL() !< structure used to regulate timing of diagnostics
@@ -93,8 +97,9 @@ type, public :: thickness_diffuse_CS ; private
   real, allocatable :: Kh_eta_u(:,:)    !< Interface height diffusivities at u points [L2 T-1 ~> m2 s-1]
   real, allocatable :: Kh_eta_v(:,:)    !< Interface height diffusivities in v points [L2 T-1 ~> m2 s-1]
 
-  real, allocatable :: KH_u_GME(:,:,:)  !< Isopycnal height diffusivities in u-columns [L2 T-1 ~> m2 s-1]
-  real, allocatable :: KH_v_GME(:,:,:)  !< Isopycnal height diffusivities in v-columns [L2 T-1 ~> m2 s-1]
+  real, allocatable :: KH_u_GME(:,:,:)         !< Isopycnal height diffusivities in u-columns [L2 T-1 ~> m2 s-1]
+  real, allocatable :: KH_v_GME(:,:,:)         !< Isopycnal height diffusivities in v-columns [L2 T-1 ~> m2 s-1]
+  real, allocatable, dimension(:,:) :: khth2d  !< 2D isopycnal height diffusivity at h-points [L2 T-1 ~> m2 s-1]
 
   !>@{
   !! Diagnostic identifier
@@ -170,7 +175,8 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
          "Module must be initialized before it is used.")
 
   if ((.not.CS%thickness_diffuse) &
-      .or. .not. (CS%Khth > 0.0 .or. VarMix%use_variable_mixing)) return
+      .or. .not. (CS%Khth > 0.0 .or. CS%read_khth &
+      .or. VarMix%use_variable_mixing)) return
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   h_neglect = GV%H_subroundoff
@@ -213,10 +219,17 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
 
   ! Set the diffusivities.
   !$OMP parallel default(shared)
-  !$OMP do
-  do j=js,je ; do I=is-1,ie
-    Khth_loc_u(I,j) = CS%Khth
-  enddo ; enddo
+  if (.not. CS%read_khth) then
+    !$OMP do
+    do j=js,je ; do I=is-1,ie
+      Khth_loc_u(I,j) = CS%Khth
+    enddo ; enddo
+  else ! use 2d KHTH that was read in from file
+    !$OMP do
+    do j=js,je ; do I=is-1,ie
+      Khth_loc_u(I,j) = 0.5 * (CS%khth2d(i,j) + CS%khth2d(i+1,j))
+    enddo ; enddo
+  endif
 
   if (use_VarMix) then
     if (use_Visbeck) then
@@ -232,7 +245,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
     if (CS%MEKE_GEOMETRIC) then
       !$OMP do
       do j=js,je ; do I=is-1,ie
-        Khth_loc_u(I,j) = Khth_loc_u(I,j) + G%mask2dCu(I,j) * CS%MEKE_GEOMETRIC_alpha * &
+        Khth_loc_u(I,j) = Khth_loc_u(I,j) + G%OBCmaskCu(I,j) * CS%MEKE_GEOMETRIC_alpha * &
                           0.5*(MEKE%MEKE(i,j)+MEKE%MEKE(i+1,j)) / &
                           (VarMix%SN_u(I,j) + CS%MEKE_GEOMETRIC_epsilon)
       enddo ; enddo
@@ -301,10 +314,17 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
     enddo ; enddo ; enddo
   endif
 
-  !$OMP do
-  do J=js-1,je ; do i=is,ie
-    Khth_loc_v(i,J) = CS%Khth
-  enddo ; enddo
+  if (.not. CS%read_khth) then
+   !$OMP do
+    do J=js-1,je ; do i=is,ie
+      Khth_loc_v(i,J) = CS%Khth
+    enddo ; enddo
+  else ! read KHTH from file
+   !$OMP do
+    do J=js-1,je ; do i=is,ie
+      Khth_loc_v(i,J) = 0.5 * (CS%khth2d(i,j) + CS%khth2d(i,j+1))
+    enddo ; enddo
+  endif
 
   if (use_VarMix) then
     if (use_Visbeck) then
@@ -318,7 +338,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
     if (CS%MEKE_GEOMETRIC) then
       !$OMP do
       do J=js-1,je ; do i=is,ie
-        Khth_loc_v(i,J) = Khth_loc_v(i,J) + G%mask2dCv(i,J) * CS%MEKE_GEOMETRIC_alpha * &
+        Khth_loc_v(i,J) = Khth_loc_v(i,J) + G%OBCmaskCv(i,J) * CS%MEKE_GEOMETRIC_alpha * &
                         0.5*(MEKE%MEKE(i,j)+MEKE%MEKE(i,j+1)) / &
                         (VarMix%SN_v(i,J) + CS%MEKE_GEOMETRIC_epsilon)
       enddo ; enddo
@@ -392,7 +412,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
 
   if (allocated(MEKE%Kh)) then
     if (CS%MEKE_GEOMETRIC) then
-      if (CS%MEKE_GEOM_answers_2018) then
+      if (CS%MEKE_GEOM_answer_date < 20190101) then
         !$OMP do
         do j=js,je ; do I=is,ie
           ! This does not give bitwise rotational symmetry.
@@ -955,7 +975,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
             if (present_slope_x) then
               Slope = slope_x(I,j,k)
             else
-              Slope = ((e(i,j,K)-e(i+1,j,K))*G%IdxCu(I,j)) * G%mask2dCu(I,j)
+              Slope = ((e(i,j,K)-e(i+1,j,K))*G%IdxCu(I,j)) * G%OBCmaskCu(I,j)
             endif
             if (CS%id_slope_x > 0) CS%diagSlopeX(I,j,k) = Slope
             Sfn_unlim_u(I,K) = ((KH_u(I,j,K)*G%dy_Cu(I,j))*Slope)
@@ -970,7 +990,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
     enddo ! k-loop
 
     if (CS%use_FGNV_streamfn) then
-      do k=1,nz ; do I=is-1,ie ; if (G%mask2dCu(I,j)>0.) then
+      do k=1,nz ; do I=is-1,ie ; if (G%OBCmaskCu(I,j)>0.) then
         h_harm = max( h_neglect, &
               2. * h(i,j,k) * h(i+1,j,k) / ( ( h(i,j,k) + h(i+1,j,k) ) + h_neglect ) )
         c2_h_u(I,k) = CS%FGNV_scale * &
@@ -979,7 +999,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
 
       ! Solve an elliptic equation for the streamfunction following Ferrari et al., 2010.
       do I=is-1,ie
-        if (G%mask2dCu(I,j)>0.) then
+        if (G%OBCmaskCu(I,j)>0.) then
           do K=2,nz
             Sfn_unlim_u(I,K) = (1. + CS%FGNV_scale) * Sfn_unlim_u(I,K)
           enddo
@@ -1237,7 +1257,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
             if (present_slope_y) then
               Slope = slope_y(i,J,k)
             else
-              Slope = ((e(i,j,K)-e(i,j+1,K))*G%IdyCv(i,J)) * G%mask2dCv(i,J)
+              Slope = ((e(i,j,K)-e(i,j+1,K))*G%IdyCv(i,J)) * G%OBCmaskCv(i,J)
             endif
             if (CS%id_slope_y > 0) CS%diagSlopeY(I,j,k) = Slope
             Sfn_unlim_v(i,K) = ((KH_v(i,J,K)*G%dx_Cv(i,J))*Slope)
@@ -1252,7 +1272,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
     enddo ! k-loop
 
     if (CS%use_FGNV_streamfn) then
-      do k=1,nz ; do i=is,ie ; if (G%mask2dCv(i,J)>0.) then
+      do k=1,nz ; do i=is,ie ; if (G%OBCmaskCv(i,J)>0.) then
         h_harm = max( h_neglect, &
               2. * h(i,j,k) * h(i,j+1,k) / ( ( h(i,j,k) + h(i,j+1,k) ) + h_neglect ) )
         c2_h_v(i,k) = CS%FGNV_scale * &
@@ -1261,7 +1281,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
 
       ! Solve an elliptic equation for the streamfunction following Ferrari et al., 2010.
       do i=is,ie
-        if (G%mask2dCv(i,J)>0.) then
+        if (G%OBCmaskCv(i,J)>0.) then
           do K=2,nz
             Sfn_unlim_v(i,K) = (1. + CS%FGNV_scale) * Sfn_unlim_v(i,K)
           enddo
@@ -1650,7 +1670,7 @@ subroutine add_detangling_Kh(h, e, Kh_u, Kh_v, KH_u_CFL, KH_v_CFL, tv, dt, G, GV
       de_bot(i,j) = de_bot(i,j) + h(i,j,k+1)
     enddo ; enddo
 
-    do j=js,je ; do I=is-1,ie ; if (G%mask2dCu(I,j) > 0.0) then
+    do j=js,je ; do I=is-1,ie ; if (G%OBCmaskCu(I,j) > 0.0) then
       if (h(i,j,k) > h(i+1,j,k)) then
         h2 = h(i,j,k)
         h1 = max( h(i+1,j,k), h2 - min(de_bot(i+1,j), de_top(i+1,j,k)) )
@@ -1662,7 +1682,7 @@ subroutine add_detangling_Kh(h, e, Kh_u, Kh_v, KH_u_CFL, KH_v_CFL, tv, dt, G, GV
       KH_lay_u(I,j,k) = (Kh_scale * KH_u_CFL(I,j)) * jag_Rat**2
     endif ; enddo ; enddo
 
-    do J=js-1,je ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.0) then
+    do J=js-1,je ; do i=is,ie ; if (G%OBCmaskCv(i,J) > 0.0) then
       if (h(i,j,k) > h(i,j+1,k)) then
         h2 = h(i,j,k)
         h1 = max( h(i,j+1,k), h2 - min(de_bot(i,j+1), de_top(i,j+1,k)) )
@@ -1688,7 +1708,7 @@ subroutine add_detangling_Kh(h, e, Kh_u, Kh_v, KH_u_CFL, KH_v_CFL, tv, dt, G, GV
       ! First, populate the diffusivities
       if (n==1) then ! This is a u-column.
         do i=ish,ie
-          do_i(I) = (G%mask2dCu(I,j) > 0.0)
+          do_i(I) = (G%OBCmaskCu(I,j) > 0.0)
           Kh_Max_max(I) = KH_u_CFL(I,j)
         enddo
         do K=1,nz+1 ; do i=ish,ie
@@ -1698,7 +1718,7 @@ subroutine add_detangling_Kh(h, e, Kh_u, Kh_v, KH_u_CFL, KH_v_CFL, tv, dt, G, GV
         enddo ; enddo
       else ! This is a v-column.
         do i=ish,ie
-          do_i(i) = (G%mask2dCv(i,J) > 0.0) ; Kh_Max_max(I) = KH_v_CFL(i,J)
+          do_i(i) = (G%OBCmaskCv(i,J) > 0.0) ; Kh_Max_max(I) = KH_v_CFL(i,J)
         enddo
         do K=1,nz+1 ; do i=ish,ie
           Kh_bg(I,K) = KH_v(I,j,K) ; Kh(I,K) = Kh_bg(I,K)
@@ -1943,6 +1963,7 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
 
   ! Local variables
   character(len=40)  :: mdl = "MOM_thickness_diffuse" ! This module's name.
+  character(len=200) :: khth_file, inputdir, khth_varname
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   real :: grid_sp      ! The local grid spacing [L ~> m]
@@ -1950,7 +1971,11 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
   real :: strat_floor  ! A floor for buoyancy frequency in the Ferrari et al. 2010,
                        ! streamfunction formulation, expressed as a fraction of planetary
                        ! rotation [nondim].
+  integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   logical :: default_2018_answers ! The default setting for the various 2018_ANSWERS flags.
+  logical :: MEKE_GEOM_answers_2018  ! If true, use expressions in the MEKE_GEOMETRIC calculation
+                                  ! that recover the answers from the original implementation.
+                                  ! Otherwise, use expressions that satisfy rotational symmetry.
   integer :: i, j
 
   CS%initialized = .true.
@@ -1964,6 +1989,32 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
   call get_param(param_file, mdl, "KHTH", CS%Khth, &
                  "The background horizontal thickness diffusivity.", &
                  default=0.0, units="m2 s-1", scale=US%m_to_L**2*US%T_to_s)
+  call get_param(param_file, mdl, "READ_KHTH", CS%read_khth, &
+                 "If true, read a file (given by KHTH_FILE) containing the "//&
+                 "spatially varying horizontal isopycnal height diffusivity.", &
+                 default=.false.)
+  if (CS%read_khth) then
+    if (CS%Khth > 0) then
+        call MOM_error(FATAL, "thickness_diffuse_init: KHTH > 0 is not "// &
+              "compatible with READ_KHTH = TRUE. ")
+    endif
+    call get_param(param_file, mdl, "INPUTDIR", inputdir, &
+                 "The directory in which all input files are found.", &
+                 default=".", do_not_log=.true.)
+    inputdir = slasher(inputdir)
+    call get_param(param_file, mdl, "KHTH_FILE", khth_file, &
+                 "The file containing the spatially varying horizontal "//&
+                 "isopycnal height diffusivity.", default="khth.nc")
+    call get_param(param_file, mdl, "KHTH_VARIABLE", khth_varname, &
+                 "The name of the isopycnal height diffusivity variable to read "//&
+                 "from KHTH_FILE.", &
+                 default="khth")
+    khth_file = trim(inputdir) // trim(khth_file)
+
+    allocate(CS%khth2d(G%isd:G%ied, G%jsd:G%jed), source=0.0)
+    call MOM_read_data(khth_file, khth_varname, CS%khth2d(:,:), G%domain, scale=US%m_to_L**2*US%T_to_s)
+    call pass_var(CS%khth2d, G%domain)
+  endif
   call get_param(param_file, mdl, "KHTH_SLOPE_CFF", CS%KHTH_Slope_Cff, &
                  "The nondimensional coefficient in the Visbeck formula "//&
                  "for the interface depth diffusivity", units="nondim", &
@@ -1998,11 +2049,11 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
     allocate(CS%Kh_eta_v(G%isd:G%ied, G%JsdB:G%JedB), source=0.)
     do j=G%jsc,G%jec ; do I=G%isc-1,G%iec
       grid_sp = sqrt((2.0*G%dxCu(I,j)**2 * G%dyCu(I,j)**2) / (G%dxCu(I,j)**2 + G%dyCu(I,j)**2))
-      CS%Kh_eta_u(I,j) = G%mask2dCu(I,j) * MAX(0.0, CS%Kh_eta_bg + CS%Kh_eta_vel * grid_sp)
+      CS%Kh_eta_u(I,j) = G%OBCmaskCu(I,j) * MAX(0.0, CS%Kh_eta_bg + CS%Kh_eta_vel * grid_sp)
     enddo ; enddo
     do J=G%jsc-1,G%jec ; do i=G%isc,G%iec
       grid_sp = sqrt((2.0*G%dxCv(i,J)**2 * G%dyCv(i,J)**2) / (G%dxCv(i,J)**2 + G%dyCv(i,J)**2))
-      CS%Kh_eta_v(i,J) = G%mask2dCv(i,J) * MAX(0.0, CS%Kh_eta_bg + CS%Kh_eta_vel * grid_sp)
+      CS%Kh_eta_v(i,J) = G%OBCmaskCv(i,J) * MAX(0.0, CS%Kh_eta_bg + CS%Kh_eta_vel * grid_sp)
     enddo ; enddo
   endif
 
@@ -2068,13 +2119,25 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
                  "The nondimensional coefficient governing the efficiency of the GEOMETRIC "//&
                  "thickness diffusion.", units="nondim", default=0.05)
 
+    call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
+                 "This sets the default value for the various _ANSWER_DATE parameters.", &
+                 default=99991231)
     call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &
                  "This sets the default value for the various _2018_ANSWERS parameters.", &
-                 default=.false.)
-    call get_param(param_file, mdl, "MEKE_GEOMETRIC_2018_ANSWERS", CS%MEKE_GEOM_answers_2018, &
+                 default=(default_answer_date<20190101))
+    call get_param(param_file, mdl, "MEKE_GEOMETRIC_2018_ANSWERS", MEKE_GEOM_answers_2018, &
                  "If true, use expressions in the MEKE_GEOMETRIC calculation that recover the "//&
                  "answers from the original implementation.  Otherwise, use expressions that "//&
                  "satisfy rotational symmetry.", default=default_2018_answers)
+    ! Revise inconsistent default answer dates for MEKE_geometric.
+    if (MEKE_GEOM_answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
+    if (.not.MEKE_GEOM_answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
+    call get_param(param_file, mdl, "MEKE_GEOMETRIC_ANSWER_DATE", CS%MEKE_GEOM_answer_date, &
+                 "The vintage of the expressions in the MEKE_GEOMETRIC calculation.  "//&
+                 "Values below 20190101 recover the answers from the original implementation, "//&
+                 "while higher values use expressions that satisfy rotational symmetry.  "//&
+                 "If both MEKE_GEOMETRIC_2018_ANSWERS and MEKE_GEOMETRIC_ANSWER_DATE are "//&
+                 "specified, the latter takes precedence.", default=default_answer_date)
   endif
 
   call get_param(param_file, mdl, "USE_KH_IN_MEKE", CS%Use_KH_in_MEKE, &
@@ -2202,6 +2265,8 @@ subroutine thickness_diffuse_end(CS, CDp)
     deallocate(CS%KH_u_GME)
     deallocate(CS%KH_v_GME)
   endif
+
+  if (allocated(CS%khth2d)) deallocate(CS%khth2d)
 end subroutine thickness_diffuse_end
 
 !> \namespace mom_thickness_diffuse

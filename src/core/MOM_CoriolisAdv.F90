@@ -16,7 +16,7 @@ use MOM_open_boundary, only : ocean_OBC_type, OBC_DIRECTION_E, OBC_DIRECTION_W
 use MOM_open_boundary, only : OBC_DIRECTION_N, OBC_DIRECTION_S
 use MOM_string_functions, only : uppercase
 use MOM_unit_scaling,  only : unit_scale_type
-use MOM_variables,     only : accel_diag_ptrs, porous_barrier_ptrs
+use MOM_variables,     only : accel_diag_ptrs, porous_barrier_type
 use MOM_verticalGrid,  only : verticalGrid_type
 use MOM_wave_interface, only : wave_parameters_CS
 
@@ -49,10 +49,10 @@ type, public :: CoriolisAdv_CS ; private
   real    :: F_eff_max_blend !< The factor by which the maximum effective Coriolis
                              !! acceleration from any point can be increased when
                              !! blending different discretizations with the
-                             !! ARAKAWA_LAMB_BLEND Coriolis scheme.  This must be
-                             !! greater than 2.0, and is 4.0 by default.
+                             !! ARAKAWA_LAMB_BLEND Coriolis scheme [nondim].
+                             !! This must be greater than 2.0, and is 4.0 by default.
   real    :: wt_lin_blend    !< A weighting value beyond which the blending between
-                             !! Sadourny and Arakawa & Hsu goes linearly to 0.
+                             !! Sadourny and Arakawa & Hsu goes linearly to 0 [nondim].
                              !! This must be between 1 and 1e-15, often 1/8.
   logical :: no_slip         !< If true, no slip boundary conditions are used.
                              !! Otherwise free slip boundary conditions are assumed.
@@ -140,7 +140,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   type(accel_diag_ptrs),                      intent(inout) :: AD  !< Storage for acceleration diagnostics
   type(unit_scale_type),                      intent(in)    :: US  !< A dimensional unit scaling type
   type(CoriolisAdv_CS),                       intent(in)    :: CS  !< Control structure for MOM_CoriolisAdv
-  type(porous_barrier_ptrs),                  intent(in)    :: pbv !< porous barrier fractional cell metrics
+  type(porous_barrier_type),                  intent(in)    :: pbv !< porous barrier fractional cell metrics
   type(Wave_parameters_CS),         optional, pointer       :: Waves !< An optional pointer to Stokes drift CS
 
   ! Local variables
@@ -173,9 +173,10 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
                 ! KEy = d/dy KE.
     vh_center   ! Transport based on arithmetic mean h at v-points [H L2 T-1 ~> m3 s-1 or kg s-1]
   real, dimension(SZI_(G),SZJ_(G)) :: &
-    uh_min, uh_max, &   ! The smallest and largest estimates of the volume
-    vh_min, vh_max, &   ! fluxes through the faces (i.e. u*h*dy & v*h*dx)
-                        ! [H L2 T-1 ~> m3 s-1 or kg s-1].
+    uh_min, uh_max, &   ! The smallest and largest estimates of the zonal volume fluxes through
+                        ! the faces (i.e. u*h*dy) [H L2 T-1 ~> m3 s-1 or kg s-1]
+    vh_min, vh_max, &   ! The smallest and largest estimates of the meridional volume fluxes through
+                        ! the faces (i.e. v*h*dx) [H L2 T-1 ~> m3 s-1 or kg s-1]
     ep_u, ep_v  ! Additional pseudo-Coriolis terms in the Arakawa and Lamb
                 ! discretization [H-1 T-1 ~> m-1 s-1 or m2 kg-1 s-1].
   real, dimension(SZIB_(G),SZJB_(G)) :: &
@@ -195,8 +196,8 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   real :: max_fv, max_fu       ! The maximum or minimum of the neighboring Coriolis
   real :: min_fv, min_fu       ! accelerations [L T-2 ~> m s-2], i.e. max(min)_fu(v)q.
 
-  real, parameter :: C1_12=1.0/12.0 ! C1_12 = 1/12
-  real, parameter :: C1_24=1.0/24.0 ! C1_24 = 1/24
+  real, parameter :: C1_12 = 1.0 / 12.0 ! C1_12 = 1/12 [nondim]
+  real, parameter :: C1_24 = 1.0 / 24.0 ! C1_24 = 1/24 [nondim]
   real :: max_Ihq, min_Ihq       ! The maximum and minimum of the nearby Ihq [H-1 ~> m-1 or m2 kg-1].
   real :: hArea_q                ! The sum of area times thickness of the cells
                                  ! surrounding a q point [H L2 ~> m3 or kg].
@@ -1211,11 +1212,11 @@ subroutine CoriolisAdv_init(Time, G, GV, US, param_file, diag, AD, CS)
      'Zonal Acceleration from Relative Vorticity', 'm s-2', conversion=US%L_T2_to_m_s2)
 
   CS%id_CAuS = register_diag_field('ocean_model', 'CAu_Stokes', diag%axesCuL, Time, &
-     'Zonal Acceleration from Stokes Vorticity', 'm-1 s-2', conversion=US%L_T2_to_m_s2)
+     'Zonal Acceleration from Stokes Vorticity', 'm s-2', conversion=US%L_T2_to_m_s2)
   ! add to AD
 
   CS%id_CAvS = register_diag_field('ocean_model', 'CAv_Stokes', diag%axesCvL, Time, &
-     'Meridional Acceleration from Stokes Vorticity', 'm-1 s-2', conversion=US%L_T2_to_m_s2)
+     'Meridional Acceleration from Stokes Vorticity', 'm s-2', conversion=US%L_T2_to_m_s2)
   ! add to AD
 
   !CS%id_hf_gKEu = register_diag_field('ocean_model', 'hf_gKEu', diag%axesCuL, Time, &
@@ -1248,14 +1249,14 @@ subroutine CoriolisAdv_init(Time, G, GV, US, param_file, diag, AD, CS)
 
   !CS%id_hf_rvxu = register_diag_field('ocean_model', 'hf_rvxu', diag%axesCvL, Time, &
   !   'Fractional Thickness-weighted Meridional Acceleration from Relative Vorticity', &
-  !   'm-1 s-2', v_extensive=.true., conversion=US%L_T2_to_m_s2)
+  !   'm s-2', v_extensive=.true., conversion=US%L_T2_to_m_s2)
   CS%id_hf_rvxu_2d = register_diag_field('ocean_model', 'hf_rvxu_2d', diag%axesCv1, Time, &
      'Depth-sum Fractional Thickness-weighted Meridional Acceleration from Relative Vorticity', &
      'm s-2', conversion=US%L_T2_to_m_s2)
 
   !CS%id_hf_rvxv = register_diag_field('ocean_model', 'hf_rvxv', diag%axesCuL, Time, &
   !   'Fractional Thickness-weighted Zonal Acceleration from Relative Vorticity', &
-  !   'm-1 s-2', v_extensive=.true., conversion=US%L_T2_to_m_s2)
+  !   'm s-2', v_extensive=.true., conversion=US%L_T2_to_m_s2)
   CS%id_hf_rvxv_2d = register_diag_field('ocean_model', 'hf_rvxv_2d', diag%axesCu1, Time, &
      'Depth-sum Fractional Thickness-weighted Zonal Acceleration from Relative Vorticity', &
      'm s-2', conversion=US%L_T2_to_m_s2)

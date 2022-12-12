@@ -4,12 +4,12 @@ module MOM_restart
 ! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_checksums, only : chksum => rotated_field_chksum
-use MOM_domains, only : PE_here, num_PEs
+use MOM_domains, only : PE_here, num_PEs, AGRID, BGRID_NE, CGRID_NE
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, NOTE, is_root_pe
 use MOM_file_parser, only : get_param, log_param, log_version, param_file_type
 use MOM_grid, only : ocean_grid_type
 use MOM_io, only : create_file, file_type, fieldtype, file_exists, open_file, close_file
-use MOM_io, only : MOM_read_data, read_data, MOM_write_field, read_field_chksum
+use MOM_io, only : MOM_read_data, read_data, MOM_write_field, read_field_chksum, field_exists
 use MOM_io, only : get_file_info, get_file_fields, get_field_atts, get_file_times
 use MOM_io, only : vardesc, var_desc, query_vardesc, modify_vardesc, get_filename_appendix
 use MOM_io, only : MULTIPLE, READONLY_FILE, SINGLE_FILE
@@ -22,7 +22,8 @@ use MOM_verticalGrid,  only : verticalGrid_type
 implicit none ; private
 
 public restart_init, restart_end, restore_state, register_restart_field
-public save_restart, query_initialized, restart_registry_lock, restart_init_end, vardesc
+public save_restart, query_initialized, set_initialized, only_read_from_restarts
+public restart_registry_lock, restart_init_end, vardesc
 public restart_files_exist, determine_is_new_run, is_new_run
 public register_restart_field_as_obsolete, register_restart_pair
 
@@ -134,6 +135,23 @@ interface query_initialized
   module procedure query_initialized_2d, query_initialized_2d_name
   module procedure query_initialized_3d, query_initialized_3d_name
   module procedure query_initialized_4d, query_initialized_4d_name
+end interface
+
+!> Specify that a field has been initialized, even if it was not read from a restart file
+interface set_initialized
+  module procedure set_initialized_name, set_initialized_0d_name
+  module procedure set_initialized_1d_name, set_initialized_2d_name
+  module procedure set_initialized_3d_name, set_initialized_4d_name
+end interface
+
+!> Read optional variables from restart files.
+interface only_read_from_restarts
+  module procedure only_read_restart_field_4d
+  module procedure only_read_restart_field_3d
+  module procedure only_read_restart_field_2d
+!  module procedure only_read_restart_field_1d
+!  module procedure only_read_restart_field_0d
+  module procedure only_read_restart_pair_3d
 end interface
 
 contains
@@ -571,7 +589,7 @@ end subroutine register_restart_field_0d
 
 
 !> query_initialized_name determines whether a named field has been successfully
-!! read from a restart file yet.
+!! read from a restart file or has otherwise been recored as being initialzed.
 function query_initialized_name(name, CS) result(query_initialized)
   character(len=*),     intent(in) :: name  !< The name of the field that is being queried
   type(MOM_restart_CS), intent(in) :: CS    !< MOM restart control struct
@@ -592,8 +610,6 @@ function query_initialized_name(name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if ((n==CS%novars+1) .and. (is_root_pe())) &
     call MOM_error(NOTE,"MOM_restart: Unknown restart variable "//name// &
                         " queried for initialization.")
@@ -625,8 +641,6 @@ function query_initialized_0d(f_ptr, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
 
 end function query_initialized_0d
 
@@ -651,8 +665,6 @@ function query_initialized_1d(f_ptr, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
 
 end function query_initialized_1d
 
@@ -678,8 +690,6 @@ function query_initialized_2d(f_ptr, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
 
 end function query_initialized_2d
 
@@ -705,8 +715,6 @@ function query_initialized_3d(f_ptr, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
 
 end function query_initialized_3d
 
@@ -732,15 +740,13 @@ function query_initialized_4d(f_ptr, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
 
 end function query_initialized_4d
 
-!> Indicate whether the field pointed to by f_ptr or with the specified variable
+!> Indicate whether the field stored in f_ptr or with the specified variable
 !! name has been initialized from a restart file.
 function query_initialized_0d_name(f_ptr, name, CS) result(query_initialized)
-  real,         target, intent(in) :: f_ptr !< A pointer to the field that is being queried
+  real,         target, intent(in) :: f_ptr !< The field that is being queried
   character(len=*),     intent(in) :: name  !< The name of the field that is being queried
   type(MOM_restart_CS), intent(in) :: CS    !< MOM restart control struct
   logical :: query_initialized
@@ -760,8 +766,6 @@ function query_initialized_0d_name(f_ptr, name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if (n==CS%novars+1) then
     if (is_root_pe()) &
       call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
@@ -771,11 +775,11 @@ function query_initialized_0d_name(f_ptr, name, CS) result(query_initialized)
 
 end function query_initialized_0d_name
 
-!> Indicate whether the field pointed to by f_ptr or with the specified variable
+!> Indicate whether the field stored in f_ptr or with the specified variable
 !! name has been initialized from a restart file.
 function query_initialized_1d_name(f_ptr, name, CS) result(query_initialized)
   real, dimension(:),  &
-                target, intent(in) :: f_ptr !< A pointer to the field that is being queried
+                target, intent(in) :: f_ptr !< The field that is being queried
   character(len=*),     intent(in) :: name  !< The name of the field that is being queried
   type(MOM_restart_CS), intent(in) :: CS    !< MOM restart control struct
   logical :: query_initialized
@@ -795,8 +799,6 @@ function query_initialized_1d_name(f_ptr, name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if (n==CS%novars+1) then
     if (is_root_pe()) &
       call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
@@ -806,11 +808,11 @@ function query_initialized_1d_name(f_ptr, name, CS) result(query_initialized)
 
 end function query_initialized_1d_name
 
-!> Indicate whether the field pointed to by f_ptr or with the specified variable
+!> Indicate whether the field stored in f_ptr or with the specified variable
 !! name has been initialized from a restart file.
 function query_initialized_2d_name(f_ptr, name, CS) result(query_initialized)
   real, dimension(:,:),  &
-                target, intent(in) :: f_ptr !< A pointer to the field that is being queried
+                target, intent(in) :: f_ptr !< The field that is being queried
   character(len=*),     intent(in) :: name  !< The name of the field that is being queried
   type(MOM_restart_CS), intent(in) :: CS    !< MOM restart control struct
   logical :: query_initialized
@@ -830,8 +832,6 @@ function query_initialized_2d_name(f_ptr, name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if (n==CS%novars+1) then
     if (is_root_pe()) &
       call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
@@ -841,11 +841,11 @@ function query_initialized_2d_name(f_ptr, name, CS) result(query_initialized)
 
 end function query_initialized_2d_name
 
-!> Indicate whether the field pointed to by f_ptr or with the specified variable
+!> Indicate whether the field stored in f_ptr or with the specified variable
 !! name has been initialized from a restart file.
 function query_initialized_3d_name(f_ptr, name, CS) result(query_initialized)
   real, dimension(:,:,:),  &
-                target, intent(in) :: f_ptr !< A pointer to the field that is being queried
+                target, intent(in) :: f_ptr !< The field that is being queried
   character(len=*),     intent(in) :: name  !< The name of the field that is being queried
   type(MOM_restart_CS), intent(in) :: CS    !< MOM restart control struct
   logical :: query_initialized
@@ -865,8 +865,6 @@ function query_initialized_3d_name(f_ptr, name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if (n==CS%novars+1) then
     if (is_root_pe()) &
       call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
@@ -876,11 +874,11 @@ function query_initialized_3d_name(f_ptr, name, CS) result(query_initialized)
 
 end function query_initialized_3d_name
 
-!> Indicate whether the field pointed to by f_ptr or with the specified variable
+!> Indicate whether the field stored in f_ptr or with the specified variable
 !! name has been initialized from a restart file.
 function query_initialized_4d_name(f_ptr, name, CS) result(query_initialized)
   real, dimension(:,:,:,:),  &
-                target, intent(in) :: f_ptr !< A pointer to the field that is being queried
+                target, intent(in) :: f_ptr !< The field that is being queried
   character(len=*),     intent(in) :: name  !< The name of the field that is being queried
   type(MOM_restart_CS), intent(in) :: CS    !< MOM restart control struct
   logical :: query_initialized
@@ -900,8 +898,6 @@ function query_initialized_4d_name(f_ptr, name, CS) result(query_initialized)
       n = m ; exit
     endif
   enddo
-  ! Assume that you are going to initialize it now, so set flag to initialized if queried again.
-  if (n<=CS%novars) CS%restart_field(n)%initialized = .true.
   if (n==CS%novars+1) then
     if (is_root_pe()) &
       call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
@@ -910,6 +906,338 @@ function query_initialized_4d_name(f_ptr, name, CS) result(query_initialized)
   endif
 
 end function query_initialized_4d_name
+
+!> set_initialized_name records that a named field has been initialized.
+subroutine set_initialized_name(name, CS)
+  character(len=*),     intent(in)    :: name  !< The name of the field that is being set
+  type(MOM_restart_CS), intent(inout) :: CS    !< MOM restart control struct
+
+  integer :: m
+
+  if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
+      "set_initialized: Module must be initialized before it is used.")
+
+  do m=1,CS%novars ; if (trim(name) == trim(CS%restart_field(m)%var_name)) then
+    CS%restart_field(m)%initialized = .true. ; exit
+  endif ; enddo
+
+  if ((m==CS%novars+1) .and. (is_root_pe())) &
+    call MOM_error(NOTE,"MOM_restart: Unknown restart variable "//name// &
+                        " used in set_initialized call.")
+
+end subroutine set_initialized_name
+
+!> Record that the array in f_ptr with the given name has been initialized.
+subroutine set_initialized_0d_name(f_ptr, name, CS)
+  real,         target, intent(in)    :: f_ptr !< The variable that has been initialized
+  character(len=*),     intent(in)    :: name  !< The name of the field that has been initialized
+  type(MOM_restart_CS), intent(inout) :: CS    !< MOM restart control struct
+
+  integer :: m
+
+  if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
+      "set_initialized: Module must be initialized before it is used.")
+
+  do m=1,CS%novars ; if (associated(CS%var_ptr0d(m)%p,f_ptr)) then
+    CS%restart_field(m)%initialized = .true. ; exit
+  endif ; enddo
+
+  if (m==CS%novars+1) then
+    if (is_root_pe()) &
+      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+        "probably because of the suspect comparison of pointers by ASSOCIATED.")
+    call set_initialized_name(name, CS)
+  endif
+
+end subroutine set_initialized_0d_name
+
+!> Record that the array in f_ptr with the given name has been initialized.
+subroutine set_initialized_1d_name(f_ptr, name, CS)
+  real, dimension(:),  &
+                target, intent(in)    :: f_ptr !< The array that has been initialized
+  character(len=*),     intent(in)    :: name  !< The name of the field that has been initialized
+  type(MOM_restart_CS), intent(inout) :: CS    !< MOM restart control struct
+
+  integer :: m
+
+  if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
+      "set_initialized: Module must be initialized before it is used.")
+
+  do m=1,CS%novars ; if (associated(CS%var_ptr1d(m)%p,f_ptr)) then
+    CS%restart_field(m)%initialized = .true. ; exit
+  endif ; enddo
+
+  if (m==CS%novars+1) then
+    if (is_root_pe()) &
+      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+        "probably because of the suspect comparison of pointers by ASSOCIATED.")
+    call set_initialized_name(name, CS)
+  endif
+
+end subroutine set_initialized_1d_name
+
+!> Record that the array in f_ptr with the given name has been initialized.
+subroutine set_initialized_2d_name(f_ptr, name, CS)
+  real, dimension(:,:),  &
+                target, intent(in)    :: f_ptr !< The array that has been initialized
+  character(len=*),     intent(in)    :: name  !< The name of the field that has been initialized
+  type(MOM_restart_CS), intent(inout) :: CS    !< MOM restart control struct
+
+  integer :: m
+
+  if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
+      "set_initialized: Module must be initialized before it is used.")
+
+  do m=1,CS%novars ; if (associated(CS%var_ptr2d(m)%p,f_ptr)) then
+    CS%restart_field(m)%initialized = .true. ; exit
+  endif ; enddo
+
+  if (m==CS%novars+1) then
+    if (is_root_pe()) &
+      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+        "probably because of the suspect comparison of pointers by ASSOCIATED.")
+    call set_initialized_name(name, CS)
+  endif
+
+end subroutine set_initialized_2d_name
+
+!> Record that the array in f_ptr with the given name has been initialized.
+subroutine set_initialized_3d_name(f_ptr, name, CS)
+  real, dimension(:,:,:),  &
+                target, intent(in)    :: f_ptr !< The array that has been initialized
+  character(len=*),     intent(in)    :: name  !< The name of the field that has been initialized
+  type(MOM_restart_CS), intent(inout) :: CS    !< MOM restart control struct
+
+  integer :: m
+
+  if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
+      "set_initialized: Module must be initialized before it is used.")
+
+  do m=1,CS%novars ; if (associated(CS%var_ptr3d(m)%p,f_ptr)) then
+    CS%restart_field(m)%initialized = .true. ; exit
+  endif ; enddo
+
+  if (m==CS%novars+1) then
+    if (is_root_pe()) &
+      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+        "probably because of the suspect comparison of pointers by ASSOCIATED.")
+    call set_initialized_name(name, CS)
+  endif
+
+end subroutine set_initialized_3d_name
+
+!> Record that the array in f_ptr with the given name has been initialized.
+subroutine set_initialized_4d_name(f_ptr, name, CS)
+  real, dimension(:,:,:,:),  &
+                target, intent(in)    :: f_ptr !< The array that has been initialized
+  character(len=*),     intent(in)    :: name  !< The name of the field that has been initialized
+  type(MOM_restart_CS), intent(inout) :: CS    !< MOM restart control struct
+
+  integer :: m
+
+  if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
+      "set_initialized: Module must be initialized before it is used.")
+
+  do m=1,CS%novars ; if (associated(CS%var_ptr4d(m)%p,f_ptr)) then
+    CS%restart_field(m)%initialized = .true. ; exit
+  endif ; enddo
+
+  if (m==CS%novars+1) then
+    if (is_root_pe()) &
+      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+        "probably because of the suspect comparison of pointers by ASSOCIATED.")
+    call set_initialized_name(name, CS)
+  endif
+
+end subroutine set_initialized_4d_name
+
+
+!====================== only_read_from_restarts variants =======================
+
+!> Try to read a named 4-d field from the restart files
+subroutine only_read_restart_field_4d(varname, f_ptr, G, CS, position, filename, directory, success, scale)
+  character(len=*),                intent(in)    :: varname   !< The variable name to be used in the restart file
+  real, dimension(:,:,:,:),        intent(inout) :: f_ptr     !< The array for the field to be read
+  type(ocean_grid_type),           intent(in)    :: G         !< The ocean's grid structure
+  type(MOM_restart_CS),            intent(in)    :: CS        !< MOM restart control struct
+  integer,               optional, intent(in)    :: position  !< A coded integer indicating the horizontal
+                                                              !! position of this variable
+  character(len=*),      optional, intent(in)    :: filename  !< The list of restart file names or a single
+                                                              !! character 'r' to read automatically named files
+  character(len=*),      optional, intent(in)    :: directory !< The directory in which to seek restart files.
+  logical,               optional, intent(out)   :: success   !< True if the field was read successfully
+  real,                  optional, intent(in)    :: scale     !< A factor by which the field will be scaled
+
+  ! Local variables
+  character(len=:), allocatable :: file_path ! The full path to the file with the variable
+  logical :: found     ! True if the variable was found.
+  logical :: is_global ! True if the variable is in a global file.
+
+  found = find_var_in_restart_files(varname, G, CS, file_path, filename, directory, is_global)
+
+  if (found) then
+    call MOM_read_data(file_path, varname, f_ptr, G%domain, timelevel=1, position=position, &
+                       scale=scale, global_file=is_global)
+  endif
+  if (present(success)) success = found
+
+end subroutine only_read_restart_field_4d
+
+!> Try to read a named 3-d field from the restart files
+subroutine only_read_restart_field_3d(varname, f_ptr, G, CS, position, filename, directory, success, scale)
+  character(len=*),                intent(in)    :: varname   !< The variable name to be used in the restart file
+  real, dimension(:,:,:),          intent(inout) :: f_ptr     !< The array for the field to be read
+  type(ocean_grid_type),           intent(in)    :: G         !< The ocean's grid structure
+  type(MOM_restart_CS),            intent(in)    :: CS        !< MOM restart control struct
+  integer,               optional, intent(in)    :: position  !< A coded integer indicating the horizontal
+                                                              !! position of this variable
+  character(len=*),      optional, intent(in)    :: filename  !< The list of restart file names or a single
+                                                              !! character 'r' to read automatically named files
+  character(len=*),      optional, intent(in)    :: directory !< The directory in which to seek restart files.
+  logical,               optional, intent(out)   :: success   !< True if the field was read successfully
+  real,                  optional, intent(in)    :: scale     !< A factor by which the field will be scaled
+
+  ! Local variables
+  character(len=:), allocatable :: file_path ! The full path to the file with the variable
+  logical :: found     ! True if the variable was found.
+  logical :: is_global ! True if the variable is in a global file.
+
+  found = find_var_in_restart_files(varname, G, CS, file_path, filename, directory, is_global)
+
+  if (found) then
+    call MOM_read_data(file_path, varname, f_ptr, G%domain, timelevel=1, position=position, &
+                       scale=scale, global_file=is_global)
+  endif
+  if (present(success)) success = found
+
+end subroutine only_read_restart_field_3d
+
+!> Try to read a named 2-d field from the restart files
+subroutine only_read_restart_field_2d(varname, f_ptr, G, CS, position, filename, directory, success, scale)
+  character(len=*),                intent(in)    :: varname   !< The variable name to be used in the restart file
+  real, dimension(:,:),            intent(inout) :: f_ptr     !< The array for the field to be read
+  type(ocean_grid_type),           intent(in)    :: G         !< The ocean's grid structure
+  type(MOM_restart_CS),            intent(in)    :: CS        !< MOM restart control struct
+  integer,               optional, intent(in)    :: position  !< A coded integer indicating the horizontal
+                                                              !! position of this variable
+  character(len=*),      optional, intent(in)    :: filename  !< The list of restart file names or a single
+                                                              !! character 'r' to read automatically named files
+  character(len=*),      optional, intent(in)    :: directory !< The directory in which to seek restart files.
+  logical,               optional, intent(out)   :: success   !< True if the field was read successfully
+  real,                  optional, intent(in)    :: scale     !< A factor by which the field will be scaled
+
+  ! Local variables
+  character(len=:), allocatable :: file_path ! The full path to the file with the variable
+  logical :: found     ! True if the variable was found.
+  logical :: is_global ! True if the variable is in a global file.
+
+  found = find_var_in_restart_files(varname, G, CS, file_path, filename, directory, is_global)
+
+  if (found) then
+    call MOM_read_data(file_path, varname, f_ptr, G%domain, timelevel=1, position=position, &
+                       scale=scale, global_file=is_global)
+  endif
+  if (present(success)) success = found
+
+end subroutine only_read_restart_field_2d
+
+
+!> Try to read a named 3-d field from the restart files
+subroutine only_read_restart_pair_3d(a_ptr, b_ptr, a_name, b_name, G, CS, &
+                                     stagger, filename, directory, success, scale)
+  real, dimension(:,:,:),          intent(inout) :: a_ptr     !< The array for the first field to be read
+  real, dimension(:,:,:),          intent(inout) :: b_ptr     !< The array for the second field to be read
+  character(len=*),                intent(in)    :: a_name    !< The first variable name to be used in the restart file
+  character(len=*),                intent(in)    :: b_name    !< The second variable name to be used in the restart file
+  type(ocean_grid_type),           intent(in)    :: G         !< The ocean's grid structure
+  type(MOM_restart_CS),            intent(in)    :: CS        !< MOM restart control struct
+  integer,               optional, intent(in)    :: stagger   !< A coded integer indicating the horizontal
+                                                              !! position of this pair of variables
+  character(len=*),      optional, intent(in)    :: filename  !< The list of restart file names or a single
+                                                              !! character 'r' to read automatically named files
+  character(len=*),      optional, intent(in)    :: directory !< The directory in which to seek restart files.
+  logical,               optional, intent(out)   :: success   !< True if the field was read successfully
+  real,                  optional, intent(in)    :: scale     !< A factor by which the field will be scaled
+
+  ! Local variables
+  character(len=:), allocatable :: file_path_a ! The full path to the file with the first variable
+  character(len=:), allocatable :: file_path_b ! The full path to the file with the second variable
+  integer :: a_pos, b_pos       ! A coded position for the two variables.
+  logical :: a_found, b_found   ! True if the variables were found.
+  logical :: global_a, global_b ! True if the variables are in global files.
+
+  a_found = find_var_in_restart_files(a_name, G, CS, file_path_a, filename, directory, global_a)
+  b_found = find_var_in_restart_files(b_name, G, CS, file_path_b, filename, directory, global_b)
+
+  a_pos = EAST_FACE ; b_pos = NORTH_FACE
+  if (present(stagger)) then ; select case (stagger)
+    case (AGRID)    ; a_pos = CENTER ; b_pos = CENTER
+    case (BGRID_NE) ; a_pos = CORNER ; b_pos = CORNER
+    case (CGRID_NE) ; a_pos = EAST_FACE ; b_pos = NORTH_FACE
+    case default    ; a_pos = EAST_FACE ; b_pos = NORTH_FACE
+  end select ; endif
+
+  if (a_found .and. b_found) then
+    call MOM_read_data(file_path_a, a_name, a_ptr, G%domain, timelevel=1, position=a_pos, &
+                       scale=scale, global_file=global_b, file_may_be_4d=.true.)
+    call MOM_read_data(file_path_b, b_name, b_ptr, G%domain, timelevel=1, position=b_pos, &
+                       scale=scale, global_file=global_b, file_may_be_4d=.true.)
+  endif
+  if (present(success)) success = (a_found .and. b_found)
+
+end subroutine only_read_restart_pair_3d
+
+!> Return an indicationof whether the named variable is the restart files, and provie the full path
+!! to the restart file in which a variable is found.
+function find_var_in_restart_files(varname, G, CS, file_path, filename, directory, is_global) result (found)
+  character(len=*),                intent(in)    :: varname   !< The variable name to be used in the restart file
+  type(ocean_grid_type),           intent(in)    :: G         !< The ocean's grid structure
+  type(MOM_restart_CS),            intent(in)    :: CS        !< MOM restart control struct
+  character(len=:),   allocatable, intent(out)   :: file_path !< The full path to the file in which the
+                                                              !! variable is found
+  character(len=*),      optional, intent(in)    :: filename  !< The list of restart file names or a single
+                                                              !! character 'r' to read automatically named files
+  character(len=*),      optional, intent(in)    :: directory !< The directory in which to seek restart files.
+  logical,               optional, intent(out)   :: is_global !< True if the file is global.
+  logical :: found !< True if the named variable was found in the restart files.
+
+  ! Local variables
+  character(len=240), allocatable, dimension(:) :: file_paths ! The possible file names.
+  character(len=:), allocatable :: dir ! The directory to read from.
+  character(len=:), allocatable :: fname ! The list of file names.
+  logical, allocatable, dimension(:) :: global_file  ! True if the file is global
+  integer :: n, num_files
+
+  dir = "./INPUT/" ; if (present(directory)) dir = trim(directory)
+
+  ! Set the default return values.
+  found = .false.
+  file_path = ""
+  if (present(is_global)) is_global = .false.
+
+  fname = 'r'
+  if (present(filename)) then
+    if (.not.((LEN_TRIM(filename) == 1) .and. (filename(1:1) == 'F'))) fname = filename
+  endif
+
+  num_files = get_num_restart_files(fname, dir, G, CS)
+  if (num_files == 0) return
+  allocate(file_paths(num_files), global_file(num_files))
+  num_files = open_restart_units(fname, dir, G, CS, file_paths=file_paths, global_files=global_file)
+
+  do n=1,num_files ; if (field_exists(file_paths(n), varname, MOM_Domain=G%domain)) then
+    found = .true.
+    file_path = file_paths(n)
+    if (present(is_global)) is_global = global_file(n)
+    exit
+  endif ; enddo
+
+  deallocate(file_paths, global_file)
+
+end function find_var_in_restart_files
+
+!====================== end of the only_read_from_restarts variants =======================
+
 
 !> save_restart saves all registered variables to restart files.
 subroutine save_restart(directory, time, G, CS, time_stamped, filename, GV, num_rest_files, write_IC)
