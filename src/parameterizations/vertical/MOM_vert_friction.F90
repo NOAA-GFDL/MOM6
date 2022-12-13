@@ -214,7 +214,7 @@ subroutine find_coupling_coef_gl90(a_cpl_gl90, hvel, do_i, z_i, j, G, GV, CS, Va
                                                                      !! otherwise they are v-points.
 
   ! local variables
-  logical                                                     :: khth_use_ebt_struct
+  logical                                                     :: kdgl90_use_ebt_struct
   integer                                                     :: i, k, is, ie, nz, Isq, Ieq
   real                                                        :: f2   !< Squared Coriolis parameter at a
                                                                      !! velocity grid point [T-2 ~> s-2].
@@ -231,9 +231,9 @@ subroutine find_coupling_coef_gl90(a_cpl_gl90, hvel, do_i, z_i, j, G, GV, CS, Va
   nz = GV%ke
 
   h_neglect = GV%H_subroundoff
-  khth_use_ebt_struct = .false.
+  kdgl90_use_ebt_struct = .false.
   if (VarMix%use_variable_mixing) then
-    khth_use_ebt_struct = VarMix%khth_use_ebt_struct
+    kdgl90_use_ebt_struct = VarMix%kdgl90_use_ebt_struct
   endif
 
   if (work_on_u) then
@@ -249,7 +249,7 @@ subroutine find_coupling_coef_gl90(a_cpl_gl90, hvel, do_i, z_i, j, G, GV, CS, Va
           else
             a_cpl_gl90(I,K) = f2 * CS%kappa_gl90 / GV%g_prime(K)
           endif
-          if (khth_use_ebt_struct) then
+          if (kdgl90_use_ebt_struct) then
             a_cpl_gl90(I,K) = a_cpl_gl90(I,K) * 0.5 * ( VarMix%ebt_struct(i,j,k-1) + VarMix%ebt_struct(i+1,j,k-1) )
           endif
         endif
@@ -273,7 +273,7 @@ subroutine find_coupling_coef_gl90(a_cpl_gl90, hvel, do_i, z_i, j, G, GV, CS, Va
           else
             a_cpl_gl90(i,K) = f2 * CS%kappa_gl90 / GV%g_prime(K)
           endif
-          if (khth_use_ebt_struct) then
+          if (kdgl90_use_ebt_struct) then
             a_cpl_gl90(i,K) = a_cpl_gl90(i,K) * 0.5 * ( VarMix%ebt_struct(i,j,k-1) + VarMix%ebt_struct(i,j+1,k-1) )
           endif
         endif
