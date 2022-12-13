@@ -1072,8 +1072,8 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
 
     if (do_any_shelf) then
       do K=1,nz+1 ; do I=Isq,Ieq ; if (do_i_shelf(I)) then
-        CS%a_u(I,j,K) = min(a_cpl_max, forces%frac_shelf_u(I,j)  * a_shelf(I,K) + &
-                                       (1.0-forces%frac_shelf_u(I,j)) * a_cpl(I,K) + a_cpl_gl90(I,K))
+        CS%a_u(I,j,K) = min(a_cpl_max, (forces%frac_shelf_u(I,j)  * a_shelf(I,K) + &
+                                       (1.0-forces%frac_shelf_u(I,j)) * a_cpl(I,K)) + a_cpl_gl90(I,K))
 ! This is Alistair's suggestion, but it destabilizes the model. I do not know why. RWH
 !        CS%a_u(I,j,K) = min(a_cpl_max, forces%frac_shelf_u(I,j)  * max(a_shelf(I,K), a_cpl(I,K)) + &
 !                                       (1.0-forces%frac_shelf_u(I,j)) * a_cpl(I,K))
@@ -1263,8 +1263,8 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
 
     if (do_any_shelf) then
       do K=1,nz+1 ; do i=is,ie ; if (do_i_shelf(i)) then
-        CS%a_v(i,J,K) = min(a_cpl_max, forces%frac_shelf_v(i,J)  * a_shelf(i,k) + &
-                                       (1.0-forces%frac_shelf_v(i,J)) * a_cpl(i,K) + a_cpl_gl90(i,K))
+        CS%a_v(i,J,K) = min(a_cpl_max, (forces%frac_shelf_v(i,J)  * a_shelf(i,k) + &
+                                       (1.0-forces%frac_shelf_v(i,J)) * a_cpl(i,K)) + a_cpl_gl90(i,K))
 ! This is Alistair's suggestion, but it destabilizes the model. I do not know why. RWH
 !        CS%a_v(i,J,K) = min(a_cpl_max, forces%frac_shelf_v(i,J)  * max(a_shelf(i,K), a_cpl(i,K)) + &
                     !                   (1.0-forces%frac_shelf_v(i,J)) * a_cpl(i,K))
@@ -2168,7 +2168,6 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
                  "coefficient is zeroed out, in order to avoid fluxing "//&
                  "momentum into vanished layers over steep topography.", &
                  units="m", default=5.0, scale=GV%m_to_H)
-
   CS%Kvml_invZ2 = 0.0
   if (GV%nkml < 1) then
     call get_param(param_file, mdl, "KV_ML_INVZ2", CS%Kvml_invZ2, &
