@@ -902,7 +902,9 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
   h_neglect = GV%H_subroundoff
   a_cpl_max = 1.0e37 * US%m_to_Z * US%T_to_s
   I_Hbbl(:) = 1.0 / (CS%Hbbl + h_neglect)
-  I_Hbbl_gl90 = 1.0 / (CS%Hbbl_gl90 + h_neglect)
+  if (CS%use_GL90_in_SSW) then
+    I_Hbbl_gl90 = 1.0 / (CS%Hbbl_gl90 + h_neglect)
+  endif
   I_valBL = 0.0 ; if (CS%harm_BL_val > 0.0) I_valBL = 1.0 / CS%harm_BL_val
 
   if (CS%id_Kv_u > 0) allocate(Kv_u(G%IsdB:G%IedB,G%jsd:G%jed,GV%ke), source=0.0)
@@ -2112,62 +2114,65 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
                  "If true, use simpler method to calculate 1/N^2 in GL90 vertical "// &
                  "viscosity coefficient. This method is valid in stacked shallow water mode.", &
                  default=.false.)
-  call get_param(param_file, mdl, "KD_GL90", CS%kappa_gl90, &
-                 "The scalar diffusivity used in GL90 vertical viscosity "//&
-                 "scheme.", &
-                 units="m2 s-1", default=0.0, scale=US%m_to_Z**2*US%T_to_s)
-  call get_param(param_file, mdl, "READ_KD_GL90", CS%read_kappa_gl90, &
-                 "If true, read a file (given by KD_GL90_FILE) containing the "//&
-                 "spatially varying diffusivity KD_GL90 used in the GL90 scheme.", default=.false.)
-  if (CS%read_kappa_gl90) then
-    if (CS%kappa_gl90 > 0) then
-        call MOM_error(FATAL, "MOM_vert_friction.F90, vertvisc_init: KD_GL90 > 0 "// &
-              "is not compatible with READ_KD_GL90 = .TRUE. ")
-    endif
-    call get_param(param_file, mdl, "INPUTDIR", inputdir, &
-                 "The directory in which all input files are found.", &
-                 default=".", do_not_log=.true.)
-    inputdir = slasher(inputdir)
-    call get_param(param_file, mdl, "KD_GL90_FILE", kappa_gl90_file, &
-                 "The file containing the spatially varying diffusivity used in the "// &
-                 "GL90 scheme.", default="kd_gl90.nc")
-    call get_param(param_file, mdl, "KD_GL90_VARIABLE", kdgl90_varname, &
-                 "The name of the GL90 diffusivity variable to read "//&
-                 "from KD_GL90_FILE.", default="kd_gl90")
-    kappa_gl90_file = trim(inputdir) // trim(kappa_gl90_file)
+  if (CS%use_GL90_in_SSW) then
+    call get_param(param_file, mdl, "KD_GL90", CS%kappa_gl90, &
+                   "The scalar diffusivity used in GL90 vertical viscosity "//&
+                   "scheme.", &
+                   units="m2 s-1", default=0.0, scale=US%m_to_Z**2*US%T_to_s)
+    call get_param(param_file, mdl, "READ_KD_GL90", CS%read_kappa_gl90, &
+                   "If true, read a file (given by KD_GL90_FILE) containing the "//&
+                   "spatially varying diffusivity KD_GL90 used in the GL90 scheme.", default=.false.)
+    if (CS%read_kappa_gl90) then
+      if (CS%kappa_gl90 > 0) then
+          call MOM_error(FATAL, "MOM_vert_friction.F90, vertvisc_init: KD_GL90 > 0 "// &
+                "is not compatible with READ_KD_GL90 = .TRUE. ")
+      endif
+      call get_param(param_file, mdl, "INPUTDIR", inputdir, &
+                   "The directory in which all input files are found.", &
+                   default=".", do_not_log=.true.)
+      inputdir = slasher(inputdir)
+      call get_param(param_file, mdl, "KD_GL90_FILE", kappa_gl90_file, &
+                   "The file containing the spatially varying diffusivity used in the "// &
+                   "GL90 scheme.", default="kd_gl90.nc")
+      call get_param(param_file, mdl, "KD_GL90_VARIABLE", kdgl90_varname, &
+                   "The name of the GL90 diffusivity variable to read "//&
+                   "from KD_GL90_FILE.", default="kd_gl90")
+      kappa_gl90_file = trim(inputdir) // trim(kappa_gl90_file)
 
-    allocate(CS%kappa_gl90_2d(G%isd:G%ied, G%jsd:G%jed), source=0.0)
-    call MOM_read_data(kappa_gl90_file, kdgl90_varname, CS%kappa_gl90_2d(:,:), G%domain, scale=US%m_to_L**2*US%T_to_s)
-    call pass_var(CS%kappa_gl90_2d, G%domain)
-  endif
-  call get_param(param_file, mdl, "USE_GL90_N2", CS%use_GL90_N2, &
-                 "If true, use GL90 vertical viscosity coefficient that is depth-independent; "// &
-                 "this corresponds to a kappa_GM that scales as N^2 with depth.", &
-                 default=.false.)
-  if (CS%use_GL90_N2) then
-    if (.not. CS%use_GL90_in_SSW) call MOM_error(FATAL, &
-           "MOM_vert_friction.F90, vertvisc_init: "//&
-           "When USE_GL90_N2=True, USE_GL90_in_SSW must also be True.")
-    if (CS%kappa_gl90 > 0) then
-        call MOM_error(FATAL, "MOM_vert_friction.F90, vertvisc_init: KD_GL90 > 0 "// &
-              "is not compatible with USE_GL90_N2 = .TRUE. ")
+      allocate(CS%kappa_gl90_2d(G%isd:G%ied, G%jsd:G%jed), source=0.0)
+      call MOM_read_data(kappa_gl90_file, kdgl90_varname, CS%kappa_gl90_2d(:,:), G%domain, scale=US%m_to_L**2*US%T_to_s)
+      call pass_var(CS%kappa_gl90_2d, G%domain)
     endif
-    if (CS%read_kappa_gl90) call MOM_error(FATAL, &
-           "MOM_vert_friction.F90, vertvisc_init: "//&
-           "READ_KD_GL90 = .TRUE. is not compatible with USE_GL90_N2 = .TRUE.")
-    call get_param(param_file, mdl, "alpha_GL90", CS%alpha_gl90, &
-                   "Coefficient used to compute a depth-independent GL90 vertical "//&
-                   "viscosity via Kv_GL90 = alpha_GL90 * f2. Is only used "// &
-                   "if USE_GL90_N2 is true. Note that the implied Kv_GL90 "// &
-                   "corresponds to a KD_GL90 that scales as N^2 with depth.", &
-                   units="m2 s", default=0.0, scale=US%m_to_Z**2*US%s_to_T)
+    call get_param(param_file, mdl, "USE_GL90_N2", CS%use_GL90_N2, &
+                   "If true, use GL90 vertical viscosity coefficient that is depth-independent; "// &
+                   "this corresponds to a kappa_GM that scales as N^2 with depth.", &
+                   default=.false.)
+    if (CS%use_GL90_N2) then
+      if (.not. CS%use_GL90_in_SSW) call MOM_error(FATAL, &
+             "MOM_vert_friction.F90, vertvisc_init: "//&
+             "When USE_GL90_N2=True, USE_GL90_in_SSW must also be True.")
+      if (CS%kappa_gl90 > 0) then
+          call MOM_error(FATAL, "MOM_vert_friction.F90, vertvisc_init: KD_GL90 > 0 "// &
+                "is not compatible with USE_GL90_N2 = .TRUE. ")
+      endif
+      if (CS%read_kappa_gl90) call MOM_error(FATAL, &
+             "MOM_vert_friction.F90, vertvisc_init: "//&
+             "READ_KD_GL90 = .TRUE. is not compatible with USE_GL90_N2 = .TRUE.")
+      call get_param(param_file, mdl, "alpha_GL90", CS%alpha_gl90, &
+                     "Coefficient used to compute a depth-independent GL90 vertical "//&
+                     "viscosity via Kv_GL90 = alpha_GL90 * f2. Is only used "// &
+                     "if USE_GL90_N2 is true. Note that the implied Kv_GL90 "// &
+                     "corresponds to a KD_GL90 that scales as N^2 with depth.", &
+                     units="m2 s", default=0.0, scale=US%m_to_Z**2*US%s_to_T)
+    endif
+    call get_param(param_file, mdl, "HBBL_GL90", CS%Hbbl_gl90, &
+                   "The thickness of the GL90 bottom boundary layer, "//&
+                   "which defines the range over which the GL90 coupling "//&
+                   "coefficient is zeroed out, in order to avoid fluxing "//&
+                   "momentum into vanished layers over steep topography.", &
+                   units="m", default=5.0, scale=GV%m_to_H)
   endif
-  call get_param(param_file, mdl, "HBBL_GL90", CS%Hbbl_gl90, &
-                 "The thickness of the GL90 bottom boundary layer, "//&
-                 "which defines the range over which the GL90 coupling "//&
-                 "coefficient is zeroed out, in order to avoid fluxing "//&
-                 "momentum into vanished layers over steep topography.", &
-                 units="m", default=5.0, scale=GV%m_to_H)
+
   CS%Kvml_invZ2 = 0.0
   if (GV%nkml < 1) then
     call get_param(param_file, mdl, "KV_ML_INVZ2", CS%Kvml_invZ2, &
