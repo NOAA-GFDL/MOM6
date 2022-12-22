@@ -54,7 +54,7 @@ type, public :: vertvisc_CS ; private
   real    :: Hbbl_gl90       !< The static bottom boundary layer thickness used for GL90 [H ~> m or kg m-2].
   real    :: Kv_extra_bbl    !< An extra vertical viscosity in the bottom boundary layer of thickness
                              !! Hbbl when there is not a bottom drag law in use [Z2 T-1 ~> m2 s-1].
-  real    :: vonKar          !< The von Karman constant as used for mixed layer viscosity [nomdim]
+  real    :: vonKar          !< The von Karman constant as used for mixed layer viscosity [nondim]
 
   logical :: use_GL90_in_SSW !< If true, use the GL90 parameterization in stacked shallow water mode (SSW).
                              !! The calculation of the GL90 viscosity coefficient uses the fact that in SSW

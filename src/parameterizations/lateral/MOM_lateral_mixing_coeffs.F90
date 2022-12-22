@@ -1116,6 +1116,8 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                                   ! scaled by the resolution function.
   logical :: better_speed_est ! If true, use a more robust estimate of the first
                               ! mode wave speed as the starting point for iterations.
+  real :: Stanley_coeff    ! Coefficient relating the temperature gradient and sub-gridscale
+                           ! temperature variance [nondim]
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_lateral_mixing_coeffs" ! This module's name.
@@ -1183,12 +1185,10 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                  default=.false.)
   call get_param(param_file, mdl, "KHTH_SLOPE_CFF", KhTh_Slope_Cff, &
                  "The nondimensional coefficient in the Visbeck formula "//&
-                 "for the interface depth diffusivity", units="nondim", &
-                 default=0.0)
+                 "for the interface depth diffusivity", units="nondim", default=0.0)
   call get_param(param_file, mdl, "KHTR_SLOPE_CFF", KhTr_Slope_Cff, &
                  "The nondimensional coefficient in the Visbeck formula "//&
-                 "for the epipycnal tracer diffusivity", units="nondim", &
-                 default=0.0)
+                 "for the epipycnal tracer diffusivity", units="nondim", default=0.0)
   call get_param(param_file, mdl, "USE_STORED_SLOPES", CS%use_stored_slopes,&
                  "If true, the isopycnal slopes are calculated once and "//&
                  "stored for re-use. This uses more memory but avoids calling "//&
@@ -1216,6 +1216,13 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "USE_STANLEY_ISO", CS%use_stanley_iso, &
                  "If true, turn on Stanley SGS T variance parameterization "// &
                  "in isopycnal slope code.", default=.false.)
+  if (CS%use_stanley_iso) then
+    call get_param(param_file, mdl, "STANLEY_COEFF", Stanley_coeff, &
+                 "Coefficient correlating the temperature gradient and SGS T variance.", &
+                 units="nondim", default=-1.0, do_not_log=.true.)
+    if (Stanley_coeff < 0.0) call MOM_error(FATAL, &
+                 "STANLEY_COEFF must be set >= 0 if USE_STANLEY_ISO is true.")
+  endif
 
   if (CS%Resoln_use_ebt .or. CS%khth_use_ebt_struct .or. CS%kdgl90_use_ebt_struct) then
     in_use = .true.
@@ -1283,20 +1290,22 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   if (KhTr_Slope_Cff>0. .or. KhTh_Slope_Cff>0.) then
     in_use = .true.
     call get_param(param_file, mdl, "VISBECK_L_SCALE", CS%Visbeck_L_scale, &
-                 "The fixed length scale in the Visbeck formula.", units="m", &
-                 default=0.0)
+                 "The fixed length scale in the Visbeck formula, or if negative a nondimensional "//&
+                 "scaling factor relating this length scale squared to the cell areas.", &
+                 units="m or nondim", default=0.0, scale=US%m_to_L)
     allocate(CS%L2u(IsdB:IedB,jsd:jed), source=0.0)
     allocate(CS%L2v(isd:ied,JsdB:JedB), source=0.0)
     if (CS%Visbeck_L_scale<0) then
+      ! Undo the rescaling of CS%Visbeck_L_scale.
       do j=js,je ; do I=is-1,Ieq
-        CS%L2u(I,j) = CS%Visbeck_L_scale**2 * G%areaCu(I,j)
+        CS%L2u(I,j) = (US%L_to_m*CS%Visbeck_L_scale)**2 * G%areaCu(I,j)
       enddo ; enddo
       do J=js-1,Jeq ; do i=is,ie
-        CS%L2v(i,J) = CS%Visbeck_L_scale**2 * G%areaCv(i,J)
+        CS%L2v(i,J) = (US%L_to_m*CS%Visbeck_L_scale)**2 * G%areaCv(i,J)
       enddo ; enddo
     else
-      CS%L2u(:,:) = US%m_to_L**2*CS%Visbeck_L_scale**2
-      CS%L2v(:,:) = US%m_to_L**2*CS%Visbeck_L_scale**2
+      CS%L2u(:,:) = CS%Visbeck_L_scale**2
+      CS%L2v(:,:) = CS%Visbeck_L_scale**2
     endif
 
     CS%id_L2u = register_diag_field('ocean_model', 'L2u', diag%axesCu1, Time, &
