@@ -233,7 +233,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   type(time_type),         intent(in)    :: Time   !< The time of the fluxes, used for interpolating the
                                                    !! salinity to the right time, when it is being restored.
   real,                    intent(in)    :: valid_time !< The amount of time over which these fluxes
-                                                   !! should be applied [s].
+                                                   !! should be applied [T ~> s].
   type(ocean_grid_type),   intent(inout) :: G      !< The ocean's grid structure
   type(unit_scale_type),   intent(in)    :: US     !< A dimensional unit scaling type
   type(surface_forcing_CS),pointer       :: CS     !< A pointer to the control structure returned by a
@@ -363,7 +363,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
 
   ! Indicate that there are new unused fluxes.
   fluxes%fluxes_used = .false.
-  fluxes%dt_buoy_accum = US%s_to_T*valid_time
+  fluxes%dt_buoy_accum = valid_time
 
   if (CS%allow_flux_adjustments) then
     fluxes%heat_added(:,:)=0.0
@@ -1209,7 +1209,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, restore_salt,
   call get_param(param_file, mdl, "WIND_STRESS_MULTIPLIER", CS%wind_stress_multiplier, &
                  "A factor multiplying the wind-stress given to the ocean by the "//&
                  "coupler. This is used for testing and should be =1.0 for any "//&
-                 "production runs.", default=1.0)
+                 "production runs.", units="nondim", default=1.0)
 
   call get_param(param_file, mdl, "USE_CFC_CAP", CS%use_CFC, &
                  default=.false., do_not_log=.true.)
