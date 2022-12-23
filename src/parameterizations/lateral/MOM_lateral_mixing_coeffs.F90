@@ -48,6 +48,8 @@ type, public :: VarMix_CS
                                   !! of first baroclinic wave for calculating the resolution fn.
   logical :: khth_use_ebt_struct  !< If true, uses the equivalent barotropic structure
                                   !! as the vertical structure of thickness diffusivity.
+  logical :: kdgl90_use_ebt_struct  !< If true, uses the equivalent barotropic structure
+                                  !! as the vertical structure of diffusivity in the GL90 scheme.
   logical :: calculate_cg1        !< If true, calls wave_speed() to calculate the first
                                   !! baroclinic wave speed and populate CS%cg1.
                                   !! This parameter is set depending on other parameters.
@@ -229,7 +231,7 @@ subroutine calc_resoln_function(h, tv, G, GV, US, CS)
   if (CS%calculate_cg1) then
     if (.not. allocated(CS%cg1)) call MOM_error(FATAL, &
       "calc_resoln_function: %cg1 is not associated with Resoln_scaled_Kh.")
-    if (CS%khth_use_ebt_struct) then
+    if (CS%khth_use_ebt_struct .or. CS%kdgl90_use_ebt_struct) then
       if (.not. allocated(CS%ebt_struct)) call MOM_error(FATAL, &
         "calc_resoln_function: %ebt_struct is not associated with RESOLN_USE_EBT.")
       if (CS%Resoln_use_ebt) then
@@ -1114,6 +1116,8 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                                   ! scaled by the resolution function.
   logical :: better_speed_est ! If true, use a more robust estimate of the first
                               ! mode wave speed as the starting point for iterations.
+  real :: Stanley_coeff    ! Coefficient relating the temperature gradient and sub-gridscale
+                           ! temperature variance [nondim]
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_lateral_mixing_coeffs" ! This module's name.
@@ -1175,14 +1179,16 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                  "If true, uses the equivalent barotropic structure "//&
                  "as the vertical structure of thickness diffusivity.",&
                  default=.false.)
+  call get_param(param_file, mdl, "KD_GL90_USE_EBT_STRUCT", CS%kdgl90_use_ebt_struct, &
+                 "If true, uses the equivalent barotropic structure "//&
+                 "as the vertical structure of diffusivity in the GL90 scheme.",&
+                 default=.false.)
   call get_param(param_file, mdl, "KHTH_SLOPE_CFF", KhTh_Slope_Cff, &
                  "The nondimensional coefficient in the Visbeck formula "//&
-                 "for the interface depth diffusivity", units="nondim", &
-                 default=0.0)
+                 "for the interface depth diffusivity", units="nondim", default=0.0)
   call get_param(param_file, mdl, "KHTR_SLOPE_CFF", KhTr_Slope_Cff, &
                  "The nondimensional coefficient in the Visbeck formula "//&
-                 "for the epipycnal tracer diffusivity", units="nondim", &
-                 default=0.0)
+                 "for the epipycnal tracer diffusivity", units="nondim", default=0.0)
   call get_param(param_file, mdl, "USE_STORED_SLOPES", CS%use_stored_slopes,&
                  "If true, the isopycnal slopes are calculated once and "//&
                  "stored for re-use. This uses more memory but avoids calling "//&
@@ -1194,7 +1200,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                  default=1.0e-17, units="s-1", scale=US%T_to_s)
   call get_param(param_file, mdl, "KHTH_USE_FGNV_STREAMFUNCTION", use_FGNV_streamfn, &
                  default=.false., do_not_log=.true.)
-  CS%calculate_cg1 = CS%calculate_cg1 .or. use_FGNV_streamfn .or. CS%khth_use_ebt_struct
+  CS%calculate_cg1 = CS%calculate_cg1 .or. use_FGNV_streamfn .or. CS%khth_use_ebt_struct .or. CS%kdgl90_use_ebt_struct
   CS%calculate_Rd_dx = CS%calculate_Rd_dx .or. use_MEKE
   ! Indicate whether to calculate the Eady growth rate
   CS%calculate_Eady_growth_rate = use_MEKE .or. (KhTr_Slope_Cff>0.) .or. (KhTh_Slope_Cff>0.)
@@ -1210,8 +1216,15 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "USE_STANLEY_ISO", CS%use_stanley_iso, &
                  "If true, turn on Stanley SGS T variance parameterization "// &
                  "in isopycnal slope code.", default=.false.)
+  if (CS%use_stanley_iso) then
+    call get_param(param_file, mdl, "STANLEY_COEFF", Stanley_coeff, &
+                 "Coefficient correlating the temperature gradient and SGS T variance.", &
+                 units="nondim", default=-1.0, do_not_log=.true.)
+    if (Stanley_coeff < 0.0) call MOM_error(FATAL, &
+                 "STANLEY_COEFF must be set >= 0 if USE_STANLEY_ISO is true.")
+  endif
 
-  if (CS%Resoln_use_ebt .or. CS%khth_use_ebt_struct) then
+  if (CS%Resoln_use_ebt .or. CS%khth_use_ebt_struct .or. CS%kdgl90_use_ebt_struct) then
     in_use = .true.
     call get_param(param_file, mdl, "RESOLN_N2_FILTER_DEPTH", N2_filter_depth, &
                  "The depth below which N2 is monotonized to avoid stratification "//&
@@ -1277,20 +1290,22 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   if (KhTr_Slope_Cff>0. .or. KhTh_Slope_Cff>0.) then
     in_use = .true.
     call get_param(param_file, mdl, "VISBECK_L_SCALE", CS%Visbeck_L_scale, &
-                 "The fixed length scale in the Visbeck formula.", units="m", &
-                 default=0.0)
+                 "The fixed length scale in the Visbeck formula, or if negative a nondimensional "//&
+                 "scaling factor relating this length scale squared to the cell areas.", &
+                 units="m or nondim", default=0.0, scale=US%m_to_L)
     allocate(CS%L2u(IsdB:IedB,jsd:jed), source=0.0)
     allocate(CS%L2v(isd:ied,JsdB:JedB), source=0.0)
     if (CS%Visbeck_L_scale<0) then
+      ! Undo the rescaling of CS%Visbeck_L_scale.
       do j=js,je ; do I=is-1,Ieq
-        CS%L2u(I,j) = CS%Visbeck_L_scale**2 * G%areaCu(I,j)
+        CS%L2u(I,j) = (US%L_to_m*CS%Visbeck_L_scale)**2 * G%areaCu(I,j)
       enddo ; enddo
       do J=js-1,Jeq ; do i=is,ie
-        CS%L2v(i,J) = CS%Visbeck_L_scale**2 * G%areaCv(i,J)
+        CS%L2v(i,J) = (US%L_to_m*CS%Visbeck_L_scale)**2 * G%areaCv(i,J)
       enddo ; enddo
     else
-      CS%L2u(:,:) = US%m_to_L**2*CS%Visbeck_L_scale**2
-      CS%L2v(:,:) = US%m_to_L**2*CS%Visbeck_L_scale**2
+      CS%L2u(:,:) = CS%Visbeck_L_scale**2
+      CS%L2v(:,:) = CS%Visbeck_L_scale**2
     endif
 
     CS%id_L2u = register_diag_field('ocean_model', 'L2u', diag%axesCu1, Time, &
@@ -1559,7 +1574,7 @@ end subroutine VarMix_init
 subroutine VarMix_end(CS)
   type(VarMix_CS), intent(inout) :: CS
 
-  if (CS%Resoln_use_ebt .or. CS%khth_use_ebt_struct) &
+  if (CS%Resoln_use_ebt .or. CS%khth_use_ebt_struct .or. CS%kdgl90_use_ebt_struct) &
     deallocate(CS%ebt_struct)
 
   if (CS%use_stored_slopes) then
