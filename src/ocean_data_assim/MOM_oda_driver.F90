@@ -105,8 +105,10 @@ type, public :: ODA_CS ; private
   real, pointer, dimension(:,:,:) :: h => NULL() !<layer thicknesses [H ~> m or kg m-2] for DA
   real, pointer, dimension(:,:,:) :: T_tend => NULL() !<layer temperature tendency from DA [C T-1 ~> degC s-1]
   real, pointer, dimension(:,:,:) :: S_tend => NULL() !<layer salinity tendency from DA [S T-1 ~> ppt s-1]
-  real, pointer, dimension(:,:,:) :: T_bc_tend => NULL() !<layer temperature tendency due to bias adjustment [C T-1 ~> degC s-1]
-  real, pointer, dimension(:,:,:) :: S_bc_tend => NULL() !<layer salinity tendency due to bias adjustment [S T-1 ~> ppt s-1]
+  real, pointer, dimension(:,:,:) :: T_bc_tend => NULL() !< The layer temperature tendency due
+                                                         !! to bias adjustment [C T-1 ~> degC s-1]
+  real, pointer, dimension(:,:,:) :: S_bc_tend => NULL() !< The layer salinity tendency due
+                                                         !! to bias adjustment [S T-1 ~> ppt s-1]
   integer :: ni          !< global i-direction grid size
   integer :: nj          !< global j-direction grid size
   logical :: reentrant_x !< grid is reentrant in the x direction
