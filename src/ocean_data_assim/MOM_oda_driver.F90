@@ -103,8 +103,10 @@ type, public :: ODA_CS ; private
   type(domain2d), pointer :: mpp_domain => NULL() !< Pointer to a mpp domain object for DA
   type(grid_type), pointer :: oda_grid !< local tracer grid
   real, pointer, dimension(:,:,:) :: h => NULL() !<layer thicknesses [H ~> m or kg m-2] for DA
-  type(thermo_var_ptrs), pointer :: tv => NULL() !< pointer to thermodynamic variables
-  type(thermo_var_ptrs), pointer :: tv_bc => NULL() !< pointer to thermodynamic bias correction
+  real, pointer, dimension(:,:,:) :: T_tend => NULL() !<layer temperature tendency [C T-1 ~> degC s-1]
+  real, pointer, dimension(:,:,:) :: S_tend => NULL() !<layer salinity tendency [S T-1 ~> ppt s-1]
+  real, pointer, dimension(:,:,:) :: T_bc_tend => NULL() !<layer temperature tendency due to bias adjustment [C T-1 ~> degC s-1]
+  real, pointer, dimension(:,:,:) :: S_bc_tend => NULL() !<layer salinity tendency due to bias adjustment [S T-1 ~> ppt s-1]
   integer :: ni          !< global i-direction grid size
   integer :: nj          !< global j-direction grid size
   logical :: reentrant_x !< grid is reentrant in the x direction
@@ -120,7 +122,7 @@ type, public :: ODA_CS ; private
   integer :: ensemble_id = 0 !< id of the current ensemble member
   integer, pointer, dimension(:,:) :: ensemble_pelist !< PE list for ensemble members
   integer, pointer, dimension(:) :: filter_pelist !< PE list for ensemble members
-  integer :: assim_frequency !< analysis interval in hours
+  real :: assim_interval !< analysis interval [ T ~> s]
   ! Profiles local to the analysis domain
   type(ocean_profile_type), pointer :: Profiles => NULL() !< pointer to linked list of all available profiles
   type(ocean_profile_type), pointer :: CProfiles => NULL()!< pointer to linked list of current profiles
@@ -198,8 +200,16 @@ subroutine init_oda(Time, G, GV, US, diag_CS, CS)
   call get_param(PF, mdl, "ASSIM_METHOD", assim_method,  &
        "String which determines the data assimilation method "//&
        "Valid methods are: \'EAKF\',\'OI\', and \'NO_ASSIM\'", default='NO_ASSIM')
-  call get_param(PF, mdl, "ASSIM_FREQUENCY", CS%assim_frequency,  &
-       "data assimilation frequency in hours")
+  call get_param(PF, mdl, "ASSIM_INTERVAL", CS%assim_interval,  &
+       "data assimilation update interval in hours",default=-1.0)
+  if (CS%assim_interval < 0.) then
+     call get_param(PF, mdl, "ASSIM_FREQUENCY", CS%assim_interval,  &
+          "data assimilation update  in hours. This parameter name is \n"//&
+          "being deprecated. ASSIM_INTERVAL should be used instead.",default=-1.0)
+  endif
+  !! Convert units [T ~> s]
+  if (CS%assim_interval > 0.) CS%assim_interval = (CS%assim_interval*3600.)*US%s_to_T
+
   call get_param(PF, mdl, "USE_REGRIDDING", CS%use_ALE_algorithm , &
                 "If True, use the ALE algorithm (regridding/remapping).\n"//&
                 "If False, use the layered isopycnal algorithm.", default=.false. )
@@ -338,9 +348,9 @@ subroutine init_oda(Time, G, GV, US, diag_CS, CS)
     ! assign thicknesses
     call ALE_initThicknessToCoord(CS%ALE_CS, G, CS%GV, CS%h)
   endif
-  allocate(CS%tv)
-  allocate(CS%tv%T(isd:ied,jsd:jed,CS%GV%ke), source=0.0)
-  allocate(CS%tv%S(isd:ied,jsd:jed,CS%GV%ke), source=0.0)
+
+  allocate(CS%T_tend(isd:ied,jsd:jed,CS%GV%ke), source=0.0)
+  allocate(CS%S_tend(isd:ied,jsd:jed,CS%GV%ke), source=0.0)
 !  call set_axes_info(CS%Grid, CS%GV, CS%US, PF, CS%diag_cs, set_vertical=.true.) ! missing in Feiyu's fork
   allocate(CS%oda_grid)
   CS%oda_grid%x => CS%Grid%geolonT
@@ -387,9 +397,9 @@ subroutine init_oda(Time, G, GV, US, diag_CS, CS)
     call get_external_field_info(CS%INC_CS%T_id,size=fld_sz)
     CS%INC_CS%fldno = 2
     if (CS%nk /= fld_sz(3)) call MOM_error(FATAL,'Increment levels /= ODA levels')
-    allocate(CS%tv_bc)     ! storage for increment
-    allocate(CS%tv_bc%T(G%isd:G%ied,G%jsd:G%jed,CS%GV%ke), source=0.0)
-    allocate(CS%tv_bc%S(G%isd:G%ied,G%jsd:G%jed,CS%GV%ke), source=0.0)
+
+    allocate(CS%T_bc_tend(G%isd:G%ied,G%jsd:G%jed,CS%GV%ke), source=0.0)
+    allocate(CS%S_bc_tend(G%isd:G%ied,G%jsd:G%jed,CS%GV%ke), source=0.0)
   endif
 
   call cpu_clock_end(id_clock_oda_init)
@@ -468,17 +478,15 @@ end subroutine set_prior_tracer
 
 !> Returns posterior adjustments or full state
 !!Note that only those PEs associated with an ensemble member receive data
-subroutine get_posterior_tracer(Time, CS, h, tv, increment)
+subroutine get_posterior_tracer(Time, CS, increment)
   type(time_type), intent(in) :: Time !< the current model time
   type(ODA_CS), pointer :: CS !< ocean DA control structure
-  real, dimension(:,:,:), pointer, optional :: h    !< Layer thicknesses [H ~> m or kg m-2]
-  type(thermo_var_ptrs), pointer, optional :: tv   !< A structure pointing to various thermodynamic variables
   logical, optional, intent(in) :: increment !< True if returning increment only
 
   type(ocean_control_struct), pointer :: Ocean_increment=>NULL()
   integer :: m
   logical :: get_inc
-  integer :: seconds_per_hour = 3600.
+
 
   ! return if not analysis time (retain pointers for h and tv)
   if (Time < CS%Time .or. CS%assim_method == NO_ASSIM) return
@@ -487,7 +495,7 @@ subroutine get_posterior_tracer(Time, CS, h, tv, increment)
   !! switch to global pelist
   call set_PElist(CS%filter_pelist)
   call MOM_mesg('Getting posterior')
-  if (present(h)) h => CS%h ! get analysis thickness
+
   !! Calculate and redistribute increments to CS%tv right after assimilation
   !! Retain CS%tv to calculate increments for IAU updates CS%tv_inc otherwise
   get_inc = .true.
@@ -503,30 +511,27 @@ subroutine get_posterior_tracer(Time, CS, h, tv, increment)
   do m=1,CS%ensemble_size
     if (get_inc) then
       call redistribute_array(CS%mpp_domain, Ocean_increment%T(:,:,:,m),&
-           CS%domains(m)%mpp_domain, CS%tv%T, complete=.true.)
+           CS%domains(m)%mpp_domain, CS%T_tend, complete=.true.)
       call redistribute_array(CS%mpp_domain, Ocean_increment%S(:,:,:,m),&
-           CS%domains(m)%mpp_domain, CS%tv%S, complete=.true.)
+           CS%domains(m)%mpp_domain, CS%S_tend, complete=.true.)
     else
       call redistribute_array(CS%mpp_domain, CS%Ocean_posterior%T(:,:,:,m),&
-           CS%domains(m)%mpp_domain, CS%tv%T, complete=.true.)
+           CS%domains(m)%mpp_domain, CS%T_tend, complete=.true.)
       call redistribute_array(CS%mpp_domain, CS%Ocean_posterior%S(:,:,:,m),&
-           CS%domains(m)%mpp_domain, CS%tv%S, complete=.true.)
+           CS%domains(m)%mpp_domain, CS%S_tend, complete=.true.)
     endif
   enddo
-
-  if (present(tv)) tv => CS%tv
-  if (present(h)) h => CS%h
 
 
   !! switch back to ensemble member pelist
   call set_PElist(CS%ensemble_pelist(CS%ensemble_id,:))
 
-  call pass_var(CS%tv%T,CS%domains(CS%ensemble_id))
-  call pass_var(CS%tv%S,CS%domains(CS%ensemble_id))
+  call pass_var(CS%T_tend,CS%domains(CS%ensemble_id))
+  call pass_var(CS%S_tend,CS%domains(CS%ensemble_id))
 
   !convert to a tendency (degC or PSU per second)
-  CS%tv%T = CS%tv%T / (CS%assim_frequency * seconds_per_hour)
-  CS%tv%S = CS%tv%S / (CS%assim_frequency * seconds_per_hour)
+  CS%T_tend = CS%T_tend / (CS%assim_interval)
+  CS%S_tend = CS%S_tend / (CS%assim_interval)
 
 
 end subroutine get_posterior_tracer
@@ -588,11 +593,11 @@ subroutine get_bias_correction_tracer(Time, US, CS)
     enddo
   enddo
 
-  CS%tv_bc%T = T_bias * CS%bias_adjustment_multiplier
-  CS%tv_bc%S = S_bias * CS%bias_adjustment_multiplier
+  CS%T_bc_tend = T_bias * CS%bias_adjustment_multiplier
+  CS%S_bc_tend = S_bias * CS%bias_adjustment_multiplier
 
-  call pass_var(CS%tv_bc%T, CS%domains(CS%ensemble_id))
-  call pass_var(CS%tv_bc%S, CS%domains(CS%ensemble_id))
+  call pass_var(CS%T_bc_tend, CS%domains(CS%ensemble_id))
+  call pass_var(CS%S_bc_tend, CS%domains(CS%ensemble_id))
 
   call cpu_clock_end(id_clock_bias_adjustment)
 
@@ -640,8 +645,8 @@ subroutine set_analysis_time(Time,CS)
   integer :: yr, mon, day, hr, min, sec
 
   if (Time >= CS%Time) then
-    ! increment the analysis time to the next step converting to seconds
-    CS%Time = CS%Time + real_to_time(CS%US%T_to_s*(CS%assim_frequency*3600.))
+    ! increment the analysis time to the next step
+    CS%Time = CS%Time + real_to_time(CS%US%T_to_s*(CS%assim_interval))
 
     call get_date(Time, yr, mon, day, hr, min, sec)
     write(mesg,*) 'Model Time: ', yr, mon, day, hr, min, sec
@@ -678,8 +683,8 @@ subroutine apply_oda_tracer_increments(dt, Time_end, G, GV, tv, h, CS)
                                                     !! tendency [C T-1 -> degC s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: S_inc !< an adjustment to the salinity
                                                     !! tendency [S T-1 -> ppt s-1]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(CS%Grid)) :: T !< The updated temperature [C ~> degC]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(CS%Grid)) :: S !< The updated salinity [S ~> ppt]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(CS%Grid)) :: T !< The temperature tendency adjustment from DA [C T-1 ~> degC s-1]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(CS%Grid)) :: S !< The salinity tendency adjustment from DA [S T-1 ~> ppt s-1]
   real :: h_neglect, h_neglect_edge                 ! small thicknesses [H ~> m or kg m-2]
 
   if (.not. associated(CS)) return
@@ -689,12 +694,12 @@ subroutine apply_oda_tracer_increments(dt, Time_end, G, GV, tv, h, CS)
 
   T_inc(:,:,:) = 0.0; S_inc(:,:,:) = 0.0; T(:,:,:) = 0.0; S(:,:,:) = 0.0
   if (CS%assim_method > 0 ) then
-    T = T + CS%tv%T
-    S = S + CS%tv%S
+    T = T + CS%T_tend
+    S = S + CS%S_tend
   endif
   if (CS%do_bias_adjustment ) then
-    T = T + CS%tv_bc%T
-    S = S + CS%tv_bc%S
+    T = T + CS%T_bc_tend
+    S = S + CS%S_bc_tend
   endif
 
   if (CS%answer_date >= 20190101) then
