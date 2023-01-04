@@ -103,8 +103,8 @@ type, public :: ODA_CS ; private
   type(domain2d), pointer :: mpp_domain => NULL() !< Pointer to a mpp domain object for DA
   type(grid_type), pointer :: oda_grid !< local tracer grid
   real, pointer, dimension(:,:,:) :: h => NULL() !<layer thicknesses [H ~> m or kg m-2] for DA
-  real, pointer, dimension(:,:,:) :: T_tend => NULL() !<layer temperature tendency [C T-1 ~> degC s-1]
-  real, pointer, dimension(:,:,:) :: S_tend => NULL() !<layer salinity tendency [S T-1 ~> ppt s-1]
+  real, pointer, dimension(:,:,:) :: T_tend => NULL() !<layer temperature tendency from DA [C T-1 ~> degC s-1]
+  real, pointer, dimension(:,:,:) :: S_tend => NULL() !<layer salinity tendency from DA [S T-1 ~> ppt s-1]
   real, pointer, dimension(:,:,:) :: T_bc_tend => NULL() !<layer temperature tendency due to bias adjustment [C T-1 ~> degC s-1]
   real, pointer, dimension(:,:,:) :: S_bc_tend => NULL() !<layer salinity tendency due to bias adjustment [S T-1 ~> ppt s-1]
   integer :: ni          !< global i-direction grid size
