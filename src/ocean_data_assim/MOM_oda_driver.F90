@@ -689,8 +689,10 @@ subroutine apply_oda_tracer_increments(dt, Time_end, G, GV, tv, h, CS)
                                                     !! tendency [C T-1 -> degC s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: S_tend_inc !< an adjustment to the salinity
                                                     !! tendency [S T-1 -> ppt s-1]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(CS%Grid)) :: T !< The temperature tendency adjustment from DA [C T-1 ~> degC s-1]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(CS%Grid)) :: S !< The salinity tendency adjustment from DA [S T-1 ~> ppt s-1]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(CS%Grid)) :: T_tend !< The temperature tendency adjustment from
+                                                           !! DA [C T-1 ~> degC s-1]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(CS%Grid)) :: S_tend !< The salinity tendency adjustment from DA
+                                                          !! [S T-1 ~> ppt s-1]
   real :: h_neglect, h_neglect_edge                 ! small thicknesses [H ~> m or kg m-2]
 
   if (.not. associated(CS)) return
@@ -698,14 +700,14 @@ subroutine apply_oda_tracer_increments(dt, Time_end, G, GV, tv, h, CS)
 
   call cpu_clock_begin(id_clock_apply_increments)
 
-  T_tend_inc(:,:,:) = 0.0; S_tend_inc(:,:,:) = 0.0; T(:,:,:) = 0.0; S(:,:,:) = 0.0
+  T_tend_inc(:,:,:) = 0.0; S_tend_inc(:,:,:) = 0.0; T_tend(:,:,:) = 0.0; S_tend(:,:,:) = 0.0
   if (CS%assim_method > 0 ) then
-    T = T + CS%T_tend
-    S = S + CS%S_tend
+    T_tend = T_tend + CS%T_tend
+    S_tend = S_tend + CS%S_tend
   endif
   if (CS%do_bias_adjustment ) then
-    T = T + CS%T_bc_tend
-    S = S + CS%S_bc_tend
+    T_tend = T_tend + CS%T_bc_tend
+    S_tend = S_tend + CS%S_bc_tend
   endif
 
   if (CS%answer_date >= 20190101) then
@@ -718,9 +720,9 @@ subroutine apply_oda_tracer_increments(dt, Time_end, G, GV, tv, h, CS)
 
   isc=G%isc; iec=G%iec; jsc=G%jsc; jec=G%jec
   do j=jsc,jec; do i=isc,iec
-    call remapping_core_h(CS%remapCS, CS%nk, CS%h(i,j,:), T(i,j,:), &
+    call remapping_core_h(CS%remapCS, CS%nk, CS%h(i,j,:), T_tend(i,j,:), &
          G%ke, h(i,j,:), T_tend_inc(i,j,:), h_neglect, h_neglect_edge)
-    call remapping_core_h(CS%remapCS, CS%nk, CS%h(i,j,:), S(i,j,:), &
+    call remapping_core_h(CS%remapCS, CS%nk, CS%h(i,j,:), S_tend(i,j,:), &
          G%ke, h(i,j,:), S_tend_inc(i,j,:), h_neglect, h_neglect_edge)
   enddo; enddo
 
