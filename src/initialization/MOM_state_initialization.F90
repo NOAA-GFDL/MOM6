@@ -691,7 +691,9 @@ subroutine initialize_thickness_from_file(h, depth_tot, G, GV, US, param_file, f
                       ! them to units of m or correct sign conventions to positive upward [various]
   real :: h_tolerance ! A parameter that controls the tolerance when adjusting the
                       ! thickness to fit the bathymetry [Z ~> m].
-  integer :: inconsistent = 0
+  real :: tol_dz_bot  ! A tolerance for detecting inconsistent bottom depths when
+                      ! correct_thickness is false [Z ~> m]
+  integer :: inconsistent ! The total number of cells with in consistent topography and layer thicknesses.
   logical :: correct_thickness
   character(len=40)  :: mdl = "initialize_thickness_from_file" ! This subroutine's name.
   character(len=200) :: filename, thickness_file, inputdir, mesg ! Strings for file/path
@@ -738,6 +740,11 @@ subroutine initialize_thickness_from_file(h, depth_tot, G, GV, US, param_file, f
                  "thickness to fit the bathymetry. Used when ADJUST_THICKNESS=True.", &
                  units="m", default=0.1, scale=US%m_to_Z, do_not_log=just_read)
     endif
+    call get_param(param_file, mdl, "DZ_BOTTOM_TOLERANCE", tol_dz_bot, &
+                 "A tolerance for detecting inconsist topography and input layer "//&
+                 "ticknesses when ADJUST_THICKNESS is false.", &
+                 units="m", default=1.0, scale=US%m_to_Z, &
+                 do_not_log=(just_read.or.correct_thickness))
     call get_param(param_file, mdl, "INTERFACE_IC_VAR", eta_var, &
                  "The variable name for initial conditions for interface heights "//&
                  "relative to mean sea level, positive upward unless otherwise rescaled.", &
@@ -762,8 +769,9 @@ subroutine initialize_thickness_from_file(h, depth_tot, G, GV, US, param_file, f
         endif
       enddo ; enddo ; enddo
 
+      inconsistent = 0
       do j=js,je ; do i=is,ie
-        if (abs(eta(i,j,nz+1) + depth_tot(i,j)) > 1.0*US%m_to_Z) &
+        if (abs(eta(i,j,nz+1) + depth_tot(i,j)) > tol_dz_bot) &
           inconsistent = inconsistent + 1
       enddo ; enddo
       call sum_across_PEs(inconsistent)
@@ -1188,6 +1196,7 @@ subroutine trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read)
   character(len=200) :: inputdir, filename, p_surf_file, p_surf_var ! Strings for file/path
   real :: scale_factor   ! A file-dependent scaling factor for the input pressure.
   real :: min_thickness  ! The minimum layer thickness, recast into Z units [Z ~> m].
+  real :: z_tolerance    ! The tolerance with which to find the depth matching a specified pressure [Z ~> m].
   integer :: i, j, k
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   logical :: default_2018_answers ! The default setting for the various 2018_ANSWERS flags.
@@ -1217,6 +1226,11 @@ subroutine trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read)
                  units="file dependent", default=1., do_not_log=just_read)
   call get_param(PF, mdl, "MIN_THICKNESS", min_thickness, 'Minimum layer thickness', &
                  units='m', default=1.e-3, scale=US%m_to_Z, do_not_log=just_read)
+  call get_param(PF, mdl, "TRIM_IC_Z_TOLERANCE", z_tolerance, &
+                 "The tolerance with which to find the depth matching the specified "//&
+                 "surface pressure with TRIM_IC_FOR_P_SURF.", &
+                 units="m", default=1.0e-5, scale=US%m_to_Z, do_not_log=just_read)
+
   call get_param(PF, mdl, "TRIMMING_USES_REMAPPING", use_remapping, &
                  'When trimming the column, also remap T and S.', &
                  default=.false., do_not_log=just_read)
@@ -1270,7 +1284,7 @@ subroutine trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read)
     call cut_off_column_top(GV%ke, tv, GV, US, GV%g_Earth, G%bathyT(i,j)+G%Z_ref, &
                min_thickness, tv%T(i,j,:), T_t(i,j,:), T_b(i,j,:), &
                tv%S(i,j,:), S_t(i,j,:), S_b(i,j,:), p_surf(i,j), h(i,j,:), remap_CS, &
-               z_tol=1.0e-5*US%m_to_Z, remap_answer_date=remap_answer_date)
+               z_tol=z_tolerance, remap_answer_date=remap_answer_date)
   enddo ; enddo
 
 end subroutine trim_for_ice
@@ -2476,37 +2490,44 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
   integer :: i, j, k, ks
   integer :: nkml     ! The number of layers in the mixed layer.
 
-  integer :: kd, inconsistent
+  integer :: inconsistent ! The total number of cells with in consistent topography and layer thicknesses.
+  integer :: kd       ! The number of levels in the input data
   integer :: nkd      ! number of levels to use for regridding input arrays
   real    :: eps_Z    ! A negligibly thin layer thickness [Z ~> m].
   real    :: eps_rho  ! A negligibly small density difference [R ~> kg m-3].
   real    :: PI_180   ! for conversion from degrees to radians [radian degree-1]
   real    :: Hmix_default ! The default initial mixed layer depth [Z ~> m].
   real    :: Hmix_depth   ! The mixed layer depth in the initial condition [Z ~> m].
-  real    :: missing_value_temp  ! The missing value in the input temperature field
-  real    :: missing_value_salt  ! The missing value in the input salinity field
-  logical :: correct_thickness
+  real    :: missing_value_temp  ! The missing value in the input temperature field [C ~> degC]
+  real    :: missing_value_salt  ! The missing value in the input salinity field [S ~> ppt]
+  real    :: tol_temp ! The tolerance for changes in temperature during the horizontal
+                      ! interpolation from an input dataset [C ~> degC]
+  real    :: tol_sal  ! The tolerance for changes in salinity during the horizontal
+                      ! interpolation from an input dataset [S ~> ppt]
+  logical :: correct_thickness  ! If true, correct the column thicknesses to match the topography
   real    :: h_tolerance ! A parameter that controls the tolerance when adjusting the
                          ! thickness to fit the bathymetry [Z ~> m].
+  real    :: tol_dz_bot  ! A tolerance for detecting inconsistent bottom depths when
+                         ! correct_thickness is false [Z ~> m]
   character(len=40) :: potemp_var, salin_var
 
   integer, parameter :: niter=10   ! number of iterations for t/s adjustment to layer density
   logical            :: adjust_temperature = .true.  ! fit t/s to target densities
   real    :: temp_land_fill  ! A temperature value to use for land points [C ~> degC]
   real    :: salt_land_fill  ! A salinity value to use for land points [C ~> degC]
-  logical :: reentrant_x, tripolar_n
 
   ! data arrays
-  real, dimension(:), allocatable :: z_edges_in, z_in ! Interface heights [Z ~> m]
-  real, dimension(:), allocatable :: Rb  ! Interface densities [R ~> kg m-3]
+  real, dimension(:), allocatable :: z_edges_in ! Input data interface heights or depths [Z ~> m]
+  real, dimension(:), allocatable :: z_in       ! Input data cell heights or depths [Z ~> m]
+  real, dimension(:), allocatable :: Rb         ! Interface densities [R ~> kg m-3]
   real, dimension(:,:,:), allocatable, target :: temp_z ! Input temperatures [C ~> degC]
   real, dimension(:,:,:), allocatable, target :: salt_z ! Input salinities [S ~> ppt]
   real, dimension(:,:,:), allocatable, target :: mask_z ! 1 for valid data points [nondim]
-  real, dimension(:,:,:), allocatable :: rho_z ! Densities in Z-space [R ~> kg m-3]
+  real, dimension(:,:,:), allocatable :: rho_z  ! Densities in Z-space [R ~> kg m-3]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: zi   ! Interface heights [Z ~> m].
-  real, dimension(SZI_(G),SZJ_(G)) :: Z_bottom   ! The (usually negative) height of the seafloor
-                                                 ! relative to the surface [Z ~> m].
-  integer, dimension(SZI_(G),SZJ_(G))  :: nlevs  ! The number of levels in each column with valid data
+  real, dimension(SZI_(G),SZJ_(G)) :: Z_bottom  ! The (usually negative) height of the seafloor
+                                                ! relative to the surface [Z ~> m].
+  integer, dimension(SZI_(G),SZJ_(G))  :: nlevs ! The number of levels in each column with valid data
   real, dimension(SZI_(G))   :: press  ! Pressures [R L2 T-2 ~> Pa].
 
   ! Local variables for ALE remapping
@@ -2568,9 +2589,6 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
   inputdir = slasher(inputdir)
 
   eos => tv%eqn_of_state
-
-  reentrant_x = .false. ; call get_param(PF, mdl, "REENTRANT_X", reentrant_x, default=.true.)
-  tripolar_n = .false. ;  call get_param(PF, mdl, "TRIPOLAR_N", tripolar_n, default=.false.)
 
   call get_param(PF, mdl, "TEMP_SALT_Z_INIT_FILE", filename, &
                  "The name of the z-space input file used to initialize "//&
@@ -2661,12 +2679,16 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
                  "If true, all mass below the bottom removed if the "//&
                  "topography is shallower than the thickness input file "//&
                  "would indicate.", default=.false., do_not_log=just_read)
-    if (correct_thickness) then
-      call get_param(PF, mdl, "THICKNESS_TOLERANCE", h_tolerance, &
+    call get_param(PF, mdl, "THICKNESS_TOLERANCE", h_tolerance, &
                  "A parameter that controls the tolerance when adjusting the "//&
                  "thickness to fit the bathymetry. Used when ADJUST_THICKNESS=True.", &
-                 units="m", default=0.1, scale=US%m_to_Z, do_not_log=just_read)
-    endif
+                 units="m", default=0.1, scale=US%m_to_Z, &
+                 do_not_log=(just_read.or..not.correct_thickness))
+    call get_param(PF, mdl, "DZ_BOTTOM_TOLERANCE", tol_dz_bot, &
+                 "A tolerance for detecting inconsist topography and input layer "//&
+                 "ticknesses when ADJUST_THICKNESS is false.", &
+                 units="m", default=1.0, scale=US%m_to_Z, &
+                 do_not_log=(just_read.or.correct_thickness))
 
     call get_param(PF, mdl, "FIT_TO_TARGET_DENSITY_IC", adjust_temperature, &
                  "If true, all the interior layers are adjusted to "//&
@@ -2685,25 +2707,45 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
                  "The mixed layer depth in the initial conditions when Z_INIT_SEPARATE_MIXED_LAYER "//&
                  "is set to true.", units="m", default=US%Z_to_m*Hmix_default, scale=US%m_to_Z, &
                  do_not_log=(just_read .or. .not.separate_mixed_layer))
+    ! Reusing MINIMUM_DEPTH for the default mixed layer depth may be a strange choice, but
+    ! it reproduces previous answers.
+    call get_param(PF, mdl, "DENSITY_INTERP_TOLERANCE", eps_rho, &
+                 "A small density tolerance used when finding depths in a density profile.", &
+                 units="kg m-3", default=1.0e-10, scale=US%kg_m3_to_R, &
+                 do_not_log=useALEremapping.or.just_read)
     call get_param(PF, mdl, "LAYER_Z_INIT_IC_EXTRAP_BUG", density_extrap_bug, &
                  "If true use an expression with a vertical indexing bug for extrapolating the "//&
                  "densities at the bottom of unstable profiles from data when finding the "//&
                  "initial interface locations in layered mode from a dataset of T and S.", &
                  default=.false., do_not_log=just_read)
-    ! Reusing MINIMUM_DEPTH for the default mixed layer depth may be a strange choice, but
-    ! it reproduces previous answers.
   endif
+  call get_param(PF, mdl, "LAND_FILL_TEMP", temp_land_fill, &
+                 "A value to use to fill in ocean temperatures on land points.", &
+                 units="degC", default=0.0, scale=US%degC_to_C, do_not_log=just_read)
+  call get_param(PF, mdl, "LAND_FILL_SALIN", salt_land_fill, &
+                 "A value to use to fill in ocean salinities on land points.", &
+                 units="1e-3", default=35.0, scale=US%ppt_to_S, do_not_log=just_read)
+  call get_param(PF, mdl, "HORIZ_INTERP_TOL_TEMP", tol_temp, &
+                 "The tolerance in temperature changes between iterations when interpolating "//&
+                 "ifrom an nput dataset using horiz_interp_and_extrap_tracer.  This routine "//&
+                 "converges slowly, so an overly small tolerance can get expensive.", &
+                 units="degC", default=1.0e-3, scale=US%degC_to_C, do_not_log=just_read)
+  call get_param(PF, mdl, "HORIZ_INTERP_TOL_SALIN", tol_sal, &
+                 "The tolerance in salinity changes between iterations when interpolating "//&
+                 "ifrom an nput dataset using horiz_interp_and_extrap_tracer.  This routine "//&
+                 "converges slowly, so an overly small tolerance can get expensive.", &
+                 units="1e-3", default=1.0e-3, scale=US%ppt_to_S, do_not_log=just_read)
+
   if (just_read) then
+    if ((.not.useALEremapping) .and. adjust_temperature) &
+      ! This call is just here to read and log the determine_temperature parameters
+      call determine_temperature(tv%T, tv%S, GV%Rlay(1:nz), eos, tv%P_Ref, 0, &
+                                 h, 0, G, GV, US, PF, just_read=.true.)
     call cpu_clock_end(id_clock_routine)
     return ! All run-time parameters have been read, so return.
   endif
 
-  !### These hard-coded constants should be made into runtime parameters
-  temp_land_fill = 0.0*US%degC_to_C
-  salt_land_fill = 35.0*US%ppt_to_S
-
   eps_z = GV%Angstrom_Z
-  eps_rho = 1.0e-10*US%kg_m3_to_R
 
   ! Read input grid coordinates for temperature and salinity field
   ! in z-coordinate dataset. The file is REQUIRED to contain the
@@ -2720,15 +2762,15 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
   ! to the North/South Pole past the limits of the input data, they are extrapolated using the average
   ! value at the northernmost/southernmost latitude.
 
-  call horiz_interp_and_extrap_tracer(tfilename, potemp_var, US%degC_to_C, 1, &
-       G, temp_z, mask_z, z_in, z_edges_in, missing_value_temp, reentrant_x, &
-       tripolar_n, homogenize, m_to_Z=US%m_to_Z, answer_date=hor_regrid_answer_date, &
-       ongrid=pre_gridded, tr_iter_tol=1.0e-3*US%degC_to_C)
+  call horiz_interp_and_extrap_tracer(tfilename, potemp_var, 1, &
+            G, temp_z, mask_z, z_in, z_edges_in, missing_value_temp, &
+            scale=US%degC_to_C, homogenize=homogenize, m_to_Z=US%m_to_Z, &
+            answer_date=hor_regrid_answer_date, ongrid=pre_gridded, tr_iter_tol=tol_temp)
 
-  call horiz_interp_and_extrap_tracer(sfilename, salin_var, US%ppt_to_S, 1, &
-       G, salt_z, mask_z, z_in, z_edges_in, missing_value_salt, reentrant_x, &
-       tripolar_n, homogenize, m_to_Z=US%m_to_Z, answer_date=hor_regrid_answer_date, &
-       ongrid=pre_gridded, tr_iter_tol=1.0e-3*US%ppt_to_S)
+  call horiz_interp_and_extrap_tracer(sfilename, salin_var, 1, &
+            G, salt_z, mask_z, z_in, z_edges_in, missing_value_salt, &
+            scale=US%ppt_to_S, homogenize=homogenize, m_to_Z=US%m_to_Z, &
+            answer_date=hor_regrid_answer_date, ongrid=pre_gridded, tr_iter_tol=tol_sal)
 
   kd = size(z_in,1)
 
@@ -2874,9 +2916,9 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
           h(i,j,k) = GV%Z_to_H * (zi(i,j,K) - zi(i,j,K+1))
         endif
       enddo ; enddo ; enddo
-      inconsistent=0
+      inconsistent = 0
       do j=js,je ; do i=is,ie
-        if (abs(zi(i,j,nz+1) - Z_bottom(i,j)) > 1.0*US%m_to_Z) &
+        if (abs(zi(i,j,nz+1) - Z_bottom(i,j)) > tol_dz_bot) &
           inconsistent = inconsistent + 1
       enddo ; enddo
       call sum_across_PEs(inconsistent)
@@ -2919,8 +2961,8 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
     if (adjust_temperature) then
       ! Finally adjust to target density
       ks = 1 ; if (separate_mixed_layer) ks = GV%nk_rho_varies + 1
-      call determine_temperature(tv%T, tv%S, GV%Rlay(1:nz), tv%P_Ref, niter, &
-                                 h, ks, G, GV, US, eos)
+      call determine_temperature(tv%T, tv%S, GV%Rlay(1:nz), eos, tv%P_Ref, niter, &
+                                 h, ks, G, GV, US, PF, just_read)
     endif
 
   endif ! useALEremapping

@@ -3360,10 +3360,9 @@ subroutine bulkmixedlayer_init(Time, G, GV, US, param_file, diag, CS)
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_mixed_layer"  ! This module's name.
-  real :: BL_detrain_time_dflt ! The default value for BUFFER_LAY_DETRAIN_TIME [s]
   real :: omega_frac_dflt  ! The default value for ML_OMEGA_FRAC [nondim]
   real :: ustar_min_dflt   ! The default value for BML_USTAR_MIN [Z T-1 ~> m s-1]
-  real :: Hmix_min_m       ! The unscaled value of HMIX_MIN [m]
+  real :: Hmix_min_z       ! The default value of HMIX_MIN [Z ~> m]
   integer :: isd, ied, jsd, jed
   logical :: use_temperature, use_omega
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
@@ -3419,10 +3418,10 @@ subroutine bulkmixedlayer_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, 'VON_KARMAN_CONST', CS%vonKar, &
                  'The value the von Karman constant as used for mixed layer viscosity.', &
                  units='nondim', default=0.41)
-  call get_param(param_file, mdl, "HMIX_MIN", CS%Hmix_min, &
+  call get_param(param_file, mdl, "HMIX_MIN", Hmix_min_Z, &
                  "The minimum mixed layer depth if the mixed layer depth "//&
-                 "is determined dynamically.", units="m", default=0.0, scale=GV%m_to_H, &
-                 unscaled=Hmix_min_m)
+                 "is determined dynamically.", units="m", default=0.0, scale=US%m_to_Z)
+  CS%Hmix_min = GV%Z_to_H * Hmix_min_Z
 
   call get_param(param_file, mdl, "LIMIT_BUFFER_DETRAIN", CS%limit_det, &
                  "If true, limit the detrainment from the buffer layers "//&
@@ -3454,10 +3453,15 @@ subroutine bulkmixedlayer_init(Time, G, GV, US, param_file, diag, CS)
                  "The minimum buffer layer thickness relative to the combined mixed "//&
                  "land buffer ayer thicknesses when they are thin.", &
                  units="nondim", default=0.1/CS%nkbl)
-  BL_detrain_time_dflt = 4.0*3600.0 ; if (CS%nkbl==1) BL_detrain_time_dflt = 86400.0*30.0
-  call get_param(param_file, mdl, "BUFFER_LAY_DETRAIN_TIME", CS%BL_detrain_time, &
+  if (CS%nkbl==1) then
+    call get_param(param_file, mdl, "BUFFER_LAY_DETRAIN_TIME", CS%BL_detrain_time, &
                  "A timescale that characterizes buffer layer detrainment events.", &
-                 units="s", default=BL_detrain_time_dflt, scale=US%s_to_T)
+                 units="s", default=86400.0*30.0, scale=US%s_to_T)
+  else
+    call get_param(param_file, mdl, "BUFFER_LAY_DETRAIN_TIME", CS%BL_detrain_time, &
+                 "A timescale that characterizes buffer layer detrainment events.", &
+                 units="s", default=4.0*3600.0, scale=US%s_to_T)
+  endif
   call get_param(param_file, mdl, "BUFFER_SPLIT_RHO_TOL", CS%BL_split_rho_tol, &
                  "The fractional tolerance for matching layer target densities when splitting "//&
                  "layers to deal with massive interior layers that are lighter than one of the "//&
@@ -3466,7 +3470,7 @@ subroutine bulkmixedlayer_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "DEPTH_LIMIT_FLUXES", CS%H_limit_fluxes, &
                  "The surface fluxes are scaled away when the total ocean "//&
                  "depth is less than DEPTH_LIMIT_FLUXES.", &
-                 units="m", default=0.1*Hmix_min_m, scale=GV%m_to_H)
+                 units="m", default=0.1*US%Z_to_m*Hmix_min_z, scale=GV%m_to_H)
   call get_param(param_file, mdl, "OMEGA", CS%omega, &
                  "The rotation rate of the earth.", &
                  default=7.2921e-5, units="s-1", scale=US%T_to_s)
