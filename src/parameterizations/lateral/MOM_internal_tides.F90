@@ -113,6 +113,8 @@ type, public :: int_tide_CS ; private
                         !< If true, apply scattering due to small-scale roughness as a sink.
   logical :: apply_Froude_drag
                         !< If true, apply wave breaking as a sink.
+  real :: En_check_tol  !< An energy density tolerance for flagging points with an imbalance in the
+                        !! internal tide energy budget when apply_Froude_drag is True [R Z3 T-2 ~> J m-2]
   logical :: apply_residual_drag
                         !< If true, apply sink from residual term of reflection/transmission.
   real, allocatable :: En(:,:,:,:,:)
@@ -474,7 +476,7 @@ subroutine propagate_int_tide(h, tv, cn, TKE_itidal_input, vel_btTide, Nb, dt, &
               ! Re-scale (reduce) energy due to breaking
               CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m)/Fr2_max
               ! Check (for debugging only)
-              if (abs(En_new - En_check) > 1e-10*US%kg_m3_to_R*US%m_to_Z**3*US%T_to_s**2) then
+              if (abs(En_new - En_check) > CS%En_check_tol) then
                 call MOM_error(WARNING, "MOM_internal_tides: something is wrong with Fr-breaking.", &
                                all_print=.true.)
                 write(mesg,*) "En_new=", En_new , "En_check=", En_check
@@ -485,7 +487,7 @@ subroutine propagate_int_tide(h, tv, cn, TKE_itidal_input, vel_btTide, Nb, dt, &
             Delta_E_check = En_initial - sum(CS%En(i,j,:,fr,m))
             TKE_Froude_loss_check = abs(Delta_E_check)/dt
             TKE_Froude_loss_tot = sum(CS%TKE_Froude_loss(i,j,:,fr,m))
-            if (abs(TKE_Froude_loss_check - TKE_Froude_loss_tot) > 1e-10) then
+            if (abs(TKE_Froude_loss_check - TKE_Froude_loss_tot)*dt > CS%En_check_tol) then
               call MOM_error(WARNING, "MOM_internal_tides: something is wrong with Fr energy update.", &
                              all_print=.true.)
               write(mesg,*) "TKE_Froude_loss_check=", TKE_Froude_loss_check, &
@@ -2344,10 +2346,15 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "INTERNAL_TIDE_FROUDE_DRAG", CS%apply_Froude_drag, &
                  "If true, apply wave breaking as a sink.", &
                  default=.false.)
+  call get_param(param_file, mdl, "EN_CHECK_TOLERANCE", CS%En_check_tol, &
+                 "An energy density tolerance for flagging points with an imbalance in the "//&
+                 "internal tide energy budget when INTERNAL_TIDE_FROUDE_DRAG is True.", &
+                 units="J m-2", default=1.0e-10, scale=US%W_m2_to_RZ3_T3*US%s_to_T, &
+                 do_not_log=.not.CS%apply_Froude_drag)
   call get_param(param_file, mdl, "CDRAG", CS%cdrag, &
                  "CDRAG is the drag coefficient relating the magnitude of "//&
-                 "the velocity field to the bottom stress.", units="nondim", &
-                 default=0.003)
+                 "the velocity field to the bottom stress.", &
+                 units="nondim", default=0.003)
   call get_param(param_file, mdl, "INTERNAL_TIDE_ENERGIZED_ANGLE", CS%energized_angle, &
                  "If positive, only one angular band of the internal tides "//&
                  "gets all of the energy.  (This is for debugging.)", default=-1)
@@ -2518,7 +2525,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   CS%id_dy_Cu = register_diag_field('ocean_model', 'dy_Cu', diag%axesT1, &
                  Time, 'East face unblocked width', 'm', conversion=US%L_to_m)
   CS%id_land_mask = register_diag_field('ocean_model', 'land_mask', diag%axesT1, &
-                 Time, 'Land mask', 'logical')            ! used if overriding (BDM)
+                 Time, 'Land mask', 'nondim')
   ! Output reflection parameters as diags here (not needed every timestep)
   if (CS%id_refl_ang > 0)   call post_data(CS%id_refl_ang, CS%refl_angle, CS%diag)
   if (CS%id_refl_pref > 0)  call post_data(CS%id_refl_pref, CS%refl_pref, CS%diag)
