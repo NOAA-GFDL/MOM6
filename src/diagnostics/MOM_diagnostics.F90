@@ -83,7 +83,7 @@ type, public :: diagnostics_CS ; private
   integer :: id_PE_to_KE       = -1, id_KE_BT          = -1
   integer :: id_KE_Coradv      = -1, id_KE_adv         = -1
   integer :: id_KE_visc        = -1, id_KE_stress      = -1
-  integer :: id_KE_visc_gl90 = -1
+  integer :: id_KE_visc_gl90   = -1
   integer :: id_KE_horvisc     = -1, id_KE_dia         = -1
   integer :: id_uh_Rlay        = -1, id_vh_Rlay        = -1
   integer :: id_uhGM_Rlay      = -1, id_vhGM_Rlay      = -1
@@ -1135,7 +1135,7 @@ subroutine calculate_energy_diagnostics(u, v, h, uh, vh, ADp, CDp, G, GV, US, CS
         call do_group_pass(CS%pass_KE_uv, G%domain)
       do j=js,je ; do i=is,ie
         KE_term(i,j,k) = 0.5 * G%IareaT(i,j) &
-            * (KE_u(I,j) + KE_u(I-1,j) + KE_v(i,J) + KE_v(i,J-1))
+            * ((KE_u(I,j) + KE_u(I-1,j)) + (KE_v(i,J) + KE_v(i,J-1)))
       enddo ; enddo
     enddo
     call post_data(CS%id_KE_visc_gl90, KE_term, CS%diag)
