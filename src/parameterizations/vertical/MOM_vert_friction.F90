@@ -2262,9 +2262,9 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
                  "viscosity coefficient. This method is valid in stacked shallow water mode.", &
                  default=.false.)
   call get_param(param_file, mdl, "KD_GL90", CS%kappa_gl90, &
-                 "The scalar diffusivity used in GL90 vertical viscosity "//&
-                 "scheme.", units="m2 s-1", default=0.0, &
-                 scale=US%m_to_Z**2*US%T_to_s, do_not_log=.not.CS%use_GL90_in_SSW)
+                 "The scalar diffusivity used in GL90 vertical viscosity scheme.", &
+                 units="m2 s-1", default=0.0, scale=US%m2_s_to_Z2_T, &
+                 do_not_log=.not.CS%use_GL90_in_SSW)
   call get_param(param_file, mdl, "READ_KD_GL90", CS%read_kappa_gl90, &
                  "If true, read a file (given by KD_GL90_FILE) containing the "//&
                  "spatially varying diffusivity KD_GL90 used in the GL90 scheme.", default=.false., &
