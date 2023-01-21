@@ -253,7 +253,7 @@ subroutine bulkmixedlayer(h_3d, u_3d, v_3d, tv, fluxes, dt, ea, eb, G, GV, US, C
     uhtot, &    ! The depth integrated zonal velocity in the mixed layer [H L T-1 ~> m2 s-1 or kg m-1 s-1]
     vhtot, &    ! The depth integrated meridional velocity in the mixed layer [H L T-1 ~> m2 s-1 or kg m-1 s-1]
 
-    netMassInOut, &  ! The net mass flux (if non-Boussinsq) or volume flux (if
+    netMassInOut, &  ! The net mass flux (if non-Boussinesq) or volume flux (if
                      ! Boussinesq - i.e. the fresh water flux (P+R-E)) into the
                      ! ocean over a time step [H ~> m or kg m-2].
     NetMassOut,   &  ! The mass flux (if non-Boussinesq) or volume flux (if Boussinesq)
@@ -290,8 +290,8 @@ subroutine bulkmixedlayer(h_3d, u_3d, v_3d, tv, fluxes, dt, ea, eb, G, GV, US, C
   real :: Inkml, Inkmlm1!  1.0 / REAL(nkml) and  1.0 / REAL(nkml-1)
   real :: Ih            !   The inverse of a thickness [H-1 ~> m-1 or m2 kg-1].
   real :: Idt_diag      !   The inverse of the timestep used for diagnostics [T-1 ~> s-1].
-  real :: RmixConst
-
+  real :: RmixConst     ! A combination of constants used in the river mixing energy
+                        ! calculation [L2 T-2 R-2 ~> m8 s-2 kg-2]
   real, dimension(SZI_(G)) :: &
     dKE_FC, &   !   The change in mean kinetic energy due to free convection
                 ! [Z L2 T-2 ~> m3 s-2].
@@ -344,9 +344,9 @@ subroutine bulkmixedlayer(h_3d, u_3d, v_3d, tv, fluxes, dt, ea, eb, G, GV, US, C
   Inkml = 1.0 / REAL(CS%nkml)
   if (CS%nkml > 1) Inkmlm1 = 1.0 / REAL(CS%nkml-1)
 
-  Irho0 = 1.0 / (GV%Rho0)
+  Irho0 = 1.0 / GV%Rho0
   dt__diag = dt ; if (present(dt_diag)) dt__diag = dt_diag
-  Idt_diag = 1.0 / (dt__diag)
+  Idt_diag = 1.0 / dt__diag
   write_diags = .true. ; if (present(last_call)) write_diags = last_call
 
   p_ref(:) = 0.0 ; p_ref_cv(:) = tv%P_Ref
@@ -1451,7 +1451,7 @@ subroutine mechanical_entrainment(h, d_eb, htot, Ttot, Stot, uhtot, vhtot, &
                             intent(inout) :: d_eb  !< The downward increase across a layer in the
                                                    !! layer in the entrainment from below [H ~> m or kg m-2].
                                                    !! Positive values go with mass gain by a layer.
-  real, dimension(SZI_(G)), intent(inout) :: htot  !< The accumlated mixed layer thickness [H ~> m or kg m-2].
+  real, dimension(SZI_(G)), intent(inout) :: htot  !< The accumulated mixed layer thickness [H ~> m or kg m-2].
   real, dimension(SZI_(G)), intent(inout) :: Ttot  !< The depth integrated mixed layer temperature
                                                    !! [C H ~> degC m or degC kg m-2].
   real, dimension(SZI_(G)), intent(inout) :: Stot  !< The depth integrated mixed layer salinity
@@ -1892,7 +1892,7 @@ subroutine resort_ML(h, T, S, R0, Rcv, RcvTgt, eps, d_ea, d_eb, ksort, G, GV, CS
   real    :: h_tgt_old  ! The previous thickness of the recipient layer [H ~> m or kg m-2]
   real    :: I_hnew     ! The inverse of a new layer thickness [H-1 ~> m-1 or m3 kg-1]
   real    :: dT_dS_wt2  ! The square of the relative weighting of temperature and salinity changes
-                        ! when extraploating to match a target density [C2 S-2 ~> degC2 ppt-2]
+                        ! when extrapolating to match a target density [C2 S-2 ~> degC2 ppt-2]
   real    :: dT_dR      ! The ratio of temperature changes to density changes when
                         ! extrapolating [C R-1 ~> degC m3 kg-1]
   real    :: dS_dR      ! The ratio of salinity changes to density changes when
