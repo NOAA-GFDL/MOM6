@@ -45,7 +45,7 @@ integer, parameter :: SLOPE_Z_IDX = 2 !< Index of vertically averaged isopycnal 
 integer, parameter :: RV_IDX = 3      !< Index of surface relative vorticity in the feature array
 integer, parameter :: RD_DX_Z_IDX = 4 !< Index of the radius of deformation over the grid size in the feature array
 
-integer, parameter :: EKE_PROG = 1     !< Use prognostic equation to calcualte EKE
+integer, parameter :: EKE_PROG = 1     !< Use prognostic equation to calculate EKE
 integer, parameter :: EKE_FILE = 2     !< Read in EKE from a file
 integer, parameter :: EKE_DBCLIENT = 3 !< Infer EKE using a neural network
 
@@ -141,7 +141,7 @@ type, public :: MEKE_CS ; private
   logical :: online_analysis !< If true, post the EKE used in MOM6 at every timestep
   character(len=5) :: model_key  = 'mleke'  !< Key where the ML-model is stored
   character(len=7) :: key_suffix !< Suffix appended to every key sent to Redis
-  real :: eke_max !< The maximum value of EKE considered physically reasonable
+  real :: eke_max !< The maximum value of EKE considered physically reasonable [L2 T-2 ~> m2 s-2]
 
   ! Clock ids
   integer :: id_client_init   !< Clock id to time initialization of the client
@@ -173,10 +173,10 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
   type(vertvisc_type),                      intent(in)    :: visc !< The vertical viscosity type.
   real,                                     intent(in)    :: dt   !< Model(baroclinic) time-step [T ~> s].
   type(MEKE_CS),                            intent(inout) :: CS   !< MEKE control structure.
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in)  :: hu   !< Accumlated zonal mass flux [H L2 ~> m3 or kg].
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in)  :: hv   !< Accumlated meridional mass flux [H L2 ~> m3 or kg]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(inout)  :: u    !< Zonal velocity
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(inout)  :: v    !< Meridional velocity
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in)  :: hu   !< Accumulated zonal mass flux [H L2 ~> m3 or kg].
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in)  :: hv   !< Accumulated meridional mass flux [H L2 ~> m3 or kg]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(inout) :: u  !< Zonal velocity [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(inout) :: v  !< Meridional velocity [L T-1 ~> m s-1]
   type(thermo_var_ptrs),                    intent(in)    :: tv   !< Type containing thermodynamic variables
   type(time_type),                          intent(in)    :: Time !< The time used for interpolating EKE
 
@@ -188,7 +188,7 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
     depth_tot, &    ! The depth of the water column [Z ~> m].
     src, &          ! The sum of all MEKE sources [L2 T-3 ~> W kg-1] (= m2 s-3).
     MEKE_decay, &   ! A diagnostic of the MEKE decay timescale [T-1 ~> s-1].
-    drag_rate_visc, & ! Near-bottom velocity contribution to bottom dratg [L T-1 ~> m s-1]
+    drag_rate_visc, & ! Near-bottom velocity contribution to bottom drag [L T-1 ~> m s-1]
     drag_rate, &    ! The MEKE spindown timescale due to bottom drag [T-1 ~> s-1].
     del2MEKE, &     ! Laplacian of MEKE, used for bi-harmonic diffusion [T-2 ~> s-2].
     del4MEKE, &     ! Time-integrated MEKE tendency arising from the biharmonic of MEKE [L2 T-2 ~> m2 s-2].
@@ -196,7 +196,7 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
     barotrFac2, &   ! Ratio of EKE_barotropic / EKE [nondim]
     bottomFac2, &   ! Ratio of EKE_bottom / EKE [nondim]
     tmp, &          ! Temporary variable for computation of diagnostic velocities [L T-1 ~> m s-1]
-    equilibrium_value ! The equilbrium value of MEKE to be calculated at each
+    equilibrium_value ! The equilibrium value of MEKE to be calculated at each
                     ! time step [L2 T-2 ~> m2 s-2]
 
   real, dimension(SZIB_(G),SZJ_(G)) :: &
@@ -755,7 +755,7 @@ subroutine MEKE_equilibrium(CS, MEKE, G, GV, US, SN_u, SN_v, drag_rate_visc, I_m
   real, dimension(SZI_(G),SZJ_(G)),  intent(in)    :: depth_tot !< The depth of the water column [Z ~> m].
 
   ! Local variables
-  real :: beta ! Combined topograpic and planetary vorticity gradient [T-1 L-1 ~> s-1 m-1]
+  real :: beta ! Combined topographic and planetary vorticity gradient [T-1 L-1 ~> s-1 m-1]
   real :: SN   ! The local Eady growth rate [T-1 ~> s-1]
   real :: bottomFac2, barotrFac2    ! Vertical structure factors [nondim]
   real :: LmixScale, LRhines, LEady ! Various mixing length scales [L ~> m]
@@ -955,7 +955,7 @@ subroutine MEKE_lengthScales(CS, MEKE, G, GV, US, SN_u, SN_v, EKE, depth_tot, &
   real, dimension(SZI_(G),SZJ_(G)),  intent(out)   :: LmixScale !< Eddy mixing length [L ~> m].
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: LRhines, LEady  ! Possible mixing length scales [L ~> m]
-  real :: beta ! Combined topograpic and planetary vorticity gradient [T-1 L-1 ~> s-1 m-1]
+  real :: beta ! Combined topographic and planetary vorticity gradient [T-1 L-1 ~> s-1 m-1]
   real :: SN   ! The local Eady growth rate [T-1 ~> s-1]
   real :: FatH ! Coriolis parameter at h points [T-1 ~> s-1]
   real :: beta_topo_x, beta_topo_y  ! Topographic PV gradients in x and y [T-1 L-1 ~> s-1 m-1]
@@ -1094,7 +1094,7 @@ logical function MEKE_init(Time, G, US, param_file, diag, dbcomms_CS, CS, MEKE, 
   type(diag_ctrl), target, intent(inout) :: diag       !< Diagnostics structure.
   type(MEKE_CS),           intent(inout) :: CS         !< MEKE control structure.
   type(MEKE_type),         intent(inout) :: MEKE       !< MEKE fields
-  type(MOM_restart_CS),    intent(in)    :: restart_CS !< MOM restart control struct
+  type(MOM_restart_CS),    intent(in)    :: restart_CS !< MOM restart control structure
   logical,                 intent(  out) :: meke_in_dynamics !< If true, MEKE is stepped forward in dynamics
                                                              !! otherwise in tracer dynamics
 
@@ -1230,7 +1230,7 @@ logical function MEKE_init(Time, G, US, param_file, diag, dbcomms_CS, CS, MEKE, 
   case default
     call MOM_error(FATAL, "Invalid method selected for calculating EKE")
   end select
-  ! GMM, make sure all params used to calculated MEKE are within the above if
+  ! GMM, make sure all parameters used to calculated MEKE are within the above if
 
   call get_param(param_file, mdl, "MEKE_KHCOEFF", CS%MEKE_KhCoeff, &
                  "A scaling factor in the expression for eddy diffusivity "//&
@@ -1574,12 +1574,12 @@ end subroutine ML_MEKE_init
 subroutine ML_MEKE_calculate_features(G, GV, US, CS, Rd_dx_h, u, v, tv, h, dt, features_array)
   type(ocean_grid_type),                     intent(inout) :: G  !< Ocean grid
   type(verticalGrid_type),                   intent(in)    :: GV !< Ocean vertical grid structure
-  type(unit_scale_type),                     intent(in)    :: US         !< A dimensional unit scaling type
+  type(unit_scale_type),                     intent(in)    :: US !< A dimensional unit scaling type
   type(MEKE_CS),                             intent(in)    :: CS !< Control structure for MEKE
-  real, dimension(SZI_(G),SZJ_(G)), intent(in   ) :: Rd_dx_h !< Rossby radius of deformation over
-                                                             !! the grid length scale [nondim]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(G)), intent(in) :: u  !< Zonal velocity [L T-1 ~> m s-1]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(G)), intent(in) :: v  !< Meridional velocity [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJ_(G)),          intent(in   ) :: Rd_dx_h !< Rossby radius of deformation over
+                                                                 !! the grid length scale [nondim]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(G)), intent(in)    :: u  !< Zonal velocity [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(G)), intent(in)    :: v  !< Meridional velocity [L T-1 ~> m s-1]
   type(thermo_var_ptrs),                     intent(in)    :: tv !< Type containing thermodynamic variables
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(in)    :: h  !< Layer thickness [H ~> m or kg m-2].
   real,                                      intent(in)    :: dt   !< Model(baroclinic) time-step [T ~> s].
@@ -1587,22 +1587,25 @@ subroutine ML_MEKE_calculate_features(G, GV, US, CS, Rd_dx_h, u, v, tv, h, dt, f
                                                                           !< The array of features needed for machine
                                                                           !! learning inference
 
-  real, dimension(SZI_(G),SZJ_(G)) :: mke
-  real, dimension(SZI_(G),SZJ_(G)) :: slope_z
-  real, dimension(SZIB_(G),SZJB_(G)) :: rv_z
-  real, dimension(SZIB_(G),SZJB_(G)) :: rv_z_t
-  real, dimension(SZI_(G),SZJ_(G)) :: rd_dx_z
+  real, dimension(SZI_(G),SZJ_(G)) :: mke      ! Surface kinetic energy per unit mass [L2 T-2 ~> m2 s-2]
+  real, dimension(SZI_(G),SZJ_(G)) :: slope_z  ! Vertically averaged isoneutral slopes [Z L-1 ~> nondim]
+  real, dimension(SZIB_(G),SZJB_(G)) :: rv_z   ! Surface relative vorticity [T-1 ~> s-1]
+  real, dimension(SZIB_(G),SZJB_(G)) :: rv_z_t ! Surface relative vorticity interpolated to tracer points [T-1 ~> s-1]
+  ! This array is unused:  real, dimension(SZI_(G),SZJ_(G)) :: rd_dx_z
 
-  real, dimension(SZIB_(G),SZJ_(G), SZK_(G)) :: h_u ! Thickness at u point
-  real, dimension(SZI_(G),SZJB_(G), SZK_(G)) :: h_v ! Thickness at v point
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(G)+1) :: slope_x ! Isoneutral slope at U point
-  real, dimension(SZI_(G),SZJB_(G),SZK_(G)+1) :: slope_y ! Isoneutral slope at V point
-  real, dimension(SZIB_(G),SZJ_(G)) :: slope_x_vert_avg ! Isoneutral slope at U point
-  real, dimension(SZI_(G),SZJB_(G)) :: slope_y_vert_avg ! Isoneutral slope at V point
+  real, dimension(SZIB_(G),SZJ_(G), SZK_(G)) :: h_u ! Thickness at u point [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJB_(G), SZK_(G)) :: h_v ! Thickness at v point [H ~> m or kg m-2]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(G)+1) :: slope_x ! Isoneutral slope at U point [Z L-1 ~> nondim]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(G)+1) :: slope_y ! Isoneutral slope at V point [Z L-1 ~> nondim]
+  real, dimension(SZIB_(G),SZJ_(G)) :: slope_x_vert_avg ! Isoneutral slope at U point [Z L-1 ~> nondim]
+  real, dimension(SZI_(G),SZJB_(G)) :: slope_y_vert_avg ! Isoneutral slope at V point [Z L-1 ~> nondim]
   real, dimension(SZI_(G), SZJ_(G), SZK_(G)+1) ::  e ! The interface heights relative to mean sea level [Z ~> m].
-  real :: slope_t, u_t, v_t ! u and v interpolated to thickness point
-  real :: dvdx, dudy
-  real :: a_e, a_w, a_n, a_s, Idenom, sum_area
+  real :: slope_t  ! Slope interpolated to thickness points [Z L-1 ~> nondim]
+  real :: u_t, v_t ! u and v interpolated to thickness points [L T-1 ~> m s-1]
+  real :: dvdx, dudy ! Components of relative vorticity [T-1 ~> s-1]
+  real :: a_e, a_w, a_n, a_s ! Fractional areas of neighboring cells for interpolating velocities [nondim]
+  real :: Idenom    ! A normalizing factor in calculating weighted averages of areas [L-2 ~> m-2]
+  real :: sum_area  ! A sum of adjacent cell areas [L2 ~> m2]
 
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
 
@@ -1735,11 +1738,12 @@ end subroutine predict_MEKE
 !> Compute average of interface quantities weighted by the thickness of the surrounding layers
 real function vertical_average_interface(h, w, h_min)
 
-  real, dimension(:), intent(in) :: h  !< Layer Thicknesses
-  real, dimension(:), intent(in) :: w !< Quantity to average
-  real, intent(in) :: h_min !< The vanishingly small layer thickness
+  real, dimension(:), intent(in) :: h  !< Layer Thicknesses [H ~> m or kg m-2]
+  real, dimension(:), intent(in) :: w !< Quantity to average [A ~> a]
+  real, intent(in) :: h_min !< The vanishingly small layer thickness [H ~> m or kg m-2]
 
-  real :: htot, inv_htot
+  real :: htot  ! Twice the sum of the layer thicknesses interpolated to interior interfaces [H ~> m or kg m-2]
+  real :: inv_htot ! The inverse of htot  [H-1 ~> m-1 or m2 kg-1]
   integer :: k, nk
 
   nk = size(h)
@@ -1902,7 +1906,7 @@ end subroutine MEKE_end
 !! The local dissipation of \f$ E \f$ is parameterized through a linear
 !! damping, \f$\lambda\f$, and bottom drag, \f$ C_d | U_d | \gamma_b^2 \f$.
 !! The \f$ \gamma_b \f$ accounts for the weak projection of the column-mean
-!! eddy velocty to the bottom. In other words, the bottom velocity is
+!! eddy velocity to the bottom. In other words, the bottom velocity is
 !! estimated as \f$ \gamma_b U_e \f$.
 !! The bottom drag coefficient, \f$ C_d \f$ is the same as that used in the bottom
 !! friction in the mean model equations.
