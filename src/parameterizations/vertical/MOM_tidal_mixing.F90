@@ -240,8 +240,12 @@ logical function tidal_mixing_init(Time, G, GV, US, param_file, int_tide_CSp, di
   character(len=200) :: filename, h2_file, Niku_TKE_input_file  ! Input file names
   character(len=200) :: tideamp_file  ! Input file names or paths
   character(len=80)  :: tideamp_var, rough_var, TKE_input_var ! Input file variable names
-  real :: utide, hamp, prandtl_tidal, max_frac_rough
-  real :: Niku_scale ! local variable for scaling the Nikurashin TKE flux data
+  real :: hamp          ! The magnitude of the sub-gridscale bottom depth variance [Z ~> m]
+  real :: utide         ! The RMS tidal amplitude [Z T-1 ~> m s-1]
+  real :: max_frac_rough  ! A limit on the depth variance as a fraction of the total depth [nondim]
+  real :: prandtl_tidal ! Prandtl number used by CVMix tidal mixing schemes to convert vertical
+                        ! diffusivities into viscosities [nondim]
+  real :: Niku_scale    ! local variable for scaling the Nikurashin TKE flux data [nondim]
   integer :: i, j, is, ie, js, je
   integer :: isd, ied, jsd, jed
 
@@ -543,11 +547,11 @@ logical function tidal_mixing_init(Time, G, GV, US, param_file, int_tide_CSp, di
 
   if (CS%Lee_wave_dissipation) then
 
-    call get_param(param_file, mdl, "NIKURASHIN_TKE_INPUT_FILE",Niku_TKE_input_file, &
+    call get_param(param_file, mdl, "NIKURASHIN_TKE_INPUT_FILE", Niku_TKE_input_file, &
                  "The path to the file containing the TKE input from lee "//&
                  "wave driven mixing. Used with LEE_WAVE_DISSIPATION.", &
                  fail_if_missing=.true.)
-    call get_param(param_file, mdl, "NIKURASHIN_SCALE",Niku_scale, &
+    call get_param(param_file, mdl, "NIKURASHIN_SCALE", Niku_scale, &
                  "A non-dimensional factor by which to scale the lee-wave "//&
                  "driven TKE input. Used with LEE_WAVE_DISSIPATION.", &
                  units="nondim", default=1.0)
@@ -590,7 +594,7 @@ logical function tidal_mixing_init(Time, G, GV, US, param_file, int_tide_CSp, di
                    "Prandtl number used by CVMix tidal mixing schemes "//&
                    "to convert vertical diffusivities into viscosities.", &
                     units="nondim", default=1.0, do_not_log=.true.)
-    call CVMix_put(CS%CVMix_glb_params,'Prandtl',prandtl_tidal)
+    call CVMix_put(CS%CVMix_glb_params, 'Prandtl', prandtl_tidal)
 
     call get_param(param_file, mdl, "TIDAL_ENERGY_TYPE",tidal_energy_type, &
                  "The type of input tidal energy flux dataset. Valid values are"//&
