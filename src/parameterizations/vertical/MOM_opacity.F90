@@ -68,7 +68,7 @@ type, public :: opacity_CS ; private
                              !! The default is 10 m-1 - a value for muddy water.
   type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
                              !! regulate the timing of diagnostic output.
-  logical :: warning_issued  !< A flag that is used to avoid repetative warnings.
+  logical :: warning_issued  !< A flag that is used to avoid repetitive warnings.
 
   !>@{ Diagnostic IDs
   integer :: id_sw_pen = -1, id_sw_vis_pen = -1
@@ -617,7 +617,7 @@ subroutine absorbRemainingSW(G, GV, US, h, opacity_band, nsw, optics, j, dt, H_l
                             ! was not entirely absorbed.
   logical :: TKE_calc       ! If true, calculate the implications to the
                             ! TKE budget of the shortwave heating.
-  real :: C1_6, C1_60
+  real :: C1_6, C1_60       ! Rational fractions [nondim]
   integer :: is, ie, nz, i, k, ks, n
 
   if (nsw < 1) return
