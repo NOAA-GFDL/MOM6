@@ -33,7 +33,7 @@ use MOM_fixed_initialization, only : MOM_initialize_rotation
 use user_initialization, only : user_initialize_topography
 use MOM_io, only : field_exists, file_exists, MOM_read_data, write_version_number
 use MOM_io, only : slasher, fieldtype, vardesc, var_desc
-use MOM_io, only : write_field, close_file, SINGLE_FILE, MULTIPLE
+use MOM_io, only : close_file, SINGLE_FILE, MULTIPLE
 use MOM_restart, only : register_restart_field, save_restart
 use MOM_restart, only : restart_init, restore_state, MOM_restart_CS, register_restart_pair
 use MOM_time_manager, only : time_type, time_type_to_real, real_to_time, operator(>), operator(-)
@@ -1468,7 +1468,7 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces_in,
 
   call get_param(param_file, mdl, "G_EARTH", CS%g_Earth, &
                  "The gravitational acceleration of the Earth.", &
-                 units="m s-2", default = 9.80, scale=US%m_s_to_L_T**2*US%Z_to_m)
+                 units="m s-2", default=9.80, scale=US%m_s_to_L_T**2*US%Z_to_m)
   call get_param(param_file, mdl, "C_P", CS%Cp, &
                  "The heat capacity of sea water, approximated as a constant. "//&
                  "The default value is from the TEOS-10 definition of conservative temperature.", &
