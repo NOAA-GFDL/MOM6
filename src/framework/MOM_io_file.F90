@@ -33,7 +33,7 @@ use MOM_netcdf, only : get_netcdf_size
 use MOM_netcdf, only : get_netcdf_fields
 use MOM_netcdf, only : read_netcdf_field
 
-use MOM_error_handler, only : MOM_error, FATAL
+use MOM_error_handler, only : MOM_error, FATAL, WARNING
 use MOM_error_handler, only : is_root_PE
 
 implicit none ; private
@@ -1698,9 +1698,11 @@ subroutine get_field_nc(handle, label, values, rescale)
   type(netcdf_field) :: field_nc
     ! netCDF field associated with label
   integer :: isc, iec, jsc, jec
-    ! Index bounds of compute domain
+    ! Index bounds of compute domain using the indexing convention in handle
   integer :: isd, ied, jsd, jed
-    ! Index bounds of data domain
+    ! Index bounds of data domain using the indexing convention in handle
+  integer :: iscl, iecl, jscl, jecl
+    ! Index bounds of compute domain taking into account that array indices here start at 1.
   integer :: bounds(2,2)
     ! Index bounds of domain
   real, allocatable :: values_nc(:,:)
@@ -1727,9 +1729,12 @@ subroutine get_field_nc(handle, label, values, rescale)
 
   field_nc = handle%fields%get(label)
 
+  values(:,:) = 0.0
   if (data_domain) then
-    allocate(values_nc(isc:iec,jsc:jec))
-    values(:,:) = 0.
+    allocate(values_nc(isc:iec,jsc:jec), source=0.)
+    iscl = isc+1-isd ; iecl = iec+1-isd ; jscl = jsc+1-jsd ; jecl = jec+1-jsd
+  else
+    iscl = 1 ; iecl = iec+1-isc ; jscl = 1 ; jecl = jec+1-jsc
   endif
 
   if (handle%domain_decomposed) then
@@ -1749,14 +1754,14 @@ subroutine get_field_nc(handle, label, values, rescale)
   endif
 
   if (data_domain) &
-    values(isc:iec,jsc:jec) = values_nc(:,:)
+    values(iscl:iecl,jscl:jecl) = values_nc(:,:)
 
   ! NOTE: It is more efficient to do the rescale in-place while copying
   ! values_nc(:,:) to values(:,:).  But since rescale is only present for
   ! debugging, we can probably disregard this impact on performance.
   if (present(rescale)) then
     if (rescale /= 1.0) then
-      values(isc:iec,jsc:jec) = rescale * values(isc:iec,jsc:jec)
+      values(iscl:iecl,jscl:jecl) = rescale * values(iscl:iecl,jscl:jecl)
     endif
   endif
 end subroutine get_field_nc
