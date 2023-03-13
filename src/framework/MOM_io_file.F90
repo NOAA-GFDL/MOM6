@@ -33,7 +33,7 @@ use MOM_netcdf, only : get_netcdf_size
 use MOM_netcdf, only : get_netcdf_fields
 use MOM_netcdf, only : read_netcdf_field
 
-use MOM_error_handler, only : MOM_error, FATAL, WARNING
+use MOM_error_handler, only : MOM_error, FATAL
 use MOM_error_handler, only : is_root_PE
 
 implicit none ; private
@@ -1698,15 +1698,15 @@ subroutine get_field_nc(handle, label, values, rescale)
   type(netcdf_field) :: field_nc
     ! netCDF field associated with label
   integer :: isc, iec, jsc, jec
-    ! Index bounds of compute domain using the indexing convention in handle
+    ! Index bounds of compute domain
   integer :: isd, ied, jsd, jed
-    ! Index bounds of data domain using the indexing convention in handle
+    ! Index bounds of data domain
   integer :: iscl, iecl, jscl, jecl
-    ! Index bounds of compute domain taking into account that array indices here start at 1.
+    ! Local 1-based index bounds of compute domain
   integer :: bounds(2,2)
     ! Index bounds of domain
-  real, allocatable :: values_nc(:,:)
-    ! Local copy of field, used for data-decomposed I/O
+  real, allocatable :: values_c(:,:)
+    ! Field values on the compute domain, used for copying to a data domain
 
   isc = handle%HI%isc
   iec = handle%HI%iec
@@ -1729,35 +1729,43 @@ subroutine get_field_nc(handle, label, values, rescale)
 
   field_nc = handle%fields%get(label)
 
-  values(:,:) = 0.0
   if (data_domain) then
-    allocate(values_nc(isc:iec,jsc:jec), source=0.)
-    iscl = isc+1-isd ; iecl = iec+1-isd ; jscl = jsc+1-jsd ; jecl = jec+1-jsd
-  else
-    iscl = 1 ; iecl = iec+1-isc ; jscl = 1 ; jecl = jec+1-jsc
+    allocate(values_c(1:iec-isc+1,1:jec-jsc+1))
+    values(:,:) = 0.
   endif
 
   if (handle%domain_decomposed) then
     bounds(1,:) = [isc, jsc] + [handle%HI%idg_offset, handle%HI%jdg_offset]
     bounds(2,:) = [iec, jec] + [handle%HI%idg_offset, handle%HI%jdg_offset]
     if (data_domain) then
-      call read_netcdf_field(handle%handle_nc, field_nc, values_nc, bounds=bounds)
+      call read_netcdf_field(handle%handle_nc, field_nc, values_c, bounds=bounds)
     else
       call read_netcdf_field(handle%handle_nc, field_nc, values, bounds=bounds)
     endif
   else
     if (data_domain) then
-      call read_netcdf_field(handle%handle_nc, field_nc, values_nc)
+      call read_netcdf_field(handle%handle_nc, field_nc, values_c)
     else
       call read_netcdf_field(handle%handle_nc, field_nc, values)
     endif
   endif
 
-  if (data_domain) &
-    values(iscl:iecl,jscl:jecl) = values_nc(:,:)
+  if (data_domain) then
+    iscl = isc - isd + 1
+    iecl = iec - isd + 1
+    jscl = jsc - jsd + 1
+    jecl = jec - jsd + 1
+
+    values(iscl:iecl,jscl:jecl) = values_c(:,:)
+  else
+    iscl = 1
+    iecl = iec - isc + 1
+    jscl = 1
+    jecl = jec - jsc + 1
+  endif
 
   ! NOTE: It is more efficient to do the rescale in-place while copying
-  ! values_nc(:,:) to values(:,:).  But since rescale is only present for
+  ! values_c(:,:) to values(:,:).  But since rescale is only present for
   ! debugging, we can probably disregard this impact on performance.
   if (present(rescale)) then
     if (rescale /= 1.0) then
