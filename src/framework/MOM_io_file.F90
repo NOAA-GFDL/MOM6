@@ -1681,15 +1681,18 @@ subroutine read_field_chksum_nc(handle, field, chksum, valid_chksum)
 end subroutine read_field_chksum_nc
 
 
-!> Read the values of a netCDF field
+!> Read the values of a netCDF field into an array that might have halos
 subroutine get_field_nc(handle, label, values, rescale)
   class(MOM_netcdf_file), intent(in) :: handle
-    ! Handle of netCDF file to be read
+    !< Handle of netCDF file to be read
   character(len=*), intent(in) :: label
-    ! Field variable name
-  real, intent(out) :: values(:,:)
-    ! Field values read from file
+    !< Field variable name
+  real, intent(inout) :: values(:,:)
+    !< Field values read from the file.  It would be intent(out) but for the
+    !! need to preserve any initialized values in the halo regions.
   real, optional, intent(in) :: rescale
+    !< A multiplicative rescaling factor for the values that are read.
+    !! Omitting this is the same as setting it to 1.
 
   logical :: data_domain
     ! True if values matches the data domain size
@@ -1729,10 +1732,8 @@ subroutine get_field_nc(handle, label, values, rescale)
 
   field_nc = handle%fields%get(label)
 
-  if (data_domain) then
+  if (data_domain) &
     allocate(values_c(1:iec-isc+1,1:jec-jsc+1))
-    values(:,:) = 0.
-  endif
 
   if (handle%domain_decomposed) then
     bounds(1,:) = [isc, jsc] + [handle%HI%idg_offset, handle%HI%jdg_offset]
