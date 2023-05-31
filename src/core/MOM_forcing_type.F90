@@ -131,8 +131,10 @@ type, public :: forcing
   real, pointer, dimension(:,:) :: &
     salt_flux       => NULL(), & !< net salt flux into the ocean [R Z T-1 ~> kgSalt m-2 s-1]
     salt_flux_in    => NULL(), & !< salt flux provided to the ocean from coupler [R Z T-1 ~> kgSalt m-2 s-1]
-    salt_flux_added => NULL()    !< additional salt flux from restoring or flux adjustment before adjustment
+    salt_flux_added => NULL(), & !< additional salt flux from restoring or flux adjustment before adjustment
                                  !! to net zero [R Z T-1 ~> kgSalt m-2 s-1]
+    salt_left_behind => NULL()   !< salt left in ocean at the surface from brine rejection
+                                 !! [R Z T-1 ~> kgSalt m-2 s-1]
 
   ! applied surface pressure from other component models (e.g., atmos, sea ice, land ice)
   real, pointer, dimension(:,:) :: p_surf_full => NULL()
@@ -1927,6 +1929,10 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
 
   handles%id_saltFluxAdded = register_diag_field('ocean_model', 'salt_flux_added', &
         diag%axesT1,Time,'Salt flux into ocean at surface due to restoring or flux adjustment', &
+        units='kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
+
+  handles%id_saltFluxAdded = register_diag_field('ocean_model', 'salt_left_behind', &
+        diag%axesT1,Time,'Salt left in ocean at surface due to ice formation', &
         units='kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
 
   handles%id_saltFluxGlobalAdj = register_scalar_field('ocean_model',              &

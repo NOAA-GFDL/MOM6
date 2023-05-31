@@ -172,6 +172,7 @@ type, public :: ice_ocean_boundary_type
   real, pointer, dimension(:,:) :: t_flux          =>NULL() !< sensible heat flux [W m-2]
   real, pointer, dimension(:,:) :: q_flux          =>NULL() !< specific humidity flux [kg m-2 s-1]
   real, pointer, dimension(:,:) :: salt_flux       =>NULL() !< salt flux [kg m-2 s-1]
+  real, pointer, dimension(:,:) :: excess_salt     =>NULL() !< salt left behind by brine rejection [kg m-2 s-1]
   real, pointer, dimension(:,:) :: lw_flux         =>NULL() !< long wave radiation [W m-2]
   real, pointer, dimension(:,:) :: sw_flux_vis_dir =>NULL() !< direct visible sw radiation [W m-2]
   real, pointer, dimension(:,:) :: sw_flux_vis_dif =>NULL() !< diffuse visible sw radiation [W m-2]
