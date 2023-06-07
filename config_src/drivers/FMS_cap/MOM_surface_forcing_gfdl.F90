@@ -28,6 +28,7 @@ use MOM_grid,             only : ocean_grid_type
 use MOM_interpolate,      only : init_external_field, time_interp_external
 use MOM_interpolate,      only : time_interp_external_init
 use MOM_io,               only : slasher, write_version_number, MOM_read_data
+use MOM_io,               only : read_netCDF_data
 use MOM_io,               only : stdout_if_root
 use MOM_restart,          only : register_restart_field, restart_init, MOM_restart_CS
 use MOM_restart,          only : restart_init_end, save_restart, restore_state
@@ -82,17 +83,17 @@ type, public :: surface_forcing_CS ; private
                                 !! type without any further adjustments to drive the ocean dynamics.
                                 !! The actual net mass source may differ due to corrections.
 
-  real :: gust_const            !< Constant unresolved background gustiness for ustar [R L Z T-1 ~> Pa]
+  real :: gust_const            !< Constant unresolved background gustiness for ustar [R L Z T-2 ~> Pa]
   logical :: read_gust_2d       !< If true, use a 2-dimensional gustiness supplied from an input file.
   real, pointer, dimension(:,:) :: &
     TKE_tidal => NULL()         !< Turbulent kinetic energy introduced to the bottom boundary layer
                                 !! by drag on the tidal flows [R Z3 T-3 ~> W m-2].
   real, pointer, dimension(:,:) :: &
     gust => NULL()              !< A spatially varying unresolved background gustiness that
-                                !! contributes to ustar [R L Z T-1 ~> Pa].  gust is used when read_gust_2d is true.
+                                !! contributes to ustar [R L Z T-2 ~> Pa].  gust is used when read_gust_2d is true.
   real, pointer, dimension(:,:) :: &
     ustar_tidal => NULL()       !< Tidal contribution to the bottom friction velocity [Z T-1 ~> m s-1]
-  real :: cd_tides              !< Drag coefficient that applies to the tides (nondimensional)
+  real :: cd_tides              !< Drag coefficient that applies to the tides [nondim]
   real :: utide                 !< Constant tidal velocity to use if read_tideamp is false [Z T-1 ~> m s-1].
   logical :: read_tideamp       !< If true, spatially varying tidal amplitude read from a file.
 
@@ -110,7 +111,6 @@ type, public :: surface_forcing_CS ; private
                                 !! salinity to a specified value.
   logical :: restore_temp       !< If true, the coupled MOM driver adds a term to restore sea
                                 !! surface temperature to a specified value.
-  real    :: Flux_const                     !< Piston velocity for surface restoring [Z T-1 ~> m s-1]
   real    :: Flux_const_salt                !< Piston velocity for surface salt restoring [Z T-1 ~> m s-1]
   real    :: Flux_const_temp                !< Piston velocity for surface temp restoring [Z T-1 ~> m s-1]
   logical :: trestore_SPEAR_ECDA            !< If true, modify restoring data wrt local SSS
@@ -128,7 +128,7 @@ type, public :: surface_forcing_CS ; private
   logical :: mask_srestore_marginal_seas    !< If true, then mask SSS restoring in marginal seas
   real    :: max_delta_srestore             !< Maximum delta salinity used for restoring [S ~> ppt]
   real    :: max_delta_trestore             !< Maximum delta sst used for restoring [C ~> degC]
-  real, pointer, dimension(:,:) :: basin_mask => NULL() !< Mask for surface salinity restoring by basin
+  real, pointer, dimension(:,:) :: basin_mask => NULL() !< Mask for surface salinity restoring by basin [nondim]
   integer :: answer_date        !< The vintage of the order of arithmetic and expressions in the
                                 !! gustiness calculations.  Values below 20190101 recover the answers
                                 !! from the end of 2018, while higher values use a simpler expression
@@ -145,14 +145,14 @@ type, public :: surface_forcing_CS ; private
                                               !! salinity restoring fluxes. The masking file should be
                                               !! in inputdir/salt_restore_mask.nc and the field should
                                               !! be named 'mask'
-  real, pointer, dimension(:,:) :: srestore_mask => NULL() !< mask for SSS restoring
+  real, pointer, dimension(:,:) :: srestore_mask => NULL() !< mask for SSS restoring [nondim]
   character(len=200) :: temp_restore_file     !< Filename for sst restoring data
   character(len=30)  :: temp_restore_var_name !< Name of surface temperature in temp_restore_file
   logical            :: mask_trestore         !< If true, apply a 2-dimensional mask to the surface
                                               !! temperature restoring fluxes. The masking file should be
                                               !! in inputdir/temp_restore_mask.nc and the field should
                                               !! be named 'mask'
-  real, pointer, dimension(:,:) :: trestore_mask => NULL() !< Mask for SST restoring
+  real, pointer, dimension(:,:) :: trestore_mask => NULL() !< Mask for SST restoring [nondim]
   integer :: id_srestore = -1  !< An id number for time_interp_external.
   integer :: id_trestore = -1  !< An id number for time_interp_external.
 
@@ -221,7 +221,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   type(time_type),         intent(in)    :: Time   !< The time of the fluxes, used for interpolating the
                                                    !! salinity to the right time, when it is being restored.
   real,                    intent(in)    :: valid_time !< The amount of time over which these fluxes
-                                                   !! should be applied [s].
+                                                   !! should be applied [T ~> s].
   type(ocean_grid_type),   intent(inout) :: G      !< The ocean's grid structure
   type(unit_scale_type),   intent(in)    :: US     !< A dimensional unit scaling type
   type(surface_forcing_CS),pointer       :: CS     !< A pointer to the control structure returned by a
@@ -251,7 +251,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
                               ! mass fluxes [R Z s m2 kg-1 T-1 ~> 1]
   real :: rhoXcp              ! Reference density times heat capacity times unit scaling
                               ! factors [Q R C-1 ~> J m-3 degC-1]
-  real :: sign_for_net_FW_bug ! Should be +1. but an old bug can be recovered by using -1.
+  real :: sign_for_net_FW_bug ! Should be +1. but an old bug can be recovered by using -1 [nondim]
 
   call cpu_clock_begin(id_clock_forcing)
 
@@ -333,7 +333,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
 
   ! Indicate that there are new unused fluxes.
   fluxes%fluxes_used = .false.
-  fluxes%dt_buoy_accum = US%s_to_T*valid_time
+  fluxes%dt_buoy_accum = valid_time
 
   fluxes%heat_added(:,:) = 0.0
   fluxes%salt_flux_added(:,:) = 0.0
@@ -548,14 +548,14 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   if (associated(IOB%p)) then
     if (CS%max_p_surf >= 0.0) then
       do j=js,je ; do i=is,ie
-        fluxes%p_surf_full(i,j) = G%mask2dT(i,j) * US%kg_m3_to_R*US%m_s_to_L_T**2*IOB%p(i-i0,j-j0)
+        fluxes%p_surf_full(i,j) = G%mask2dT(i,j) * US%Pa_to_RL2_T2*IOB%p(i-i0,j-j0)
         fluxes%p_surf(i,j) = MIN(fluxes%p_surf_full(i,j),CS%max_p_surf)
         if (CS%check_no_land_fluxes) &
           call check_mask_val_consistency(IOB%p(i-i0,j-j0), G%mask2dT(i,j), i, j, 'p', G)
       enddo ; enddo
     else
       do j=js,je ; do i=is,ie
-        fluxes%p_surf_full(i,j) = G%mask2dT(i,j) * US%kg_m3_to_R*US%m_s_to_L_T**2*IOB%p(i-i0,j-j0)
+        fluxes%p_surf_full(i,j) = G%mask2dT(i,j) * US%Pa_to_RL2_T2*IOB%p(i-i0,j-j0)
         fluxes%p_surf(i,j) = fluxes%p_surf_full(i,j)
         if (CS%check_no_land_fluxes) &
           call check_mask_val_consistency(IOB%p(i-i0,j-j0), G%mask2dT(i,j), i, j, 'p', G)
@@ -581,7 +581,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
 !#CTRL#     SSS_mean(i,j) = 0.5*(sfc_state%SSS(i,j) + CS%S_Restore(i,j))
 !#CTRL#   enddo ; enddo
 !#CTRL#   call apply_ctrl_forcing(SST_anom, SSS_anom, SSS_mean, fluxes%heat_added, &
-!#CTRL#                           fluxes%vprec, day, US%s_to_T*valid_time, G, US, CS%ctrl_forcing_CSp)
+!#CTRL#                           fluxes%vprec, day, valid_time, G, US, CS%ctrl_forcing_CSp)
 !#CTRL# endif
 
   ! adjust the NET fresh-water flux to zero, if flagged
@@ -663,7 +663,7 @@ subroutine convert_IOB_to_forces(IOB, forces, index_bounds, Time, G, US, CS, dt_
                                                    !! previous call to surface_forcing_init.
   real,          optional, intent(in)    :: dt_forcing !< A time interval over which to apply the
                                                    !! current value of ustar as a weighted running
-                                                   !! average [s], or if 0 do not average ustar.
+                                                   !! average [T ~> s], or if 0 do not average ustar.
                                                    !! Missing is equivalent to 0.
   logical,       optional, intent(in)    :: reset_avg !< If true, reset the time average.
 
@@ -755,12 +755,12 @@ subroutine convert_IOB_to_forces(IOB, forces, index_bounds, Time, G, US, CS, dt_
   if (associated(IOB%p)) then
     if (CS%max_p_surf >= 0.0) then
       do j=js,je ; do i=is,ie
-        forces%p_surf_full(i,j) = G%mask2dT(i,j) * US%kg_m3_to_R*US%m_s_to_L_T**2*IOB%p(i-i0,j-j0)
+        forces%p_surf_full(i,j) = G%mask2dT(i,j) * US%Pa_to_RL2_T2*IOB%p(i-i0,j-j0)
         forces%p_surf(i,j) = MIN(forces%p_surf_full(i,j),CS%max_p_surf)
       enddo ; enddo
     else
       do j=js,je ; do i=is,ie
-        forces%p_surf_full(i,j) = G%mask2dT(i,j) * US%kg_m3_to_R*US%m_s_to_L_T**2*IOB%p(i-i0,j-j0)
+        forces%p_surf_full(i,j) = G%mask2dT(i,j) * US%Pa_to_RL2_T2*IOB%p(i-i0,j-j0)
         forces%p_surf(i,j) = forces%p_surf_full(i,j)
       enddo ; enddo
     endif
@@ -911,7 +911,6 @@ subroutine extract_IOB_stresses(IOB, index_bounds, Time, G, US, CS, taux, tauy, 
   real :: Irho0         ! Inverse of the mean density rescaled to [Z L-1 R-1 ~> m3 kg-1]
   real :: taux2, tauy2  ! squared wind stresses [R2 Z2 L2 T-4 ~> Pa2]
   real :: tau_mag       ! magnitude of the wind stress [R Z L T-2 ~> Pa]
-  real :: Pa_conversion ! A unit conversion factor from Pa to the internal wind stress units [R Z L T-2 Pa-1 ~> 1]
   real :: stress_conversion ! A unit conversion factor from Pa times any stress multiplier [R Z L T-2 Pa-1 ~> 1]
 
   logical :: do_ustar, do_gustless
@@ -925,8 +924,7 @@ subroutine extract_IOB_stresses(IOB, index_bounds, Time, G, US, CS, taux, tauy, 
   i0 = is - index_bounds(1) ; j0 = js - index_bounds(3)
 
   IRho0 = US%L_to_Z / CS%Rho0
-  Pa_conversion = US%kg_m3_to_R*US%m_s_to_L_T**2*US%L_to_Z
-  stress_conversion = Pa_conversion * CS%wind_stress_multiplier
+  stress_conversion = US%Pa_to_RLZ_T2 * CS%wind_stress_multiplier
 
   do_ustar = present(ustar) ; do_gustless = present(gustless_ustar)
 
@@ -1037,15 +1035,15 @@ subroutine extract_IOB_stresses(IOB, index_bounds, Time, G, US, CS, taux, tauy, 
                 (G%mask2dBu(I,J-1) + G%mask2dBu(I-1,J))) > 0.0)) ) &
             gustiness = CS%gust(i,j)
         endif
-        ustar(i,j) = sqrt(gustiness*IRho0 + IRho0*Pa_conversion*IOB%stress_mag(i-i0,j-j0))
+        ustar(i,j) = sqrt(gustiness*IRho0 + IRho0*US%Pa_to_RLZ_T2*IOB%stress_mag(i-i0,j-j0))
       enddo ; enddo ; endif
       if (CS%answer_date < 20190101) then
         if (do_gustless) then ; do j=js,je ; do i=is,ie
-          gustless_ustar(i,j) = sqrt(Pa_conversion*US%L_to_Z*IOB%stress_mag(i-i0,j-j0) / CS%Rho0)
+          gustless_ustar(i,j) = sqrt(US%Pa_to_RLZ_T2*US%L_to_Z*IOB%stress_mag(i-i0,j-j0) / CS%Rho0)
         enddo ; enddo ; endif
       else
         if (do_gustless) then ; do j=js,je ; do i=is,ie
-          gustless_ustar(i,j) = sqrt(IRho0 * Pa_conversion*IOB%stress_mag(i-i0,j-j0))
+          gustless_ustar(i,j) = sqrt(IRho0 * US%Pa_to_RLZ_T2*IOB%stress_mag(i-i0,j-j0))
         enddo ; enddo ; endif
       endif
     elseif (wind_stagger == BGRID_NE) then
@@ -1170,18 +1168,21 @@ subroutine apply_force_adjustments(G, US, CS, Time, forces)
   real, dimension(SZI_(G),SZJ_(G)) :: tempy_at_h ! Delta to meridional wind stress at h points [R Z L T-2 ~> Pa]
 
   integer :: isc, iec, jsc, jec, i, j
-  real :: dLonDx, dLonDy, rDlon, cosA, sinA, zonal_tau, merid_tau
-  real :: Pa_conversion ! A unit conversion factor from Pa to the internal units [R Z L T-2 Pa-1 ~> 1]
+  real :: dLonDx, dLonDy ! The change in longitude across the cell in the x- and y-directions [degrees_E]
+  real :: rDlon ! The magnitude of the change in longitude [degrees_E] and then its inverse [degrees_E-1]
+  real :: cosA, sinA  ! The cosine and sine of the angle between the grid and true north [nondim]
+  real :: zonal_tau, merid_tau ! True zonal and meridional wind stresses [R Z L T-2 ~> Pa]
   logical :: overrode_x, overrode_y
 
   isc = G%isc; iec = G%iec ; jsc = G%jsc; jec = G%jec
-  Pa_conversion = US%kg_m3_to_R*US%m_s_to_L_T**2*US%L_to_Z
 
   tempx_at_h(:,:) = 0.0 ; tempy_at_h(:,:) = 0.0
   ! Either reads data or leaves contents unchanged
   overrode_x = .false. ; overrode_y = .false.
-  call data_override(G%Domain, 'taux_adj', tempx_at_h(isc:iec,jsc:jec), Time, override=overrode_x, scale=Pa_conversion)
-  call data_override(G%Domain, 'tauy_adj', tempy_at_h(isc:iec,jsc:jec), Time, override=overrode_y, scale=Pa_conversion)
+  call data_override(G%Domain, 'taux_adj', tempx_at_h(isc:iec,jsc:jec), Time, &
+                     override=overrode_x, scale=US%Pa_to_RLZ_T2)
+  call data_override(G%Domain, 'tauy_adj', tempy_at_h(isc:iec,jsc:jec), Time, &
+                     override=overrode_y, scale=US%Pa_to_RLZ_T2)
 
   if (overrode_x .or. overrode_y) then
     if (.not. (overrode_x .and. overrode_y)) call MOM_error(FATAL,"apply_flux_adjustments: "//&
@@ -1244,19 +1245,22 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                                                   !! diagnostic output
   type(surface_forcing_CS), pointer       :: CS   !< A pointer that is set to point to the control
                                                   !! structure for this module
-  integer, optional,        intent(in)   :: wind_stagger !< If present, the staggering of the winds that are
-                                                          !! being provided in calls to update_ocean_model
+  integer,        optional, intent(in)    :: wind_stagger !< If present, the staggering of the winds
+                                                  !! that are being provided in calls to update_ocean_model
 
   ! Local variables
-  real :: utide  ! The RMS tidal velocity [Z T-1 ~> m s-1].
-  type(directories)  :: dirs
-  logical            :: new_sim, iceberg_flux_diags
+  real :: utide             ! The RMS tidal velocity [Z T-1 ~> m s-1].
+  real :: Flux_const_dflt   ! A default piston velocity for restoring surface properties [m day-1]
+  logical :: new_sim              ! False if this simulation was started from a restart file
+                                  ! or other equivalent files.
+  logical :: iceberg_flux_diags   ! If true, diagnostics of fluxes from icebergs are available.
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   logical :: default_2018_answers ! The default setting for the various 2018_ANSWERS flags.
   logical :: answers_2018         ! If true, use the order of arithmetic and expressions that recover
                                   ! the answers from the end of 2018.  Otherwise, use a simpler
                                   ! expression to calculate gustiness.
   type(time_type)    :: Time_frc
+  type(directories)  :: dirs      ! A structure containing relevant directory paths and input filenames.
   character(len=200) :: TideAmp_file, gust_file, salt_file, temp_file ! Input file names.
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
@@ -1265,7 +1269,6 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
   character(len=48)  :: flnam
   character(len=240) :: basin_file
   integer :: i, j, isd, ied, jsd, jed
-  real :: unscaled_fluxconst
 
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
 
@@ -1309,7 +1312,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "limit the water that can be frozen out of the ocean and "//&
                  "the ice-ocean heat fluxes are treated explicitly.  No "//&
                  "limit is applied if a negative value is used.", &
-                 units="Pa", default=-1.0, scale=US%kg_m3_to_R*US%m_s_to_L_T**2)
+                 units="Pa", default=-1.0, scale=US%Pa_to_RL2_T2)
   call get_param(param_file, mdl, "RESTORE_SALINITY", CS%restore_salt, &
                  "If true, the coupled driver will add a globally-balanced "//&
                  "fresh-water flux that drives sea-surface salinity "//&
@@ -1386,16 +1389,16 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "production runs.", units="nondim", default=1.0)
 
   if (CS%restore_salt) then
-    call get_param(param_file, mdl, "FLUXCONST", CS%Flux_const, &
+    call get_param(param_file, mdl, "FLUXCONST", Flux_const_dflt, &
                  "The constant that relates the restoring surface fluxes to the relative "//&
                  "surface anomalies (akin to a piston velocity).  Note the non-MKS units.", &
-                 default=0.0, units="m day-1", scale=US%m_to_Z*US%T_to_s, unscaled=unscaled_fluxconst)
+                 units="m day-1", default=0.0)
     call get_param(param_file, mdl, "FLUXCONST_SALT", CS%Flux_const_salt, &
                  "The constant that relates the restoring surface salt fluxes to the relative "//&
                  "surface anomalies (akin to a piston velocity).  Note the non-MKS units.", &
-                 fail_if_missing=.false., default=unscaled_fluxconst, units="m day-1", scale=US%m_to_Z*US%T_to_s)
-    ! Finish converting CS%Flux_const from m day-1 to [Z T-1 ~> m s-1].
-    CS%Flux_const = CS%Flux_const / 86400.0
+                 units="m day-1", default=Flux_const_dflt, scale=US%m_to_Z*US%T_to_s)
+    ! Finish converting CS%Flux_const_salt from m day-1 to [Z T-1 ~> m s-1].  Ideally this would be
+    ! included in the scale factors above, but doing so would change answers because a/b /= a*(1/b).
     CS%Flux_const_salt = CS%Flux_const_salt / 86400.0
     call get_param(param_file, mdl, "SALT_RESTORE_FILE", CS%salt_restore_file, &
                  "A file in which to find the surface salinity to use for restoring.", &
@@ -1437,16 +1440,16 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
   endif
 
   if (CS%restore_temp) then
-    call get_param(param_file, mdl, "FLUXCONST", CS%Flux_const, &
+    call get_param(param_file, mdl, "FLUXCONST", Flux_const_dflt, &
                  "The constant that relates the restoring surface fluxes to the relative "//&
                  "surface anomalies (akin to a piston velocity).  Note the non-MKS units.", &
-                 default=0.0, units="m day-1", scale=US%m_to_Z*US%T_to_s, unscaled=unscaled_fluxconst)
+                 units="m day-1", default=0.0)
     call get_param(param_file, mdl, "FLUXCONST_TEMP", CS%Flux_const_temp, &
                  "The constant that relates the restoring surface temperature fluxes to the relative "//&
                  "surface anomalies (akin to a piston velocity).  Note the non-MKS units.", &
-                 fail_if_missing=.false., default=unscaled_fluxconst, units="m day-1", scale=US%m_to_Z*US%T_to_s)
-    ! Convert CS%Flux_const from m day-1 to m s-1.
-    CS%Flux_const = CS%Flux_const / 86400.0
+                 units="m day-1", default=Flux_const_dflt, scale=US%m_to_Z*US%T_to_s)
+    ! Finish converting CS%Flux_const_temp from [m day-1] to [Z T-1 ~> m s-1].  Ideally this would be
+    ! included in the scale factors above, but doing so would change answers because a/b /= a*(1/b).
     CS%Flux_const_temp = CS%Flux_const_temp / 86400.0
     call get_param(param_file, mdl, "SST_RESTORE_FILE", CS%temp_restore_file, &
                  "A file in which to find the surface temperature to use for restoring.", &
@@ -1503,7 +1506,10 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
 
   if (CS%read_TIDEAMP) then
     TideAmp_file = trim(CS%inputdir) // trim(TideAmp_file)
-    call MOM_read_data(TideAmp_file,'tideamp',CS%TKE_tidal,G%domain,timelevel=1, scale=US%m_to_Z*US%T_to_s)
+    ! NOTE: There are certain cases where FMS is unable to read this file, so
+    ! we use read_netCDF_data in place of MOM_read_data.
+    call read_netCDF_data(TideAmp_file, 'tideamp', CS%TKE_tidal, G%Domain, &
+        rescale=US%m_to_Z*US%T_to_s)
     do j=jsd, jed; do i=isd, ied
       utide = CS%TKE_tidal(i,j)
       CS%TKE_tidal(i,j) = G%mask2dT(i,j)*CS%Rho0*CS%cd_tides*(utide*utide*utide)
@@ -1524,8 +1530,8 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "If true, use a 2-dimensional gustiness supplied from "//&
                  "an input file", default=.false.)
   call get_param(param_file, mdl, "GUST_CONST", CS%gust_const, &
-               "The background gustiness in the winds.", &
-               units="Pa", default=0.0, scale=US%kg_m3_to_R*US%m_s_to_L_T**2*US%L_to_Z)
+                 "The background gustiness in the winds.", &
+                 units="Pa", default=0.0, scale=US%Pa_to_RLZ_T2)
   if (CS%read_gust_2d) then
     call get_param(param_file, mdl, "GUST_2D_FILE", gust_file, &
                  "The file in which the wind gustiness is found in "//&
@@ -1533,8 +1539,10 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
 
     call safe_alloc_ptr(CS%gust,isd,ied,jsd,jed)
     gust_file = trim(CS%inputdir) // trim(gust_file)
-    call MOM_read_data(gust_file, 'gustiness', CS%gust, G%domain, timelevel=1, &
-               scale=US%kg_m3_to_R*US%m_s_to_L_T**2*US%L_to_Z) ! units in file should be Pa
+    ! NOTE: There are certain cases where FMS is unable to read this file, so
+    ! we use read_netCDF_data in place of MOM_read_data.
+    call read_netCDF_data(gust_file, 'gustiness', CS%gust, G%Domain, &
+                          rescale=US%Pa_to_RLZ_T2) ! units in file should be [Pa]
   endif
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
@@ -1713,8 +1721,8 @@ end subroutine ice_ocn_bnd_type_chksum
 !> Check the values passed by IOB over land are zero
 subroutine check_mask_val_consistency(val, mask, i, j, varname, G)
 
-  real, intent(in) :: val  !< value of flux/variable passed by IOB
-  real, intent(in) :: mask !< value of ocean mask
+  real, intent(in) :: val  !< value of flux/variable passed by IOB [various]
+  real, intent(in) :: mask !< value of ocean mask [nondim]
   integer, intent(in) :: i !< model grid cell indices
   integer, intent(in) :: j !< model grid cell indices
   character(len=*), intent(in) :: varname !< variable name

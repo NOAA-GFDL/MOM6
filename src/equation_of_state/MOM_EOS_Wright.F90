@@ -3,80 +3,81 @@ module MOM_EOS_Wright
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
-!***********************************************************************
-!*  The subroutines in this file implement the equation of state for   *
-!*  sea water using the formulae given by  Wright, 1997, J. Atmos.     *
-!*  Ocean. Tech., 14, 735-740.  Coded by R. Hallberg, 7/00.            *
-!***********************************************************************
-
 use MOM_hor_index, only : hor_index_type
 
 implicit none ; private
 
-#include <MOM_memory.h>
-
 public calculate_compress_wright, calculate_density_wright, calculate_spec_vol_wright
 public calculate_density_derivs_wright, calculate_specvol_derivs_wright
-public calculate_density_second_derivs_wright
+public calculate_density_second_derivs_wright, calc_density_second_derivs_wright_buggy
+public EoS_fit_range_Wright
 public int_density_dz_wright, int_spec_vol_dp_wright
 
-! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
-! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
-! their mks counterparts with notation like "a velocity [Z T-1 ~> m s-1]".  If the units
-! vary with the Boussinesq approximation, the Boussinesq variant is given first.
-
-
 !> Compute the in situ density of sea water (in [kg m-3]), or its anomaly with respect to
-!! a reference density, from salinity (in psu), potential temperature (in deg C), and pressure [Pa],
-!! using the expressions from Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740.
+!! a reference density, from salinity in practical salinity units ([PSU]), potential
+!! temperature (in degrees Celsius [degC]) and pressure [Pa], using the expressions from
+!! Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740 with the reduced range fit coefficients.
 interface calculate_density_wright
   module procedure calculate_density_scalar_wright, calculate_density_array_wright
 end interface calculate_density_wright
 
 !> Compute the in situ specific volume of sea water (in [m3 kg-1]), or an anomaly with respect
-!! to a reference specific volume, from salinity (in psu), potential temperature (in deg C), and
-!! pressure [Pa], using the expressions from Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740.
+!! to a reference specific volume, from salinity in practical salinity units ([PSU]), potential
+!! temperature (in degrees Celsius [degC]) and pressure [Pa], using the expressions from
+!! Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740 with the reduced range fit coefficients.
 interface calculate_spec_vol_wright
   module procedure calculate_spec_vol_scalar_wright, calculate_spec_vol_array_wright
 end interface calculate_spec_vol_wright
 
-!> For a given thermodynamic state, return the derivatives of density with temperature and salinity
+!> Compute the derivatives of density with temperature and salinity
 interface calculate_density_derivs_wright
   module procedure calculate_density_derivs_scalar_wright, calculate_density_derivs_array_wright
-end interface
+end interface calculate_density_derivs_wright
 
-!> For a given thermodynamic state, return the second derivatives of density with various combinations
-!! of temperature, salinity, and pressure
+!> Compute the second derivatives of density with various combinations
+!! of temperature, salinity and pressure, using the expressions from
+!! Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740 with the reduced range fit coefficients.
 interface calculate_density_second_derivs_wright
   module procedure calculate_density_second_derivs_scalar_wright, calculate_density_second_derivs_array_wright
-end interface
+end interface calculate_density_second_derivs_wright
 
-!>@{ Parameters in the Wright equation of state
-!real :: a0, a1, a2, b0, b1, b2, b3, b4, b5, c0, c1, c2, c3, c4, c5
-!    One of the two following blocks of values should be commented out.
-!  Following are the values for the full range formula.
-!
-!real, parameter :: a0 = 7.133718e-4, a1 = 2.724670e-7, a2 = -1.646582e-7
-!real, parameter :: b0 = 5.613770e8,  b1 = 3.600337e6,  b2 = -3.727194e4
-!real, parameter :: b3 = 1.660557e2,  b4 = 6.844158e5,  b5 = -8.389457e3
-!real, parameter :: c0 = 1.609893e5,  c1 = 8.427815e2,  c2 = -6.931554
-!real, parameter :: c3 = 3.869318e-2, c4 = -1.664201e2, c5 = -2.765195
+!> Compute the second derivatives of density with various combinations of temperature, salinity and
+!! pressure, but deliberately retaining a bug that reproduces older answers for the second
+!! derivative of density with temperature and the second derivative with temperature and pressure
+interface calc_density_second_derivs_wright_buggy
+  module procedure calc_dens_second_derivs_buggy_scalar_wright, calc_dens_second_derivs_buggy_array_wright
+end interface calc_density_second_derivs_wright_buggy
 
+!>@{ Parameters in the Wright equation of state using the reduced range formula, which is a fit to the UNESCO
+!    equation of state for the restricted range: -2 < theta < 30 [degC], 28 < S < 38 [PSU], 0  < p < 5e7 [Pa].
 
-! Following are the values for the reduced range formula.
-real, parameter :: a0 = 7.057924e-4, a1 = 3.480336e-7, a2 = -1.112733e-7 ! a0/a1 ~= 2028 ; a0/a2 ~= -6343
-real, parameter :: b0 = 5.790749e8,  b1 = 3.516535e6,  b2 = -4.002714e4  ! b0/b1 ~= 165  ; b0/b4 ~= 974
-real, parameter :: b3 = 2.084372e2,  b4 = 5.944068e5,  b5 = -9.643486e3
-real, parameter :: c0 = 1.704853e5,  c1 = 7.904722e2,  c2 = -7.984422    ! c0/c1 ~= 216  ; c0/c4 ~= -740
-real, parameter :: c3 = 5.140652e-2, c4 = -2.302158e2, c5 = -3.079464
+  ! Note that a0/a1 ~= 2028 [degC] ; a0/a2 ~= -6343 [PSU]
+  !           b0/b1 ~= 165 [degC]  ; b0/b4 ~= 974 [PSU]
+  !           c0/c1 ~= 216 [degC]  ; c0/c4 ~= -740 [PSU]
+real, parameter :: a0 = 7.057924e-4  ! A parameter in the Wright alpha_0 fit [m3 kg-1]
+real, parameter :: a1 = 3.480336e-7  ! A parameter in the Wright alpha_0 fit [m3 kg-1 degC-1]
+real, parameter :: a2 = -1.112733e-7 ! A parameter in the Wright alpha_0 fit [m3 kg-1 PSU-1]
+real, parameter :: b0 = 5.790749e8   ! A parameter in the Wright p_0 fit [Pa]
+real, parameter :: b1 = 3.516535e6   ! A parameter in the Wright p_0 fit [Pa degC-1]
+real, parameter :: b2 = -4.002714e4  ! A parameter in the Wright p_0 fit [Pa degC-2]
+real, parameter :: b3 = 2.084372e2   ! A parameter in the Wright p_0 fit [Pa degC-3]
+real, parameter :: b4 = 5.944068e5   ! A parameter in the Wright p_0 fit [Pa PSU-1]
+real, parameter :: b5 = -9.643486e3  ! A parameter in the Wright p_0 fit [Pa degC-1 PSU-1]
+real, parameter :: c0 = 1.704853e5   ! A parameter in the Wright lambda fit [m2 s-2]
+real, parameter :: c1 = 7.904722e2   ! A parameter in the Wright lambda fit [m2 s-2 degC-1]
+real, parameter :: c2 = -7.984422    ! A parameter in the Wright lambda fit [m2 s-2 degC-2]
+real, parameter :: c3 = 5.140652e-2  ! A parameter in the Wright lambda fit [m2 s-2 degC-3]
+real, parameter :: c4 = -2.302158e2  ! A parameter in the Wright lambda fit [m2 s-2 PSU-1]
+real, parameter :: c5 = -3.079464    ! A parameter in the Wright lambda fit [m2 s-2 degC-1 PSU-1]
 !>@}
 
 contains
 
-!> This subroutine computes the in situ density of sea water (rho in
-!! [kg m-3]) from salinity (S [PSU]), potential temperature
-!! (T [degC]), and pressure [Pa].  It uses the expression from
-!! Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740.
+!> Computes the in situ density of sea water for scalar inputs and outputs.
+!!
+!! Returns the in situ density of sea water (rho in [kg m-3]) from salinity (S [PSU]),
+!! potential temperature (T [degC]) and pressure [Pa].  It uses the expression from
+!! Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740 with the reduced range fit coefficients.
 subroutine calculate_density_scalar_wright(T, S, pressure, rho, rho_ref)
   real,           intent(in)  :: T        !< Potential temperature relative to the surface [degC].
   real,           intent(in)  :: S        !< Salinity [PSU].
@@ -84,15 +85,11 @@ subroutine calculate_density_scalar_wright(T, S, pressure, rho, rho_ref)
   real,           intent(out) :: rho      !< In situ density [kg m-3].
   real, optional, intent(in)  :: rho_ref  !< A reference density [kg m-3].
 
-! *====================================================================*
-! *  This subroutine computes the in situ density of sea water (rho in *
-! *  [kg m-3]) from salinity (S [PSU]), potential temperature  *
-! *  (T [degC]), and pressure [Pa].  It uses the expression from    *
-! *  Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740.                *
-! *  Coded by R. Hallberg, 7/00                                        *
-! *====================================================================*
-
-  real, dimension(1) :: T0, S0, pressure0, rho0
+  ! Local variables
+  real, dimension(1) :: T0    ! A 1-d array with a copy of the potential temperature [degC]
+  real, dimension(1) :: S0    ! A 1-d array with a copy of the salinity [PSU]
+  real, dimension(1) :: pressure0 ! A 1-d array with a copy of the pressure [Pa]
+  real, dimension(1) :: rho0  ! A 1-d array with a copy of the density [kg m-3]
 
   T0(1) = T
   S0(1) = S
@@ -103,10 +100,11 @@ subroutine calculate_density_scalar_wright(T, S, pressure, rho, rho_ref)
 
 end subroutine calculate_density_scalar_wright
 
-!> This subroutine computes the in situ density of sea water (rho in
-!! [kg m-3]) from salinity (S [PSU]), potential temperature
-!! (T [degC]), and pressure [Pa].  It uses the expression from
-!! Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740.
+!> Computes the in situ density of sea water for 1-d array inputs and outputs.
+!!
+!! Returns the in situ density of sea water (rho in [kg m-3]) from salinity (S [PSU]),
+!! potential temperature (T [degC]) and pressure [Pa].  It uses the expression from
+!! Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740 with the reduced range fit coefficients.
 subroutine calculate_density_array_wright(T, S, pressure, rho, start, npts, rho_ref)
   real, dimension(:), intent(in)    :: T        !< potential temperature relative to the surface [degC].
   real, dimension(:), intent(in)    :: S        !< salinity [PSU].
@@ -116,10 +114,14 @@ subroutine calculate_density_array_wright(T, S, pressure, rho, start, npts, rho_
   integer,            intent(in)    :: npts     !< the number of values to calculate.
   real,     optional, intent(in)    :: rho_ref  !< A reference density [kg m-3].
 
-  ! Original coded by R. Hallberg, 7/00, anomaly coded in 3/18.
   ! Local variables
-  real :: al0, p0, lambda
-  real :: al_TS, p_TSp, lam_TS, pa_000
+  real :: al0     ! The specific volume at 0 lambda in the Wright EOS [m3 kg-1]
+  real :: p0      ! The pressure offset in the Wright EOS [Pa]
+  real :: lambda  ! The sound speed squared at 0 alpha in the Wright EOS [m2 s-2]
+  real :: al_TS   ! The contributions of temperature and salinity to al0 [m3 kg-1]
+  real :: p_TSp   ! A combination of the pressure and the temperature and salinity contributions to p0 [Pa]
+  real :: lam_TS  ! The contributions of temperature and salinity to lambda [m2 s-2]
+  real :: pa_000  ! A corrected offset to the pressure, including contributions from rho_ref [Pa]
   integer :: j
 
   if (present(rho_ref)) pa_000 = (b0*(1.0 - a0*rho_ref) - rho_ref*c0)
@@ -142,10 +144,11 @@ subroutine calculate_density_array_wright(T, S, pressure, rho, start, npts, rho_
 
 end subroutine calculate_density_array_wright
 
-!> This subroutine computes the in situ specific volume of sea water (specvol in
-!! [m3 kg-1]) from salinity (S [PSU]), potential temperature (T [degC])
-!! and pressure [Pa].  It uses the expression from
-!! Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740.
+!> Computes the Wright in situ specific volume of sea water for scalar inputs and outputs.
+!!
+!! Returns the in situ specific volume of sea water (specvol in [m3 kg-1]) from salinity (S [PSU]),
+!! potential temperature (T [degC]) and pressure [Pa].  It uses the expression from
+!! Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740 with the reduced range fit coefficients.
 !! If spv_ref is present, specvol is an anomaly from spv_ref.
 subroutine calculate_spec_vol_scalar_wright(T, S, pressure, specvol, spv_ref)
   real,           intent(in)  :: T        !< potential temperature relative to the surface [degC].
@@ -155,7 +158,10 @@ subroutine calculate_spec_vol_scalar_wright(T, S, pressure, specvol, spv_ref)
   real, optional, intent(in)  :: spv_ref  !< A reference specific volume [m3 kg-1].
 
   ! Local variables
-  real, dimension(1) :: T0, S0, pressure0, spv0
+  real, dimension(1) :: T0    ! A 1-d array with a copy of the potential temperature [degC]
+  real, dimension(1) :: S0    ! A 1-d array with a copy of the salinity [PSU]
+  real, dimension(1) :: pressure0 ! A 1-d array with a copy of the pressure [Pa]
+  real, dimension(1) :: spv0  ! A 1-d array with a copy of the specific volume [m3 kg-1]
 
   T0(1) = T ; S0(1) = S ; pressure0(1) = pressure
 
@@ -163,14 +169,15 @@ subroutine calculate_spec_vol_scalar_wright(T, S, pressure, specvol, spv_ref)
   specvol = spv0(1)
 end subroutine calculate_spec_vol_scalar_wright
 
-!> This subroutine computes the in situ specific volume of sea water (specvol in
-!! [m3 kg-1]) from salinity (S [PSU]), potential temperature (T [degC])
-!! and pressure [Pa].  It uses the expression from
-!! Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740.
+!> Computes the Wright in situ specific volume of sea water for 1-d array inputs and outputs.
+!!
+!! Returns the in situ specific volume of sea water (specvol in [m3 kg-1]) from salinity (S [PSU]),
+!! potential temperature (T [degC]) and pressure [Pa].  It uses the expression from
+!! Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740 with the reduced range fit coefficients.
 !! If spv_ref is present, specvol is an anomaly from spv_ref.
 subroutine calculate_spec_vol_array_wright(T, S, pressure, specvol, start, npts, spv_ref)
   real, dimension(:), intent(in)    :: T        !< potential temperature relative to the
-                                              !! surface [degC].
+                                                !! surface [degC].
   real, dimension(:), intent(in)    :: S        !< salinity [PSU].
   real, dimension(:), intent(in)    :: pressure !< pressure [Pa].
   real, dimension(:), intent(inout) :: specvol  !< in situ specific volume [m3 kg-1].
@@ -179,7 +186,9 @@ subroutine calculate_spec_vol_array_wright(T, S, pressure, specvol, start, npts,
   real,     optional, intent(in)    :: spv_ref  !< A reference specific volume [m3 kg-1].
 
   ! Local variables
-  real :: al0, p0, lambda
+  real :: al0     ! The specific volume at 0 lambda in the Wright EOS [m3 kg-1]
+  real :: p0      ! The pressure offset in the Wright EOS [Pa]
+  real :: lambda  ! The sound speed squared at 0 alpha in the Wright EOS [m2 s-2]
   integer :: j
 
   do j=start,start+npts-1
@@ -195,7 +204,7 @@ subroutine calculate_spec_vol_array_wright(T, S, pressure, specvol, start, npts,
   enddo
 end subroutine calculate_spec_vol_array_wright
 
-!> For a given thermodynamic state, return the thermal/haline expansion coefficients
+!> Return the thermal/haline expansion coefficients for 1-d array inputs and outputs
 subroutine calculate_density_derivs_array_wright(T, S, pressure, drho_dT, drho_dS, start, npts)
   real,    intent(in),    dimension(:) :: T        !< Potential temperature relative to the
                                                    !! surface [degC].
@@ -209,7 +218,10 @@ subroutine calculate_density_derivs_array_wright(T, S, pressure, drho_dT, drho_d
   integer, intent(in)                  :: npts     !< The number of values to calculate.
 
   ! Local variables
-  real :: al0, p0, lambda, I_denom2
+  real :: al0     ! The specific volume at 0 lambda in the Wright EOS [m3 kg-1]
+  real :: p0      ! The pressure offset in the Wright EOS [Pa]
+  real :: lambda  ! The sound speed squared at 0 alpha in the Wright EOS [m2 s-2]
+  real :: I_denom2 ! The inverse of the square of the denominator of density in the Wright EOS [s4 m-4]
   integer :: j
 
   do j=start,start+npts-1
@@ -229,8 +241,10 @@ subroutine calculate_density_derivs_array_wright(T, S, pressure, drho_dT, drho_d
 
 end subroutine calculate_density_derivs_array_wright
 
-!> The scalar version of calculate_density_derivs which promotes scalar inputs to a 1-element array and then
-!! demotes the output back to a scalar
+!> Return the thermal/haline expansion coefficients for scalar inputs and outputs
+!!
+!! The scalar version of calculate_density_derivs promotes scalar inputs to 1-element array
+!! and then demotes the output back to a scalar
 subroutine calculate_density_derivs_scalar_wright(T, S, pressure, drho_dT, drho_dS)
   real,    intent(in)  :: T        !< Potential temperature relative to the surface [degC].
   real,    intent(in)  :: S        !< Salinity [PSU].
@@ -241,8 +255,11 @@ subroutine calculate_density_derivs_scalar_wright(T, S, pressure, drho_dT, drho_
                                    !! in [kg m-3 PSU-1].
 
   ! Local variables needed to promote the input/output scalars to 1-element arrays
-  real, dimension(1) :: T0, S0, P0
-  real, dimension(1) :: drdt0, drds0
+  real, dimension(1) :: T0    ! A 1-d array with a copy of the temperature [degC]
+  real, dimension(1) :: S0    ! A 1-d array with a copy of the salinity [PSU]
+  real, dimension(1) :: p0    ! A 1-d array with a copy of the pressure [Pa]
+  real, dimension(1) :: drdt0 ! The derivative of density with temperature [kg m-3 degC-1]
+  real, dimension(1) :: drds0 ! The derivative of density with salinity [kg m-3 PSU-1]
 
   T0(1) = T
   S0(1) = S
@@ -253,7 +270,7 @@ subroutine calculate_density_derivs_scalar_wright(T, S, pressure, drho_dT, drho_
 
 end subroutine calculate_density_derivs_scalar_wright
 
-!> Second derivatives of density with respect to temperature, salinity, and pressure
+!> Second derivatives of density with respect to temperature, salinity and pressure for 1-d array inputs and outputs.
 subroutine calculate_density_second_derivs_array_wright(T, S, P, drho_ds_ds, drho_ds_dt, drho_dt_dt, &
                                                          drho_ds_dp, drho_dt_dp, start, npts)
   real, dimension(:), intent(in   ) :: T !< Potential temperature referenced to 0 dbar [degC]
@@ -261,27 +278,36 @@ subroutine calculate_density_second_derivs_array_wright(T, S, P, drho_ds_ds, drh
   real, dimension(:), intent(in   ) :: P !< Pressure [Pa]
   real, dimension(:), intent(inout) :: drho_ds_ds !< Partial derivative of beta with respect
                                                   !! to S [kg m-3 PSU-2]
-  real, dimension(:), intent(inout) :: drho_ds_dt !< Partial derivative of beta with respcct
+  real, dimension(:), intent(inout) :: drho_ds_dt !< Partial derivative of beta with respect
                                                   !! to T [kg m-3 PSU-1 degC-1]
   real, dimension(:), intent(inout) :: drho_dt_dt !< Partial derivative of alpha with respect
                                                   !! to T [kg m-3 degC-2]
   real, dimension(:), intent(inout) :: drho_ds_dp !< Partial derivative of beta with respect
-                                                  !! to pressure [kg m-3 PSU-1 Pa-1]
+                                                  !! to pressure [kg m-3 PSU-1 Pa-1] = [s2 m-2 PSU-1]
   real, dimension(:), intent(inout) :: drho_dt_dp !< Partial derivative of alpha with respect
-                                                  !! to pressure [kg m-3 degC-1 Pa-1]
+                                                  !! to pressure [kg m-3 degC-1 Pa-1] = [s2 m-2 degC-1]
   integer,            intent(in   ) :: start !< Starting index in T,S,P
   integer,            intent(in   ) :: npts  !< Number of points to loop over
 
   ! Local variables
-  real :: z0, z1, z2, z3, z4, z5, z6 ,z7, z8, z9, z10, z11, z2_2, z2_3
+  real :: z0, z1 ! Local work variables [Pa]
+  real :: z2, z4 ! Local work variables [m2 s-2]
+  real :: z3, z5 ! Local work variables [Pa degC-1]
+  real :: z6, z8 ! Local work variables [m2 s-2 degC-1]
+  real :: z7     ! A local work variable [m2 s-2 PSU-1]
+  real :: z9     ! A local work variable [m3 kg-1]
+  real :: z10    ! A local work variable [Pa PSU-1]
+  real :: z11    ! A local work variable [Pa m2 s-2 PSU-1] = [kg m s-4 PSU-1]
+  real :: z2_2   ! A local work variable [m4 s-4]
+  real :: z2_3   ! A local work variable [m6 s-6]
   integer :: j
-  ! Based on the above expression with common terms factored, there probably exists a more numerically stable
-  ! and/or efficient expression
+  ! See the counterpart in MOM_EOS_Wright_full.F90 for a more numerically stable
+  ! and/or efficient, but mathematically equivalent expression
 
   do j = start,start+npts-1
     z0 = T(j)*(b1 + b5*S(j) + T(j)*(b2 + b3*T(j)))
     z1 = (b0 + P(j) + b4*S(j) + z0)
-    z3 = (b1 + b5*S(j) + T(j)*(2.*b2 + 2.*b3*T(j)))
+    z3 = (b1 + b5*S(j) + T(j)*(2.*b2 + 3.*b3*T(j)))
     z4 = (c0 + c4*S(j) + T(j)*(c1 + c5*S(j) + T(j)*(c2 + c3*T(j))))
     z5 = (b1 + b5*S(j) + T(j)*(b2 + b3*T(j)) + T(j)*(b2 + 2.*b3*T(j)))
     z6 = c1 + c5*S(j) + T(j)*(c2 + c3*T(j)) + T(j)*(c2 + 2.*c3*T(j))
@@ -296,7 +322,7 @@ subroutine calculate_density_second_derivs_array_wright(T, S, P, drho_ds_ds, drh
 
     drho_ds_ds(j) = (z10*(c4 + c5*T(j)) - a2*z10*z1 - z10*z7)/z2_2 - (2.*(c4 + c5*T(j) + z9*z10 + a2*z1)*z11)/z2_3
     drho_ds_dt(j) = (z10*z6 - z1*(c5 + a2*z5) + b5*z4 - z5*z7)/z2_2 - (2.*(z6 + z9*z5 + a1*z1)*z11)/z2_3
-    drho_dt_dt(j) = (z3*z6 - z1*(2.*c2 + 6.*c3*T(j) + a1*z5) + (2.*b2 + 4.*b3*T(j))*z4 - z5*z8)/z2_2 - &
+    drho_dt_dt(j) = (z3*z6 - z1*(2.*c2 + 6.*c3*T(j) + a1*z5) + (2.*b2 + 6.*b3*T(j))*z4 - z5*z8)/z2_2 - &
                     (2.*(z6 + z9*z5 + a1*z1)*(z3*z4 - z1*z8))/z2_3
     drho_ds_dp(j) = (-c4 - c5*T(j) - 2.*a2*z1)/z2_2 - (2.*z9*z11)/z2_3
     drho_dt_dp(j) = (-c1 - c5*S(j) - T(j)*(2.*c2 + 3.*c3*T(j)) - 2.*a1*z1)/z2_2 - (2.*z9*(z3*z4 - z1*z8))/z2_3
@@ -304,8 +330,10 @@ subroutine calculate_density_second_derivs_array_wright(T, S, P, drho_ds_ds, drh
 
 end subroutine calculate_density_second_derivs_array_wright
 
-!> Second derivatives of density with respect to temperature, salinity, and pressure for scalar inputs. Inputs
-!! promoted to 1-element array and output demoted to scalar
+!> Second derivatives of density with respect to temperature, salinity and pressure for scalar inputs.
+!!
+!! The scalar version of calculate_density_second_derivs promotes scalar inputs to 1-element array
+!! and then demotes the output back to a scalar
 subroutine calculate_density_second_derivs_scalar_wright(T, S, P, drho_ds_ds, drho_ds_dt, drho_dt_dt, &
                                                          drho_ds_dp, drho_dt_dp)
   real, intent(in   ) :: T          !< Potential temperature referenced to 0 dbar
@@ -313,17 +341,26 @@ subroutine calculate_density_second_derivs_scalar_wright(T, S, P, drho_ds_ds, dr
   real, intent(in   ) :: P          !< pressure [Pa]
   real, intent(  out) :: drho_ds_ds !< Partial derivative of beta with respect
                                     !! to S [kg m-3 PSU-2]
-  real, intent(  out) :: drho_ds_dt !< Partial derivative of beta with respcct
+  real, intent(  out) :: drho_ds_dt !< Partial derivative of beta with respect
                                     !! to T [kg m-3 PSU-1 degC-1]
   real, intent(  out) :: drho_dt_dt !< Partial derivative of alpha with respect
                                     !! to T [kg m-3 degC-2]
   real, intent(  out) :: drho_ds_dp !< Partial derivative of beta with respect
-                                    !! to pressure [kg m-3 PSU-1 Pa-1]
+                                    !! to pressure [kg m-3 PSU-1 Pa-1] = [s2 m-2 PSU-1]
   real, intent(  out) :: drho_dt_dp !< Partial derivative of alpha with respect
-                                    !! to pressure [kg m-3 degC-1 Pa-1]
+                                    !! to pressure [kg m-3 degC-1 Pa-1] = [s2 m-2 degC-1]
   ! Local variables
-  real, dimension(1) :: T0, S0, P0
-  real, dimension(1) :: drdsds, drdsdt, drdtdt, drdsdp, drdtdp
+  real, dimension(1) :: T0    ! A 1-d array with a copy of the temperature [degC]
+  real, dimension(1) :: S0    ! A 1-d array with a copy of the salinity [PSU]
+  real, dimension(1) :: p0    ! A 1-d array with a copy of the pressure [Pa]
+  real, dimension(1) :: drdsds ! The second derivative of density with salinity [kg m-3 PSU-2]
+  real, dimension(1) :: drdsdt ! The second derivative of density with salinity and
+                               ! temperature [kg m-3 PSU-1 degC-1]
+  real, dimension(1) :: drdtdt ! The second derivative of density with temperature [kg m-3 degC-2]
+  real, dimension(1) :: drdsdp ! The second derivative of density with salinity and
+                               ! pressure [kg m-3 PSU-1 Pa-1] = [s2 m-2 PSU-1]
+  real, dimension(1) :: drdtdp ! The second derivative of density with temperature and
+                               ! pressure [kg m-3 degC-1 Pa-1] = [s2 m-2 degC-1]
 
   T0(1) = T
   S0(1) = S
@@ -337,8 +374,116 @@ subroutine calculate_density_second_derivs_scalar_wright(T, S, P, drho_ds_ds, dr
 
 end subroutine calculate_density_second_derivs_scalar_wright
 
-!> For a given thermodynamic state, return the partial derivatives of specific volume
-!! with temperature and salinity
+!> Second derivatives of density with respect to temperature, salinity and pressure for 1-d array
+!! inputs and outputs, but deliberately including a bug to reproduce previous answers, in which
+!! some terms in the expressions for drho_dt_dt and drho_dt_dp are 2/3 of what they should be.
+subroutine calc_dens_second_derivs_buggy_array_wright(T, S, P, drho_ds_ds, drho_ds_dt, drho_dt_dt, &
+                                                         drho_ds_dp, drho_dt_dp, start, npts)
+  real, dimension(:), intent(in   ) :: T !< Potential temperature referenced to 0 dbar [degC]
+  real, dimension(:), intent(in   ) :: S !< Salinity [PSU]
+  real, dimension(:), intent(in   ) :: P !< Pressure [Pa]
+  real, dimension(:), intent(inout) :: drho_ds_ds !< Partial derivative of beta with respect
+                                                  !! to S [kg m-3 PSU-2]
+  real, dimension(:), intent(inout) :: drho_ds_dt !< Partial derivative of beta with respect
+                                                  !! to T [kg m-3 PSU-1 degC-1]
+  real, dimension(:), intent(inout) :: drho_dt_dt !< Partial derivative of alpha with respect
+                                                  !! to T [kg m-3 degC-2]
+  real, dimension(:), intent(inout) :: drho_ds_dp !< Partial derivative of beta with respect
+                                                  !! to pressure [kg m-3 PSU-1 Pa-1] = [s2 m-2 PSU-1]
+  real, dimension(:), intent(inout) :: drho_dt_dp !< Partial derivative of alpha with respect
+                                                  !! to pressure [kg m-3 degC-1 Pa-1] = [s2 m-2 degC-1]
+  integer,            intent(in   ) :: start !< Starting index in T,S,P
+  integer,            intent(in   ) :: npts  !< Number of points to loop over
+
+  ! Local variables
+  real :: z0, z1 ! Local work variables [Pa]
+  real :: z2, z4 ! Local work variables [m2 s-2]
+  real :: z3, z5 ! Local work variables [Pa degC-1]
+  real :: z6, z8 ! Local work variables [m2 s-2 degC-1]
+  real :: z7     ! A local work variable [m2 s-2 PSU-1]
+  real :: z9     ! A local work variable [m3 kg-1]
+  real :: z10    ! A local work variable [Pa PSU-1]
+  real :: z11    ! A local work variable [Pa m2 s-2 PSU-1] = [kg m s-4 PSU-1]
+  real :: z2_2   ! A local work variable [m4 s-4]
+  real :: z2_3   ! A local work variable [m6 s-6]
+  integer :: j
+  ! Based on the above expression with common terms factored, there probably exists a more numerically stable
+  ! and/or efficient expression
+
+  do j = start,start+npts-1
+    z0 = T(j)*(b1 + b5*S(j) + T(j)*(b2 + b3*T(j)))
+    z1 = (b0 + P(j) + b4*S(j) + z0)
+    z3 = (b1 + b5*S(j) + T(j)*(2.*b2 + 2.*b3*T(j))) ! BUG: This should be z3 = b1 + b5*S(j) + T(j)*(2.*b2 + 3.*b3*T(j))
+    z4 = (c0 + c4*S(j) + T(j)*(c1 + c5*S(j) + T(j)*(c2 + c3*T(j))))
+    z5 = (b1 + b5*S(j) + T(j)*(b2 + b3*T(j)) + T(j)*(b2 + 2.*b3*T(j)))
+    z6 = c1 + c5*S(j) + T(j)*(c2 + c3*T(j)) + T(j)*(c2 + 2.*c3*T(j))
+    z7 = (c4 + c5*T(j) + a2*z1)
+    z8 = (c1 + c5*S(j) + T(j)*(2.*c2 + 3.*c3*T(j)) + a1*z1)
+    z9 = (a0 + a2*S(j) + a1*T(j))
+    z10 = (b4 + b5*T(j))
+    z11 = (z10*z4 - z1*z7)
+    z2 = (c0 + c4*S(j) + T(j)*(c1 + c5*S(j) + T(j)*(c2 + c3*T(j))) + z9*z1)
+    z2_2 = z2*z2
+    z2_3 = z2_2*z2
+
+    drho_ds_ds(j) = (z10*(c4 + c5*T(j)) - a2*z10*z1 - z10*z7)/z2_2 - (2.*(c4 + c5*T(j) + z9*z10 + a2*z1)*z11)/z2_3
+    drho_ds_dt(j) = (z10*z6 - z1*(c5 + a2*z5) + b5*z4 - z5*z7)/z2_2 - (2.*(z6 + z9*z5 + a1*z1)*z11)/z2_3
+    ! BUG: In the following line: (2.*b2 + 4.*b3*T(j)) should be (2.*b2 + 6.*b3*T(j))
+    drho_dt_dt(j) = (z3*z6 - z1*(2.*c2 + 6.*c3*T(j) + a1*z5) + (2.*b2 + 4.*b3*T(j))*z4 - z5*z8)/z2_2 - &
+                    (2.*(z6 + z9*z5 + a1*z1)*(z3*z4 - z1*z8))/z2_3
+    drho_ds_dp(j) = (-c4 - c5*T(j) - 2.*a2*z1)/z2_2 - (2.*z9*z11)/z2_3
+    drho_dt_dp(j) = (-c1 - c5*S(j) - T(j)*(2.*c2 + 3.*c3*T(j)) - 2.*a1*z1)/z2_2 - (2.*z9*(z3*z4 - z1*z8))/z2_3
+  enddo
+
+end subroutine calc_dens_second_derivs_buggy_array_wright
+
+!> Second derivatives of density with respect to temperature, salinity and pressure for scalar
+!! inputs, but deliberately including a bug to reproduce previous answers.
+!!
+!! The scalar version of calculate_density_second_derivs promotes scalar inputs to 1-element array
+!! and then demotes the output back to a scalar
+subroutine calc_dens_second_derivs_buggy_scalar_wright(T, S, P, drho_ds_ds, drho_ds_dt, drho_dt_dt, &
+                                                         drho_ds_dp, drho_dt_dp)
+  real, intent(in   ) :: T          !< Potential temperature referenced to 0 dbar
+  real, intent(in   ) :: S          !< Salinity [PSU]
+  real, intent(in   ) :: P          !< pressure [Pa]
+  real, intent(  out) :: drho_ds_ds !< Partial derivative of beta with respect
+                                    !! to S [kg m-3 PSU-2]
+  real, intent(  out) :: drho_ds_dt !< Partial derivative of beta with respect
+                                    !! to T [kg m-3 PSU-1 degC-1]
+  real, intent(  out) :: drho_dt_dt !< Partial derivative of alpha with respect
+                                    !! to T [kg m-3 degC-2]
+  real, intent(  out) :: drho_ds_dp !< Partial derivative of beta with respect
+                                    !! to pressure [kg m-3 PSU-1 Pa-1] = [s2 m-2 PSU-1]
+  real, intent(  out) :: drho_dt_dp !< Partial derivative of alpha with respect
+                                    !! to pressure [kg m-3 degC-1 Pa-1] = [s2 m-2 degC-1]
+  ! Local variables
+  real, dimension(1) :: T0    ! A 1-d array with a copy of the temperature [degC]
+  real, dimension(1) :: S0    ! A 1-d array with a copy of the salinity [PSU]
+  real, dimension(1) :: p0    ! A 1-d array with a copy of the pressure [Pa]
+  real, dimension(1) :: drdsds ! The second derivative of density with salinity [kg m-3 PSU-2]
+  real, dimension(1) :: drdsdt ! The second derivative of density with salinity and
+                               ! temperature [kg m-3 PSU-1 degC-1]
+  real, dimension(1) :: drdtdt ! The second derivative of density with temperature [kg m-3 degC-2]
+  real, dimension(1) :: drdsdp ! The second derivative of density with salinity and
+                               ! pressure [kg m-3 PSU-1 Pa-1] = [s2 m-2 PSU-1]
+  real, dimension(1) :: drdtdp ! The second derivative of density with temperature and
+                               ! pressure [kg m-3 degC-1 Pa-1] = [s2 m-2 degC-1]
+
+  T0(1) = T
+  S0(1) = S
+  P0(1) = P
+  call calculate_density_second_derivs_array_wright(T0, S0, P0, drdsds, drdsdt, drdtdt, drdsdp, drdtdp, 1, 1)
+  drho_ds_ds = drdsds(1)
+  drho_ds_dt = drdsdt(1)
+  drho_dt_dt = drdtdt(1)
+  drho_ds_dp = drdsdp(1)
+  drho_dt_dp = drdtdp(1)
+
+end subroutine calc_dens_second_derivs_buggy_scalar_wright
+
+!> Return the partial derivatives of specific volume with temperature and salinity
+!! for 1-d array inputs and outputs
 subroutine calculate_specvol_derivs_wright(T, S, pressure, dSV_dT, dSV_dS, start, npts)
   real,    intent(in),    dimension(:) :: T        !< Potential temperature relative to the surface [degC].
   real,    intent(in),    dimension(:) :: S        !< Salinity [PSU].
@@ -346,12 +491,14 @@ subroutine calculate_specvol_derivs_wright(T, S, pressure, dSV_dT, dSV_dS, start
   real,    intent(inout), dimension(:) :: dSV_dT   !< The partial derivative of specific volume with
                                                    !! potential temperature [m3 kg-1 degC-1].
   real,    intent(inout), dimension(:) :: dSV_dS   !< The partial derivative of specific volume with
-                                                   !! salinity [m3 kg-1 / Pa].
+                                                   !! salinity [m3 kg-1 PSU-1].
   integer, intent(in)                  :: start    !< The starting point in the arrays.
   integer, intent(in)                  :: npts     !< The number of values to calculate.
 
   ! Local variables
-  real :: p0, lambda, I_denom
+  real :: p0      ! The pressure offset in the Wright EOS [Pa]
+  real :: lambda  ! The sound speed squared at 0 alpha in the Wright EOS [m2 s-2]
+  real :: I_denom ! The inverse of the denominator of specific volume in the Wright EOS [Pa-1]
   integer :: j
 
   do j=start,start+npts-1
@@ -370,12 +517,7 @@ subroutine calculate_specvol_derivs_wright(T, S, pressure, dSV_dT, dSV_dS, start
 
 end subroutine calculate_specvol_derivs_wright
 
-!> This subroutine computes the in situ density of sea water (rho in
-!! [kg m-3]) and the compressibility (drho/dp = C_sound^-2)
-!! (drho_dp [s2 m-2]) from salinity (sal in psu), potential
-!! temperature (T [degC]), and pressure [Pa].  It uses the expressions
-!! from Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740.
-!! Coded by R. Hallberg, 1/01
+!> Computes the compressibility of seawater for 1-d array inputs and outputs
 subroutine calculate_compress_wright(T, S, pressure, rho, drho_dp, start, npts)
   real,    intent(in),    dimension(:) :: T        !< Potential temperature relative to the surface [degC].
   real,    intent(in),    dimension(:) :: S        !< Salinity [PSU].
@@ -387,9 +529,11 @@ subroutine calculate_compress_wright(T, S, pressure, rho, drho_dp, start, npts)
   integer, intent(in)                  :: start    !< The starting point in the arrays.
   integer, intent(in)                  :: npts     !< The number of values to calculate.
 
-  ! Coded by R. Hallberg, 1/01
   ! Local variables
-  real :: al0, p0, lambda, I_denom
+  real :: al0     ! The specific volume at 0 lambda in the Wright EOS [m3 kg-1]
+  real :: p0      ! The pressure offset in the Wright EOS [Pa]
+  real :: lambda  ! The sound speed squared at 0 alpha in the Wright EOS [m2 s-2]
+  real :: I_denom ! The inverse of the denominator of density in the Wright EOS [s2 m-2]
   integer :: j
 
   do j=start,start+npts-1
@@ -403,9 +547,31 @@ subroutine calculate_compress_wright(T, S, pressure, rho, drho_dp, start, npts)
   enddo
 end subroutine calculate_compress_wright
 
-!> This subroutine calculates analytical and nearly-analytical integrals of
-!! pressure anomalies across layers, which are required for calculating the
-!! finite-volume form pressure accelerations in a Boussinesq model.
+!> Return the range of temperatures, salinities and pressures for which the reduced-range equation
+!! of state from Wright (1997) has been fitted to observations.  Care should be taken when applying
+!! this equation of state outside of its fit range.
+subroutine EoS_fit_range_Wright(T_min, T_max, S_min, S_max, p_min, p_max)
+  real, optional, intent(out) :: T_min !< The minimum potential temperature over which this EoS is fitted [degC]
+  real, optional, intent(out) :: T_max !< The maximum potential temperature over which this EoS is fitted [degC]
+  real, optional, intent(out) :: S_min !< The minimum practical salinity over which this EoS is fitted [PSU]
+  real, optional, intent(out) :: S_max !< The maximum practical salinity over which this EoS is fitted [PSU]
+  real, optional, intent(out) :: p_min !< The minimum pressure over which this EoS is fitted [Pa]
+  real, optional, intent(out) :: p_max !< The maximum pressure over which this EoS is fitted [Pa]
+
+  if (present(T_min)) T_min = -2.0
+  if (present(T_max)) T_max = 30.0
+  if (present(S_min)) S_min = 28.0
+  if (present(S_max)) S_max = 38.0
+  if (present(p_min)) p_min = 0.0
+  if (present(p_max)) p_max = 5.0e7
+
+end subroutine EoS_fit_range_Wright
+
+!> Calculates analytical and nearly-analytical integrals, in geopotential across layers, of pressure
+!! anomalies, which are required for calculating the finite-volume form pressure accelerations in a
+!! Boussinesq model.  There are essentially no free assumptions, apart from the use of Boole's rule
+!! rule to do the horizontal integrals, and from a truncation in the series for log(1-eps/1+eps)
+!! that assumes that |eps| < 0.34.
 subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
                                  dpa, intz_dpa, intx_dpa, inty_dpa, bathyT, dz_neglect, &
                                  useMassWghtInterp, rho_scale, pres_scale, temp_scale, saln_scale, Z_0p)
@@ -421,7 +587,7 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
                         intent(in)  :: z_b      !< Height at the top of the layer [Z ~> m].
   real,                 intent(in)  :: rho_ref  !< A mean density [R ~> kg m-3], that is subtracted
                                                 !! out to reduce the magnitude of each of the integrals.
-                                                !! (The pressure is calucated as p~=-z*rho_0*G_e.)
+                                                !! (The pressure is calculated as p~=-z*rho_0*G_e.)
   real,                 intent(in)  :: rho_0    !< Density [R ~> kg m-3], that is used
                                                 !! to calculate the pressure (as p~=-z*rho_0*G_e)
                                                 !! used in the equation of state.
@@ -454,7 +620,7 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
   real,       optional, intent(in)  :: temp_scale  !< A multiplicative factor by which to scale
                             !! temperature into degC [degC C-1 ~> 1]
   real,       optional, intent(in)  :: saln_scale !< A multiplicative factor to convert pressure
-                            !! into ppt [ppt S-1 ~> 1].
+                            !! into PSU [PSU S-1 ~> 1].
   real,       optional, intent(in)  :: Z_0p      !< The height at which the pressure is 0 [Z ~> m]
 
   ! Local variables
@@ -488,20 +654,20 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
                        ! pres_scale [R L2 T-2 Pa-1 ~> 1].
   real :: z0pres     ! The height at which the pressure is zero [Z ~> m]
   real :: a1s        ! Partly rescaled version of a1 [m3 kg-1 C-1 ~> m3 kg-1 degC-1]
-  real :: a2s        ! Partly rescaled version of a2 [m3 kg-1 S-1 ~> m3 kg-1 ppt-1]
+  real :: a2s        ! Partly rescaled version of a2 [m3 kg-1 S-1 ~> m3 kg-1 PSU-1]
   real :: b1s        ! Partly rescaled version of b1 [Pa C-1 ~> Pa degC-1]
   real :: b2s        ! Partly rescaled version of b2 [Pa C-2 ~> Pa degC-2]
   real :: b3s        ! Partly rescaled version of b3 [Pa C-3 ~> Pa degC-3]
-  real :: b4s        ! Partly rescaled version of b4 [Pa S-1 ~> Pa ppt-1]
-  real :: b5s        ! Partly rescaled version of b5 [Pa C-1 S-1 ~> Pa degC-1 ppt-1]
+  real :: b4s        ! Partly rescaled version of b4 [Pa S-1 ~> Pa PSU-1]
+  real :: b5s        ! Partly rescaled version of b5 [Pa C-1 S-1 ~> Pa degC-1 PSU-1]
   real :: c1s        ! Partly rescaled version of c1 [m2 s-2 C-1 ~> m2 s-2 degC-1]
   real :: c2s        ! Partly rescaled version of c2 [m2 s-2 C-2 ~> m2 s-2 degC-2]
   real :: c3s        ! Partly rescaled version of c3 [m2 s-2 C-3 ~> m2 s-2 degC-3]
-  real :: c4s        ! Partly rescaled version of c4 [m2 s-2 S-1 ~> m2 s-2 ppt-1]
-  real :: c5s        ! Partly rescaled version of c5 [m2 s-2 C-1 S-1 ~> m2 s-2 degC-1 ppt-1]
+  real :: c4s        ! Partly rescaled version of c4 [m2 s-2 S-1 ~> m2 s-2 PSU-1]
+  real :: c5s        ! Partly rescaled version of c5 [m2 s-2 C-1 S-1 ~> m2 s-2 degC-1 PSU-1]
   logical :: do_massWeight ! Indicates whether to do mass weighting.
-  real, parameter :: C1_3 = 1.0/3.0, C1_7 = 1.0/7.0    ! Rational constants.
-  real, parameter :: C1_9 = 1.0/9.0, C1_90 = 1.0/90.0  ! Rational constants.
+  real, parameter :: C1_3 = 1.0/3.0, C1_7 = 1.0/7.0    ! Rational constants [nondim]
+  real, parameter :: C1_9 = 1.0/9.0, C1_90 = 1.0/90.0  ! Rational constants [nondim]
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, i, j, m
 
   ! These array bounds work for the indexing convention of the input arrays, but
@@ -661,12 +827,11 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
 
 end subroutine int_density_dz_wright
 
-!>   This subroutine calculates analytical and nearly-analytical integrals in
-!! pressure across layers of geopotential anomalies, which are required for
-!! calculating the finite-volume form pressure accelerations in a non-Boussinesq
-!! model.  There are essentially no free assumptions, apart from the use of
-!! Boole's rule to do the horizontal integrals, and from a truncation in the
-!! series for log(1-eps/1+eps) that assumes that |eps| < 0.34.
+!> Calculates analytical and nearly-analytical integrals, in pressure across layers, of geopotential
+!! anomalies, which are required for calculating the finite-volume form pressure accelerations in a
+!! non-Boussinesq model.  There are essentially no free assumptions, apart from the use of Boole's
+!! rule to do the horizontal integrals, and from a truncation in the series for log(1-eps/1+eps)
+!! that assumes that |eps| < 0.34.
 subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
                                   intp_dza, intx_dza, inty_dza, halo_size, bathyP, dP_neglect, &
                                   useMassWghtInterp, SV_scale, pres_scale, temp_scale, saln_scale)
@@ -716,7 +881,7 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
   real,       optional, intent(in)  :: temp_scale  !< A multiplicative factor by which to scale
                             !! temperature into degC [degC C-1 ~> 1]
   real,       optional, intent(in)  :: saln_scale !< A multiplicative factor to convert pressure
-                            !! into ppt [ppt S-1 ~> 1].
+                            !! into PSU [PSU S-1 ~> 1].
 
   ! Local variables
   real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed) :: al0_2d ! A term in the Wright EOS [R-1 ~> m3 kg-1]
@@ -743,27 +908,27 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
   real :: intp(5)    ! The integrals of specific volume with pressure at the
                      ! 5 sub-column locations [L2 T-2 ~> m2 s-2].
   real :: a1s        ! Partly rescaled version of a1 [m3 kg-1 C-1 ~> m3 kg-1 degC-1]
-  real :: a2s        ! Partly rescaled version of a2 [m3 kg-1 S-1 ~> m3 kg-1 ppt-1]
+  real :: a2s        ! Partly rescaled version of a2 [m3 kg-1 S-1 ~> m3 kg-1 PSU-1]
   real :: b1s        ! Partly rescaled version of b1 [Pa C-1 ~> Pa degC-1]
   real :: b2s        ! Partly rescaled version of b2 [Pa C-2 ~> Pa degC-2]
   real :: b3s        ! Partly rescaled version of b3 [Pa C-3 ~> Pa degC-3]
-  real :: b4s        ! Partly rescaled version of b4 [Pa S-1 ~> Pa ppt-1]
-  real :: b5s        ! Partly rescaled version of b5 [Pa C-1 S-1 ~> Pa degC-1 ppt-1]
+  real :: b4s        ! Partly rescaled version of b4 [Pa S-1 ~> Pa PSU-1]
+  real :: b5s        ! Partly rescaled version of b5 [Pa C-1 S-1 ~> Pa degC-1 PSU-1]
   real :: c1s        ! Partly rescaled version of c1 [m2 s-2 C-1 ~> m2 s-2 degC-1]
   real :: c2s        ! Partly rescaled version of c2 [m2 s-2 C-2 ~> m2 s-2 degC-2]
   real :: c3s        ! Partly rescaled version of c3 [m2 s-2 C-3 ~> m2 s-2 degC-3]
-  real :: c4s        ! Partly rescaled version of c4 [m2 s-2 S-1 ~> m2 s-2 ppt-1]
-  real :: c5s        ! Partly rescaled version of c5 [m2 s-2 C-1 S-1 ~> m2 s-2 degC-1 ppt-1]
+  real :: c4s        ! Partly rescaled version of c4 [m2 s-2 S-1 ~> m2 s-2 PSU-1]
+  real :: c5s        ! Partly rescaled version of c5 [m2 s-2 C-1 S-1 ~> m2 s-2 degC-1 PSU-1]
   logical :: do_massWeight ! Indicates whether to do mass weighting.
-  real, parameter :: C1_3 = 1.0/3.0, C1_7 = 1.0/7.0    ! Rational constants.
-  real, parameter :: C1_9 = 1.0/9.0, C1_90 = 1.0/90.0  ! Rational constants.
+  real, parameter :: C1_3 = 1.0/3.0, C1_7 = 1.0/7.0    ! Rational constants [nondim]
+  real, parameter :: C1_9 = 1.0/9.0, C1_90 = 1.0/90.0  ! Rational constants [nondim]
   integer :: Isq, Ieq, Jsq, Jeq, ish, ieh, jsh, jeh, i, j, m, halo
 
   Isq = HI%IscB ; Ieq = HI%IecB ; Jsq = HI%JscB ; Jeq = HI%JecB
   halo = 0 ; if (present(halo_size)) halo = MAX(halo_size,0)
   ish = HI%isc-halo ; ieh = HI%iec+halo ; jsh = HI%jsc-halo ; jeh = HI%jec+halo
-  if (present(intx_dza)) then ; ish = MIN(Isq,ish) ; ieh = MAX(Ieq+1,ieh); endif
-  if (present(inty_dza)) then ; jsh = MIN(Jsq,jsh) ; jeh = MAX(Jeq+1,jeh); endif
+  if (present(intx_dza)) then ; ish = MIN(Isq,ish) ; ieh = MAX(Ieq+1,ieh) ; endif
+  if (present(inty_dza)) then ; jsh = MIN(Jsq,jsh) ; jeh = MAX(Jeq+1,jeh) ; endif
 
 
   al0_scale = 1.0 ; if (present(SV_scale)) al0_scale = SV_scale
@@ -841,8 +1006,8 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
       wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
       wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
 
-      ! T, S, and p are interpolated in the horizontal.  The p interpolation
-      ! is linear, but for T and S it may be thickness wekghted.
+      ! T, S and p are interpolated in the horizontal.  The p interpolation
+      ! is linear, but for T and S it may be thickness weighted.
       al0 = wtT_L*al0_2d(i,j) + wtT_R*al0_2d(i+1,j)
       p0 = wtT_L*p0_2d(i,j) + wtT_R*p0_2d(i+1,j)
       lambda = wtT_L*lambda_2d(i,j) + wtT_R*lambda_2d(i+1,j)
@@ -882,8 +1047,8 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
       wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
       wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
 
-      ! T, S, and p are interpolated in the horizontal.  The p interpolation
-      ! is linear, but for T and S it may be thickness wekghted.
+      ! T, S and p are interpolated in the horizontal.  The p interpolation
+      ! is linear, but for T and S it may be thickness weighted.
       al0 = wt_L*al0_2d(i,j) + wt_R*al0_2d(i,j+1)
       p0 = wt_L*p0_2d(i,j) + wt_R*p0_2d(i,j+1)
       lambda = wt_L*lambda_2d(i,j) + wt_R*lambda_2d(i,j+1)
@@ -900,5 +1065,25 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
                            12.0*intp(3))
   enddo ; enddo ; endif
 end subroutine int_spec_vol_dp_wright
+
+!> \namespace mom_eos_wright
+!!
+!! \section section_EOS_Wright Wright equation of state
+!!
+!! Wright, 1997, provide an approximation for the in situ density as a function of
+!! potential temperature, salinity and pressure. The formula follow the Tumlirz
+!! equation of state which are easier to evaluate and make efficient.
+!!
+!! Two ranges are provided by Wright: a "full" range and "reduced" range. The version in this
+!! module uses the reduced range.
+!!
+!! Originally coded in 2000 by R. Hallberg.
+!! Anomaly form coded in 3/18.
+!!
+!! \subsection section_EOS_Wright_references References
+!!
+!! Wright, D., 1997: An Equation of State for Use in Ocean Models: Eckart's Formula Revisited.
+!! J. Ocean. Atmosph. Tech., 14 (3), 735-740.
+!! https://journals.ametsoc.org/doi/abs/10.1175/1520-0426%281997%29014%3C0735%3AAEOSFU%3E2.0.CO%3B2
 
 end module MOM_EOS_Wright

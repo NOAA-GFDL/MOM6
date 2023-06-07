@@ -33,7 +33,7 @@ use MOM_fixed_initialization, only : MOM_initialize_rotation
 use user_initialization, only : user_initialize_topography
 use MOM_io, only : field_exists, file_exists, MOM_read_data, write_version_number
 use MOM_io, only : slasher, fieldtype, vardesc, var_desc
-use MOM_io, only : write_field, close_file, SINGLE_FILE, MULTIPLE
+use MOM_io, only : close_file, SINGLE_FILE, MULTIPLE
 use MOM_restart, only : register_restart_field, save_restart
 use MOM_restart, only : restart_init, restore_state, MOM_restart_CS, register_restart_pair
 use MOM_time_manager, only : time_type, time_type_to_real, real_to_time, operator(>), operator(-)
@@ -220,16 +220,16 @@ contains
 !! formulation (optional to use just two equations).
 !! See \ref section_ICE_SHELF_equations
 subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
-  type(surface), target,         intent(inout) :: sfc_state_in !< A structure containing fields that
-                                                !! describe the surface state of the ocean.  The
-                                                !! intent is only inout to allow for halo updates.
-  type(forcing),  target, intent(inout)        :: fluxes_in !< structure containing pointers to any
-                                                !! possible thermodynamic or mass-flux forcing fields.
-  type(time_type),       intent(in)    :: Time  !< Start time of the fluxes.
-  real,                  intent(in)    :: time_step_in !< Length of time over which these fluxes
-                                                !! will be applied [s].
-  type(ice_shelf_CS),    pointer       :: CS    !< A pointer to the control structure returned
-                                                !! by a previous call to initialize_ice_shelf.
+  type(surface), target,  intent(inout) :: sfc_state_in !< A structure containing fields that
+                                                 !! describe the surface state of the ocean.  The
+                                                 !! intent is only inout to allow for halo updates.
+  type(forcing),  target, intent(inout) :: fluxes_in !< structure containing pointers to any
+                                                 !! possible thermodynamic or mass-flux forcing fields.
+  type(time_type),        intent(in)    :: Time  !< Start time of the fluxes.
+  real,                   intent(in)    :: time_step_in !< Length of time over which these fluxes
+                                                 !! will be applied [T ~> s].
+  type(ice_shelf_CS),     pointer       :: CS    !< A pointer to the control structure returned
+                                                 !! by a previous call to initialize_ice_shelf.
 
   ! Local variables
   type(ocean_grid_type), pointer :: G => NULL()  !< The grid structure used by the ice shelf.
@@ -326,7 +326,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
 
   G => CS%grid ; US => CS%US
   ISS => CS%ISS
-  time_step = US%s_to_T*time_step_in
+  time_step = time_step_in
 
   if (CS%data_override_shelf_fluxes .and. CS%active_shelf_dynamics) then
     call data_override(G%Domain, 'shelf_sfc_mass_flux', fluxes_in%shelf_sfc_mass_flux, CS%Time, &
@@ -1222,12 +1222,6 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces_in,
                                           !! the ice-shelf state
   type(directories)  :: dirs
   type(dyn_horgrid_type), pointer :: dG => NULL()
-  real    :: Z_rescale  ! A rescaling factor for heights from the representation in
-                        ! a restart file to the internal representation in this run.
-  real    :: RZ_rescale ! A rescaling factor for mass loads from the representation in
-                        ! a restart file to the internal representation in this run.
-  real    :: L_rescale  ! A rescaling factor for horizontal lengths from the representation in
-                        ! a restart file to the internal representation in this run.
   real :: meltrate_conversion ! The conversion factor to use for in the melt rate diagnostic.
   real :: dz_ocean_min_float ! The minimum ocean thickness above which the ice shelf is considered
                         ! to be floating when CONST_SEA_LEVEL = True [Z ~> m].
@@ -1468,7 +1462,7 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces_in,
 
   call get_param(param_file, mdl, "G_EARTH", CS%g_Earth, &
                  "The gravitational acceleration of the Earth.", &
-                 units="m s-2", default = 9.80, scale=US%m_s_to_L_T**2*US%Z_to_m)
+                 units="m s-2", default=9.80, scale=US%m_s_to_L_T**2*US%Z_to_m)
   call get_param(param_file, mdl, "C_P", CS%Cp, &
                  "The heat capacity of sea water, approximated as a constant. "//&
                  "The default value is from the TEOS-10 definition of conservative temperature.", &
@@ -1675,12 +1669,6 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces_in,
     endif
   endif
 
-  call register_restart_field(US%m_to_Z_restart, "m_to_Z", .false., CS%restart_CSp, &
-                              "Height unit conversion factor", "Z meter-1")
-  call register_restart_field(US%m_to_L_restart, "m_to_L", .false., CS%restart_CSp, &
-                              "Length unit conversion factor", "L meter-1")
-  call register_restart_field(US%kg_m3_to_R_restart, "kg_m3_to_R", .false., CS%restart_CSp, &
-                              "Density unit conversion factor", "R m3 kg-1")
   if (CS%active_shelf_dynamics) then
     call register_restart_field(ISS%hmask, "h_mask", .true., CS%restart_CSp, &
                                 "ice sheet/shelf thickness mask" ,"none")
@@ -1722,28 +1710,6 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces_in,
     ! This line calls a subroutine that reads the initial conditions from a restart file.
     call MOM_mesg("MOM_ice_shelf.F90, initialize_ice_shelf: Restoring ice shelf from file.")
     call restore_state(dirs%input_filename, dirs%restart_input_dir, Time, G, CS%restart_CSp)
-
-    if ((US%m_to_Z_restart /= 0.0) .and. (US%m_to_Z_restart /= 1.0)) then
-      Z_rescale = 1.0 / US%m_to_Z_restart
-      do j=G%jsc,G%jec ; do i=G%isc,G%iec
-        ISS%h_shelf(i,j) = Z_rescale * ISS%h_shelf(i,j)
-      enddo ; enddo
-    endif
-
-    if ((US%m_to_Z_restart*US%kg_m3_to_R_restart /= 0.0) .and. &
-        (US%m_to_Z_restart*US%kg_m3_to_R_restart /= 1.0)) then
-      RZ_rescale = 1.0 / (US%m_to_Z_restart * US%kg_m3_to_R_restart)
-      do j=G%jsc,G%jec ; do i=G%isc,G%iec
-        ISS%mass_shelf(i,j) = RZ_rescale * ISS%mass_shelf(i,j)
-      enddo ; enddo
-    endif
-
-    if ((US%m_to_L_restart /= 0.0) .and. (US%m_to_L_restart /= 1.0)) then
-      L_rescale = 1.0 / US%m_to_L_restart
-      do j=G%jsc,G%jec ; do i=G%isc,G%iec
-        ISS%area_shelf_h(i,j) = L_rescale**2 * ISS%area_shelf_h(i,j)
-      enddo ; enddo
-    endif
 
   endif ! .not. new_sim
 

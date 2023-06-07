@@ -8,7 +8,8 @@ use MOM_EOS,              only : calculate_density, EOS_type
 use MOM_error_handler,    only : MOM_mesg, MOM_error, FATAL, WARNING, is_root_pe
 use MOM_error_handler,    only : callTree_enter, callTree_leave, callTree_waypoint
 use MOM_file_parser,      only : get_param, read_param, log_param, param_file_type, log_version
-use MOM_io,               only : close_file, create_file, file_type, fieldtype, file_exists
+use MOM_io,               only : create_MOM_file, file_exists
+use MOM_io,               only : MOM_netCDF_file, MOM_field
 use MOM_io,               only : MOM_read_data, MOM_write_field, vardesc, var_desc, SINGLE_FILE
 use MOM_string_functions, only : slasher, uppercase
 use MOM_unit_scaling,     only : unit_scale_type
@@ -314,8 +315,8 @@ subroutine set_coord_from_TS_range(Rlay, g_prime, GV, US, param_file, eqn_of_sta
   real, dimension(GV%ke) :: T0   ! A profile of temperatures [C ~> degC]
   real, dimension(GV%ke) :: S0   ! A profile of salinities [S ~> ppt]
   real, dimension(GV%ke) :: Pref ! A array of reference pressures [R L2 T-2 ~> Pa]
-  real :: S_Ref   ! Default salinity range parameters [ppt].
-  real :: T_Ref   ! Default temperature range parameters [degC].
+  real :: S_Ref   ! Default salinity range parameters [S ~> ppt].
+  real :: T_Ref   ! Default temperature range parameters [C ~> degC].
   real :: S_Light, S_Dense ! Salinity range parameters [S ~> ppt].
   real :: T_Light, T_Dense ! Temperature range parameters [C ~> degC].
   real :: res_rat ! The ratio of density space resolution in the denser part
@@ -332,22 +333,26 @@ subroutine set_coord_from_TS_range(Rlay, g_prime, GV, US, param_file, eqn_of_sta
   call callTree_enter(trim(mdl)//"(), MOM_coord_initialization.F90")
 
   call get_param(param_file, mdl, "T_REF", T_Ref, &
-                 "The default initial temperatures.", units="degC", default=10.0)
+                 "The default initial temperatures.", &
+                 units="degC", default=10.0, scale=US%degC_to_C)
   call get_param(param_file, mdl, "TS_RANGE_T_LIGHT", T_Light, &
                  "The initial temperature of the lightest layer when "//&
-                 "COORD_CONFIG is set to ts_range.", units="degC", default=T_Ref, scale=US%degC_to_C)
+                 "COORD_CONFIG is set to ts_range.", &
+                 units="degC", default=US%C_to_degC*T_Ref, scale=US%degC_to_C)
   call get_param(param_file, mdl, "TS_RANGE_T_DENSE", T_Dense, &
                  "The initial temperature of the densest layer when "//&
-                 "COORD_CONFIG is set to ts_range.", units="degC", default=T_Ref, scale=US%degC_to_C)
+                 "COORD_CONFIG is set to ts_range.", &
+                 units="degC", default=US%C_to_degC*T_Ref, scale=US%degC_to_C)
 
   call get_param(param_file, mdl, "S_REF", S_Ref, &
-                 "The default initial salinities.", units="PSU", default=35.0)
+                 "The default initial salinities.", &
+                 units="PSU", default=35.0, scale=US%ppt_to_S)
   call get_param(param_file, mdl, "TS_RANGE_S_LIGHT", S_Light, &
-                 "The initial lightest salinities when COORD_CONFIG "//&
-                 "is set to ts_range.", default = S_Ref, units="PSU", scale=US%ppt_to_S)
+                 "The initial lightest salinities when COORD_CONFIG is set to ts_range.", &
+                 units="PSU", default=US%S_to_ppt*S_Ref, scale=US%ppt_to_S)
   call get_param(param_file, mdl, "TS_RANGE_S_DENSE", S_Dense, &
-                 "The initial densest salinities when COORD_CONFIG "//&
-                 "is set to ts_range.", default = S_Ref, units="PSU", scale=US%ppt_to_S)
+                 "The initial densest salinities when COORD_CONFIG is set to ts_range.", &
+                 units="PSU", default=US%S_to_ppt*S_Ref, scale=US%ppt_to_S)
 
   call get_param(param_file, mdl, "TS_RANGE_RESOLN_RATIO", res_rat, &
                  "The ratio of density space resolution in the densest "//&
@@ -522,20 +527,21 @@ subroutine write_vertgrid_file(GV, US, param_file, directory)
   ! Local variables
   character(len=240) :: filepath
   type(vardesc) :: vars(2)
-  type(fieldtype) :: fields(2)
-  type(file_type) :: IO_handle ! The I/O handle of the fileset
+  type(MOM_field) :: fields(2)
+  type(MOM_netCDF_file) :: IO_handle ! The I/O handle of the fileset
 
-  filepath = trim(directory) // trim("Vertical_coordinate")
+  filepath = trim(directory) // trim("Vertical_coordinate.nc")
 
   vars(1) = var_desc("R","kilogram meter-3","Target Potential Density",'1','L','1')
-  vars(2) = var_desc("g","meter second-2","Reduced gravity",'1','L','1')
+  vars(2) = var_desc("g","meter second-2","Reduced gravity",'1','i','1')
 
-  call create_file(IO_handle, trim(filepath), vars, 2, fields, SINGLE_FILE, GV=GV)
+  call create_MOM_file(IO_handle, trim(filepath), vars, 2, fields, &
+      SINGLE_FILE, GV=GV)
 
   call MOM_write_field(IO_handle, fields(1), GV%Rlay, scale=US%R_to_kg_m3)
   call MOM_write_field(IO_handle, fields(2), GV%g_prime, scale=US%L_T_to_m_s**2*US%m_to_Z)
 
-  call close_file(IO_handle)
+  call IO_handle%close()
 
 end subroutine write_vertgrid_file
 

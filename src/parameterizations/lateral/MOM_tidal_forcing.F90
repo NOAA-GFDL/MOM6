@@ -25,11 +25,10 @@ integer, parameter :: MAX_CONSTITUENTS = 10 !< The maximum number of tidal
                                             !! constituents that could be used.
 !> Simple type to store astronomical longitudes used to calculate tidal phases.
 type, public :: astro_longitudes
-  real :: &
-    s, &  !< Mean longitude of moon [rad]
-    h, &  !< Mean longitude of sun [rad]
-    p, &  !< Mean longitude of lunar perigee [rad]
-    N     !< Longitude of ascending node [rad]
+  real :: s  !< Mean longitude of moon [rad]
+  real :: h  !< Mean longitude of sun [rad]
+  real :: p  !< Mean longitude of lunar perigee [rad]
+  real :: N  !< Longitude of ascending node [rad]
 end type astro_longitudes
 
 !> The control structure for the MOM_tidal_forcing module
@@ -59,13 +58,15 @@ type, public :: tidal_forcing_CS ; private
   type(astro_longitudes) :: tidal_longitudes !< Astronomical longitudes used to calculate
                                    !! tidal phases at t = 0.
   real, allocatable :: &
-    sin_struct(:,:,:), &    !< The sine and cosine based structures that can
-    cos_struct(:,:,:), &    !< be associated with the astronomical forcing [nondim].
-    cosphasesal(:,:,:), &   !< The cosine and sine of the phase of the
-    sinphasesal(:,:,:), &   !< self-attraction and loading amphidromes.
+    sin_struct(:,:,:), &    !< The sine based structures that can be associated with
+                            !! the astronomical forcing [nondim].
+    cos_struct(:,:,:), &    !< The cosine based structures that can be associated with
+                            !! the astronomical forcing [nondim].
+    cosphasesal(:,:,:), &   !< The cosine of the phase of the self-attraction and loading amphidromes [nondim].
+    sinphasesal(:,:,:), &   !< The sine of the phase of the self-attraction and loading amphidromes [nondim].
     ampsal(:,:,:), &        !< The amplitude of the SAL [Z ~> m].
-    cosphase_prev(:,:,:), & !< The cosine and sine of the phase of the
-    sinphase_prev(:,:,:), & !< amphidromes in the previous tidal solutions.
+    cosphase_prev(:,:,:), & !< The cosine of the phase of the amphidromes in the previous tidal solutions [nondim].
+    sinphase_prev(:,:,:), & !< The sine of the phase of the amphidromes in the previous tidal solutions [nondim].
     amp_prev(:,:,:)         !< The amplitude of the previous tidal solution [Z ~> m].
 end type tidal_forcing_CS
 
@@ -81,13 +82,16 @@ contains
 !! (their Equation I.71), which are based on Schureman, 1958.
 !! For simplicity, the time associated with time_ref should
 !! be at midnight. These formulas also only make sense if
-!! the calendar is gregorian.
+!! the calendar is Gregorian.
 subroutine astro_longitudes_init(time_ref, longitudes)
   type(time_type), intent(in) :: time_ref            !> Time to calculate longitudes for.
   type(astro_longitudes), intent(out) :: longitudes  !> Lunar and solar longitudes at time_ref.
+
+  ! Local variables
   real :: D                                          !> Time since the reference date [days]
   real :: T                                          !> Time in Julian centuries [centuries]
   real, parameter :: PI = 4.0 * atan(1.0)            !> 3.14159... [nondim]
+
   ! Find date at time_ref in days since 1900-01-01
   D = time_type_to_real(time_ref - set_date(1900, 1, 1)) / (24.0 * 3600.0)
   ! Time since 1900-01-01 in Julian centuries
@@ -111,7 +115,7 @@ end subroutine astro_longitudes_init
 function eq_phase(constit, longitudes)
   character (len=2), intent(in) :: constit !> Name of constituent (e.g., M2).
   type(astro_longitudes), intent(in) :: longitudes   !> Mean longitudes calculated using astro_longitudes_init
-  real, parameter :: PI = 4.0 * atan(1.0)  !> 3.14159...
+  real, parameter :: PI = 4.0 * atan(1.0)  !> 3.14159... [nondim]
   real :: eq_phase                         !> The equilibrium phase argument for the constituent [rad].
 
   select case (constit)
@@ -231,13 +235,13 @@ subroutine tidal_forcing_init(Time, G, US, param_file, CS)
   type(ocean_grid_type),  intent(inout) :: G    !< The ocean's grid structure.
   type(unit_scale_type),  intent(in)    :: US   !< A dimensional unit scaling type
   type(param_file_type),  intent(in)    :: param_file !< A structure to parse for run-time parameters.
-  type(tidal_forcing_CS), intent(inout) :: CS   !< Tidal forcing control struct
+  type(tidal_forcing_CS), intent(inout) :: CS   !< Tidal forcing control structure
 
   ! Local variables
   real, dimension(SZI_(G), SZJ_(G)) :: &
-    phase, &          ! The phase of some tidal constituent.
-    lat_rad, lon_rad  ! Latitudes and longitudes of h-points in radians.
-  real :: deg_to_rad
+    phase, &          ! The phase of some tidal constituent [radians].
+    lat_rad, lon_rad  ! Latitudes and longitudes of h-points [radians].
+  real :: deg_to_rad  ! A conversion factor from degrees to radians [radian degree-1]
   real, dimension(MAX_CONSTITUENTS) :: freq_def ! Default frequency for each tidal constituent [s-1]
   real, dimension(MAX_CONSTITUENTS) :: phase0_def ! Default reference phase for each tidal constituent [rad]
   real, dimension(MAX_CONSTITUENTS) :: amp_def  ! Default amplitude for each tidal constituent [m]
@@ -364,7 +368,7 @@ subroutine tidal_forcing_init(Time, G, US, param_file, CS)
   if (CS%use_tidal_sal_file .or. CS%use_tidal_sal_prev) then
     call get_param(param_file, mdl, "TIDAL_INPUT_FILE", tidal_input_files, &
                    "A list of input files for tidal information.",         &
-                   default = "", fail_if_missing=.true.)
+                   default="", fail_if_missing=.true.)
   endif
 
   call get_param(param_file, mdl, "TIDE_REF_DATE", tide_ref_date, &
@@ -522,8 +526,9 @@ subroutine find_in_files(filenames, varname, array, G, scale)
   character(len=*), dimension(:),   intent(in)  :: filenames !< The names of the files to search for the named variable
   character(len=*),                 intent(in)  :: varname   !< The name of the variable to read
   type(ocean_grid_type),            intent(in)  :: G         !< The ocean's grid structure
-  real, dimension(SZI_(G),SZJ_(G)), intent(out) :: array     !< The array to fill with the data
-  real,                   optional, intent(in)  :: scale     !< A factor by which to rescale the array.
+  real, dimension(SZI_(G),SZJ_(G)), intent(out) :: array     !< The array to fill with the data [arbitrary]
+  real,                   optional, intent(in)  :: scale     !< A factor by which to rescale the array to translate it
+                                                             !! into its desired units [arbitrary]
   ! Local variables
   integer :: nf
 
@@ -559,12 +564,12 @@ subroutine calc_tidal_forcing(Time, e_tide_eq, e_tide_sal, G, US, CS)
                                                               !! due to the tidal SAL [Z ~> m].
   type(unit_scale_type),            intent(in)  :: US         !< A dimensional unit scaling type
   type(tidal_forcing_CS),           intent(in)  :: CS         !< The control structure returned by a
-                                                              !! previous call to tidal_forcing_init.
 
   ! Local variables
   real :: now       ! The relative time compared with the tidal reference [T ~> s]
   real :: amp_cosomegat, amp_sinomegat ! The tidal amplitudes times the components of phase [Z ~> m]
   real :: cosomegat, sinomegat ! The components of the phase [nondim]
+
   integer :: i, j, c, m, is, ie, js, je, Isq, Ieq, Jsq, Jeq
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
