@@ -43,7 +43,7 @@ use MOM_geothermal,          only : geothermal_init, geothermal_end, geothermal_
 use MOM_grid,                only : ocean_grid_type
 use MOM_int_tide_input,      only : set_int_tide_input, int_tide_input_init
 use MOM_int_tide_input,      only : int_tide_input_end, int_tide_input_CS, int_tide_input_type
-use MOM_interface_heights,   only : find_eta
+use MOM_interface_heights,   only : find_eta, calc_derived_thermo
 use MOM_internal_tides,      only : propagate_int_tide
 use MOM_internal_tides,      only : internal_tides_init, internal_tides_end, int_tide_CS
 use MOM_kappa_shear,         only : kappa_shear_is_used
@@ -396,7 +396,10 @@ subroutine diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
     if (CS%uniform_test_cg > 0.0) then
       do m=1,CS%nMode ; cn_IGW(:,:,m) = CS%uniform_test_cg ; enddo
     else
-      call wave_speeds(h, tv, G, GV, US, CS%nMode, cn_IGW, CS%wave_speed, full_halos=.true.)
+      call wave_speeds(h, tv, G, GV, US, CS%nMode, cn_IGW, CS%wave_speed, CS%int_tide%w_struct, &
+                       CS%int_tide%u_struct, CS%int_tide%u_struct_max, CS%int_tide%u_struct_bot, &
+                       CS%int_tide_input%Nb, CS%int_tide%int_w2, CS%int_tide%int_U2, CS%int_tide%int_N2w2, &
+                       full_halos=.true.)
     endif
 
     call propagate_int_tide(h, tv, cn_IGW, CS%int_tide_input%TKE_itidal_input, CS%int_tide_input%tideamp, &
@@ -712,6 +715,10 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
       ! If visc%MLD exists, copy KPP's BLD into it
       if (associated(visc%MLD)) visc%MLD(:,:) = Hml(:,:)
     endif
+    if (associated(visc%sfc_buoy_flx)) then
+      visc%sfc_buoy_flx(:,:) = CS%KPP_buoy_flux(:,:,1)
+      call pass_var(visc%sfc_buoy_flx, G%domain, halo=1)
+    endif
 
     if (.not.CS%KPPisPassive) then
       !$OMP parallel do default(shared)
@@ -853,6 +860,10 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
     elseif (associated(visc%MLD)) then
       call energetic_PBL_get_MLD(CS%ePBL, visc%MLD, G, US)
       call pass_var(visc%MLD, G%domain, halo=1)
+    endif
+    if (associated(visc%sfc_buoy_flx)) then
+      visc%sfc_buoy_flx(:,:) = SkinBuoyFlux(:,:)
+      call pass_var(visc%sfc_buoy_flx, G%domain, halo=1)
     endif
 
     ! Augment the diffusivities and viscosity due to those diagnosed in energetic_PBL.
@@ -1306,6 +1317,10 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
       ! If visc%MLD exists, copy KPP's BLD into it
       if (associated(visc%MLD)) visc%MLD(:,:) = Hml(:,:)
     endif
+    if (associated(visc%sfc_buoy_flx)) then
+      visc%sfc_buoy_flx(:,:) = CS%KPP_buoy_flux(:,:,1)
+      call pass_var(visc%sfc_buoy_flx, G%domain, halo=1)
+    endif
 
     if (showCallTree) call callTree_waypoint("done with KPP_calculate (diabatic)")
     if (CS%debug) then
@@ -1390,6 +1405,10 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
     elseif (associated(visc%MLD)) then
       call energetic_PBL_get_MLD(CS%ePBL, visc%MLD, G, US)
       call pass_var(visc%MLD, G%domain, halo=1)
+    endif
+    if (associated(visc%sfc_buoy_flx)) then
+      visc%sfc_buoy_flx(:,:) = SkinBuoyFlux(:,:)
+      call pass_var(visc%sfc_buoy_flx, G%domain, halo=1)
     endif
 
     ! Augment the diffusivities and viscosity due to those diagnosed in energetic_PBL.
@@ -1828,9 +1847,15 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
   ! Also changes: visc%Kd_shear and visc%Kv_shear
   if ((CS%halo_TS_diff > 0) .and. (CS%ML_mix_first > 0.0)) then
     if (associated(tv%T)) call pass_var(tv%T, G%Domain, halo=CS%halo_TS_diff, complete=.false.)
-    if (associated(tv%T)) call pass_var(tv%S, G%Domain, halo=CS%halo_TS_diff, complete=.false.)
+    if (associated(tv%S)) call pass_var(tv%S, G%Domain, halo=CS%halo_TS_diff, complete=.false.)
     call pass_var(h, G%domain, halo=CS%halo_TS_diff, complete=.true.)
   endif
+
+  ! Update derived thermodynamic quantities.
+  if ((CS%ML_mix_first > 0.0) .and. allocated(tv%SpV_avg)) then
+    call calc_derived_thermo(tv, h, G, GV, US, halo=CS%halo_TS_diff)
+  endif
+
   if (CS%debug) &
     call MOM_state_chksum("before set_diffusivity", u, v, h, G, GV, US, haloshift=CS%halo_TS_diff)
   if (CS%double_diffuse) then
@@ -1899,6 +1924,10 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
       call pass_var(Hml, G%domain, halo=1)
       ! If visc%MLD exists, copy KPP's BLD into it
       if (associated(visc%MLD)) visc%MLD(:,:) = Hml(:,:)
+    endif
+    if (associated(visc%sfc_buoy_flx)) then
+      visc%sfc_buoy_flx(:,:) = CS%KPP_buoy_flux(:,:,1)
+      call pass_var(visc%sfc_buoy_flx, G%domain, halo=1)
     endif
 
     if (.not. CS%KPPisPassive) then
