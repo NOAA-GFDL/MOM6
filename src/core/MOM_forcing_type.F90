@@ -741,15 +741,15 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
     endif
 
     ! Salt fluxes
-    Net_salt(i) = 0.0
-    if (do_NSR) Net_salt_rate(i) = 0.0
+    net_salt(i) = 0.0
+    if (do_NSR) net_salt_rate(i) = 0.0
     ! Convert salt_flux from kg (salt)/(m^2 * s) to
     ! Boussinesq: (ppt * m)
     ! non-Bouss:  (g/m^2)
     if (associated(fluxes%salt_flux)) then
-      Net_salt(i) = (scale * dt * (1000.0*US%ppt_to_S * fluxes%salt_flux(i,j))) * GV%RZ_to_H
+      net_salt(i) = (scale * dt * (1000.0*US%ppt_to_S * fluxes%salt_flux(i,j))) * GV%RZ_to_H
       !Repeat above code for 'rate' term
-      if (do_NSR) Net_salt_rate(i) = (scale * 1. * (1000.0*US%ppt_to_S * fluxes%salt_flux(i,j))) * GV%RZ_to_H
+      if (do_NSR) net_salt_rate(i) = (scale * 1. * (1000.0*US%ppt_to_S * fluxes%salt_flux(i,j))) * GV%RZ_to_H
     endif
 
     ! Diagnostics follow...

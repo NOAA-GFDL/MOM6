@@ -581,7 +581,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   endif
   if (associated(IOB%excess_salt)) then
     do j=js,je ; do i=is,ie
-      fluxes%salt_left_behind(i,j) = G%mask2dT(i,j)*( - kg_m2_s_conversion*IOB%excess_salt(i-i0,j-j0))
+      fluxes%salt_left_behind(i,j) = G%mask2dT(i,j)*(kg_m2_s_conversion*IOB%excess_salt(i-i0,j-j0))
     enddo ; enddo
   endif
 

@@ -313,6 +313,10 @@ function init_extern_field(file, fieldname, MOM_domain, domain, verbose, &
 
   ! Pass to FMS2 implementation of init_external_field
 
+  ! NOTE: external fields are currently assumed to be on-grid, which holds
+  ! across the current codebase.  In the future, we may need to either enforce
+  ! this or somehow relax this requirement.
+
   if (present(MOM_Domain)) then
     field%id = init_external_field(file, field%label, domain=MOM_domain%mpp_domain, &
              verbose=verbose, ierr=ierr, ignore_axis_atts=ignore_axis_atts, &
