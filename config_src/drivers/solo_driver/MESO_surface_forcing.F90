@@ -31,7 +31,7 @@ type, public :: MESO_surface_forcing_CS ; private
   real :: G_Earth            !< The gravitational acceleration [L2 Z-1 T-2 ~> m s-2].
   real :: Flux_const         !< The restoring rate at the surface [Z T-1 ~> m s-1].
   real :: gust_const         !< A constant unresolved background gustiness
-                             !! that contributes to ustar [R L Z T-1 ~> Pa]
+                             !! that contributes to ustar [R L Z T-2 ~> Pa]
   real, dimension(:,:), pointer :: &
     T_Restore(:,:) => NULL(), & !< The temperature to restore the SST toward [C ~> degC].
     S_Restore(:,:) => NULL(), & !< The salinity to restore the sea surface salnity toward [S ~> ppt]
@@ -242,7 +242,7 @@ subroutine MESO_surface_forcing_init(Time, G, US, param_file, diag, CS)
                  units="kg m-3", default=1035.0, scale=US%kg_m3_to_R)
   call get_param(param_file, mdl, "GUST_CONST", CS%gust_const, &
                  "The background gustiness in the winds.", units="Pa", default=0.0, &
-                 scale=US%kg_m3_to_R*US%m_s_to_L_T**2*US%L_to_Z)
+                 scale=US%Pa_to_RLZ_T2)
 
   call get_param(param_file, mdl, "RESTOREBUOY", CS%restorebuoy, &
                  "If true, the buoyancy fluxes drive the model back "//&

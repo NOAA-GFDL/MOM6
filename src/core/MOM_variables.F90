@@ -93,6 +93,9 @@ type, public :: thermo_var_ptrs
   logical :: S_is_absS = .false. !< If true, the salinity variable tv%S is
                          !! actually the absolute salinity in units of [gSalt kg-1].
   real :: min_salinity   !< The minimum value of salinity when BOUND_SALINITY=True [S ~> ppt].
+  real, allocatable, dimension(:,:,:) :: SpV_avg
+                         !< The layer averaged in situ specific volume [R-1 ~> m3 kg-1].
+
   ! These arrays are accumulated fluxes for communication with other components.
   real, dimension(:,:), pointer :: frazil => NULL()
                          !< The energy needed to heat the ocean column to the
@@ -101,7 +104,7 @@ type, public :: thermo_var_ptrs
   real, dimension(:,:), pointer :: salt_deficit => NULL()
                          !<   The salt needed to maintain the ocean column
                          !! at a minimum salinity of MIN_SALINITY since the last time
-                         !! that calculate_surface_state was called, [ppt R Z ~> gSalt m-2].
+                         !! that calculate_surface_state was called, [S R Z ~> gSalt m-2].
   real, dimension(:,:), pointer :: TempxPmE => NULL()
                          !<   The net inflow of water into the ocean times the
                          !! temperature at which this inflow occurs since the
@@ -257,8 +260,8 @@ type, public :: vertvisc_type
     Ray_v       !< The Rayleigh drag velocity to be applied to each layer at v-points [Z T-1 ~> m s-1].
 
   ! The following elements are pointers so they can be used as targets for pointers in the restart registry.
-  real, pointer, dimension(:,:) :: &
-    MLD => NULL()  !< Instantaneous active mixing layer depth [Z ~> m].
+  real, pointer, dimension(:,:) :: MLD => NULL() !< Instantaneous active mixing layer depth [Z ~> m].
+  real, pointer, dimension(:,:) :: sfc_buoy_flx !< Surface buoyancy flux (derived) [Z2 T-3 ~> m2 s-3].
   real, pointer, dimension(:,:,:) :: Kd_shear => NULL()
                 !< The shear-driven turbulent diapycnal diffusivity at the interfaces between layers
                 !! in tracer columns [Z2 T-1 ~> m2 s-1].

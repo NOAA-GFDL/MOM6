@@ -61,6 +61,7 @@ public :: field_exists, get_filename_appendix
 public :: fieldtype, field_size, get_field_atts
 public :: axistype, get_axis_data
 public :: MOM_read_data, MOM_read_vector, read_field_chksum
+public :: read_netCDF_data
 public :: slasher, write_version_number
 public :: io_infra_init, io_infra_end
 public :: stdout_if_root
@@ -107,6 +108,15 @@ interface MOM_read_vector
   module procedure MOM_read_vector_2d
   module procedure MOM_read_vector_3d
 end interface MOM_read_vector
+
+!> Read a field using native netCDF I/O
+!!
+!! This function is primarily used for unstructured data which may contain
+!! content that cannot be parsed by infrastructure I/O.
+interface read_netCDF_data
+  ! NOTE: Only 2D I/O is currently used; this should be expanded as needed.
+  module procedure read_netCDF_data_2d
+end interface read_netCDF_data
 
 !> Write a registered field to an output file, potentially with rotation
 interface MOM_write_field
@@ -322,15 +332,20 @@ subroutine create_MOM_file(IO_handle, filename, vars, novars, fields, &
     IsgB = dG%IsgB ; IegB = dG%IegB ; JsgB = dG%JsgB ; JegB = dG%JegB
   endif
 
-  if (domain_set .and. (num_PEs() == 1)) thread = SINGLE_FILE
-
   one_file = .true.
   if (domain_set) one_file = (thread == SINGLE_FILE)
 
   if (one_file) then
-    call IO_handle%open(filename, action=OVERWRITE_FILE, threading=thread)
+    if (domain_set) then
+      call IO_handle%open(filename, action=OVERWRITE_FILE, &
+          MOM_domain=domain, threading=thread, fileset=SINGLE_FILE)
+    else
+      call IO_handle%open(filename, action=OVERWRITE_FILE, threading=thread, &
+          fileset=SINGLE_FILE)
+    endif
   else
-    call IO_handle%open(filename, action=OVERWRITE_FILE, MOM_domain=Domain)
+    call IO_handle%open(filename, action=OVERWRITE_FILE, MOM_domain=Domain, &
+        threading=thread, fileset=thread)
   endif
 
 ! Define the coordinates.
@@ -658,6 +673,20 @@ subroutine reopen_MOM_file(IO_handle, filename, vars, novars, fields, &
   thread = SINGLE_FILE
   if (PRESENT(threading)) thread = threading
 
+  ! For single-file IO, only the root PE is required to set up the fields.
+  ! This permits calls by either the root PE or all PEs
+  if (.not. is_root_PE() .and. thread == SINGLE_FILE) return
+
+  ! For multiple IO domains, we would need additional functionality:
+  ! * Identify ranks as IO PEs
+  ! * Determine the filename of
+  ! Neither of these tasks should be handed by MOM6, so we cannot safely use
+  ! this function.  A framework-specific `inquire()` function is needed.
+  ! Until it exists, we will disable this function.
+  if (thread == MULTIPLE) &
+    call MOM_error(FATAL, 'reopen_MOM_file does not yet support files with ' &
+      // 'multiple I/O domains.')
+
   check_name = filename
   length = len(trim(check_name))
   if (check_name(length-2:length) /= ".nc") check_name = trim(check_name)//".nc"
@@ -741,13 +770,13 @@ function num_timelevels(filename, varname, min_dims) result(n_time)
 
   call get_var_sizes(filename, varname, ndims, sizes, match_case=.false., caller="num_timelevels")
 
-  n_time = sizes(ndims)
+  if (ndims > 0) n_time = sizes(ndims)
 
   if (present(min_dims)) then
     if (ndims < min_dims-1) then
       write(msg, '(I3)') min_dims
       call MOM_error(WARNING, "num_timelevels: variable "//trim(varname)//" in file "//&
-        trim(filename)//" has fewer than min_dims = "//trim(msg)//" dimensions.")
+          trim(filename)//" has fewer than min_dims = "//trim(msg)//" dimensions.")
       n_time = -1
     elseif (ndims == min_dims - 1) then
       n_time = 0
@@ -837,12 +866,18 @@ subroutine read_var_sizes(filename, varname, ndims, sizes, match_case, caller, d
     ncid = ncid_in
   else
     call open_file_to_read(filename, ncid, success=success)
-    if (.not.success) return
+    if (.not.success) then
+      call MOM_error(WARNING, "Unsuccessfully attempted to open file "//trim(filename))
+      return
+    endif
   endif
 
   ! Get the dimension sizes of the variable varname.
   call get_varid(varname, ncid, filename, varid, match_case=match_case, found=found)
-  if (.not.found) return
+  if (.not.found) then
+    call MOM_error(WARNING, "Could not find variable "//trim(varname)//" in file "//trim(filename))
+    return
+  endif
 
   status = NF90_inquire_variable(ncid, varid, ndims=ndims)
   if (status /= NF90_NOERR) then
@@ -2031,6 +2066,60 @@ subroutine MOM_read_data_2d(filename, fieldname, data, MOM_Domain, &
     deallocate(data_in)
   endif
 end subroutine MOM_read_data_2d
+
+
+!> Read a 2d array (which might have halos) from a file using native netCDF I/O.
+subroutine read_netCDF_data_2d(filename, fieldname, values, MOM_Domain, &
+                            timelevel, position, rescale)
+  character(len=*), intent(in) :: filename
+    !< Input filename
+  character(len=*), intent(in)  :: fieldname
+    !< Field variable name
+  real, intent(inout) :: values(:,:)
+    !< Field values read from the file.  It would be intent(out) but for the
+    !! need to preserve any initialized values in the halo regions.
+  type(MOM_domain_type), intent(in) :: MOM_Domain
+    !< Model domain decomposition
+  integer, optional, intent(in) :: timelevel
+    !< Time level to read in file
+  integer, optional, intent(in) :: position
+    !< Grid positioning flag
+  real, optional, intent(in) :: rescale
+    !< Rescale factor, omitting this is the same as setting it to 1.
+
+  integer :: turns
+    ! Number of quarter-turns from input to model grid
+  real, allocatable :: values_in(:,:)
+    ! Field array on the unrotated input grid
+  type(MOM_netcdf_file) :: handle
+    ! netCDF file handle
+
+  ! General-purpose IO will require the following arguments, but they are not
+  ! yet implemented, so we raise an error if they are present.
+
+  ! Fields are currently assumed on cell centers, and position is unsupported
+  if (present(position)) &
+    call MOM_error(FATAL, 'read_netCDF_data: position is not yet supported.')
+
+  ! Timelevels are not yet supported
+  if (present(timelevel)) &
+    call MOM_error(FATAL, 'read_netCDF_data: timelevel is not yet supported.')
+
+  call handle%open(filename, action=READONLY_FILE, MOM_domain=MOM_domain)
+  call handle%update()
+
+  turns = MOM_domain%turns
+  if (turns == 0) then
+    call handle%read(fieldname, values, rescale=rescale)
+  else
+    call allocate_rotated_array(values, [1,1], -turns, values_in)
+    call handle%read(fieldname, values_in, rescale=rescale)
+    call rotate_array(values_in, turns, values)
+    deallocate(values_in)
+  endif
+
+  call handle%close()
+end subroutine read_netCDF_data_2d
 
 
 !> Read a 2d region array from file using infrastructure I/O.

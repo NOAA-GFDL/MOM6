@@ -27,7 +27,9 @@ use MOM_get_input,        only : Get_MOM_Input, directories
 use MOM_grid,             only : ocean_grid_type
 use MOM_interpolate,      only : init_external_field, time_interp_external
 use MOM_interpolate,      only : time_interp_external_init
+use MOM_interpolate,      only : external_field
 use MOM_io,               only : slasher, write_version_number, MOM_read_data
+use MOM_io,               only : read_netCDF_data
 use MOM_io,               only : stdout_if_root
 use MOM_restart,          only : register_restart_field, restart_init, MOM_restart_CS
 use MOM_restart,          only : restart_init_end, save_restart, restore_state
@@ -82,14 +84,14 @@ type, public :: surface_forcing_CS ; private
                                 !! type without any further adjustments to drive the ocean dynamics.
                                 !! The actual net mass source may differ due to corrections.
 
-  real :: gust_const            !< Constant unresolved background gustiness for ustar [R L Z T-1 ~> Pa]
+  real :: gust_const            !< Constant unresolved background gustiness for ustar [R L Z T-2 ~> Pa]
   logical :: read_gust_2d       !< If true, use a 2-dimensional gustiness supplied from an input file.
   real, pointer, dimension(:,:) :: &
     TKE_tidal => NULL()         !< Turbulent kinetic energy introduced to the bottom boundary layer
                                 !! by drag on the tidal flows [R Z3 T-3 ~> W m-2].
   real, pointer, dimension(:,:) :: &
     gust => NULL()              !< A spatially varying unresolved background gustiness that
-                                !! contributes to ustar [R L Z T-1 ~> Pa].  gust is used when read_gust_2d is true.
+                                !! contributes to ustar [R L Z T-2 ~> Pa].  gust is used when read_gust_2d is true.
   real, pointer, dimension(:,:) :: &
     ustar_tidal => NULL()       !< Tidal contribution to the bottom friction velocity [Z T-1 ~> m s-1]
   real :: cd_tides              !< Drag coefficient that applies to the tides [nondim]
@@ -152,8 +154,10 @@ type, public :: surface_forcing_CS ; private
                                               !! in inputdir/temp_restore_mask.nc and the field should
                                               !! be named 'mask'
   real, pointer, dimension(:,:) :: trestore_mask => NULL() !< Mask for SST restoring [nondim]
-  integer :: id_srestore = -1  !< An id number for time_interp_external.
-  integer :: id_trestore = -1  !< An id number for time_interp_external.
+  type(external_field) :: srestore_handle
+    !< Handle for time-interpolated salt restoration field
+  type(external_field) :: trestore_handle
+    !< Handle for time-interpolated temperature restoration field
 
   type(forcing_diags), public :: handles !< Diagnostics handles
 
@@ -344,7 +348,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
 
   ! Salinity restoring logic
   if (CS%restore_salt) then
-    call time_interp_external(CS%id_srestore, Time, data_restore, scale=US%ppt_to_S)
+    call time_interp_external(CS%srestore_handle, Time, data_restore, scale=US%ppt_to_S)
     ! open_ocn_mask indicates where to restore salinity (1 means restore, 0 does not)
     open_ocn_mask(:,:) = 1.0
     if (CS%mask_srestore_under_ice) then ! Do not restore under sea-ice
@@ -402,7 +406,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
 
   ! SST restoring logic
   if (CS%restore_temp) then
-    call time_interp_external(CS%id_trestore, Time, data_restore, scale=US%degC_to_C)
+    call time_interp_external(CS%trestore_handle, Time, data_restore, scale=US%degC_to_C)
     if ( CS%trestore_SPEAR_ECDA ) then
       do j=js,je ; do i=is,ie
         if (abs(data_restore(i,j)+1.8*US%degC_to_C) < 0.0001*US%degC_to_C) then
@@ -547,14 +551,14 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   if (associated(IOB%p)) then
     if (CS%max_p_surf >= 0.0) then
       do j=js,je ; do i=is,ie
-        fluxes%p_surf_full(i,j) = G%mask2dT(i,j) * US%kg_m3_to_R*US%m_s_to_L_T**2*IOB%p(i-i0,j-j0)
+        fluxes%p_surf_full(i,j) = G%mask2dT(i,j) * US%Pa_to_RL2_T2*IOB%p(i-i0,j-j0)
         fluxes%p_surf(i,j) = MIN(fluxes%p_surf_full(i,j),CS%max_p_surf)
         if (CS%check_no_land_fluxes) &
           call check_mask_val_consistency(IOB%p(i-i0,j-j0), G%mask2dT(i,j), i, j, 'p', G)
       enddo ; enddo
     else
       do j=js,je ; do i=is,ie
-        fluxes%p_surf_full(i,j) = G%mask2dT(i,j) * US%kg_m3_to_R*US%m_s_to_L_T**2*IOB%p(i-i0,j-j0)
+        fluxes%p_surf_full(i,j) = G%mask2dT(i,j) * US%Pa_to_RL2_T2*IOB%p(i-i0,j-j0)
         fluxes%p_surf(i,j) = fluxes%p_surf_full(i,j)
         if (CS%check_no_land_fluxes) &
           call check_mask_val_consistency(IOB%p(i-i0,j-j0), G%mask2dT(i,j), i, j, 'p', G)
@@ -754,12 +758,12 @@ subroutine convert_IOB_to_forces(IOB, forces, index_bounds, Time, G, US, CS, dt_
   if (associated(IOB%p)) then
     if (CS%max_p_surf >= 0.0) then
       do j=js,je ; do i=is,ie
-        forces%p_surf_full(i,j) = G%mask2dT(i,j) * US%kg_m3_to_R*US%m_s_to_L_T**2*IOB%p(i-i0,j-j0)
+        forces%p_surf_full(i,j) = G%mask2dT(i,j) * US%Pa_to_RL2_T2*IOB%p(i-i0,j-j0)
         forces%p_surf(i,j) = MIN(forces%p_surf_full(i,j),CS%max_p_surf)
       enddo ; enddo
     else
       do j=js,je ; do i=is,ie
-        forces%p_surf_full(i,j) = G%mask2dT(i,j) * US%kg_m3_to_R*US%m_s_to_L_T**2*IOB%p(i-i0,j-j0)
+        forces%p_surf_full(i,j) = G%mask2dT(i,j) * US%Pa_to_RL2_T2*IOB%p(i-i0,j-j0)
         forces%p_surf(i,j) = forces%p_surf_full(i,j)
       enddo ; enddo
     endif
@@ -910,7 +914,6 @@ subroutine extract_IOB_stresses(IOB, index_bounds, Time, G, US, CS, taux, tauy, 
   real :: Irho0         ! Inverse of the mean density rescaled to [Z L-1 R-1 ~> m3 kg-1]
   real :: taux2, tauy2  ! squared wind stresses [R2 Z2 L2 T-4 ~> Pa2]
   real :: tau_mag       ! magnitude of the wind stress [R Z L T-2 ~> Pa]
-  real :: Pa_conversion ! A unit conversion factor from Pa to the internal wind stress units [R Z L T-2 Pa-1 ~> 1]
   real :: stress_conversion ! A unit conversion factor from Pa times any stress multiplier [R Z L T-2 Pa-1 ~> 1]
 
   logical :: do_ustar, do_gustless
@@ -924,8 +927,7 @@ subroutine extract_IOB_stresses(IOB, index_bounds, Time, G, US, CS, taux, tauy, 
   i0 = is - index_bounds(1) ; j0 = js - index_bounds(3)
 
   IRho0 = US%L_to_Z / CS%Rho0
-  Pa_conversion = US%kg_m3_to_R*US%m_s_to_L_T**2*US%L_to_Z
-  stress_conversion = Pa_conversion * CS%wind_stress_multiplier
+  stress_conversion = US%Pa_to_RLZ_T2 * CS%wind_stress_multiplier
 
   do_ustar = present(ustar) ; do_gustless = present(gustless_ustar)
 
@@ -1036,15 +1038,15 @@ subroutine extract_IOB_stresses(IOB, index_bounds, Time, G, US, CS, taux, tauy, 
                 (G%mask2dBu(I,J-1) + G%mask2dBu(I-1,J))) > 0.0)) ) &
             gustiness = CS%gust(i,j)
         endif
-        ustar(i,j) = sqrt(gustiness*IRho0 + IRho0*Pa_conversion*IOB%stress_mag(i-i0,j-j0))
+        ustar(i,j) = sqrt(gustiness*IRho0 + IRho0*US%Pa_to_RLZ_T2*IOB%stress_mag(i-i0,j-j0))
       enddo ; enddo ; endif
       if (CS%answer_date < 20190101) then
         if (do_gustless) then ; do j=js,je ; do i=is,ie
-          gustless_ustar(i,j) = sqrt(Pa_conversion*US%L_to_Z*IOB%stress_mag(i-i0,j-j0) / CS%Rho0)
+          gustless_ustar(i,j) = sqrt(US%Pa_to_RLZ_T2*US%L_to_Z*IOB%stress_mag(i-i0,j-j0) / CS%Rho0)
         enddo ; enddo ; endif
       else
         if (do_gustless) then ; do j=js,je ; do i=is,ie
-          gustless_ustar(i,j) = sqrt(IRho0 * Pa_conversion*IOB%stress_mag(i-i0,j-j0))
+          gustless_ustar(i,j) = sqrt(IRho0 * US%Pa_to_RLZ_T2*IOB%stress_mag(i-i0,j-j0))
         enddo ; enddo ; endif
       endif
     elseif (wind_stagger == BGRID_NE) then
@@ -1173,17 +1175,17 @@ subroutine apply_force_adjustments(G, US, CS, Time, forces)
   real :: rDlon ! The magnitude of the change in longitude [degrees_E] and then its inverse [degrees_E-1]
   real :: cosA, sinA  ! The cosine and sine of the angle between the grid and true north [nondim]
   real :: zonal_tau, merid_tau ! True zonal and meridional wind stresses [R Z L T-2 ~> Pa]
-  real :: Pa_conversion ! A unit conversion factor from Pa to the internal units [R Z L T-2 Pa-1 ~> 1]
   logical :: overrode_x, overrode_y
 
   isc = G%isc; iec = G%iec ; jsc = G%jsc; jec = G%jec
-  Pa_conversion = US%kg_m3_to_R*US%m_s_to_L_T**2*US%L_to_Z
 
   tempx_at_h(:,:) = 0.0 ; tempy_at_h(:,:) = 0.0
   ! Either reads data or leaves contents unchanged
   overrode_x = .false. ; overrode_y = .false.
-  call data_override(G%Domain, 'taux_adj', tempx_at_h(isc:iec,jsc:jec), Time, override=overrode_x, scale=Pa_conversion)
-  call data_override(G%Domain, 'tauy_adj', tempy_at_h(isc:iec,jsc:jec), Time, override=overrode_y, scale=Pa_conversion)
+  call data_override(G%Domain, 'taux_adj', tempx_at_h(isc:iec,jsc:jec), Time, &
+                     override=overrode_x, scale=US%Pa_to_RLZ_T2)
+  call data_override(G%Domain, 'tauy_adj', tempy_at_h(isc:iec,jsc:jec), Time, &
+                     override=overrode_y, scale=US%Pa_to_RLZ_T2)
 
   if (overrode_x .or. overrode_y) then
     if (.not. (overrode_x .and. overrode_y)) call MOM_error(FATAL,"apply_flux_adjustments: "//&
@@ -1313,7 +1315,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "limit the water that can be frozen out of the ocean and "//&
                  "the ice-ocean heat fluxes are treated explicitly.  No "//&
                  "limit is applied if a negative value is used.", &
-                 units="Pa", default=-1.0, scale=US%kg_m3_to_R*US%m_s_to_L_T**2)
+                 units="Pa", default=-1.0, scale=US%Pa_to_RL2_T2)
   call get_param(param_file, mdl, "RESTORE_SALINITY", CS%restore_salt, &
                  "If true, the coupled driver will add a globally-balanced "//&
                  "fresh-water flux that drives sea-surface salinity "//&
@@ -1507,7 +1509,10 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
 
   if (CS%read_TIDEAMP) then
     TideAmp_file = trim(CS%inputdir) // trim(TideAmp_file)
-    call MOM_read_data(TideAmp_file,'tideamp',CS%TKE_tidal,G%domain,timelevel=1, scale=US%m_to_Z*US%T_to_s)
+    ! NOTE: There are certain cases where FMS is unable to read this file, so
+    ! we use read_netCDF_data in place of MOM_read_data.
+    call read_netCDF_data(TideAmp_file, 'tideamp', CS%TKE_tidal, G%Domain, &
+        rescale=US%m_to_Z*US%T_to_s)
     do j=jsd, jed; do i=isd, ied
       utide = CS%TKE_tidal(i,j)
       CS%TKE_tidal(i,j) = G%mask2dT(i,j)*CS%Rho0*CS%cd_tides*(utide*utide*utide)
@@ -1528,8 +1533,8 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "If true, use a 2-dimensional gustiness supplied from "//&
                  "an input file", default=.false.)
   call get_param(param_file, mdl, "GUST_CONST", CS%gust_const, &
-               "The background gustiness in the winds.", &
-               units="Pa", default=0.0, scale=US%kg_m3_to_R*US%m_s_to_L_T**2*US%L_to_Z)
+                 "The background gustiness in the winds.", &
+                 units="Pa", default=0.0, scale=US%Pa_to_RLZ_T2)
   if (CS%read_gust_2d) then
     call get_param(param_file, mdl, "GUST_2D_FILE", gust_file, &
                  "The file in which the wind gustiness is found in "//&
@@ -1537,8 +1542,10 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
 
     call safe_alloc_ptr(CS%gust,isd,ied,jsd,jed)
     gust_file = trim(CS%inputdir) // trim(gust_file)
-    call MOM_read_data(gust_file, 'gustiness', CS%gust, G%domain, timelevel=1, &
-               scale=US%kg_m3_to_R*US%m_s_to_L_T**2*US%L_to_Z) ! units in file should be Pa
+    ! NOTE: There are certain cases where FMS is unable to read this file, so
+    ! we use read_netCDF_data in place of MOM_read_data.
+    call read_netCDF_data(gust_file, 'gustiness', CS%gust, G%Domain, &
+                          rescale=US%Pa_to_RLZ_T2) ! units in file should be [Pa]
   endif
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
@@ -1606,7 +1613,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
 
   if (CS%restore_salt) then
     salt_file = trim(CS%inputdir) // trim(CS%salt_restore_file)
-    CS%id_srestore = init_external_field(salt_file, CS%salt_restore_var_name, MOM_domain=G%Domain)
+    CS%srestore_handle = init_external_field(salt_file, CS%salt_restore_var_name, MOM_domain=G%Domain)
     call safe_alloc_ptr(CS%srestore_mask,isd,ied,jsd,jed); CS%srestore_mask(:,:) = 1.0
     if (CS%mask_srestore) then ! read a 2-d file containing a mask for restoring fluxes
       flnam = trim(CS%inputdir) // 'salt_restore_mask.nc'
@@ -1616,7 +1623,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
 
   if (CS%restore_temp) then
     temp_file = trim(CS%inputdir) // trim(CS%temp_restore_file)
-    CS%id_trestore = init_external_field(temp_file, CS%temp_restore_var_name, MOM_domain=G%Domain)
+    CS%trestore_handle = init_external_field(temp_file, CS%temp_restore_var_name, MOM_domain=G%Domain)
     call safe_alloc_ptr(CS%trestore_mask,isd,ied,jsd,jed); CS%trestore_mask(:,:) = 1.0
     if (CS%mask_trestore) then  ! read a 2-d file containing a mask for restoring fluxes
       flnam = trim(CS%inputdir) // 'temp_restore_mask.nc'
