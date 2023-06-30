@@ -1323,7 +1323,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
     if (CS%do_brine_plume) then
       do i=is,ie
         mixing_depth(i) = max(MLD(i,j) - minimum_forcing_depth * GV%H_to_Z, minimum_forcing_depth * GV%H_to_Z)
-        mixing_depth(i) = min(mixing_depth(i), sum(h(i,j,:)) * GV%H_to_Z)
+        mixing_depth(i) = min(mixing_depth(i), max(sum(h(i,j,:)), GV%angstrom_h) * GV%H_to_Z)
         A_brine(i) = (CS%brine_plume_n + 1) / (mixing_depth(i) ** (CS%brine_plume_n + 1))
       enddo
     endif
@@ -1437,13 +1437,15 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
               fraction_left_brine = fraction_left_brine - plume_fraction
               plume_flux = plume_flux + plume_fraction * (1000.0*US%ppt_to_S * fluxes%salt_left_behind(i,j)) * GV%RZ_to_H
             endif
+          else
+            plume_flux = 0.0
           endif
 
           ! Change in state due to forcing
 
           dThickness = max( fractionOfForcing*netMassOut(i), -h2d(i,k) )
           dTemp      = fractionOfForcing*netHeat(i)
-          dSalt = max( fractionOfForcing*netSalt(i) + plume_flux, -CS%dSalt_frac_max * h2d(i,k) * tv%S(i,j,k))
+          dSalt = max( fractionOfForcing*netSalt(i), -CS%dSalt_frac_max * h2d(i,k) * tv%S(i,j,k))
 
           ! Update the forcing by the part to be consumed within the present k-layer.
           ! If fractionOfForcing = 1, then new netMassOut vanishes.
@@ -1483,7 +1485,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
             endif
             Ithickness  = 1.0/h2d(i,k) ! Inverse of new thickness
             T2d(i,k)    = (hOld*T2d(i,k) + dTemp)*Ithickness
-            tv%S(i,j,k) = (hOld*tv%S(i,j,k) + dSalt)*Ithickness
+            tv%S(i,j,k) = (hOld*tv%S(i,j,k) + dSalt + plume_flux)*Ithickness
           elseif (h2d(i,k) < 0.0) then ! h2d==0 is a special limit that needs no extra handling
             call forcing_SinglePointPrint(fluxes,G,i,j,'applyBoundaryFluxesInOut (h<0)')
             write(0,*) 'applyBoundaryFluxesInOut(): lon,lat=',G%geoLonT(i,j),G%geoLatT(i,j)
