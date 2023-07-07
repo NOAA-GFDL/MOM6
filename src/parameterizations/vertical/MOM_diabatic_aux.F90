@@ -1065,8 +1065,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
                                                !! salinity [R-1 S-1 ~> m3 kg-1 ppt-1].
   real, dimension(SZI_(G),SZJ_(G)), &
                  optional, intent(out)   :: SkinBuoyFlux !< Buoyancy flux at surface [Z2 T-3 ~> m2 s-3].
-  real, dimension(SZI_(G),SZJ_(G)), &
-                 optional, intent(in)    :: MLD !< Mixed layer depth for brine plumes [Z ~> m]
+  real, pointer, dimension(:,:), optional :: MLD!< Mixed layer depth for brine plumes [Z ~> m]
 
   ! Local variables
   integer, parameter :: maxGroundings = 5
@@ -1167,7 +1166,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
     GoRho = US%L_to_Z**2*GV%g_Earth / GV%Rho0
   endif
 
-  if (CS%do_brine_plume .and. .not. present(MLD)) then
+  if (CS%do_brine_plume .and. .not. associated(MLD)) then
     call MOM_error(FATAL, "MOM_diabatic_aux.F90, applyBoundaryFluxesInOut(): "//&
                    "Brine plume parameterization requires a mixed-layer depth,\n"//&
                    "currently coming from the energetic PBL scheme.")
@@ -1436,9 +1435,9 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
               endif
               fraction_left_brine = fraction_left_brine - plume_fraction
               plume_flux = plume_flux + plume_fraction * (1000.0*US%ppt_to_S * fluxes%salt_left_behind(i,j)) * GV%RZ_to_H
+            else
+              plume_flux = 0.0
             endif
-          else
-            plume_flux = 0.0
           endif
 
           ! Change in state due to forcing
