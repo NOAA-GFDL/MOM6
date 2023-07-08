@@ -875,7 +875,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
   else
     call applyBoundaryFluxesInOut(CS%diabatic_aux_CSp, G, GV, US, dt, fluxes, CS%optics, &
                                   optics_nbands(CS%optics), h, tv, CS%aggregate_FW_forcing, &
-                                  CS%evap_CFL_limit, CS%minimum_forcing_depth)
+                                  CS%evap_CFL_limit, CS%minimum_forcing_depth, MLD=visc%MLD)
 
   endif   ! endif for CS%use_energetic_PBL
 
@@ -1414,7 +1414,7 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
   else
     call applyBoundaryFluxesInOut(CS%diabatic_aux_CSp, G, GV, US, dt, fluxes, CS%optics, &
                                   optics_nbands(CS%optics), h, tv, CS%aggregate_FW_forcing, &
-                                  CS%evap_CFL_limit, CS%minimum_forcing_depth)
+                                  CS%evap_CFL_limit, CS%minimum_forcing_depth, MLD=visc%MLD)
 
   endif   ! endif for CS%use_energetic_PBL
 
