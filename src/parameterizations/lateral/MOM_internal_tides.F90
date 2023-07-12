@@ -16,8 +16,10 @@ use MOM_domains, only       : group_pass_type, start_group_pass, complete_group_
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, MOM_mesg, is_root_pe
 use MOM_file_parser, only   : read_param, get_param, log_param, log_version, param_file_type
 use MOM_grid, only          : ocean_grid_type
-use MOM_io, only            : slasher, MOM_read_data, file_exists
+use MOM_io, only            : slasher, MOM_read_data, file_exists, axis_info
+use MOM_io, only            : set_axis_info, get_axis_info
 use MOM_restart, only       : register_restart_field, MOM_restart_CS, restart_init, save_restart
+use MOM_restart, only       : lock_check, restart_registry_lock
 use MOM_spatial_means, only : global_area_integral
 use MOM_time_manager, only  : time_type, time_type_to_real, operator(+), operator(/), operator(-)
 use MOM_unit_scaling, only  : unit_scale_type
@@ -29,12 +31,13 @@ implicit none ; private
 
 #include <MOM_memory.h>
 
-public propagate_int_tide !, register_int_tide_restarts
+public propagate_int_tide, register_int_tide_restarts
 public internal_tides_init, internal_tides_end
 public get_lowmode_loss
 
 !> This control structure has parameters for the MOM_internal_tides module
 type, public :: int_tide_CS ; private
+  logical :: initialized = .false.   !< True if this control structure has been initialized.
   logical :: do_int_tides    !< If true, use the internal tide code.
   integer :: nFreq = 0       !< The number of internal tide frequency bands
   integer :: nMode = 1       !< The number of internal tide vertical modes
@@ -263,6 +266,11 @@ subroutine propagate_int_tide(h, tv, TKE_itidal_input, vel_btTide, Nb, dt, &
   Umax(:,:,:,:) = 0.
 
   cn(:,:,:) = 0.
+
+  ! temporary solution for restart, only works with one freq/1mode
+  do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
+    CS%En(i,j,a,1,1) = CS%En_restart(i,j,a)
+  enddo ; enddo ; enddo
 
   ! Set properties related to the internal tides, such as the wave speeds, storing some
   ! of them in the control structure for this module.
@@ -634,6 +642,11 @@ subroutine propagate_int_tide(h, tv, TKE_itidal_input, vel_btTide, Nb, dt, &
       enddo ; enddo ; enddo
       call post_data(CS%id_En_mode(fr,m), tot_En, CS%diag)
     endif ; enddo ; enddo
+
+    ! save to temporary restart
+    do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+    CS%En_restart(i,j,a) = CS%En(i,j,a,1,1)
+    enddo ; enddo ; enddo
 
     ! Output 3-D (i,j,a) energy density for each frequency and mode
     do m=1,CS%NMode ; do fr=1,CS%Nfreq ; if (CS%id_En_ang_mode(fr,m) > 0) then
@@ -2258,43 +2271,66 @@ subroutine PPM_limit_pos(h_in, h_L, h_R, h_min, G, iis, iie, jis, jie)
   enddo ; enddo
 end subroutine PPM_limit_pos
 
-! subroutine register_int_tide_restarts(G, param_file, CS, restart_CS)
-!   type(ocean_grid_type), intent(inout) :: G    !< The ocean's grid structure
-!   type(param_file_type), intent(in) :: param_file !< A structure to parse for run-time parameters
-!   type(int_tide_CS),     intent(in)    :: CS   !< Internal tide control structure
-!   type(MOM_restart_CS),  intent(inout) :: restart_CS !< MOM restart control structure
+subroutine register_int_tide_restarts(G, US, param_file, CS, restart_CS)
+  type(ocean_grid_type), intent(in) :: G          !< The ocean's grid structure
+  type(unit_scale_type), intent(in) :: US         !< A dimensional unit scaling type
+  type(param_file_type), intent(in) :: param_file !< A structure to parse for run-time parameters
+  type(int_tide_CS),     pointer    :: CS         !< Internal tide control structure
+  type(MOM_restart_CS),  pointer    :: restart_CS !< MOM restart control structure
 
-!   ! This subroutine is not currently in use!!
+  ! This subroutine is used to allocate and register any fields in this module
+  ! that should be written to or read from the restart file.
+  logical :: use_int_tides
+  integer :: num_freq, num_angle , num_mode, period_1
+  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB, i, j, a, fr
+  character(64) :: var_name, cfr
 
-!   ! This subroutine is used to allocate and register any fields in this module
-!   ! that should be written to or read from the restart file.
-!   logical :: use_int_tides
-!   integer :: num_freq, num_angle , num_mode, period_1
-!   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB, a
-!   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
-!   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
+  type(axis_info) :: axes_inttides(1)
+  real, dimension(24) :: angles
 
-!   if (associated(CS)) then
-!     call MOM_error(WARNING, "register_int_tide_restarts called "//&
-!                              "with an associated control structure.")
-!     return
-!   endif
+  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
 
-!   use_int_tides = .false.
-!   call read_param(param_file, "INTERNAL_TIDES", use_int_tides)
-!   if (.not.use_int_tides) return
+  if (associated(CS)) then
+    call MOM_error(WARNING, "register_int_tide_restarts called "//&
+                             "with an associated control structure.")
+    return
+  endif
 
-!   allocate(CS)
+  allocate(CS)
 
-!   num_angle = 24
-!   call read_param(param_file, "INTERNAL_TIDE_ANGLES", num_angle)
-!   allocate(CS%En_restart(isd:ied, jsd:jed, num_angle), source=0.0)
+  ! write extra axes
+  call get_param(param_file, "MOM", "INTERNAL_TIDE_ANGLES", num_angle, default=24)
+  call get_param(param_file, "MOM", "INTERNAL_TIDE_FREQS", num_freq, default=1)
+  call get_param(param_file, "MOM", "INTERNAL_TIDE_MODES", num_mode, default=1)
 
-!   call register_restart_field(CS%En_restart, "En_restart", .false., restart_CS, &
-!            longname="The internal wave energy density as a function of (i,j,angle,frequency,mode)", &
-!            units="J m-2", conversion=US%RZ3_T3_to_W_m2*US%T_to_s, z_grid='1')
+  do a=1,num_angle
+    angles(a)= a
+  enddo
 
-! end subroutine register_int_tide_restarts
+  call set_axis_info(axes_inttides(1), "angle", "", "angle direction", 24, angles, "N", 1)
+  ! repeat for frequency and vertical modes
+
+  allocate(CS%En_restart(isd:ied, jsd:jed, num_angle), source=0.0)
+  allocate(CS%En(isd:ied, jsd:jed, num_angle, num_freq, num_mode), source=0.0)
+
+  ! temporary 3d restart
+  call register_restart_field(CS%En_restart(:,:,:), "IW_energy", .false., restart_CS, &
+                              longname="The internal wave energy density as a function of (i,j,angle,freq,mode)", &
+                              units="J m-2", conversion=US%RZ3_T3_to_W_m2*US%T_to_s, z_grid='1', t_grid="s", &
+                              extra_axes=axes_inttides)
+  ! full 5d restart
+  !call register_restart_field(CS%En(:,:,:,:,:), "IW_energy", .false., restart_CS, &
+  !                            longname="The internal wave energy density as a function of (i,j,angle,freq,mode)", &
+  !                            units="J m-2", conversion=US%RZ3_T3_to_W_m2*US%T_to_s, z_grid='1', t_grid="s", &
+  !                            extra_axes=axes_inttides)
+  !call restart_registry_lock(restart_CS, unlocked=.false.)
+
+  ! read the restart data back in at init
+  do a=1,num_angle ; do j=jsd,jed ; do i=isd,ied
+    CS%En(i,j,a,1,1) = CS%En_restart(i,j,a)
+  enddo ; enddo ; enddo
+
+end subroutine register_int_tide_restarts
 
 !> This subroutine initializes the internal tides module.
 subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
@@ -2306,7 +2342,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
                                                    !! parameters.
   type(diag_ctrl), target,   intent(in)    :: diag !< A structure that is used to regulate
                                                    !! diagnostic output.
-  type(int_tide_CS),         intent(inout) :: CS   !< Internal tide control structure
+  type(int_tide_CS),         pointer :: CS         !< Internal tide control structure
 
   ! Local variables
   real                              :: Angle_size ! size of wedges [rad]
@@ -2340,6 +2376,8 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   nz = GV%ke
 
+  CS%initialized = .true.
+
   use_int_tides = .false.
   call read_param(param_file, "INTERNAL_TIDES", use_int_tides)
   CS%do_int_tides = use_int_tides
@@ -2357,9 +2395,6 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call read_param(param_file, "INTERNAL_TIDE_MODES", num_mode)
   if (.not.((num_freq > 0) .and. (num_angle > 0) .and. (num_mode > 0))) return
   CS%nFreq = num_freq ; CS%nAngle = num_angle ; CS%nMode = num_mode
-
-  ! Allocate energy density array
-  allocate(CS%En(isd:ied, jsd:jed, num_angle, num_freq, num_mode), source=0.0)
 
   ! Allocate phase speed array
   allocate(CS%cp(isd:ied, jsd:jed, num_freq, num_mode), source=0.0)
