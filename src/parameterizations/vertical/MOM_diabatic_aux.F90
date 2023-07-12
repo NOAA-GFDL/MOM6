@@ -1192,9 +1192,9 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   !$OMP                                  H_limit_fluxes,numberOfGroundings,iGround,jGround,&
   !$OMP                                  nonPenSW,hGrounding,CS,Idt,aggregate_FW_forcing,  &
   !$OMP                                  minimum_forcing_depth,evap_CFL_limit,dt,EOSdom,   &
-  !$OMP                                  calculate_buoyancy,netPen_rate,SkinBuoyFlux,GoRho, &
+  !$OMP                                  calculate_buoyancy,netPen_rate,SkinBuoyFlux,GoRho,&
   !$OMP                                  calculate_energetics,dSV_dT,dSV_dS,cTKE,g_Hconv2, &
-  !$OMP                                  EnthalpyConst,MLD)                  &
+  !$OMP                                  EnthalpyConst,MLD)                                &
   !$OMP                          private(opacityBand,h2d,T2d,netMassInOut,netMassOut,      &
   !$OMP                                  netHeat,netSalt,Pen_SW_bnd,fractionOfForcing,     &
   !$OMP                                  IforcingDepthScale,                               &
@@ -1202,7 +1202,9 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   !$OMP                                  netMassIn,pres,d_pres,p_lay,dSV_dT_2d,            &
   !$OMP                                  netmassinout_rate,netheat_rate,netsalt_rate,      &
   !$OMP                                  drhodt,drhods,pen_sw_bnd_rate,                    &
-  !$OMP                                  pen_TKE_2d,Temp_in,Salin_in,RivermixConst)        &
+  !$OMP                                  pen_TKE_2d,Temp_in,Salin_in,RivermixConst,        &
+  !$OMP                                  mixing_depth,A_brine,fraction_left_brine,         &
+  !$OMP                                  plume_flux,plume_fraction,dK)                     &
   !$OMP                     firstprivate(SurfPressure)
   do j=js,je
   ! Work in vertical slices for efficiency
