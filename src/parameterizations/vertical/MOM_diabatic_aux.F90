@@ -1430,14 +1430,16 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
                 plume_flux = 0.0
               endif
               if (dK(i) <= mixing_depth(i) .and. fraction_left_brine > 0.0) then
-                plume_fraction = min(fraction_left_brine, A_brine(i) * dK(i) ** CS%brine_plume_n * h(i,j,k) * GV%H_to_Z)
+                plume_fraction = min(fraction_left_brine, A_brine(i) * dK(i) ** CS%brine_plume_n &
+                                 * h(i,j,k) * GV%H_to_Z)
               else
                 IforcingDepthScale = 1. / max(GV%H_subroundoff, minimum_forcing_depth - netMassOut(i) )
                 ! plume_fraction = fraction_left_brine, unless h2d is less than IforcingDepthScale.
                 plume_fraction = min(fraction_left_brine, h2d(i,k)*IforcingDepthScale)
               endif
               fraction_left_brine = fraction_left_brine - plume_fraction
-              plume_flux = plume_flux + plume_fraction * (1000.0*US%ppt_to_S * fluxes%salt_left_behind(i,j)) * GV%RZ_to_H
+              plume_flux = plume_flux + plume_fraction * (1000.0*US%ppt_to_S * fluxes%salt_left_behind(i,j)) &
+                               * GV%RZ_to_H
             else
               plume_flux = 0.0
             endif
