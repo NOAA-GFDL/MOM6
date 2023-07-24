@@ -364,6 +364,7 @@ subroutine offline_advection_ale(fluxes, Time_start, time_interval, G, GV, US, C
       ! Remap all variables from the old grid h_new onto the new grid h_post_remap
       call ALE_remap_tracers(CS%ALE_CSp, G, GV, h_new, h_post_remap, CS%tracer_Reg, &
                              CS%debug, dt=CS%dt_offline)
+      if (allocated(CS%tv%SpV_avg)) CS%tv%valid_SpV_halo = -1   ! Record that SpV_avg is no longer valid.
 
       do k=1,nz ; do j=js-1,je+1 ; do i=is-1,ie+1
         h_new(i,j,k) = h_post_remap(i,j,k)
@@ -1069,7 +1070,7 @@ subroutine update_offline_fields(CS, G, GV, US, h, fluxes, do_ale)
     call pass_var(h, G%Domain)
     call pass_var(CS%tv%T, G%Domain)
     call pass_var(CS%tv%S, G%Domain)
-    call ALE_offline_inputs(CS%ALE_CSp, G, GV, h, CS%tv, CS%tracer_Reg, CS%uhtr, CS%vhtr, CS%Kd, &
+    call ALE_offline_inputs(CS%ALE_CSp, G, GV, US, h, CS%tv, CS%tracer_Reg, CS%uhtr, CS%vhtr, CS%Kd, &
                             CS%debug, CS%OBC)
     if (CS%id_temp_regrid>0) call post_data(CS%id_temp_regrid, CS%tv%T, CS%diag)
     if (CS%id_salt_regrid>0) call post_data(CS%id_salt_regrid, CS%tv%S, CS%diag)
