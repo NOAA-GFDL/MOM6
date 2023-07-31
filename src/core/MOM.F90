@@ -162,7 +162,7 @@ use MOM_offline_main,          only : offline_fw_fluxes_into_ocean, offline_fw_f
 use MOM_offline_main,          only : offline_advection_layer, offline_transport_end
 use MOM_ice_shelf,             only : ice_shelf_CS, ice_shelf_query, initialize_ice_shelf
 use MOM_particles_mod,         only : particles, particles_init, particles_run, particles_save_restart, particles_end
-
+use MOM_particles_mod,         only : particles_to_k_space, particles_to_z_space
 implicit none ; private
 
 #include <MOM_memory.h>
@@ -435,13 +435,16 @@ type, public :: MOM_control_struct ; private
   type(porous_barrier_type) :: pbv !< porous barrier fractional cell metrics
   type(particles), pointer :: particles => NULL() !<Lagrangian particles
   type(stochastic_CS), pointer :: stoch_CS => NULL() !< a pointer to the stochastics control structure
+  type(MOM_restart_CS), pointer :: restart_CS => NULL()
+    !< Pointer to MOM's restart control structure
 end type MOM_control_struct
 
 public initialize_MOM, finish_MOM_initialization, MOM_end
-public step_MOM, step_offline, save_MOM6_internal_state
+public step_MOM, step_offline
 public extract_surface_state, get_ocean_stocks
 public get_MOM_state_elements, MOM_state_is_synchronized
 public allocate_surface_state, deallocate_surface_state
+public save_MOM_restart
 
 !>@{ CPU time clock IDs
 integer :: id_clock_ocean
@@ -1090,7 +1093,7 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
   call cpu_clock_end(id_clock_stoch)
   call cpu_clock_begin(id_clock_varT)
   if (CS%use_stochastic_EOS) then
-    call MOM_calc_varT(G, GV, h, CS%tv, CS%stoch_eos_CS, dt)
+    call MOM_calc_varT(G, GV, US, h, CS%tv, CS%stoch_eos_CS, dt)
     if (associated(CS%tv%varT)) call pass_var(CS%tv%varT, G%Domain, clock=id_clock_pass, halo=1)
   endif
   call cpu_clock_end(id_clock_varT)
@@ -1541,6 +1544,10 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
 
       call preAle_tracer_diagnostics(CS%tracer_Reg, G, GV)
 
+      if (CS%use_particles) then
+        call particles_to_z_space(CS%particles, h)
+      endif
+
       if (CS%debug) then
         call MOM_state_chksum("Pre-ALE ", u, v, h, CS%uh, CS%vh, G, GV, US, omit_corners=.true.)
         call hchksum(tv%T,"Pre-ALE T", G%HI, haloshift=1, omit_corners=.true., scale=US%C_to_degC)
@@ -1587,6 +1594,11 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
       if (showCallTree) call callTree_waypoint("finished ALE_regrid (step_MOM_thermo)")
       call cpu_clock_end(id_clock_ALE)
     endif   ! endif for the block "if ( CS%use_ALE_algorithm )"
+
+
+    if (CS%use_particles) then
+      call particles_to_k_space(CS%particles, h)
+    endif
 
     dynamics_stencil = min(3, G%Domain%nihalo, G%Domain%njhalo)
     call create_group_pass(pass_uv_T_S_h, u, v, G%Domain, halo=dynamics_stencil)
@@ -1894,7 +1906,7 @@ end subroutine step_offline
 
 !> Initialize MOM, including memory allocation, setting up parameters and diagnostics,
 !! initializing the ocean state variables, and initializing subsidiary modules
-subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
+subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                           Time_in, offline_tracer_mode, input_restart_file, diag_ptr, &
                           count_calls, tracer_flow_CSp,  ice_shelf_CSp, waves_CSp)
   type(time_type), target,   intent(inout) :: Time        !< model time, set in this routine
@@ -1902,9 +1914,6 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
   type(param_file_type),     intent(out)   :: param_file  !< structure indicating parameter file to parse
   type(directories),         intent(out)   :: dirs        !< structure with directory paths
   type(MOM_control_struct),  intent(inout), target :: CS  !< pointer set in this routine to MOM control structure
-  type(MOM_restart_CS),      pointer       :: restart_CSp !< pointer set in this routine to the
-                                                          !! restart control structure that will
-                                                          !! be used for MOM.
   type(time_type), optional, intent(in)    :: Time_in     !< time passed to MOM_initialize_state when
                                                           !! model is not being started from a restart file
   logical,         optional, intent(out)   :: offline_tracer_mode !< True is returned if tracers are being run offline
@@ -1930,6 +1939,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
   type(dyn_horgrid_type), pointer :: dG_in => NULL()
   type(diag_ctrl),        pointer :: diag => NULL()
   type(unit_scale_type),  pointer :: US => NULL()
+  type(MOM_restart_CS),   pointer :: restart_CSp => NULL()
   character(len=4), parameter :: vers_num = 'v2.0'
   integer :: turns   ! Number of grid quarter-turns
 
@@ -1948,7 +1958,6 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
   type(sponge_CS), pointer :: sponge_in_CSp => NULL()
   type(ALE_sponge_CS), pointer :: ALE_sponge_in_CSp => NULL()
   type(oda_incupd_CS),pointer :: oda_incupd_in_CSp => NULL()
-
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
 
@@ -2656,7 +2665,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
 
   ! Set the fields that are needed for bitwise identical restarting
   ! the time stepping scheme.
-  call restart_init(param_file, restart_CSp)
+  call restart_init(param_file, CS%restart_CS)
+  restart_CSp => CS%restart_CS
+
   call set_restart_fields(GV, US, param_file, CS, restart_CSp)
   if (CS%split) then
     call register_restarts_dyn_split_RK2(HI, GV, US, param_file, &
@@ -3013,7 +3024,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
 
   new_sim = is_new_run(restart_CSp)
   if (use_temperature) then
-    CS%use_stochastic_EOS = MOM_stoch_eos_init(Time, G, US, param_file, diag, CS%stoch_eos_CS, restart_CSp)
+    CS%use_stochastic_EOS = MOM_stoch_eos_init(Time, G, GV, US, param_file, diag, CS%stoch_eos_CS, restart_CSp)
   else
     CS%use_stochastic_EOS = .false.
   endif
@@ -3115,26 +3126,6 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
     call ALE_register_diags(Time, G, GV, US, diag, CS%ALE_CSp)
   endif
 
-  ! This subroutine initializes any tracer packages.
-  call tracer_flow_control_init(.not.new_sim, Time, G, GV, US, CS%h, param_file, &
-             CS%diag, CS%OBC, CS%tracer_flow_CSp, CS%sponge_CSp, &
-             CS%ALE_sponge_CSp, CS%tv)
-  if (present(tracer_flow_CSp)) tracer_flow_CSp => CS%tracer_flow_CSp
-
-  ! If running in offline tracer mode, initialize the necessary control structure and
-  ! parameters
-  if (present(offline_tracer_mode)) offline_tracer_mode=CS%offline_tracer_mode
-
-  if (CS%offline_tracer_mode) then
-    ! Setup some initial parameterizations and also assign some of the subtypes
-    call offline_transport_init(param_file, CS%offline_CSp, CS%diabatic_CSp, G, GV, US)
-    call insert_offline_main( CS=CS%offline_CSp, ALE_CSp=CS%ALE_CSp, diabatic_CSp=CS%diabatic_CSp, &
-                              diag=CS%diag, OBC=CS%OBC, tracer_adv_CSp=CS%tracer_adv_CSp, &
-                              tracer_flow_CSp=CS%tracer_flow_CSp, tracer_Reg=CS%tracer_Reg, &
-                              tv=CS%tv, x_before_y=(MODULO(first_direction,2)==0), debug=CS%debug )
-    call register_diags_offline_transport(Time, CS%diag, CS%offline_CSp, GV, US)
-  endif
-
   !--- set up group pass for u,v,T,S and h. pass_uv_T_S_h also is used in step_MOM
   call cpu_clock_begin(id_clock_pass_init)
   dynamics_stencil = min(3, G%Domain%nihalo, G%Domain%njhalo)
@@ -3159,6 +3150,26 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
     call pass_var(CS%visc%Kv_slow, G%Domain, To_All+Omit_Corners, halo=1)
 
   call cpu_clock_end(id_clock_pass_init)
+
+  ! This subroutine initializes any tracer packages.
+  call tracer_flow_control_init(.not.new_sim, Time, G, GV, US, CS%h, param_file, &
+             CS%diag, CS%OBC, CS%tracer_flow_CSp, CS%sponge_CSp, &
+             CS%ALE_sponge_CSp, CS%tv)
+  if (present(tracer_flow_CSp)) tracer_flow_CSp => CS%tracer_flow_CSp
+
+  ! If running in offline tracer mode, initialize the necessary control structure and
+  ! parameters
+  if (present(offline_tracer_mode)) offline_tracer_mode=CS%offline_tracer_mode
+
+  if (CS%offline_tracer_mode) then
+    ! Setup some initial parameterizations and also assign some of the subtypes
+    call offline_transport_init(param_file, CS%offline_CSp, CS%diabatic_CSp, G, GV, US)
+    call insert_offline_main( CS=CS%offline_CSp, ALE_CSp=CS%ALE_CSp, diabatic_CSp=CS%diabatic_CSp, &
+                              diag=CS%diag, OBC=CS%OBC, tracer_adv_CSp=CS%tracer_adv_CSp, &
+                              tracer_flow_CSp=CS%tracer_flow_CSp, tracer_Reg=CS%tracer_Reg, &
+                              tv=CS%tv, x_before_y=(MODULO(first_direction,2)==0), debug=CS%debug )
+    call register_diags_offline_transport(Time, CS%diag, CS%offline_CSp, GV, US)
+  endif
 
   call register_obsolete_diagnostics(param_file, CS%diag)
 
@@ -3210,13 +3221,11 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
 end subroutine initialize_MOM
 
 !> Finishes initializing MOM and writes out the initial conditions.
-subroutine finish_MOM_initialization(Time, dirs, CS, restart_CSp)
+subroutine finish_MOM_initialization(Time, dirs, CS)
   type(time_type),          intent(in)    :: Time        !< model time, used in this routine
   type(directories),        intent(in)    :: dirs        !< structure with directory paths
   type(MOM_control_struct), intent(inout) :: CS          !< MOM control structure
-  type(MOM_restart_CS),     pointer       :: restart_CSp !< pointer to the restart control
-                                                         !! structure that will be used for MOM.
-  ! Local variables
+
   type(ocean_grid_type),   pointer :: G => NULL()  ! pointer to a structure containing
                                                    ! metrics and related information
   type(verticalGrid_type), pointer :: GV => NULL() ! Pointer to the vertical grid structure
@@ -3232,13 +3241,13 @@ subroutine finish_MOM_initialization(Time, dirs, CS, restart_CSp)
   G => CS%G ; GV => CS%GV ; US => CS%US
 
   if (CS%use_particles) then
-    call particles_init(CS%particles, G, CS%Time, CS%dt_therm, CS%u, CS%v)
+    call particles_init(CS%particles, G, CS%Time, CS%dt_therm, CS%u, CS%v, CS%h)
   endif
 
   ! Write initial conditions
   if (CS%write_IC) then
     allocate(restart_CSp_tmp)
-    restart_CSp_tmp = restart_CSp
+    restart_CSP_tmp = CS%restart_CS
     call restart_registry_lock(restart_CSp_tmp, unlocked=.true.)
     allocate(z_interface(SZI_(G),SZJ_(G),SZK_(GV)+1))
     call find_eta(CS%h, CS%tv, G, GV, US, z_interface, dZref=G%Z_ref)
@@ -3917,27 +3926,35 @@ subroutine get_ocean_stocks(CS, mass, heat, salt, on_PE_only)
 end subroutine get_ocean_stocks
 
 
-!> Trigger a writing of restarts for the MOM6 internal state
-!!
-!! Currently this applies to the state that does not take the form
-!! of simple arrays for which the generic save_restart() function
-!! can be used.
-!!
-!! Todo:
-!! [ ] update particles to use Time and directories
-!! [ ] move the call to generic save_restart() in here.
-subroutine save_MOM6_internal_state(CS, dirs, time, stamp_time)
-  type(MOM_control_struct), intent(inout) :: CS         !< MOM control structure
-  character(len=*),         intent(in)    :: dirs  !< The directory where the restart
-                                                        !! files are to be written
-  type(time_type),          intent(in)    :: time       !< The current model time
-  logical,       optional,  intent(in)    :: stamp_time !< If present and true, add time-stamp
+!> Save restart/pickup files required to initialize the MOM6 internal state.
+subroutine save_MOM_restart(CS, directory, time, G, time_stamped, filename, &
+    GV, num_rest_files, write_IC)
+  type(MOM_control_struct), intent(inout) :: CS
+    !< MOM control structure
+  character(len=*), intent(in) :: directory
+    !< The directory where the restart files are to be written
+  type(time_type), intent(in) :: time
+    !< The current model time
+  type(ocean_grid_type), intent(inout) :: G
+    !< The ocean's grid structure
+  logical, optional, intent(in) :: time_stamped
+    !< If present and true, add time-stamp to the restart file names
+  character(len=*), optional, intent(in) :: filename
+    !< A filename that overrides the name in CS%restartfile
+  type(verticalGrid_type), optional, intent(in) :: GV
+    !< The ocean's vertical grid structure
+  integer, optional, intent(out) :: num_rest_files
+    !< number of restart files written
+  logical, optional, intent(in) :: write_IC
+    !< If present and true, initial conditions are being written
 
-    ! Could call save_restart(CS%restart_CSp) here
+  call save_restart(directory, time, G, CS%restart_CS, &
+      time_stamped=time_stamped, filename=filename, GV=GV, &
+      num_rest_files=num_rest_files, write_IC=write_IC)
 
-    if (CS%use_particles) call particles_save_restart(CS%particles)
-
-end subroutine save_MOM6_internal_state
+  ! TODO: Update particles to use Time and directories
+  if (CS%use_particles) call particles_save_restart(CS%particles, CS%h)
+end subroutine save_MOM_restart
 
 
 !> End of ocean model, including memory deallocation
@@ -3978,7 +3995,7 @@ subroutine MOM_end(CS)
   endif
 
   if (CS%use_particles) then
-    call particles_end(CS%particles)
+    call particles_end(CS%particles, CS%h)
     deallocate(CS%particles)
   endif
 
