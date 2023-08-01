@@ -4,13 +4,14 @@ module MOM_interface_heights
 ! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_density_integrals, only : int_specific_vol_dp, avg_specific_vol
+use MOM_debugging,     only : hchksum
 use MOM_error_handler, only : MOM_error, FATAL
-use MOM_EOS, only : calculate_density, EOS_type, EOS_domain
-use MOM_file_parser, only : log_version
-use MOM_grid, only : ocean_grid_type
-use MOM_unit_scaling, only : unit_scale_type
-use MOM_variables, only : thermo_var_ptrs
-use MOM_verticalGrid, only : verticalGrid_type
+use MOM_EOS,           only : calculate_density, average_specific_vol, EOS_type, EOS_domain
+use MOM_file_parser,   only : log_version
+use MOM_grid,          only : ocean_grid_type
+use MOM_unit_scaling,  only : unit_scale_type
+use MOM_variables,     only : thermo_var_ptrs
+use MOM_verticalGrid,  only : verticalGrid_type
 
 implicit none ; private
 
@@ -18,6 +19,7 @@ implicit none ; private
 
 public find_eta, dz_to_thickness, thickness_to_dz, dz_to_thickness_simple
 public calc_derived_thermo
+public find_rho_bottom
 
 !> Calculates the heights of the free surface or all interfaces from layer thicknesses.
 interface find_eta
@@ -262,7 +264,7 @@ end subroutine find_eta_2d
 
 
 !> Calculate derived thermodynamic quantities for re-use later.
-subroutine calc_derived_thermo(tv, h, G, GV, US, halo)
+subroutine calc_derived_thermo(tv, h, G, GV, US, halo, debug)
   type(ocean_grid_type),   intent(in)    :: G  !< The ocean's grid structure
   type(verticalGrid_type), intent(in)    :: GV !< The ocean's vertical grid structure
   type(unit_scale_type),   intent(in)    :: US !< A dimensional unit scaling type
@@ -271,13 +273,16 @@ subroutine calc_derived_thermo(tv, h, G, GV, US, halo)
                                                !! which will be set here.
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                            intent(in)    :: h  !< Layer thicknesses [H ~> m or kg m-2].
-  integer,         optional, intent(in)  :: halo !< Width of halo within which to
+  integer,       optional, intent(in)    :: halo !< Width of halo within which to
                                                !! calculate thicknesses
+  logical,       optional, intent(in)    :: debug !< If present and true, write debugging checksums
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: p_t  ! Hydrostatic pressure atop a layer [R L2 T-2 ~> Pa]
   real, dimension(SZI_(G),SZJ_(G)) :: dp   ! Pressure change across a layer [R L2 T-2 ~> Pa]
+  logical :: do_debug  ! If true, write checksums for debugging.
   integer :: i, j, k, is, ie, js, je, halos, nz
 
+  do_debug = .false. ; if (present(debug)) do_debug = debug
   halos = 0 ; if (present(halo)) halos = max(0,halo)
   is = G%isc-halos ; ie = G%iec+halos ; js = G%jsc-halos ; je = G%jec+halos ; nz = GV%ke
 
@@ -296,9 +301,149 @@ subroutine calc_derived_thermo(tv, h, G, GV, US, halo)
         p_t(i,j) = p_t(i,j) + dp(i,j)
       enddo ; enddo ; endif
     enddo
+    tv%valid_SpV_halo = halos
+
+    if (do_debug) then
+      call hchksum(h, "derived_thermo h", G%HI, haloshift=halos, scale=GV%H_to_MKS)
+      if (associated(tv%p_surf)) call hchksum(tv%p_surf, "derived_thermo p_surf", G%HI, &
+                                              haloshift=halos, scale=US%RL2_T2_to_Pa)
+      call hchksum(tv%T, "derived_thermo T", G%HI, haloshift=halos, scale=US%C_to_degC)
+      call hchksum(tv%S, "derived_thermo S", G%HI, haloshift=halos, scale=US%S_to_ppt)
+    endif
   endif
 
 end subroutine calc_derived_thermo
+
+
+!> Determine the in situ density averaged over a specified distance from the bottom,
+!! calculating it as the inverse of the mass-weighted average specific volume.
+subroutine find_rho_bottom(h, dz, pres_int, dz_avg, tv, j, G, GV, US, Rho_bot)
+  type(ocean_grid_type),    intent(in)  :: G    !< The ocean's grid structure
+  type(verticalGrid_type),  intent(in)  :: GV   !< The ocean's vertical grid structure
+  type(unit_scale_type),    intent(in)  :: US   !< A dimensional unit scaling type
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                            intent(in)  :: h    !< Layer thicknesses [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZK_(GV)), &
+                            intent(in)  :: dz   !< Height change across layers [Z ~> m]
+  real, dimension(SZI_(G),SZK_(GV)+1), &
+                            intent(in)  :: pres_int !< Pressure at each interface [R L2 T-2 ~> Pa]
+  real, dimension(SZI_(G)), intent(in)  :: dz_avg !< The vertical distance over which to average [Z ~> m]
+  type(thermo_var_ptrs),    intent(in)  :: tv   !< Structure containing pointers to any available
+                                                !! thermodynamic fields.
+  integer,                  intent(in)  :: j    !< j-index of row to work on
+  real, dimension(SZI_(G)), intent(out) :: Rho_bot  !< Near-bottom density [R ~> kg m-3].
+
+  ! Local variables
+  real :: hb(SZI_(G))         ! Running sum of the thickness in the bottom boundary layer [H ~> m or kg m-2]
+  real :: SpV_h_bot(SZI_(G))  ! Running sum of the specific volume times thickness in the bottom
+                              ! boundary layer [R-1 H ~> m4 kg-1 or m]
+  real :: dz_bbl_rem(SZI_(G)) ! Vertical extent of the boundary layer that has yet to be accounted
+                              ! for [Z ~> m]
+  real :: h_bbl_frac(SZI_(G)) ! Thickness of the fractional layer that makes up the top of the
+                              ! boundary layer [H ~> m or kg m-2]
+  real :: T_bbl(SZI_(G))      ! Temperature of the fractional layer that makes up the top of the
+                              ! boundary layer [C ~> degC]
+  real :: S_bbl(SZI_(G))      ! Salinity of the fractional layer that makes up the top of the
+                              ! boundary layer [S ~> ppt]
+  real :: P_bbl(SZI_(G))      ! Pressure the top of the boundary layer [R L2 T-2 ~> Pa]
+  real :: dp(SZI_(G))         ! Pressure change across the fractional layer that makes up the top
+                              ! of the boundary layer [R L2 T-2 ~> Pa]
+  real :: SpV_bbl(SZI_(G))    ! In situ specific volume of the fractional layer that makes up the
+                              ! top of the boundary layer [R-1 ~> m3 kg-1]
+  real :: frac_in             ! The fraction of a layer that is within the bottom boundary layer [nondim]
+  logical :: do_i(SZI_(G)), do_any
+  logical :: use_EOS
+  integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
+  integer :: i, k, is, ie, nz
+
+  is = G%isc ; ie = G%iec ; nz = GV%ke
+
+  use_EOS = associated(tv%T) .and. associated(tv%S) .and. associated(tv%eqn_of_state)
+
+  if (GV%Boussinesq .or. GV%semi_Boussinesq .or. .not.allocated(tv%SpV_avg)) then
+    do i=is,ie
+      rho_bot(i) = GV%Rho0
+    enddo
+  else
+    ! Check that SpV_avg has been set.
+    if (tv%valid_SpV_halo < 0) call MOM_error(FATAL, &
+        "find_rho_bottom called in fully non-Boussinesq mode with invalid values of SpV_avg.")
+
+    ! Set the bottom density to the inverse of the in situ specific volume averaged over the
+    ! specified distance, with care taken to avoid having compressibility lead to an imprint
+    ! of the layer thicknesses on this density.
+    do i=is,ie
+      hb(i) = 0.0 ; SpV_h_bot(i) = 0.0
+      dz_bbl_rem(i) = G%mask2dT(i,j) * max(0.0, dz_avg(i))
+      do_i(i) = .true.
+      if (G%mask2dT(i,j) <= 0.0) then
+        ! Set acceptable values for calling the equation of state over land.
+        T_bbl(i) = 0.0 ; S_bbl(i) = 0.0 ; dp(i) = 0.0 ; P_bbl(i) = 0.0
+        SpV_bbl(i) = 1.0 ! This value is arbitrary, provided it is non-zero.
+        h_bbl_frac(i) = 0.0
+        do_i(i) = .false.
+      endif
+    enddo
+
+    do k=nz,1,-1
+      do_any = .false.
+      do i=is,ie ; if (do_i(i)) then
+        if (dz(i,k) < dz_bbl_rem(i)) then
+          ! This layer is fully within the averaging depth.
+          SpV_h_bot(i) = SpV_h_bot(i) + h(i,j,k) * tv%SpV_avg(i,j,k)
+          dz_bbl_rem(i) = dz_bbl_rem(i) - dz(i,k)
+          hb(i) = hb(i) + h(i,j,k)
+          do_any = .true.
+        else
+          if (dz(i,k) > 0.0) then
+            frac_in = dz_bbl_rem(i) / dz(i,k)
+          else
+            frac_in = 0.0
+          endif
+          if (use_EOS) then
+            ! Store the properties of this layer to determine the average
+            ! specific volume of the portion that is within the BBL.
+            T_bbl(i) = tv%T(i,j,k) ; S_bbl(i) = tv%S(i,j,k)
+            dp(i) = frac_in * (GV%g_Earth*GV%H_to_RZ * h(i,j,k))
+            P_bbl(i) = pres_int(i,K) + (1.0-frac_in) * (GV%g_Earth*GV%H_to_RZ * h(i,j,k))
+          else
+            SpV_bbl(i) = tv%SpV_avg(i,j,k)
+          endif
+          h_bbl_frac(i) = frac_in * h(i,j,k)
+          dz_bbl_rem(i) = 0.0
+          do_i(i) = .false.
+        endif
+      endif ; enddo
+      if (.not.do_any) exit
+    enddo
+    do i=is,ie ; if (do_i(i)) then
+      ! The nominal bottom boundary layer is thicker than the water column, but layer 1 is
+      ! already included in the averages.  These values are set so that the call to find
+      ! the layer-average specific volume will behave sensibly.
+      if (use_EOS) then
+        T_bbl(i) = tv%T(i,j,1) ; S_bbl(i) = tv%S(i,j,1)
+        dp(i) = 0.0
+        P_bbl(i) = pres_int(i,1)
+      else
+        SpV_bbl(i) = tv%SpV_avg(i,j,1)
+      endif
+      h_bbl_frac(i) = 0.0
+    endif ; enddo
+
+    if (use_EOS) then
+      ! Find the average specific volume of the fractional layer atop the BBL.
+      EOSdom(:) = EOS_domain(G%HI)
+      call average_specific_vol(T_bbl, S_bbl, P_bbl, dp, SpV_bbl, tv%eqn_of_state, EOSdom)
+    endif
+
+    do i=is,ie
+      if (hb(i) + h_bbl_frac(i) < GV%H_subroundoff) h_bbl_frac(i) = GV%H_subroundoff
+      rho_bot(i) = G%mask2dT(i,j) * (hb(i) + h_bbl_frac(i)) / (SpV_h_bot(i) + h_bbl_frac(i)*SpV_bbl(i))
+    enddo
+  endif
+
+end subroutine find_rho_bottom
+
 
 !> Converts thickness from geometric height units to thickness units, perhaps via an
 !! inversion of the integral of the density in pressure using variables stored in
@@ -493,12 +638,23 @@ subroutine thickness_to_dz_3d(h, tv, dz, G, GV, US, halo_size)
   integer,       optional, intent(in)    :: halo_size !< Width of halo within which to
                                                !! calculate thicknesses
   ! Local variables
+  character(len=128) :: mesg    ! A string for error messages
   integer :: i, j, k, is, ie, js, je, halo, nz
 
   halo = 0 ; if (present(halo_size)) halo = max(0,halo_size)
   is = G%isc-halo ; ie = G%iec+halo ; js = G%jsc-halo ; je = G%jec+halo ; nz = GV%ke
 
   if ((.not.GV%Boussinesq) .and. allocated(tv%SpV_avg))  then
+    if ((allocated(tv%SpV_avg)) .and. (tv%valid_SpV_halo < halo)) then
+      if (tv%valid_SpV_halo < 0) then
+        mesg = "invalid values of SpV_avg."
+      else
+        write(mesg, '("insufficiently large SpV_avg halos of width ", i2, " but ", i2," is needed.")') &
+                     tv%valid_SpV_halo, halo
+      endif
+      call MOM_error(FATAL, "thickness_to_dz called in fully non-Boussinesq mode with "//trim(mesg))
+    endif
+
     do k=1,nz ; do j=js,je ; do i=is,ie
       dz(i,j,k) = GV%H_to_RZ * h(i,j,k) * tv%SpV_avg(i,j,k)
     enddo ; enddo ; enddo
@@ -529,12 +685,23 @@ subroutine thickness_to_dz_jslice(h, tv, dz, j, G, GV, halo_size)
   integer,       optional, intent(in)    :: halo_size !< Width of halo within which to
                                                !! calculate thicknesses
   ! Local variables
+  character(len=128) :: mesg    ! A string for error messages
   integer :: i, k, is, ie, halo, nz
 
   halo = 0 ; if (present(halo_size)) halo = max(0,halo_size)
   is = G%isc-halo ; ie = G%iec+halo ; nz = GV%ke
 
   if ((.not.GV%Boussinesq) .and. allocated(tv%SpV_avg))  then
+    if ((allocated(tv%SpV_avg)) .and. (tv%valid_SpV_halo < halo)) then
+      if (tv%valid_SpV_halo < 0) then
+        mesg = "invalid values of SpV_avg."
+      else
+        write(mesg, '("insufficiently large SpV_avg halos of width ", i2, " but ", i2," is needed.")') &
+                     tv%valid_SpV_halo, halo
+      endif
+      call MOM_error(FATAL, "thickness_to_dz called in fully non-Boussinesq mode with "//trim(mesg))
+    endif
+
     do k=1,nz ; do i=is,ie
       dz(i,k) = GV%H_to_RZ * h(i,j,k) * tv%SpV_avg(i,j,k)
     enddo ; enddo

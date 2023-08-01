@@ -464,7 +464,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     enddo ; endif ! direct_stress
 
     if (allocated(visc%Ray_u)) then ; do k=1,nz ; do I=Isq,Ieq
-      Ray(I,k) = visc%Ray_u(I,j,k)
+      Ray(I,k) = GV%H_to_Z*visc%Ray_u(I,j,k)
     enddo ; enddo ; endif
 
     ! perform forward elimination on the tridiagonal system
@@ -636,7 +636,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     enddo ; endif ! direct_stress
 
     if (allocated(visc%Ray_v)) then ; do k=1,nz ; do i=is,ie
-      Ray(i,k) = visc%Ray_v(i,J,k)
+      Ray(i,k) = GV%H_to_Z*visc%Ray_v(i,J,k)
     enddo ; enddo ; endif
 
     do i=is,ie ; if (do_i(i)) then
@@ -877,7 +877,7 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
     do I=Isq,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0.0) ; enddo
 
     if (allocated(visc%Ray_u)) then ; do k=1,nz ; do I=Isq,Ieq
-      Ray(I,k) = visc%Ray_u(I,j,k)
+      Ray(I,k) = GV%H_to_Z*visc%Ray_u(I,j,k)
     enddo ; enddo ; endif
 
     do I=Isq,Ieq ; if (do_i(I)) then
@@ -906,7 +906,7 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
     do i=is,ie ; do_i(i) = (G%mask2dCv(i,J) > 0.0) ; enddo
 
     if (allocated(visc%Ray_v)) then ; do k=1,nz ; do i=is,ie
-      Ray(i,k) = visc%Ray_v(i,J,k)
+      Ray(i,k) = GV%H_to_Z*visc%Ray_v(i,J,k)
     enddo ; enddo ; endif
 
     do i=is,ie ; if (do_i(i)) then
@@ -938,7 +938,7 @@ end subroutine vertvisc_remnant
 !> Calculate the coupling coefficients (CS%a_u, CS%a_v, CS%a_u_gl90, CS%a_v_gl90)
 !! and effective layer thicknesses (CS%h_u and CS%h_v) for later use in the
 !! applying the implicit vertical viscosity via vertvisc().
-subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
+subroutine vertvisc_coef(u, v, h, dz, forces, visc, tv, dt, G, GV, US, CS, OBC, VarMix)
   type(ocean_grid_type),   intent(in)    :: G      !< Ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV     !< Ocean vertical grid structure
   type(unit_scale_type),   intent(in)    :: US     !< A dimensional unit scaling type
@@ -948,8 +948,12 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
                            intent(in)    :: v      !< Meridional velocity [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                            intent(in)    :: h      !< Layer thickness [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(in)    :: dz     !< Vertical distance across layers [Z ~> m]
   type(mech_forcing),      intent(in)    :: forces !< A structure with the driving mechanical forces
   type(vertvisc_type),     intent(in)    :: visc   !< Viscosities and bottom drag
+  type(thermo_var_ptrs),   intent(in)    :: tv     !< A structure containing pointers to any available
+                                                   !! thermodynamic fields.
   real,                    intent(in)    :: dt     !< Time increment [T ~> s]
   type(vertvisc_CS),       pointer       :: CS     !< Vertical viscosity control structure
   type(ocean_OBC_type),    pointer       :: OBC    !< Open boundary condition structure
@@ -1066,7 +1070,7 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
     do I=Isq,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0.0) ; enddo
 
     if (CS%bottomdraglaw) then ; do I=Isq,Ieq
-      kv_bbl(I) = visc%Kv_bbl_u(I,j)
+      kv_bbl(I) = GV%H_to_Z*visc%Kv_bbl_u(I,j)
       bbl_thick(I) = visc%bbl_thick_u(I,j) * GV%Z_to_H + h_neglect
       if (do_i(I)) I_Hbbl(I) = 1.0 / bbl_thick(I)
     enddo ; endif
@@ -1259,7 +1263,7 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
     do i=is,ie ; do_i(i) = (G%mask2dCv(i,J) > 0.0) ; enddo
 
     if (CS%bottomdraglaw) then ; do i=is,ie
-      kv_bbl(i) = visc%Kv_bbl_v(i,J)
+      kv_bbl(i) = GV%H_to_Z*visc%Kv_bbl_v(i,J)
       bbl_thick(i) = visc%bbl_thick_v(i,J) * GV%Z_to_H + h_neglect
       if (do_i(i)) I_Hbbl(i) = 1.0 / bbl_thick(i)
     enddo ; endif
@@ -1605,14 +1609,14 @@ subroutine find_coupling_coef(a_cpl, hvel, do_i, h_harm, bbl_thick, kv_bbl, z_i,
     ! layer thicknesses or the surface wind stresses are added later.
     if (work_on_u) then
       do K=2,nz ; do i=is,ie ; if (do_i(i)) then
-        Kv_add(i,K) = 0.5*(visc%Kv_shear(i,j,k) + visc%Kv_shear(i+1,j,k))
+        Kv_add(i,K) = GV%H_to_Z*0.5*(visc%Kv_shear(i,j,k) + visc%Kv_shear(i+1,j,k))
       endif ; enddo ; enddo
       if (do_OBCs) then
         do I=is,ie ; if (do_i(I) .and. (OBC%segnum_u(I,j) /= OBC_NONE)) then
           if (OBC%segment(OBC%segnum_u(I,j))%direction == OBC_DIRECTION_E) then
-            do K=2,nz ; Kv_add(i,K) = visc%Kv_shear(i,j,k) ; enddo
+            do K=2,nz ; Kv_add(i,K) = GV%H_to_Z*visc%Kv_shear(i,j,k) ; enddo
           elseif (OBC%segment(OBC%segnum_u(I,j))%direction == OBC_DIRECTION_W) then
-            do K=2,nz ; Kv_add(i,K) = visc%Kv_shear(i+1,j,k) ; enddo
+            do K=2,nz ; Kv_add(i,K) = GV%H_to_Z*visc%Kv_shear(i+1,j,k) ; enddo
           endif
         endif ; enddo
       endif
@@ -1621,14 +1625,14 @@ subroutine find_coupling_coef(a_cpl, hvel, do_i, h_harm, bbl_thick, kv_bbl, z_i,
       endif ; enddo ; enddo
     else
       do K=2,nz ; do i=is,ie ; if (do_i(i)) then
-        Kv_add(i,K) = 0.5*(visc%Kv_shear(i,j,k) + visc%Kv_shear(i,j+1,k))
+        Kv_add(i,K) = GV%H_to_Z*0.5*(visc%Kv_shear(i,j,k) + visc%Kv_shear(i,j+1,k))
       endif ; enddo ; enddo
       if (do_OBCs) then
         do i=is,ie ; if (do_i(i) .and. (OBC%segnum_v(i,J) /= OBC_NONE)) then
           if (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_N) then
-            do K=2,nz ; Kv_add(i,K) = visc%Kv_shear(i,j,k) ; enddo
+            do K=2,nz ; Kv_add(i,K) = GV%H_to_Z*visc%Kv_shear(i,j,k) ; enddo
           elseif (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_S) then
-            do K=2,nz ; Kv_add(i,K) = visc%Kv_shear(i,j+1,k) ; enddo
+            do K=2,nz ; Kv_add(i,K) = GV%H_to_Z*visc%Kv_shear(i,j+1,k) ; enddo
           endif
         endif ; enddo
       endif
@@ -1644,11 +1648,11 @@ subroutine find_coupling_coef(a_cpl, hvel, do_i, h_harm, bbl_thick, kv_bbl, z_i,
     ! to further modify these viscosities here to take OBCs into account.
     if (work_on_u) then
       do K=2,nz ; do I=Is,Ie ; If (do_i(I)) then
-        Kv_tot(I,K) = Kv_tot(I,K) + (0.5)*(visc%Kv_shear_Bu(I,J-1,k) + visc%Kv_shear_Bu(I,J,k))
+        Kv_tot(I,K) = Kv_tot(I,K) + GV%H_to_Z*(0.5)*(visc%Kv_shear_Bu(I,J-1,k) + visc%Kv_shear_Bu(I,J,k))
       endif ; enddo ; enddo
     else
       do K=2,nz ; do i=is,ie ; if (do_i(i)) then
-        Kv_tot(i,K) = Kv_tot(i,K) + (0.5)*(visc%Kv_shear_Bu(I-1,J,k) + visc%Kv_shear_Bu(I,J,k))
+        Kv_tot(i,K) = Kv_tot(i,K) + GV%H_to_Z*(0.5)*(visc%Kv_shear_Bu(I-1,J,k) + visc%Kv_shear_Bu(I,J,k))
       endif ; enddo ; enddo
     endif
   endif
@@ -1722,10 +1726,10 @@ subroutine find_coupling_coef(a_cpl, hvel, do_i, h_harm, bbl_thick, kv_bbl, z_i,
     ! Set the coefficients to include the no-slip surface stress.
     do i=is,ie ; if (do_i(i)) then
       if (work_on_u) then
-        kv_TBL(i) = visc%Kv_tbl_shelf_u(I,j)
+        kv_TBL(i) = GV%H_to_Z*visc%Kv_tbl_shelf_u(I,j)
         tbl_thick(i) = visc%tbl_thick_shelf_u(I,j) * GV%Z_to_H + h_neglect
       else
-        kv_TBL(i) = visc%Kv_tbl_shelf_v(i,J)
+        kv_TBL(i) = GV%H_to_Z*visc%Kv_tbl_shelf_v(i,J)
         tbl_thick(i) = visc%tbl_thick_shelf_v(i,J) * GV%Z_to_H + h_neglect
       endif
       z_t(i) = 0.0
@@ -2152,6 +2156,7 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_vert_friction" ! This module's name.
   character(len=40)  :: thickness_units
+  real :: Kv_mks ! KVML in MKS
 
   if (associated(CS)) then
     call MOM_error(WARNING, "vertvisc_init called with an associated "// &
@@ -2339,6 +2344,14 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
 
   CS%Kvml_invZ2 = 0.0
   if (GV%nkml < 1) then
+    call get_param(param_file, mdl, "KVML", Kv_mks, &
+                 "The scale for an extra kinematic viscosity in the mixed layer", &
+                 units="m2 s-1", default=-1.0, do_not_log=.true.)
+    if (Kv_mks >= 0.0) then
+      call MOM_error(WARNING, "KVML is a deprecated parameter. Use KV_ML_INVZ2 instead.")
+    else
+      Kv_mks = 0.0
+    endif
     call get_param(param_file, mdl, "KV_ML_INVZ2", CS%Kvml_invZ2, &
                  "An extra kinematic viscosity in a mixed layer of thickness HMIX_FIXED, "//&
                  "with the actual viscosity scaling as 1/(z*HMIX_FIXED)^2, where z is the "//&
@@ -2346,23 +2359,7 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
                  "transmitted through infinitesimally thin surface layers.  This is an "//&
                  "older option for numerical convenience without a strong physical basis, "//&
                  "and its use is now discouraged.", &
-                 units="m2 s-1", default=-1.0, scale=US%m2_s_to_Z2_T, do_not_log=.true.)
-    if (CS%Kvml_invZ2 < 0.0) then
-      call get_param(param_file, mdl, "KVML", CS%Kvml_invZ2, &
-                 "The scale for an extra kinematic viscosity in the mixed layer", &
-                 units="m2 s-1", default=0.0, scale=US%m2_s_to_Z2_T, do_not_log=.true.)
-      if (CS%Kvml_invZ2 >= 0.0) &
-        call MOM_error(WARNING, "KVML is a deprecated parameter. Use KV_ML_INVZ2 instead.")
-    endif
-    if (CS%Kvml_invZ2 < 0.0) CS%Kvml_invZ2 = 0.0
-    call log_param(param_file, mdl, "KV_ML_INVZ2", CS%Kvml_invZ2, &
-                 "An extra kinematic viscosity in a mixed layer of thickness HMIX_FIXED, "//&
-                 "with the actual viscosity scaling as 1/(z*HMIX_FIXED)^2, where z is the "//&
-                 "distance from the surface, to allow for finite wind stresses to be "//&
-                 "transmitted through infinitesimally thin surface layers.  This is an "//&
-                 "older option for numerical convenience without a strong physical basis, "//&
-                 "and its use is now discouraged.", &
-                 units="m2 s-1", default=0.0, unscale=US%Z2_T_to_m2_s)
+                 units="m2 s-1", default=Kv_mks, scale=US%m2_s_to_Z2_T)
   endif
 
   if (.not.CS%bottomdraglaw) then
@@ -2447,7 +2444,7 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
   ALLOC_(CS%h_v(isd:ied,JsdB:JedB,nz))   ; CS%h_v(:,:,:) = 0.0
 
   CS%id_Kv_slow = register_diag_field('ocean_model', 'Kv_slow', diag%axesTi, Time, &
-      'Slow varying vertical viscosity', 'm2 s-1', conversion=US%Z2_T_to_m2_s)
+      'Slow varying vertical viscosity', 'm2 s-1', conversion=GV%HZ_T_to_m2_s)
 
   CS%id_Kv_u = register_diag_field('ocean_model', 'Kv_u', diag%axesCuL, Time, &
       'Total vertical viscosity at u-points', 'm2 s-1', conversion=US%Z2_T_to_m2_s)
