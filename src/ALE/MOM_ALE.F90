@@ -20,7 +20,7 @@ use MOM_error_handler,    only : callTree_enter, callTree_leave, callTree_waypoi
 use MOM_hybgen_unmix,     only : hybgen_unmix, init_hybgen_unmix, end_hybgen_unmix, hybgen_unmix_CS
 use MOM_hybgen_regrid,    only : hybgen_regrid_CS
 use MOM_file_parser,      only : get_param, param_file_type, log_param
-use MOM_interface_heights,only : find_eta
+use MOM_interface_heights,only : find_eta, calc_derived_thermo
 use MOM_open_boundary,    only : ocean_OBC_type, OBC_DIRECTION_E, OBC_DIRECTION_W
 use MOM_open_boundary,    only : OBC_DIRECTION_N, OBC_DIRECTION_S
 use MOM_regridding,       only : initialize_regridding, regridding_main, end_regridding
@@ -233,21 +233,24 @@ subroutine ALE_init( param_file, GV, US, max_depth, CS)
                  default=99991231)
   call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &
                  "This sets the default value for the various _2018_ANSWERS parameters.", &
-                 default=(default_answer_date<20190101))
+                 default=(default_answer_date<20190101), do_not_log=.not.GV%Boussinesq)
   call get_param(param_file, mdl, "REMAPPING_2018_ANSWERS", answers_2018, &
                  "If true, use the order of arithmetic and expressions that recover the "//&
                  "answers from the end of 2018.  Otherwise, use updated and more robust "//&
-                 "forms of the same expressions.", default=default_2018_answers)
+                 "forms of the same expressions.", default=default_2018_answers, do_not_log=.not.GV%Boussinesq)
   ! Revise inconsistent default answer dates for remapping.
-  if (answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
-  if (.not.answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
+  if (GV%Boussinesq) then
+    if (answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
+    if (.not.answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
+  endif
   call get_param(param_file, mdl, "REMAPPING_ANSWER_DATE", CS%answer_date, &
                  "The vintage of the expressions and order of arithmetic to use for remapping.  "//&
                  "Values below 20190101 result in the use of older, less accurate expressions "//&
                  "that were in use at the end of 2018.  Higher values result in the use of more "//&
                  "robust and accurate forms of mathematically equivalent expressions.  "//&
                  "If both REMAPPING_2018_ANSWERS and REMAPPING_ANSWER_DATE are specified, the "//&
-                 "latter takes precedence.", default=default_answer_date)
+                 "latter takes precedence.", default=default_answer_date, do_not_log=.not.GV%Boussinesq)
+  if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
   call initialize_remapping( CS%remapCS, string, &
                              boundary_extrapolation=remap_boundary_extrap, &
@@ -655,6 +658,9 @@ subroutine ALE_regrid_accelerated(CS, G, GV, US, h, tv, n_itt, u, v, OBC, Reg, d
 
     ! generate new grid
     if (CS%do_conv_adj) call convective_adjustment(G, GV, h_loc, tv_local)
+
+    ! Update the layer specific volumes if necessary
+    if (allocated(tv_local%SpV_avg)) call calc_derived_thermo(tv_local, h, G, GV, US, halo=1)
 
     call regridding_main(CS%remapCS, CS%regridCS, G, GV, US, h_loc, tv_local, h, dzInterface)
     dzIntTotal(:,:,:) = dzIntTotal(:,:,:) + dzInterface(:,:,:)

@@ -263,7 +263,7 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
       param_name = create_coord_param(param_prefix, "INTERP_SCHEME", param_suffix)
       string2 = 'PPM_H4' ! Default for diagnostics
     endif
-    call get_param(param_file, mdl, "INTERPOLATION_SCHEME", string, &
+    call get_param(param_file, mdl, param_name, string, &
                  "This sets the interpolation scheme to use to "//&
                  "determine the new grid. These parameters are "//&
                  "only relevant when REGRIDDING_COORDINATE_MODE is "//&
@@ -277,28 +277,32 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
                  default=99991231)
     call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &
                  "This sets the default value for the various _2018_ANSWERS parameters.", &
-                 default=(default_answer_date<20190101))
+                 default=(default_answer_date<20190101), do_not_log=.not.GV%Boussinesq)
     call get_param(param_file, mdl, "REMAPPING_2018_ANSWERS", remap_answers_2018, &
                  "If true, use the order of arithmetic and expressions that recover the "//&
                  "answers from the end of 2018.  Otherwise, use updated and more robust "//&
-                 "forms of the same expressions.", default=default_2018_answers)
+                 "forms of the same expressions.", default=default_2018_answers, do_not_log=.not.GV%Boussinesq)
     ! Revise inconsistent default answer dates for remapping.
-    if (remap_answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
-    if (.not.remap_answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
+    if (GV%Boussinesq) then
+      if (remap_answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
+      if (.not.remap_answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
+    endif
     call get_param(param_file, mdl, "REMAPPING_ANSWER_DATE", remap_answer_date, &
                  "The vintage of the expressions and order of arithmetic to use for remapping.  "//&
                  "Values below 20190101 result in the use of older, less accurate expressions "//&
                  "that were in use at the end of 2018.  Higher values result in the use of more "//&
                  "robust and accurate forms of mathematically equivalent expressions.  "//&
                  "If both REMAPPING_2018_ANSWERS and REMAPPING_ANSWER_DATE are specified, the "//&
-                 "latter takes precedence.", default=default_answer_date)
+                 "latter takes precedence.", default=default_answer_date, do_not_log=.not.GV%Boussinesq)
+    if (.not.GV%Boussinesq) remap_answer_date = max(remap_answer_date, 20230701)
     call set_regrid_params(CS, remap_answer_date=remap_answer_date)
     call get_param(param_file, mdl, "REGRIDDING_ANSWER_DATE", regrid_answer_date, &
                  "The vintage of the expressions and order of arithmetic to use for regridding.  "//&
                  "Values below 20190101 result in the use of older, less accurate expressions "//&
                  "that were in use at the end of 2018.  Higher values result in the use of more "//&
                  "robust and accurate forms of mathematically equivalent expressions.", &
-                 default=20181231) ! ### change to default=default_answer_date)
+                 default=20181231, do_not_log=.not.GV%Boussinesq) ! ### change to default=default_answer_date)
+    if (.not.GV%Boussinesq) regrid_answer_date = max(regrid_answer_date, 20230701)
     call set_regrid_params(CS, regrid_answer_date=regrid_answer_date)
   endif
 
@@ -810,20 +814,47 @@ subroutine regridding_main( remapCS, CS, G, GV, US, h, tv, h_new, dzInterface, &
 
   ! Local variables
   real :: nom_depth_H(SZI_(G),SZJ_(G))  !< The nominal ocean depth at each point in thickness units [H ~> m or kg m-2]
+  real :: tot_h(SZI_(G),SZJ_(G))  !< The total thickness of the water column [H ~> m or kg m-2]
+  real :: tot_dz(SZI_(G),SZJ_(G)) !< The total distance between the top and bottom of the water column [Z ~> m]
   real :: Z_to_H  ! A conversion factor used by some routines to convert coordinate
                   ! parameters to depth units [H Z-1 ~> nondim or kg m-3]
   real :: trickGnuCompiler
-  integer :: i, j
+  character(len=128) :: mesg    ! A string for error messages
+  integer :: i, j, k
 
   if (present(PCM_cell)) PCM_cell(:,:,:) = .false.
 
   Z_to_H = US%Z_to_m * GV%m_to_H  ! Often this is equivalent to GV%Z_to_H.
-  do j=G%jsc-1,G%jec+1 ; do i=G%isc-1,G%iec+1
-    nom_depth_H(i,j) = (G%bathyT(i,j)+G%Z_ref) * Z_to_H
-    ! Consider using the following instead:
-    ! nom_depth_H(i,j) = max( (G%bathyT(i,j)+G%Z_ref) * Z_to_H , CS%min_nom_depth )
-    ! if (G%mask2dT(i,j)==0.) nom_depth_H(i,j) = 0.0
-  enddo ; enddo
+
+  if ((allocated(tv%SpV_avg)) .and. (tv%valid_SpV_halo < 1)) then
+    if (tv%valid_SpV_halo < 0) then
+      mesg = "invalid values of SpV_avg."
+    else
+      mesg = "insufficiently large SpV_avg halos of width 0 but 1 is needed."
+    endif
+    call MOM_error(FATAL, "Regridding_main called in fully non-Boussinesq mode with "//trim(mesg))
+  endif
+
+  if (allocated(tv%SpV_avg)) then  ! This is the fully non-Boussinesq case
+    do j=G%jsc-1,G%jec+1 ; do i=G%isc-1,G%iec+1
+      tot_h(i,j) = 0.0 ; tot_dz(i,j) = 0.0
+    enddo ; enddo
+    do k=1,GV%ke ; do j=G%jsc-1,G%jec+1 ; do i=G%isc-1,G%iec+1
+      tot_h(i,j) = tot_h(i,j) + h(i,j,k)
+      tot_dz(i,j) = tot_dz(i,j) + GV%H_to_RZ * tv%SpV_avg(i,j,k) * h(i,j,k)
+    enddo ; enddo ; enddo
+    do j=G%jsc-1,G%jec+1 ; do i=G%isc-1,G%iec+1
+      if ((tot_dz(i,j) > 0.0) .and. (G%bathyT(i,j)+G%Z_ref > 0.0)) then
+        nom_depth_H(i,j) = (G%bathyT(i,j)+G%Z_ref) * (tot_h(i,j) / tot_dz(i,j))
+      else
+        nom_depth_H(i,j) = 0.0
+      endif
+    enddo ; enddo
+  else
+    do j=G%jsc-1,G%jec+1 ; do i=G%isc-1,G%iec+1
+      nom_depth_H(i,j) = max((G%bathyT(i,j)+G%Z_ref) * Z_to_H, 0.0)
+    enddo ; enddo
+  endif
 
   select case ( CS%regridding_scheme )
 
@@ -1304,12 +1335,12 @@ subroutine build_sigma_grid( CS, G, GV, h, nom_depth_H, dzInterface )
       ! In sigma coordinates, the bathymetric depth is only used as an arbitrary offset that
       ! cancels out when determining coordinate motion, so referencing the column postions to
       ! the surface is perfectly acceptable, but for preservation of previous answers the
-      ! referencing is done relative to the bottom when in Boussinesq mode.
-      ! if (GV%Boussinesq) then
+      ! referencing is done relative to the bottom when in Boussinesq or semi-Boussinesq mode.
+      if (GV%Boussinesq .or. GV%semi_Boussinesq) then
         nominalDepth = nom_depth_H(i,j)
-      ! else
-      !   nominalDepth = totalThickness
-      ! endif
+      else
+        nominalDepth = totalThickness
+      endif
 
       call build_sigma_column(CS%sigma_CS, nominalDepth, totalThickness, zNew)
 
@@ -1432,12 +1463,12 @@ subroutine build_rho_grid( G, GV, US, h, nom_depth_H, tv, dzInterface, remapCS, 
       ! In rho coordinates, the bathymetric depth is only used as an arbitrary offset that
       ! cancels out when determining coordinate motion, so referencing the column postions to
       ! the surface is perfectly acceptable, but for preservation of previous answers the
-      ! referencing is done relative to the bottom when in Boussinesq mode.
-      ! if (GV%Boussinesq) then
+      ! referencing is done relative to the bottom when in Boussinesq or semi-Boussinesq mode.
+      if (GV%Boussinesq .or. GV%semi_Boussinesq) then
         nominalDepth = nom_depth_H(i,j)
-      ! else
-      !   nominalDepth = totalThickness
-      ! endif
+      else
+        nominalDepth = totalThickness
+      endif
 
       ! Determine absolute interface positions
       zOld(nz+1) = - nominalDepth

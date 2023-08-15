@@ -135,7 +135,7 @@ type, public :: VarMix_CS
                           !!  F = 1 / (1 + (Res_coef_visc*Ld/dx)^Res_fn_power)
   real :: depth_scaled_khth_h0 !< The depth above which KHTH is linearly scaled away [Z ~> m]
   real :: depth_scaled_khth_exp !< The exponent used in the depth dependent scaling function for KHTH [nondim]
-  real :: kappa_smooth    !< A diffusivity for smoothing T/S in vanished layers [Z2 T-1 ~> m2 s-1]
+  real :: kappa_smooth    !< A diffusivity for smoothing T/S in vanished layers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
   integer :: Res_fn_power_khth !< The power of dx/Ld in the KhTh resolution function.  Any
                                !! positive integer power may be used, but even powers
                                !! and especially 2 are coded to be more efficient.
@@ -1103,7 +1103,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   real :: oneOrTwo ! A variable that may be 1 or 2, depending on which form
                    ! of the equatorial deformation radius us used [nondim]
   real :: N2_filter_depth  ! A depth below which stratification is treated as monotonic when
-                           ! calculating the first-mode wave speed [Z ~> m]
+                           ! calculating the first-mode wave speed [H ~> m or kg m-2]
   real :: KhTr_passivity_coeff ! Coefficient setting the ratio between along-isopycnal tracer
                                ! mixing and interface height mixing [nondim]
   real :: absurdly_small_freq  ! A miniscule frequency that is used to avoid division by 0 [T-1 ~> s-1].  The
@@ -1239,8 +1239,9 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
     in_use = .true.
     call get_param(param_file, mdl, "RESOLN_N2_FILTER_DEPTH", N2_filter_depth, &
                  "The depth below which N2 is monotonized to avoid stratification "//&
-                 "artifacts from altering the equivalent barotropic mode structure.",&
-                 units="m", default=2000., scale=US%m_to_Z)
+                 "artifacts from altering the equivalent barotropic mode structure.  "//&
+                 "This monotonzization is disabled if this parameter is negative.", &
+                 units="m", default=-1.0, scale=GV%m_to_H)
     allocate(CS%ebt_struct(isd:ied,jsd:jed,GV%ke), source=0.0)
   endif
 
@@ -1264,7 +1265,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
     call get_param(param_file, mdl, "KD_SMOOTH", CS%kappa_smooth, &
                  "A diapycnal diffusivity that is used to interpolate "//&
                  "more sensible values of T & S into thin layers.", &
-                 units="m2 s-1", default=1.0e-6, scale=US%m_to_Z**2*US%T_to_s)
+                 units="m2 s-1", default=1.0e-6, scale=GV%m2_s_to_HZ_T)
   endif
 
   if (CS%calculate_Eady_growth_rate) then
@@ -1506,21 +1507,24 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                  default=99991231)
     call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &
                  "This sets the default value for the various _2018_ANSWERS parameters.", &
-                 default=(default_answer_date<20190101))
+                 default=(default_answer_date<20190101), do_not_log=.not.GV%Boussinesq)
     call get_param(param_file, mdl, "REMAPPING_2018_ANSWERS", remap_answers_2018, &
                  "If true, use the order of arithmetic and expressions that recover the "//&
                  "answers from the end of 2018.  Otherwise, use updated and more robust "//&
-                 "forms of the same expressions.", default=default_2018_answers)
+                 "forms of the same expressions.", default=default_2018_answers, do_not_log=.not.GV%Boussinesq)
     ! Revise inconsistent default answer dates for remapping.
-    if (remap_answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
-    if (.not.remap_answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
+    if (GV%Boussinesq) then
+      if (remap_answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
+      if (.not.remap_answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
+    endif
     call get_param(param_file, mdl, "REMAPPING_ANSWER_DATE", remap_answer_date, &
                  "The vintage of the expressions and order of arithmetic to use for remapping.  "//&
                  "Values below 20190101 result in the use of older, less accurate expressions "//&
                  "that were in use at the end of 2018.  Higher values result in the use of more "//&
                  "robust and accurate forms of mathematically equivalent expressions.  "//&
                  "If both REMAPPING_2018_ANSWERS and REMAPPING_ANSWER_DATE are specified, the "//&
-                 "latter takes precedence.", default=default_answer_date)
+                 "latter takes precedence.", default=default_answer_date, do_not_log=.not.GV%Boussinesq)
+  if (.not.GV%Boussinesq) remap_answer_date = max(remap_answer_date, 20230701)
 
     call get_param(param_file, mdl, "INTERNAL_WAVE_SPEED_TOL", wave_speed_tol, &
                  "The fractional tolerance for finding the wave speeds.", &
