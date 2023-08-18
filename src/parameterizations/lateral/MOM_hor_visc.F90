@@ -98,7 +98,7 @@ type, public :: hor_visc_CS ; private
                              !! the answers from the end of 2018, while higher values use updated
                              !! and more robust forms of the same expressions.
   real    :: GME_h0          !< The strength of GME tapers quadratically to zero when the bathymetric
-                             !! depth is shallower than GME_H0 [Z ~> m]
+                             !! total water column thickness is less than GME_H0 [H ~> m or kg m-2]
   real    :: GME_efficiency  !< The nondimensional prefactor multiplying the GME coefficient [nondim]
   real    :: GME_limiter     !< The absolute maximum value the GME coefficient is allowed to take [L2 T-1 ~> m2 s-1].
   real    :: min_grid_Kh     !< Minimum horizontal Laplacian viscosity used to
@@ -284,7 +284,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
     grad_div_mag_h, &     ! Magnitude of divergence gradient at h-points [L-1 T-1 ~> m-1 s-1]
     dudx, dvdy, &    ! components in the horizontal tension [T-1 ~> s-1]
     GME_effic_h, &  ! The filtered efficiency of the GME terms at h points [nondim]
-    htot          ! The total thickness of all layers [Z ~> m]
+    htot          ! The total thickness of all layers [H ~> m or kg m-2]
   real :: Del2vort_h ! Laplacian of vorticity at h-points [L-2 T-1 ~> m-2 s-1]
   real :: grad_vel_mag_bt_h ! Magnitude of the barotropic velocity gradient tensor squared at h-points [T-2 ~> s-2]
   real :: boundary_mask_h ! A mask that zeroes out cells with at least one land edge [nondim]
@@ -353,8 +353,8 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
   real :: hu, hv     ! Thicknesses interpolated by arithmetic means to corner
                      ! points; these are first interpolated to u or v velocity
                      ! points where masks are applied [H ~> m or kg m-2].
-  real :: h_arith_q  ! The arithmetic mean total thickness at q points [Z ~> m]
-  real :: I_GME_h0   ! The inverse of GME tapering scale [Z-1 ~> m-1]
+  real :: h_arith_q  ! The arithmetic mean total thickness at q points [H ~> m or kg m-2]
+  real :: I_GME_h0   ! The inverse of GME tapering scale [H-1 ~> m-1 or m2 kg-1]
   real :: h_neglect  ! thickness so small it can be lost in roundoff and so neglected [H ~> m or kg m-2]
   real :: h_neglect3 ! h_neglect^3 [H3 ~> m3 or kg3 m-6]
   real :: h_min      ! Minimum h at the 4 neighboring velocity points [H ~> m]
@@ -494,7 +494,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       htot(i,j) = 0.0
     enddo ; enddo
     do k=1,nz ; do j=js-2,je+2 ; do i=is-2,ie+2
-      htot(i,j) = htot(i,j) + GV%H_to_Z*h(i,j,k)
+      htot(i,j) = htot(i,j) + h(i,j,k)
     enddo ; enddo ; enddo
 
     I_GME_h0 = 1.0 / CS%GME_h0
@@ -1795,20 +1795,24 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
                  default=99991231)
   call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &
                  "This sets the default value for the various _2018_ANSWERS parameters.", &
-                 default=(default_answer_date<20190101))
+                 default=(default_answer_date<20190101), do_not_log=.not.GV%Boussinesq)
   call get_param(param_file, mdl, "HOR_VISC_2018_ANSWERS", answers_2018, &
                  "If true, use the order of arithmetic and expressions that recover the "//&
                  "answers from the end of 2018.  Otherwise, use updated and more robust "//&
-                 "forms of the same expressions.", default=default_2018_answers)
+                 "forms of the same expressions.", default=default_2018_answers, do_not_log=.not.GV%Boussinesq)
   ! Revise inconsistent default answer dates for horizontal viscosity.
-  if (answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
-  if (.not.answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
+  if (GV%Boussinesq) then
+    if (answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
+    if (.not.answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
+  endif
   call get_param(param_file, mdl, "HOR_VISC_ANSWER_DATE", CS%answer_date, &
                  "The vintage of the order of arithmetic and expressions in the horizontal "//&
                  "viscosity calculations.  Values below 20190101 recover the answers from the "//&
                  "end of 2018, while higher values use updated and more robust forms of the "//&
                  "same expressions.  If both HOR_VISC_2018_ANSWERS and HOR_VISC_ANSWER_DATE are "//&
-                 "specified, the latter takes precedence.", default=default_answer_date)
+                 "specified, the latter takes precedence.", &
+                 default=default_answer_date, do_not_log=.not.GV%Boussinesq)
+  if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
   call get_param(param_file, mdl, "DEBUG", CS%debug, default=.false.)
   call get_param(param_file, mdl, "LAPLACIAN", CS%Laplacian, &
@@ -2042,7 +2046,7 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
     call get_param(param_file, mdl, "GME_H0", CS%GME_h0, &
                    "The strength of GME tapers quadratically to zero when the bathymetric "//&
                    "depth is shallower than GME_H0.", &
-                   units="m", scale=US%m_to_Z, default=1000.0)
+                   units="m", scale=GV%m_to_H, default=1000.0)
     call get_param(param_file, mdl, "GME_EFFICIENCY", CS%GME_efficiency, &
                    "The nondimensional prefactor multiplying the GME coefficient.", &
                    units="nondim", default=1.0)
