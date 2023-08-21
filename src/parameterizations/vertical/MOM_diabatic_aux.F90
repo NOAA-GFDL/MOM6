@@ -71,6 +71,7 @@ type, public :: diabatic_aux_CS ; private
   logical :: do_brine_plume  !< If true, insert salt flux below the surface according to
                              !! a parameterization by \cite Nguyen2009.
   integer :: brine_plume_n   !< The exponent in the brine plume parameterization.
+  real :: plume_strength     !< Fraction of the available brine to take to the bottom of the mixed layer.
 
   type(time_type), pointer :: Time => NULL() !< A pointer to the ocean model's clock.
   type(diag_ctrl), pointer :: diag !< Structure used to regulate timing of diagnostic output
@@ -239,11 +240,11 @@ subroutine differential_diffuse_T_S(h, T, S, Kd_T, Kd_S, tv, dt, G, GV)
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
                            intent(in)    :: Kd_T !< The extra diffusivity of temperature due to
                                                  !! double diffusion relative to the diffusivity of
-                                                 !! diffusivity of density [Z2 T-1 ~> m2 s-1].
+                                                 !! density [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
                            intent(in)    :: Kd_S !< The extra diffusivity of salinity due to
                                                  !! double diffusion relative to the diffusivity of
-                                                 !! diffusivity of density [Z2 T-1 ~> m2 s-1].
+                                                 !! density [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
   type(thermo_var_ptrs),   intent(in)    :: tv   !< Structure containing pointers to any
                                                  !! available thermodynamic fields.
   real,                    intent(in)    :: dt   !<  Time increment [T ~> s].
@@ -272,8 +273,8 @@ subroutine differential_diffuse_T_S(h, T, S, Kd_T, Kd_S, tv, dt, G, GV)
   do j=js,je
     do i=is,ie
       I_h_int = 1.0 / (0.5 * (h(i,j,1) + h(i,j,2)) + h_neglect)
-      mix_T(i,2) = ((dt * Kd_T(i,j,2)) * GV%Z_to_H**2) * I_h_int
-      mix_S(i,2) = ((dt * Kd_S(i,j,2)) * GV%Z_to_H**2) * I_h_int
+      mix_T(i,2) = ((dt * Kd_T(i,j,2)) * GV%Z_to_H) * I_h_int
+      mix_S(i,2) = ((dt * Kd_S(i,j,2)) * GV%Z_to_H) * I_h_int
 
       h_tr = h(i,j,1) + h_neglect
       b1_T(i) = 1.0 / (h_tr + mix_T(i,2))
@@ -286,8 +287,8 @@ subroutine differential_diffuse_T_S(h, T, S, Kd_T, Kd_S, tv, dt, G, GV)
     do k=2,nz-1 ; do i=is,ie
       ! Calculate the mixing across the interface below this layer.
       I_h_int = 1.0 / (0.5 * (h(i,j,k) + h(i,j,k+1)) + h_neglect)
-      mix_T(i,K+1) = ((dt * Kd_T(i,j,K+1)) * GV%Z_to_H**2) * I_h_int
-      mix_S(i,K+1) = ((dt * Kd_S(i,j,K+1)) * GV%Z_to_H**2) * I_h_int
+      mix_T(i,K+1) = ((dt * Kd_T(i,j,K+1)) * GV%Z_to_H) * I_h_int
+      mix_S(i,K+1) = ((dt * Kd_S(i,j,K+1)) * GV%Z_to_H) * I_h_int
 
       c1_T(i,k) = mix_T(i,K) * b1_T(i)
       c1_S(i,k) = mix_S(i,K) * b1_S(i)
@@ -1207,8 +1208,8 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   !$OMP                                  drhodt,drhods,pen_sw_bnd_rate,                    &
   !$OMP                                  pen_TKE_2d,Temp_in,Salin_in,RivermixConst,        &
   !$OMP                                  mixing_depth,A_brine,fraction_left_brine,         &
-  !$OMP                                  plume_flux,plume_fraction,dK)                     &
-  !$OMP                     firstprivate(SurfPressure)
+  !$OMP                                  plume_fraction,dK)                     &
+  !$OMP                     firstprivate(SurfPressure,plume_flux)
   do j=js,je
   ! Work in vertical slices for efficiency
 
@@ -1425,7 +1426,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
               ! Place forcing into this layer by depth for brine plume parameterization.
               if (k == 1) then
                 dK(i) = 0.5 * h(i,j,k) * GV%H_to_Z          ! Depth of center of layer K
-                plume_flux = - (1000.0*US%ppt_to_S * fluxes%salt_left_behind(i,j)) * GV%RZ_to_H
+                plume_flux = - (1000.0*US%ppt_to_S * (CS%plume_strength * fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
                 plume_fraction = 1.0
               else
                 dK(i) = dK(i) + 0.5 * ( h(i,j,k) + h(i,j,k-1) ) * GV%H_to_Z ! Depth of center of layer K
@@ -1440,8 +1441,8 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
                 plume_fraction = min(fraction_left_brine, h2d(i,k)*IforcingDepthScale)
               endif
               fraction_left_brine = fraction_left_brine - plume_fraction
-              plume_flux = plume_flux + plume_fraction * (1000.0*US%ppt_to_S * fluxes%salt_left_behind(i,j)) &
-                               * GV%RZ_to_H
+              plume_flux = plume_flux + plume_fraction * (1000.0*US%ppt_to_S * (CS%plume_strength * &
+                           fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
             else
               plume_flux = 0.0
             endif
@@ -1767,6 +1768,9 @@ subroutine diabatic_aux_init(Time, G, GV, US, param_file, diag, CS, useALEalgori
   call get_param(param_file, mdl, "BRINE_PLUME_EXPONENT", CS%brine_plume_n, &
                  "If using the brine plume parameterization, set the integer exponent.", &
                  default=5, do_not_log=.not.CS%do_brine_plume)
+  call get_param(param_file, mdl, "BRINE_PLUME_FRACTION", CS%plume_strength, &
+                 "Fraction of the available brine to mix down using the brine plume parameterization.", &
+                 units="nondim", default=1.0, do_not_log=.not.CS%do_brine_plume)
 
   if (useALEalgorithm) then
     CS%id_createdH = register_diag_field('ocean_model',"created_H",diag%axesT1, &
