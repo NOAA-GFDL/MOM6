@@ -179,7 +179,7 @@ type, public :: vardesc
   character(len=32)  :: dim_names(5)       !< The names in the file of the axes for this variable
   integer            :: position = -1      !< An integer encoding the horizontal position, it may
                                            !! CENTER, CORNER, EAST_FACE, NORTH_FACE, or 0.
-  type(axis_info) :: extra_axes(5)
+  type(axis_info) :: extra_axes(5)         !< dimensions other than space-time
 end type vardesc
 
 !> Type that stores for a global file attribute
@@ -1776,7 +1776,7 @@ function var_desc(name, units, longname, hor_grid, z_grid, t_grid, cmor_field_na
   character(len=*), dimension(:), &
                     optional, intent(in) :: dim_names       !< The names of the dimensions of this variable
   type(axis_info),  dimension(:), &
-                    optional, intent(in) :: extra_axes
+                    optional, intent(in) :: extra_axes      !< dimensions other than space-time
   logical,          optional, intent(in) :: fixed           !< If true, this does not evolve with time
   type(vardesc)                          :: vd              !< vardesc type that is created
 
@@ -1833,7 +1833,7 @@ subroutine modify_vardesc(vd, name, units, longname, hor_grid, z_grid, t_grid, &
   character(len=*), dimension(:), &
                     optional, intent(in)    :: dim_names       !< The names of the dimensions of this variable
   type(axis_info),  dimension(:), &
-                    optional, intent(in)    :: extra_axes
+                    optional, intent(in)    :: extra_axes      !< dimensions other than space-time
 
   character(len=120) :: cllr
   integer :: n
@@ -2051,7 +2051,7 @@ subroutine query_vardesc(vd, name, units, longname, hor_grid, z_grid, t_grid, &
                                                                 !! [various] or [a A-1 ~> 1]
   character(len=*), optional, intent(in)  :: caller             !< calling routine?
   type(axis_info),  dimension(5), &
-                    optional, intent(out) :: extra_axes
+                    optional, intent(out) :: extra_axes      !< dimensions other than space-time
   integer,          optional, intent(out) :: position        !< A coded integer indicating the horizontal position
                                                             !! of this variable if it has such dimensions.
                                                             !! Valid values include CORNER, CENTER, EAST_FACE

@@ -463,7 +463,7 @@ subroutine register_restart_field_4d(f_ptr, name, mandatory, CS, longname, units
   character(len=*), optional, intent(in) :: z_grid    !< variable vertical staggering, 'L' if absent
   character(len=*), optional, intent(in) :: t_grid    !< time description: s, p, or 1, 's' if absent
   type(axis_info),  dimension(:), &
-                    optional, intent(in) :: extra_axes
+                    optional, intent(in) :: extra_axes !< dimensions other than space-time
 
   type(vardesc) :: vd
   character(len=32), dimension(:), allocatable :: dim_names
@@ -515,7 +515,7 @@ subroutine register_restart_field_3d(f_ptr, name, mandatory, CS, longname, units
   character(len=*), optional, intent(in) :: z_grid    !< variable vertical staggering, 'L' if absent
   character(len=*), optional, intent(in) :: t_grid    !< time description: s, p, or 1, 's' if absent
   type(axis_info),  dimension(:), &
-                    optional, intent(in) :: extra_axes
+                    optional, intent(in) :: extra_axes !< dimensions other than space-time
 
   type(vardesc) :: vd
   character(len=32), dimension(:), allocatable :: dim_names
