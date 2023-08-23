@@ -1700,7 +1700,7 @@ subroutine restore_state(filename, directory, day, G, CS)
           elseif (associated(CS%var_ptr4d(m)%p)) then  ! Read a 4d array.
             if (pos /= 0) then
               call MOM_read_data(unit_path(n), varname, CS%var_ptr4d(m)%p, &
-                                 G%Domain, timelevel=1, position=pos, scale=scale)
+                                 G%Domain, timelevel=1, position=pos, scale=scale, global_file=unit_is_global(n))
             else ! This array is not domain-decomposed.  This variant may be under-tested.
               call MOM_error(FATAL, &
                         "MOM_restart does not support 4-d arrays without domain decomposition.")
