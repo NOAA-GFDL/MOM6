@@ -1125,7 +1125,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
 
   ! Set up fields related to the open boundary conditions.
   if (apply_OBCs) then
-    if (CS%tides .and. CS%TIDAL_SAL_FLATHER) then
+    if (CS%TIDAL_SAL_FLATHER) then
        call set_up_BT_OBC(OBC, eta, CS%BT_OBC, CS%BT_Domain, G, GV, US, MS, ievf-ie, use_BT_cont, &
             integral_BT_cont, dt, Datu, Datv, BTCL_u, BTCL_v, dgeo_de)
     else
