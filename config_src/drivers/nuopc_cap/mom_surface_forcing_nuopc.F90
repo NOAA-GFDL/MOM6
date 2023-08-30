@@ -308,7 +308,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   if (fluxes%dt_buoy_accum < 0) then
     call allocate_forcing_type(G, fluxes, water=.true., heat=.true., ustar=.true., &
                                press=.true., fix_accum_bug=CS%fix_ustar_gustless_bug, &
-                               cfc=CS%use_CFC, hevap=CS%enthalpy_cpl)
+                               cfc=CS%use_CFC, hevap=CS%enthalpy_cpl, tau_mag=.true.)
 
     call safe_alloc_ptr(fluxes%sw_vis_dir,isd,ied,jsd,jed)
     call safe_alloc_ptr(fluxes%sw_vis_dif,isd,ied,jsd,jed)
@@ -716,7 +716,7 @@ subroutine convert_IOB_to_forces(IOB, forces, index_bounds, Time, G, US, CS)
   ! mechanical forcing type has been used.
   if (.not.forces%initialized) then
 
-    call allocate_mech_forcing(G, forces, stress=.true., ustar=.true., press=.true.)
+    call allocate_mech_forcing(G, forces, stress=.true., ustar=.true., press=.true., tau_mag=.true.)
 
     call safe_alloc_ptr(forces%p_surf,isd,ied,jsd,jed)
     call safe_alloc_ptr(forces%p_surf_full,isd,ied,jsd,jed)
@@ -902,7 +902,7 @@ subroutine convert_IOB_to_forces(IOB, forces, index_bounds, Time, G, US, CS)
         forces%tau_mag(i,j) = CS%gust(i,j) + sqrt(taux2 + tauy2)
         forces%ustar(i,j) = sqrt(CS%gust(i,j)*Irho0 + Irho0*sqrt(taux2 + tauy2))
       else
-        forces%tau_mag(i,j) = CS%gust(i,j) + sqrt(taux2 + tauy2)
+        forces%tau_mag(i,j) = CS%gust_const + sqrt(taux2 + tauy2)
         forces%ustar(i,j) = sqrt(CS%gust_const*Irho0 + Irho0*sqrt(taux2 + tauy2))
       endif
     enddo ; enddo
