@@ -144,6 +144,10 @@ subroutine find_obsolete_params(param_file)
                         hint="Instead use TIDAL_MIXING_ANSWER_DATE.")
   call obsolete_logical(param_file, "VERT_FRICTION_2018_ANSWERS", &
                         hint="Instead use VERT_FRICTION_ANSWER_DATE.")
+  call obsolete_logical(param_file, "TIDE_USE_SAL_SCALAR", hint="Use SAL_SCALAR_APPROX instead.")
+  call obsolete_logical(param_file, "TIDAL_SAL_SHT", hint="Use SAL_HARMONICS instead.")
+  call obsolete_int(param_file, "TIDAL_SAL_SHT_DEGREE", hint="Use SAL_HARMONICS_DEGREE instead.")
+  call obsolete_real(param_file, "RHO_E", hint="Use RHO_SOLID_EARTH instead.")
 
   ! Write the file version number to the model log.
   call log_version(param_file, mdl, version)
