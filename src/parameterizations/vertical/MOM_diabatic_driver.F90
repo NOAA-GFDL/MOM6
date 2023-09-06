@@ -3573,7 +3573,7 @@ subroutine register_diabatic_restarts(G, US, param_file, int_tide_CSp, restart_C
   type(int_tide_CS),     pointer       :: int_tide_CSp !< Internal tide control structure
   type(MOM_restart_CS),  pointer       :: restart_CSp  !< MOM restart control structure
 
-  logical :: use_int_tides = .false.
+  logical :: use_int_tides
 
   call read_param(param_file, "INTERNAL_TIDES", use_int_tides)
 

@@ -2763,7 +2763,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     call stoch_EOS_register_restarts(HI, param_file, CS%stoch_eos_CS, restart_CSp)
   endif
 
-  if ( .not. CS%adiabatic) then
+  if (.not. CS%adiabatic) then
     call register_diabatic_restarts(G, US, param_file, CS%int_tide_CSp, restart_CSp)
   endif
 

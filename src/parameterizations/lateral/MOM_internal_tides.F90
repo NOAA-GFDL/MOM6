@@ -688,30 +688,30 @@ subroutine propagate_int_tide(h, tv, TKE_itidal_input, vel_btTide, Nb, Rho_bot, 
     endif ; enddo ; enddo
 
     ! split energy array into multiple restarts
-    do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+    do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
       CS%En_restart_mode1(i,j,a,fr) = CS%En(i,j,a,fr,1)
     enddo ; enddo ; enddo ; enddo
 
     if (CS%nMode >= 2) then
-      do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+      do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
         CS%En_restart_mode2(i,j,a,fr) = CS%En(i,j,a,fr,2)
       enddo ; enddo ; enddo ; enddo
     endif
 
     if (CS%nMode >= 3) then
-      do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+      do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
         CS%En_restart_mode3(i,j,a,fr) = CS%En(i,j,a,fr,3)
       enddo ; enddo ; enddo ; enddo
     endif
 
     if (CS%nMode >= 4) then
-      do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+      do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
         CS%En_restart_mode4(i,j,a,fr) = CS%En(i,j,a,fr,4)
       enddo ; enddo ; enddo ; enddo
     endif
 
     if (CS%nMode >= 5) then
-      do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+      do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
         CS%En_restart_mode5(i,j,a,fr) = CS%En(i,j,a,fr,5)
       enddo ; enddo ; enddo ; enddo
     endif
@@ -2378,8 +2378,8 @@ subroutine register_int_tide_restarts(G, US, param_file, CS, restart_CS)
   call get_param(param_file, "MOM", "INTERNAL_TIDE_FREQS", num_freq, default=1)
   call get_param(param_file, "MOM", "INTERNAL_TIDE_MODES", num_mode, default=1)
 
-  allocate ( angles(num_angle) )
-  allocate ( freqs(num_freq) )
+  allocate (angles(num_angle))
+  allocate (freqs(num_freq))
 
   do a=1,num_angle ; angles(a)= a ; enddo
   do fr=1,num_freq ; freqs(fr)= fr ; enddo
@@ -2458,19 +2458,6 @@ subroutine register_int_tide_restarts(G, US, param_file, CS, restart_CS)
     enddo ; enddo ; enddo ; enddo
 
   endif
-
-
-  ! full 5d restart
-  !call register_restart_field(CS%En(:,:,:,:,:), "IW_energy", .false., restart_CS, &
-  !                            longname="The internal wave energy density as a function of (i,j,angle,freq,mode)", &
-  !                            units="J m-2", conversion=US%RZ3_T3_to_W_m2*US%T_to_s, z_grid='1', t_grid="s", &
-  !                            extra_axes=axes_inttides)
-  !call restart_registry_lock(restart_CS, unlocked=.false.)
-
-  ! read the restart data back in at init
-  !do fr=1,num_freq ; do a=1,num_angle ; do j=jsd,jed ; do i=isd,ied
-  !  CS%En(i,j,a,fr,1) = CS%En_restart(i,j,a,fr)
-  !enddo ; enddo ; enddo ; enddo
 
 end subroutine register_int_tide_restarts
 

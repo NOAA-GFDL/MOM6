@@ -469,9 +469,13 @@ subroutine register_restart_field_4d(f_ptr, name, mandatory, CS, longname, units
   character(len=32), dimension(:), allocatable :: dim_names
   integer :: n, n_extradims
 
+  ! first 2 dimensions in dim_names are reserved for i,j
+  ! so extra_dimensions are shifted to index 3.
+  ! this is designed not to break the behavior in SIS2
+  ! (see register_restart_field_4d in SIS_restart.F90)
   if (present(extra_axes)) then
     n_extradims = size(extra_axes)
-    allocate( dim_names(n_extradims+2) )
+    allocate(dim_names(n_extradims+2))
     dim_names(1) = ""
     dim_names(2) = ""
     do n=3,n_extradims+2
@@ -521,9 +525,13 @@ subroutine register_restart_field_3d(f_ptr, name, mandatory, CS, longname, units
   character(len=32), dimension(:), allocatable :: dim_names
   integer :: n, n_extradims
 
+  ! first 2 dimensions in dim_names are reserved for i,j
+  ! so extra_dimensions are shifted to index 3.
+  ! this is designed not to break the behavior in SIS2
+  ! (see register_restart_field_4d in SIS_restart.F90)
   if (present(extra_axes)) then
     n_extradims = size(extra_axes)
-    allocate( dim_names(n_extradims+2) )
+    allocate(dim_names(n_extradims+2))
     dim_names(1) = ""
     dim_names(2) = ""
     do n=3,n_extradims+2
@@ -1365,7 +1373,7 @@ subroutine save_restart(directory, time, G, CS, time_stamped, filename, GV, num_
 
   turns = CS%turns
 
-  allocate ( extra_axes(nmax_extradims) )
+  allocate (extra_axes(nmax_extradims))
 
   if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
       "save_restart: Module must be initialized before it is used.")
