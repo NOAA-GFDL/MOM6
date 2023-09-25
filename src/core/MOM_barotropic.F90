@@ -23,7 +23,8 @@ use MOM_open_boundary, only : OBC_DIRECTION_E, OBC_DIRECTION_W
 use MOM_open_boundary, only : OBC_DIRECTION_N, OBC_DIRECTION_S, OBC_segment_type
 use MOM_restart, only : register_restart_field, register_restart_pair
 use MOM_restart, only : query_initialized, MOM_restart_CS
-use MOM_tidal_forcing, only : tidal_forcing_sensitivity, tidal_forcing_CS
+use MOM_self_attr_load, only : scalar_SAL_sensitivity
+use MOM_self_attr_load, only : SAL_CS
 use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : BT_cont_type, alloc_bt_cont_type
@@ -229,7 +230,7 @@ type, public :: barotropic_CS ; private
   real    :: const_dyn_psurf !< The constant that scales the dynamic surface
                              !! pressure [nondim].  Stable values are < ~1.0.
                              !! The default is 0.9.
-  logical :: tides           !< If true, apply tidal momentum forcing.
+  logical :: calculate_SAL   !< If true, calculate self-attration and loading.
   logical :: tidal_sal_bug   !< If true, the tidal self-attraction and loading anomaly in the
                              !! barotropic solver has the wrong sign, replicating a long-standing
                              !! bug.
@@ -278,12 +279,15 @@ type, public :: barotropic_CS ; private
   logical :: use_old_coriolis_bracket_bug !< If True, use an order of operations
                              !! that is not bitwise rotationally symmetric in the
                              !! meridional Coriolis term of the barotropic solver.
+  logical :: tidal_sal_flather !< Apply adjustment to external gravity wave speed
+                             !! consistent with tidal self-attraction and loading
+                             !! used within the barotropic solver
   type(time_type), pointer :: Time  => NULL() !< A pointer to the ocean models clock.
   type(diag_ctrl), pointer :: diag => NULL()  !< A structure that is used to regulate
                              !! the timing of diagnostic output.
   type(MOM_domain_type), pointer :: BT_Domain => NULL()  !< Barotropic MOM domain
   type(hor_index_type), pointer :: debug_BT_HI => NULL() !< debugging copy of horizontal index_type
-  type(tidal_forcing_CS), pointer :: tides_CSp => NULL() !< Control structure for tides
+  type(SAL_CS), pointer :: SAL_CSp => NULL() !< Control structure for SAL
   logical :: module_is_initialized = .false.  !< If true, module has been initialized
 
   integer :: isdw !< The lower i-memory limit for the wide halo arrays.
@@ -1088,8 +1092,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     enddo
   endif
 
-  if (CS%tides) then
-    call tidal_forcing_sensitivity(G, CS%tides_CSp, det_de)
+  if (CS%calculate_SAL) then
+    call scalar_SAL_sensitivity(CS%SAL_CSp, det_de)
     if (CS%tidal_sal_bug) then
       dgeo_de = 1.0 + det_de + CS%G_extra
     else
@@ -1121,8 +1125,13 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
 
   ! Set up fields related to the open boundary conditions.
   if (apply_OBCs) then
-    call set_up_BT_OBC(OBC, eta, CS%BT_OBC, CS%BT_Domain, G, GV, US, MS, ievf-ie, use_BT_cont, &
-                       integral_BT_cont, dt, Datu, Datv, BTCL_u, BTCL_v)
+    if (CS%TIDAL_SAL_FLATHER) then
+       call set_up_BT_OBC(OBC, eta, CS%BT_OBC, CS%BT_Domain, G, GV, US, MS, ievf-ie, use_BT_cont, &
+            integral_BT_cont, dt, Datu, Datv, BTCL_u, BTCL_v, dgeo_de)
+    else
+       call set_up_BT_OBC(OBC, eta, CS%BT_OBC, CS%BT_Domain, G, GV, US, MS, ievf-ie, use_BT_cont, &
+            integral_BT_cont, dt, Datu, Datv, BTCL_u, BTCL_v)
+    endif
   endif
 
   ! Determine the difference between the sum of the layer fluxes and the
@@ -2845,7 +2854,7 @@ subroutine set_dtbt(G, GV, US, CS, eta, pbce, BT_cont, gtot_est, SSH_add)
   endif
 
   det_de = 0.0
-  if (CS%tides) call tidal_forcing_sensitivity(G, CS%tides_CSp, det_de)
+  if (CS%calculate_SAL) call scalar_SAL_sensitivity(CS%SAL_CSp, det_de)
   if (CS%tidal_sal_bug) then
     dgeo_de = 1.0 + max(0.0, det_de + CS%G_extra)
   else
@@ -3100,7 +3109,7 @@ end subroutine apply_velocity_OBCs
 !> This subroutine sets up the private structure used to apply the open
 !! boundary conditions, as developed by Mehmet Ilicak.
 subroutine set_up_BT_OBC(OBC, eta, BT_OBC, BT_Domain, G, GV, US, MS, halo, use_BT_cont, &
-                         integral_BT_cont, dt_baroclinic, Datu, Datv, BTCL_u, BTCL_v)
+                         integral_BT_cont, dt_baroclinic, Datu, Datv, BTCL_u, BTCL_v, dgeo_de)
   type(ocean_OBC_type), target,          intent(inout) :: OBC    !< An associated pointer to an OBC type.
   type(memory_size_type),                intent(in)    :: MS     !< A type that describes the memory sizes of the
                                                                  !! argument arrays.
@@ -3131,9 +3140,11 @@ subroutine set_up_BT_OBC(OBC, eta, BT_OBC, BT_Domain, G, GV, US, MS, halo, use_B
   type(local_BT_cont_v_type), dimension(SZIW_(MS),SZJBW_(MS)), intent(in) :: BTCL_v !< Structure of information used
                                                                  !! for a dynamic estimate of the face areas at
                                                                  !! v-points.
-
+  real,                                  intent(in), optional  :: dgeo_de  !< The constant of proportionality between
+                                                                 !! geopotential and sea surface height [nondim].
   ! Local variables
   real :: I_dt      ! The inverse of the time interval of this call [T-1 ~> s-1].
+  real :: dgeo_de_in !< The constant of proportionality between geopotential and sea surface height [nondim].
   integer :: i, j, k, is, ie, js, je, n, nz
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
   integer :: isdw, iedw, jsdw, jedw
@@ -3150,6 +3161,9 @@ subroutine set_up_BT_OBC(OBC, eta, BT_OBC, BT_Domain, G, GV, US, MS, halo, use_B
     call MOM_error(FATAL, "set_up_BT_OBC: Open boundary conditions are not "//&
                            "yet fully implemented with wide barotropic halos.")
   endif
+
+  dgeo_de_in = 1.0
+  if (PRESENT(dgeo_de)) dgeo_de_in = dgeo_de
 
   if (.not. BT_OBC%is_alloced) then
     allocate(BT_OBC%Cg_u(isdw-1:iedw,jsdw:jedw), source=0.0)
@@ -3209,7 +3223,7 @@ subroutine set_up_BT_OBC(OBC, eta, BT_OBC, BT_Domain, G, GV, US, MS, halo, use_B
             BT_OBC%H_u(I,j) = eta(i+1,j)
           endif
         endif
-        BT_OBC%Cg_u(I,j) = SQRT(GV%g_prime(1) * GV%H_to_Z*BT_OBC%H_u(i,j))
+        BT_OBC%Cg_u(I,j) = SQRT(dgeo_de_in *  GV%g_prime(1) * GV%H_to_Z*BT_OBC%H_u(i,j))
       endif
     endif ; enddo ; enddo
     if (OBC%Flather_u_BCs_exist_globally) then
@@ -3263,7 +3277,7 @@ subroutine set_up_BT_OBC(OBC, eta, BT_OBC, BT_Domain, G, GV, US, MS, halo, use_B
             BT_OBC%H_v(i,J) = eta(i,j+1)
           endif
         endif
-        BT_OBC%Cg_v(i,J) = SQRT(GV%g_prime(1) * GV%H_to_Z*BT_OBC%H_v(i,J))
+        BT_OBC%Cg_v(i,J) = SQRT(dgeo_de_in * GV%g_prime(1) * GV%H_to_Z*BT_OBC%H_v(i,J))
       endif
     endif ; enddo ; enddo
     if (OBC%Flather_v_BCs_exist_globally) then
@@ -4297,7 +4311,7 @@ end subroutine bt_mass_source
 !! barotropic calculation and initializes any barotropic fields that have not
 !! already been initialized.
 subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, &
-                           restart_CS, calc_dtbt, BT_cont, tides_CSp)
+                           restart_CS, calc_dtbt, BT_cont, SAL_CSp)
   type(ocean_grid_type),   intent(inout) :: G    !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)    :: GV   !< The ocean's vertical grid structure.
   type(unit_scale_type),   intent(in)    :: US   !< A dimensional unit scaling type
@@ -4321,8 +4335,8 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   type(BT_cont_type),      pointer       :: BT_cont    !< A structure with elements that describe the
                                                  !! effective open face areas as a function of
                                                  !! barotropic flow.
-  type(tidal_forcing_CS), target, optional :: tides_CSp  !< A pointer to the control structure of the
-                                                 !! tide module.
+  type(SAL_CS), target, optional :: SAL_CSp      !< A pointer to the control structure of the
+                                                 !! SAL module.
 
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
@@ -4348,7 +4362,7 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   real :: Z_to_H      ! A local unit conversion factor [H Z-1 ~> nondim or kg m-3]
   real :: H_to_Z      ! A local unit conversion factor [Z H-1 ~> nondim or m3 kg-1]
   real :: det_de      ! The partial derivative due to self-attraction and loading of the reference
-                      ! geopotential with the sea surface height when tides are enabled [nondim].
+                      ! geopotential with the sea surface height when scalar SAL are enabled [nondim].
                       ! This is typically ~0.09 or less.
   real, allocatable :: lin_drag_h(:,:)  ! A spatially varying linear drag coefficient at tracer points
                                         ! that acts on the barotropic flow [H T-1 ~> m s-1 or kg m-2 s-1].
@@ -4357,11 +4371,8 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   type(group_pass_type) :: pass_static_data, pass_q_D_Cor
   type(group_pass_type) :: pass_bt_hbt_btav, pass_a_polarity
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
-  logical :: default_2018_answers ! The default setting for the various 2018_ANSWERS flags.
-  logical :: answers_2018    ! If true, use expressions for the barotropic solver that recover
-                             ! the answers from the end of 2018.  Otherwise, use more efficient
-                             ! or general expressions.
   logical :: use_BT_cont_type
+  logical :: use_tides
   character(len=48) :: thickness_units, flux_units
   character*(40) :: hvel_str
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
@@ -4383,8 +4394,8 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   CS%module_is_initialized = .true.
 
   CS%diag => diag ; CS%Time => Time
-  if (present(tides_CSp)) then
-    CS%tides_CSp => tides_CSp
+  if (present(SAL_CSp)) then
+    CS%SAL_CSp => SAL_CSp
   endif
 
   ! Read all relevant parameters and write them to the model log.
@@ -4503,36 +4514,33 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
-  call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &
-                 "This sets the default value for the various _2018_ANSWERS parameters.", &
-                 default=(default_answer_date<20190101), do_not_log=.not.GV%Boussinesq)
-  call get_param(param_file, mdl, "BAROTROPIC_2018_ANSWERS", answers_2018, &
-                 "If true, use expressions for the barotropic solver that recover the answers "//&
-                 "from the end of 2018.  Otherwise, use more efficient or general expressions.", &
-                 default=default_2018_answers, do_not_log=.not.GV%Boussinesq)
-  ! Revise inconsistent default answer dates.
-  if (GV%Boussinesq) then
-    if (answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
-    if (.not.answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
-  endif
   call get_param(param_file, mdl, "BAROTROPIC_ANSWER_DATE", CS%answer_date, &
                  "The vintage of the expressions in the barotropic solver. "//&
                  "Values below 20190101 recover the answers from the end of 2018, "//&
-                 "while higher values uuse more efficient or general expressions.  "//&
-                 "If both BAROTROPIC_2018_ANSWERS and BAROTROPIC_ANSWER_DATE are specified, the "//&
-                 "latter takes precedence.", default=default_answer_date, do_not_log=.not.GV%Boussinesq)
+                 "while higher values uuse more efficient or general expressions.", &
+                 default=default_answer_date, do_not_log=.not.GV%Boussinesq)
   if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
-  call get_param(param_file, mdl, "TIDES", CS%tides, &
+  call get_param(param_file, mdl, "TIDES", use_tides, &
                  "If true, apply tidal momentum forcing.", default=.false.)
+  call get_param(param_file, mdl, "CALCULATE_SAL", CS%calculate_SAL, &
+                 "If true, calculate self-attraction and loading.", default=use_tides)
   det_de = 0.0
-  if (CS%tides .and. associated(CS%tides_CSp)) &
-    call tidal_forcing_sensitivity(G, CS%tides_CSp, det_de)
+  if (CS%calculate_SAL .and. associated(CS%SAL_CSp)) &
+    call scalar_SAL_sensitivity(CS%SAL_CSp, det_de)
   call get_param(param_file, mdl, "BAROTROPIC_TIDAL_SAL_BUG", CS%tidal_sal_bug, &
                  "If true, the tidal self-attraction and loading anomaly in the barotropic "//&
                  "solver has the wrong sign, replicating a long-standing bug with a scalar "//&
                  "self-attraction and loading term or the SAL term from a previous simulation.", &
                  default=.false., do_not_log=(det_de==0.0))
+  call get_param(param_file, mdl, "TIDAL_SAL_FLATHER", CS%tidal_sal_flather, &
+                 "If true, then apply adjustments to the external gravity "//&
+                 "wave speed used with the Flather OBC routine consistent "//&
+                 "with the barotropic solver. This applies to cases with  "//&
+                 "tidal forcing using the scalar self-attraction approximation. "//&
+                 "The default is currently False in order to retain previous answers "//&
+                 "but should be set to True for new experiments", default=.false.)
+
   call get_param(param_file, mdl, "SADOURNY", CS%Sadourny, &
                  "If true, the Coriolis terms are discretized with the "//&
                  "Sadourny (1975) energy conserving scheme, otherwise "//&

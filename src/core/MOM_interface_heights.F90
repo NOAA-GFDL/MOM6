@@ -279,6 +279,8 @@ subroutine calc_derived_thermo(tv, h, G, GV, US, halo, debug)
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: p_t  ! Hydrostatic pressure atop a layer [R L2 T-2 ~> Pa]
   real, dimension(SZI_(G),SZJ_(G)) :: dp   ! Pressure change across a layer [R L2 T-2 ~> Pa]
+  real, dimension(SZK_(GV)) :: SpV_lay     ! The specific volume of each layer when no equation of
+                                           ! state is used [R-1 ~> m3 kg-1]
   logical :: do_debug  ! If true, write checksums for debugging.
   integer :: i, j, k, is, ie, js, je, halos, nz
 
@@ -310,6 +312,12 @@ subroutine calc_derived_thermo(tv, h, G, GV, US, halo, debug)
       call hchksum(tv%T, "derived_thermo T", G%HI, haloshift=halos, scale=US%C_to_degC)
       call hchksum(tv%S, "derived_thermo S", G%HI, haloshift=halos, scale=US%S_to_ppt)
     endif
+  elseif (allocated(tv%Spv_avg)) then
+    do k=1,nz ; SpV_lay(k) = 1.0 / GV%Rlay(k) ; enddo
+    do k=1,nz ; do j=js,je ; do i=is,ie
+      tv%SpV_avg(i,j,k) = SpV_lay(k)
+    enddo ; enddo ; enddo
+    tv%valid_SpV_halo = halos
   endif
 
 end subroutine calc_derived_thermo
@@ -481,9 +489,7 @@ subroutine dz_to_thickness_tv(dz, tv, h, G, GV, US, halo_size)
       endif
     else
       do k=1,nz ; do j=js,je ; do i=is,ie
-        h(i,j,k) = (GV%Z_to_H*dz(i,j,k)) * (GV%Rlay(k) / GV%Rho0)
-        ! Consider revising this to the mathematically equivalent expression:
-        ! h(i,j,k) = (GV%RZ_to_H * GV%Rlay(k)) * dz(i,j,k)
+        h(i,j,k) = (GV%RZ_to_H * GV%Rlay(k)) * dz(i,j,k)
       enddo ; enddo ; enddo
     endif
   endif
@@ -513,10 +519,15 @@ subroutine dz_to_thickness_EOS(dz, Temp, Saln, EoS, h, G, GV, US, halo_size, p_s
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
     p_top, p_bot                  ! Pressure at the interfaces above and below a layer [R L2 T-2 ~> Pa]
+  real :: dp(SZI_(G),SZJ_(G))     ! Pressure change across a layer [R L2 T-2 ~> Pa]
   real :: dz_geo(SZI_(G),SZJ_(G)) ! The change in geopotential height across a layer [L2 T-2 ~> m2 s-2]
   real :: rho(SZI_(G))            ! The in situ density [R ~> kg m-3]
+  real :: dp_adj                  ! The amount by which to change the bottom pressure in an
+                                  ! iteration [R L2 T-2 ~> Pa]
   real :: I_gEarth                ! Unit conversion factors divided by the gravitational
                                   ! acceleration [H T2 R-1 L-2 ~> s2 m2 kg-1 or s2 m-1]
+  logical :: do_more(SZI_(G),SZJ_(G)) ! If true, additional iterations would be beneficial.
+  logical :: do_any               ! True if there are points in this layer that need more itertions.
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   integer :: i, j, k, is, ie, js, je, halo, nz
   integer :: itt, max_itt
@@ -551,30 +562,58 @@ subroutine dz_to_thickness_EOS(dz, Temp, Saln, EoS, h, G, GV, US, halo_size, p_s
         do i=is,ie ; p_top(i,j) = p_bot(i,j) ; enddo
         call calculate_density(Temp(:,j,k), Saln(:,j,k), p_top(:,j), rho, &
                                EoS, EOSdom)
-        do i=is,ie
-          ! This could be simplified, but it would change answers at roundoff.
-          p_bot(i,j) = p_top(i,j) + (GV%g_Earth*GV%H_to_Z) * ((GV%Z_to_H*dz(i,j,k)) * rho(i))
-        enddo
+        ! The following two expressions are mathematically equivalent.
+        if (GV%semi_Boussinesq) then
+          do i=is,ie
+            p_bot(i,j) = p_top(i,j) + (GV%g_Earth*GV%H_to_Z) * ((GV%Z_to_H*dz(i,j,k)) * rho(i))
+            dp(i,j) = (GV%g_Earth*GV%H_to_Z) * ((GV%Z_to_H*dz(i,j,k)) * rho(i))
+          enddo
+        else
+          do i=is,ie
+            p_bot(i,j) = p_top(i,j) + rho(i) * (GV%g_Earth * dz(i,j,k))
+            dp(i,j) = rho(i) * (GV%g_Earth * dz(i,j,k))
+          enddo
+        endif
       enddo
 
+      do_more(:,:) = .true.
       do itt=1,max_itt
-        call int_specific_vol_dp(Temp(:,:,k), Saln(:,:,k), p_top, p_bot, 0.0, G%HI, &
-                                 EoS, US, dz_geo)
+        do_any = .false.
+        call int_specific_vol_dp(Temp(:,:,k), Saln(:,:,k), p_top, p_bot, 0.0, G%HI, EoS, US, dz_geo)
         if (itt < max_itt) then ; do j=js,je
-          call calculate_density(Temp(:,j,k), Saln(:,j,k), p_bot(:,j), rho, &
-                                 EoS, EOSdom)
+          call calculate_density(Temp(:,j,k), Saln(:,j,k), p_bot(:,j), rho, EoS, EOSdom)
           ! Use Newton's method to correct the bottom value.
           ! The hydrostatic equation is sufficiently linear that no bounds-checking is needed.
-          do i=is,ie
-            p_bot(i,j) = p_bot(i,j) + rho(i) * ((GV%g_Earth*GV%H_to_Z)*(GV%Z_to_H*dz(i,j,k)) - dz_geo(i,j))
-          enddo
+          if (GV%semi_Boussinesq) then
+            do i=is,ie
+              dp_adj = rho(i) * ((GV%g_Earth*GV%H_to_Z)*(GV%Z_to_H*dz(i,j,k)) - dz_geo(i,j))
+              p_bot(i,j) = p_bot(i,j) + dp_adj
+              dp(i,j) = dp(i,j) + dp_adj
+            enddo
+            do_any = .true. ! To avoid changing answers, always use the maximum number of itertions.
+          else
+            do i=is,ie ; if (do_more(i,j)) then
+              dp_adj = rho(i) * (GV%g_Earth*dz(i,j,k) - dz_geo(i,j))
+              p_bot(i,j) = p_bot(i,j) + dp_adj
+              dp(i,j) = dp(i,j) + dp_adj
+              ! Check for convergence to roundoff.
+              do_more(i,j) = (abs(dp_adj) > 1.0e-15*dp(i,j))
+              if (do_more(i,j)) do_any = .true.
+            endif ; enddo
+          endif
         enddo ; endif
+        if (.not.do_any) exit
       enddo
 
-      do j=js,je ; do i=is,ie
-        !### This code should be revised to use a dp variable for accuracy.
-        h(i,j,k) = (p_bot(i,j) - p_top(i,j)) * I_gEarth
-      enddo ; enddo
+      if (GV%semi_Boussinesq) then
+        do j=js,je ; do i=is,ie
+          h(i,j,k) = (p_bot(i,j) - p_top(i,j)) * I_gEarth
+        enddo ; enddo
+      else
+        do j=js,je ; do i=is,ie
+          h(i,j,k) = dp(i,j) * I_gEarth
+        enddo ; enddo
+      endif
     enddo
   endif
 
@@ -608,13 +647,17 @@ subroutine dz_to_thickness_simple(dz, h, G, GV, US, halo_size, layer_mode)
   layered = .false. ; if (present(layer_mode)) layered = layer_mode
   is = G%isc-halo ; ie = G%iec+halo ; js = G%jsc-halo ; je = G%jec+halo ; nz = GV%ke
 
-  if (GV%Boussinesq .or. (.not.layered)) then
+  if (GV%Boussinesq) then
     do k=1,nz ; do j=js,je ; do i=is,ie
       h(i,j,k) = GV%Z_to_H * dz(i,j,k)
     enddo ; enddo ; enddo
   elseif (layered) then
     do k=1,nz ; do j=js,je ; do i=is,ie
       h(i,j,k) = (GV%RZ_to_H * GV%Rlay(k)) * dz(i,j,k)
+    enddo ; enddo ; enddo
+  else
+    do k=1,nz ; do j=js,je ; do i=is,ie
+      h(i,j,k) = (US%Z_to_m * GV%m_to_H) * dz(i,j,k)
     enddo ; enddo ; enddo
   endif
 
