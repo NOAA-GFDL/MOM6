@@ -1194,7 +1194,9 @@ subroutine remap_dyn_split_RK2_aux_vars(G, GV, CS, h_old, h_new, ALE_CSp, OBC, d
 
   if (CS%store_CAu) then
     call ALE_remap_velocities(ALE_CSp, G, GV, h_old, h_new, CS%u_av, CS%v_av, OBC, dzRegrid)
+    call pass_vector(CS%u_av, CS%v_av, G%Domain)
     call ALE_remap_velocities(ALE_CSp, G, GV, h_old, h_new, CS%CAu_pred, CS%CAv_pred, OBC, dzRegrid)
+    call pass_vector(CS%CAu_pred, CS%CAv_pred, G%Domain)
   endif
 
   call ALE_remap_velocities(ALE_CSp, G, GV, h_old, h_new, CS%diffu, CS%diffv, OBC, dzRegrid)
