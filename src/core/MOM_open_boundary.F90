@@ -14,6 +14,7 @@ use MOM_error_handler,        only : MOM_mesg, MOM_error, FATAL, WARNING, NOTE, 
 use MOM_file_parser,          only : get_param, log_version, param_file_type, log_param
 use MOM_grid,                 only : ocean_grid_type, hor_index_type
 use MOM_dyn_horgrid,          only : dyn_horgrid_type
+use MOM_interface_heights,    only : thickness_to_dz
 use MOM_io,                   only : slasher, field_size, SINGLE_FILE
 use MOM_io,                   only : vardesc, query_vardesc, var_desc
 use MOM_restart,              only : register_restart_field, register_restart_pair
@@ -189,6 +190,7 @@ type, public :: OBC_segment_type
   real, allocatable :: Cg(:,:)  !< The external gravity wave speed [L T-1 ~> m s-1]
                                 !! at OBC-points.
   real, allocatable :: Htot(:,:)  !< The total column thickness [H ~> m or kg m-2] at OBC-points.
+  real, allocatable :: dZtot(:,:) !< The total column vertical extent [Z ~> m] at OBC-points.
   real, allocatable :: h(:,:,:)   !< The cell thickness [H ~> m or kg m-2] at OBC-points.
   real, allocatable :: normal_vel(:,:,:)      !< The layer velocity normal to the OB
                                               !! segment [L T-1 ~> m s-1].
@@ -200,8 +202,8 @@ type, public :: OBC_segment_type
                                               !! segment [H L2 T-1 ~> m3 s-1].
   real, allocatable :: normal_vel_bt(:,:)     !< The barotropic velocity normal to
                                               !! the OB segment [L T-1 ~> m s-1].
-  real, allocatable :: eta(:,:)               !< The sea-surface elevation along the
-                                              !! segment [H ~> m or kg m-2].
+  real, allocatable :: SSH(:,:)               !< The sea-surface elevation along the
+                                              !! segment [Z ~> m].
   real, allocatable :: grad_normal(:,:,:)     !< The gradient of the normal flow along the
                                               !! segment times the grid spacing [L T-1 ~> m s-1],
                                               !! with the first index being the corner-point index
@@ -276,7 +278,9 @@ type, public :: ocean_OBC_type
   logical :: update_OBC = .false.                     !< Is OBC data time-dependent
   logical :: update_OBC_seg_data = .false.            !< Is it the time for OBC segment data update for fields that
                                                       !! require less frequent update
-  logical :: needs_IO_for_data = .false.              !< Is any i/o needed for OBCs
+  logical :: needs_IO_for_data = .false.              !< Is any i/o needed for OBCs on the current PE
+  logical :: any_needs_IO_for_data = .false.          !< Is any i/o needed for OBCs globally
+  logical :: some_need_no_IO_for_data = .false.       !< Are there any PEs with OBCs that do not need i/o.
   logical :: zero_vorticity = .false.                 !< If True, sets relative vorticity to zero on open boundaries.
   logical :: freeslip_vorticity = .false.             !< If True, sets normal gradient of tangential velocity to zero
                                                       !! in the relative vorticity on open boundaries.
@@ -352,7 +356,7 @@ type, public :: ocean_OBC_type
   real, allocatable :: tres_y(:,:,:,:)   !< Array storage of tracer reservoirs for restarts, in unscaled units [conc]
   logical :: debug                       !< If true, write verbose checksums for debugging purposes.
   real :: silly_h  !< A silly value of thickness outside of the domain that can be used to test
-                   !! the independence of the OBCs to this external data [H ~> m or kg m-2].
+                   !! the independence of the OBCs to this external data [Z ~> m].
   real :: silly_u  !< A silly value of velocity outside of the domain that can be used to test
                    !! the independence of the OBCs to this external data [L T-1 ~> m s-1].
   logical :: ramp = .false.                 !< If True, ramp from zero to the external values for SSH.
@@ -734,6 +738,7 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
   integer, dimension(1) :: single_pelist
   type(external_tracers_segments_props), pointer :: obgc_segments_props_list =>NULL()
   !will be able to dynamically switch between sub-sampling refined grid data or model grid
+  integer :: IO_needs(3) ! Sums to determine global OBC data use and update patterns.
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
 
@@ -1043,6 +1048,15 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
 
   call Set_PElist(saved_pelist)
 
+  ! Determine global IO data requirement patterns.
+  IO_needs(1) = 0 ; if (OBC%needs_IO_for_data) IO_needs(1) = 1
+  IO_needs(2) = 0 ; if (OBC%update_OBC) IO_needs(2) = 1
+  IO_needs(3) = 0 ; if (.not.OBC%needs_IO_for_data) IO_needs(3) = 1
+  call sum_across_PES(IO_needs, 3)
+  OBC%any_needs_IO_for_data = (IO_needs(1) > 0)
+  OBC%update_OBC = (IO_needs(2) > 0)
+  OBC%some_need_no_IO_for_data = (IO_needs(3) > 0)
+
 end subroutine initialize_segment_data
 
 !> Return an appropriate dimensional scaling factor for input data based on an OBC segment data
@@ -1064,8 +1078,8 @@ real function scale_factor_from_name(name, GV, US, Tr_Reg)
     case ('Vamp') ; scale_factor_from_name = US%m_s_to_L_T
     case ('DVDX') ; scale_factor_from_name = US%T_to_s
     case ('DUDY') ; scale_factor_from_name = US%T_to_s
-    case ('SSH') ; scale_factor_from_name = GV%m_to_H
-    case ('SSHamp') ; scale_factor_from_name = GV%m_to_H
+    case ('SSH') ; scale_factor_from_name = US%m_to_Z
+    case ('SSHamp') ; scale_factor_from_name = US%m_to_Z
     case default ; scale_factor_from_name = 1.0
   end select
 
@@ -1907,7 +1921,7 @@ logical function open_boundary_query(OBC, apply_open_OBC, apply_specified_OBC, a
                                                         OBC%Flather_v_BCs_exist_globally
   if (present(apply_nudged_OBC)) open_boundary_query = OBC%nudged_u_BCs_exist_globally .or. &
                                                        OBC%nudged_v_BCs_exist_globally
-  if (present(needs_ext_seg_data)) open_boundary_query = OBC%needs_IO_for_data
+  if (present(needs_ext_seg_data)) open_boundary_query = OBC%any_needs_IO_for_data
 
 end function open_boundary_query
 
@@ -3580,8 +3594,9 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     ! If these are just Flather, change update_OBC_segment_data accordingly
     allocate(segment%Cg(IsdB:IedB,jsd:jed), source=0.0)
     allocate(segment%Htot(IsdB:IedB,jsd:jed), source=0.0)
+    allocate(segment%dZtot(IsdB:IedB,jsd:jed), source=0.0)
     allocate(segment%h(IsdB:IedB,jsd:jed,OBC%ke), source=0.0)
-    allocate(segment%eta(IsdB:IedB,jsd:jed), source=0.0)
+    allocate(segment%SSH(IsdB:IedB,jsd:jed), source=0.0)
     if (segment%radiation) &
       allocate(segment%rx_norm_rad(IsdB:IedB,jsd:jed,OBC%ke), source=0.0)
     allocate(segment%normal_vel(IsdB:IedB,jsd:jed,OBC%ke), source=0.0)
@@ -3615,8 +3630,9 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     ! If these are just Flather, change update_OBC_segment_data accordingly
     allocate(segment%Cg(isd:ied,JsdB:JedB), source=0.0)
     allocate(segment%Htot(isd:ied,JsdB:JedB), source=0.0)
+    allocate(segment%dZtot(isd:ied,JsdB:JedB), source=0.0)
     allocate(segment%h(isd:ied,JsdB:JedB,OBC%ke), source=0.0)
-    allocate(segment%eta(isd:ied,JsdB:JedB), source=0.0)
+    allocate(segment%SSH(isd:ied,JsdB:JedB), source=0.0)
     if (segment%radiation) &
       allocate(segment%ry_norm_rad(isd:ied,JsdB:JedB,OBC%ke), source=0.0)
     allocate(segment%normal_vel(isd:ied,JsdB:JedB,OBC%ke), source=0.0)
@@ -3656,8 +3672,9 @@ subroutine deallocate_OBC_segment_data(segment)
 
   if (allocated(segment%Cg)) deallocate(segment%Cg)
   if (allocated(segment%Htot)) deallocate(segment%Htot)
+  if (allocated(segment%dZtot)) deallocate(segment%dZtot)
   if (allocated(segment%h)) deallocate(segment%h)
-  if (allocated(segment%eta)) deallocate(segment%eta)
+  if (allocated(segment%SSH)) deallocate(segment%SSH)
   if (allocated(segment%rx_norm_rad)) deallocate(segment%rx_norm_rad)
   if (allocated(segment%ry_norm_rad)) deallocate(segment%ry_norm_rad)
   if (allocated(segment%rx_norm_obl)) deallocate(segment%rx_norm_obl)
@@ -3738,7 +3755,7 @@ subroutine open_boundary_test_extern_h(G, GV, OBC, h)
 
   if (.not. associated(OBC)) return
 
-  silly_h = GV%Z_to_H*OBC%silly_h
+  silly_h = GV%Z_to_H * OBC%silly_h
 
   do n = 1, OBC%number_of_segments
     do k = 1, GV%ke
@@ -3789,6 +3806,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   integer :: ni_buf, nj_buf  ! Number of filled values in tmp_buffer
   integer :: is_obc, ie_obc, js_obc, je_obc  ! segment indices within local domain
   integer :: ishift, jshift  ! offsets for staggered locations
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV))  :: dz ! Distance between the interfaces around a layer [Z ~> m]
   real, dimension(:,:,:), allocatable, target :: tmp_buffer ! A buffer for input data [various units]
   real, dimension(:), allocatable :: h_stack  ! Thicknesses at corner points [H ~> m or kg m-2]
   integer :: is_obc2, js_obc2
@@ -3797,7 +3815,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   real :: net_H_int   ! Total thickness of the incoming flow in the model [H ~> m or kg m-2]
   real :: scl_fac     ! A scaling factor to compensate for differences in total thicknesses [nondim]
   real :: tidal_vel   ! Interpolated tidal velocity at the OBC points [L T-1 ~> m s-1]
-  real :: tidal_elev  ! Interpolated tidal elevation at the OBC points [H ~> m or kg m-2]
+  real :: tidal_elev  ! Interpolated tidal elevation at the OBC points [Z ~> m]
   real, allocatable :: normal_trans_bt(:,:) ! barotropic transport [H L2 T-1 ~> m3 s-1]
   integer :: turns    ! Number of index quarter turns
   real :: time_delta  ! Time since tidal reference date [T ~> s]
@@ -3820,6 +3838,11 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
     h_neglect = GV%m_to_H * 1.0e-30 ; h_neglect_edge = GV%m_to_H * 1.0e-10
   else
     h_neglect = GV%kg_m2_to_H * 1.0e-30 ; h_neglect_edge = GV%kg_m2_to_H * 1.0e-10
+  endif
+
+  if (OBC%number_of_segments >= 1) then
+    call thickness_to_dz(h, tv, dz, G, GV, US)
+    call pass_var(dz, G%Domain)
   endif
 
   do n = 1, OBC%number_of_segments
@@ -3854,11 +3877,13 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
       I=segment%HI%IsdB
       do j=segment%HI%jsd,segment%HI%jed
         segment%Htot(I,j) = 0.0
+        segment%dZtot(I,j) = 0.0
         do k=1,GV%ke
           segment%h(I,j,k) = h(i+ishift,j,k)
           segment%Htot(I,j) = segment%Htot(I,j) + segment%h(I,j,k)
+          segment%dZtot(I,j) = segment%dZtot(I,j) + dz(i+ishift,j,k)
         enddo
-        segment%Cg(I,j) = sqrt(GV%g_prime(1)*segment%Htot(I,j)*GV%H_to_Z)
+        segment%Cg(I,j) = sqrt(GV%g_prime(1) * segment%dZtot(I,j))
       enddo
     else! (segment%direction == OBC_DIRECTION_N .or. segment%direction == OBC_DIRECTION_S)
       allocate(normal_trans_bt(segment%HI%isd:segment%HI%ied,segment%HI%JsdB:segment%HI%JedB), source=0.0)
@@ -3866,11 +3891,13 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
       J=segment%HI%JsdB
       do i=segment%HI%isd,segment%HI%ied
         segment%Htot(i,J) = 0.0
+        segment%dZtot(i,J) = 0.0
         do k=1,GV%ke
           segment%h(i,J,k) = h(i,j+jshift,k)
           segment%Htot(i,J) = segment%Htot(i,J) + segment%h(i,J,k)
+          segment%dZtot(i,J) = segment%dZtot(i,J) + dz(i,j+jshift,k)
         enddo
-        segment%Cg(i,J) = sqrt(GV%g_prime(1)*segment%Htot(i,J)*GV%H_to_Z)
+        segment%Cg(i,J) = sqrt(GV%g_prime(1) * segment%dZtot(i,J))
       enddo
     endif
 
@@ -4381,7 +4408,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
                           + (OBC%tide_eq_phases(c) + OBC%tide_un(c)))
                 enddo
               endif
-              segment%eta(i,j) = OBC%ramp_value * (segment%field(m)%buffer_dst(i,j,1) + tidal_elev)
+              segment%SSH(i,j) = OBC%ramp_value * (segment%field(m)%buffer_dst(i,j,1) + tidal_elev)
             enddo
           enddo
         else
@@ -4395,7 +4422,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
                           + (OBC%tide_eq_phases(c) + OBC%tide_un(c)))
                 enddo
               endif
-              segment%eta(i,j) = (segment%field(m)%buffer_dst(i,j,1) + tidal_elev)
+              segment%SSH(i,j) = (segment%field(m)%buffer_dst(i,j,1) + tidal_elev)
             enddo
           enddo
         endif
@@ -5623,8 +5650,8 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
     ! The normal slope at the boundary is zero by a
     ! previous call to open_boundary_impose_normal_slope
     do k=nz+1,1,-1
-      if (-eta(i,j,k) > segment%Htot(i,j)*GV%H_to_Z + hTolerance) then
-        eta(i,j,k) = -segment%Htot(i,j)*GV%H_to_Z
+      if (-eta(i,j,k) > segment%dZtot(i,j) + hTolerance) then
+        eta(i,j,k) = -segment%dZtot(i,j)
         contractions = contractions + 1
       endif
     enddo
@@ -5642,10 +5669,10 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
 
     !   The whole column is dilated to accommodate deeper topography than
     ! the bathymetry would indicate.
-    if (-eta(i,j,nz+1) < (segment%Htot(i,j) * GV%H_to_Z) - hTolerance) then
+    if (-eta(i,j,nz+1) < segment%dZtot(i,j) - hTolerance) then
       dilations = dilations + 1
       ! expand bottom-most cell only
-      eta(i,j,nz+1) = -(segment%Htot(i,j) * GV%H_to_Z)
+      eta(i,j,nz+1) = -segment%dZtot(i,j)
       segment%field(fld)%dz_src(i,j,nz)= eta(i,j,nz)-eta(i,j,nz+1)
       ! if (eta(i,j,1) <= eta(i,j,nz+1)) then
       !   do k=1,nz ; segment%field(fld)%dz_src(i,j,k) = (eta(i,j,1) + G%bathyT(i,j)) / real(nz) ; enddo
@@ -5740,6 +5767,8 @@ subroutine rotate_OBC_config(OBC_in, G_in, OBC, G, turns)
   OBC%brushcutter_mode = OBC_in%brushcutter_mode
   OBC%update_OBC = OBC_in%update_OBC
   OBC%needs_IO_for_data = OBC_in%needs_IO_for_data
+  OBC%any_needs_IO_for_data = OBC_in%any_needs_IO_for_data
+  OBC%some_need_no_IO_for_data = OBC_in%some_need_no_IO_for_data
 
   OBC%ntr = OBC_in%ntr
 
