@@ -571,13 +571,21 @@ endef
 
 # Upload coverage reports
 CODECOV_UPLOADER_URL ?= https://uploader.codecov.io/latest/linux/codecov
+CODECOV_TOKEN ?=
+
+ifdef CODECOV_TOKEN
+  CODECOV_TOKEN_ARG = -t $(CODECOV_TOKEN)
+else
+  CODECOV_TOKEN_ARG =
+endif
+
 codecov:
 	curl -s $(CODECOV_UPLOADER_URL) -o $@
 	chmod +x codecov
 
 .PHONY: report.cov
 report.cov: run.cov codecov
-	./codecov -R build/cov -Z -f "*.gcov" \
+	./codecov $(CODECOV_TOKEN_ARG) -R build/cov -Z -f "*.gcov" \
 	  > build/cov/codecov.out \
 	  2> build/cov/codecov.err \
 	  && echo -e "${MAGENTA}Report uploaded to codecov.${RESET}" \
@@ -690,7 +698,7 @@ build/unit/MOM_file_parser_tests.F90.gcov: $(WORKSPACE)/work/unit/std.out
 
 .PHONY: report.cov.unit
 report.cov.unit: build/unit/MOM_file_parser_tests.F90.gcov codecov
-	./codecov -R build/unit -f "*.gcov" -Z -n "Unit tests" \
+	./codecov $(CODECOV_TOKEN_ARG) -R build/unit -f "*.gcov" -Z -n "Unit tests" \
 	    > build/unit/codecov.out \
 	    2> build/unit/codecov.err \
 	  && echo -e "${MAGENTA}Report uploaded to codecov.${RESET}" \
