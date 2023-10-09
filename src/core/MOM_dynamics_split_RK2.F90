@@ -452,7 +452,9 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
 
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   obc_stencil = 2
-  if (CS%OBC%oblique_BCs_exist_globally) obc_stencil = 3
+  if (associated(CS%OBC)) then
+    if (CS%OBC%oblique_BCs_exist_globally) obc_stencil = 3
+  endif
   call cpu_clock_begin(id_clock_pass)
   call create_group_pass(CS%pass_eta, eta, G%Domain, halo=1)
   call create_group_pass(CS%pass_visc_rem, CS%visc_rem_u, CS%visc_rem_v, G%Domain, &
