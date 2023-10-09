@@ -3294,12 +3294,6 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
   call open_boundary_apply_normal_flow(OBC, G, GV, u_new, v_new)
 
   call pass_vector(u_new, v_new, G%Domain, clock=id_clock_pass)
-  if (OBC%oblique_BCs_exist_globally) then
-    call do_group_pass(OBC%pass_oblique, G%Domain)
-!   call pass_vector(OBC%rx_oblique_u, OBC%ry_oblique_v, G%Domain, To_All+Scalar_Pair)
-!   call pass_vector(OBC%ry_oblique_u, OBC%rx_oblique_v, G%Domain, To_All+Scalar_Pair)
-!   call pass_vector(OBC%cff_normal_u, OBC%cff_normal_v, G%Domain, To_All+Scalar_Pair)
-  endif
 
 end subroutine radiation_open_bdry_conds
 
