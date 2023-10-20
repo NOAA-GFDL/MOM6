@@ -453,8 +453,10 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
               else
                 if (segment%direction == OBC_DIRECTION_W) then
                   T_tmp(i,ntr_id) = segment%tr_Reg%Tr(m)%OBC_inflow_conc
+                  T_tmp(i-1,ntr_id) = segment%tr_Reg%Tr(m)%OBC_inflow_conc
                 else
                   T_tmp(i+1,ntr_id) = segment%tr_Reg%Tr(m)%OBC_inflow_conc
+                  T_tmp(i+2,ntr_id) = segment%tr_Reg%Tr(m)%OBC_inflow_conc
                 endif
               endif
             enddo
@@ -831,8 +833,10 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
               if (allocated(segment%tr_Reg%Tr(m)%tres)) then
                 if (segment%direction == OBC_DIRECTION_S) then
                   T_tmp(i,ntr_id,j) = segment%tr_Reg%Tr(m)%tres(i,j,k)
+                  T_tmp(i,ntr_id,j-1) = segment%tr_Reg%Tr(m)%tres(i,j,k)
                 else
                   T_tmp(i,ntr_id,j+1) = segment%tr_Reg%Tr(m)%tres(i,j,k)
+                  T_tmp(i,ntr_id,j+2) = segment%tr_Reg%Tr(m)%tres(i,j,k)
                 endif
               else
                 if (segment%direction == OBC_DIRECTION_S) then
