@@ -5638,9 +5638,6 @@ subroutine remap_OBC_fields(G, GV, h_old, h_new, OBC, PCM_cell)
                      To_All+Scalar_Pair)
   if (OBC%oblique_BCs_exist_globally) then
     call do_group_pass(OBC%pass_oblique, G%Domain)
-!   call pass_vector(OBC%rx_oblique_u, OBC%ry_oblique_v, G%Domain, To_All+Scalar_Pair)
-!   call pass_vector(OBC%ry_oblique_u, OBC%rx_oblique_v, G%Domain, To_All+Scalar_Pair)
-!   call pass_vector(OBC%cff_normal_u, OBC%cff_normal_v, G%Domain, To_All+Scalar_Pair)
   endif
 
 end subroutine remap_OBC_fields
