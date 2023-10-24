@@ -29,6 +29,7 @@ implicit none ; private
 #include <MOM_memory.h>
 
 public set_int_tide_input, int_tide_input_init, int_tide_input_end
+public get_input_TKE, get_barotropic_tidal_vel
 
 ! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
 ! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
@@ -36,7 +37,7 @@ public set_int_tide_input, int_tide_input_init, int_tide_input_end
 ! vary with the Boussinesq approximation, the Boussinesq variant is given first.
 
 !> This control structure holds parameters that regulate internal tide energy inputs.
-type, public :: int_tide_input_CS
+type, public :: int_tide_input_CS ; private
   logical :: initialized = .false. !< True if this control structure has been initialized.
   logical :: debug      !< If true, write verbose checksums for debugging.
   type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
@@ -328,6 +329,35 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, US, N2_bot, rho_bo
   enddo
 
 end subroutine find_N2_bottom
+
+!> Returns TKE_itidal_input
+subroutine get_input_TKE(G, TKE_itidal_input, nFreq, CS)
+  type(ocean_grid_type), intent(in)    :: G !< The ocean's grid structure (in).
+  real, allocatable, dimension(:,:,:), &
+                         intent(out) :: TKE_itidal_input !< The energy input to the internal waves [R Z3 T-3 ~> W m-2].
+  integer, intent(in) :: nFreq !< number of frequencies
+  type(int_tide_input_CS),   target       :: CS !< A pointer that is set to point to the control
+                                                 !! structure for the internal tide input module.
+
+  allocate(TKE_itidal_input(G%isd:G%ied,G%jsd:G%jed,nFreq), source=0.0)
+
+  TKE_itidal_input(:,:,:) = CS%TKE_itidal_input(:,:,:)
+
+end subroutine get_input_TKE
+
+!> Returns barotropic tidal velocities
+subroutine get_barotropic_tidal_vel(G, vel_btTide, nFreq, CS)
+  type(ocean_grid_type), intent(in)    :: G !< The ocean's grid structure (in).
+  real, allocatable, dimension(:,:,:), &
+                         intent(out) :: vel_btTide !< Barotropic velocity read from file [L T-1 ~> m s-1].
+  integer, intent(in) :: nFreq !< number of frequencies
+  type(int_tide_input_CS),   target       :: CS !< A pointer that is set to point to the control
+                                                 !! structure for the internal tide input module.
+  allocate(vel_btTide(G%isd:G%ied,G%jsd:G%jed,nFreq), source=0.0)
+
+  vel_btTide(:,:,:) = CS%tideamp(:,:,:)
+
+end subroutine get_barotropic_tidal_vel
 
 !> Initializes the data related to the internal tide input module
 subroutine int_tide_input_init(Time, G, GV, US, param_file, diag, CS, itide)

@@ -16,7 +16,7 @@ use MOM_domains, only       : group_pass_type, start_group_pass, complete_group_
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, MOM_mesg, is_root_pe
 use MOM_file_parser, only   : read_param, get_param, log_param, log_version, param_file_type
 use MOM_grid, only          : ocean_grid_type
-use MOM_int_tide_input, only: int_tide_input_CS
+use MOM_int_tide_input, only: int_tide_input_CS, get_input_TKE, get_barotropic_tidal_vel
 use MOM_io, only            : slasher, MOM_read_data, file_exists, axis_info
 use MOM_io, only            : set_axis_info, get_axis_info
 use MOM_restart, only       : register_restart_field, MOM_restart_CS, restart_init, save_restart
@@ -211,7 +211,7 @@ contains
 
 !> Calls subroutines in this file that are needed to refract, propagate,
 !! and dissipate energy density of the internal tide.
-subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_CS, CS)
+subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_CSp, CS)
   type(ocean_grid_type),            intent(inout) :: G  !< The ocean's grid structure.
   type(verticalGrid_type),          intent(in)    :: GV !< The ocean's vertical grid structure.
   type(unit_scale_type),            intent(in)    :: US !< A dimensional unit scaling type
@@ -226,10 +226,14 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
                                                         !! reference density [R ~> kg m-3].
   real,                             intent(in)    :: dt !< Length of time over which to advance
                                                         !! the internal tides [T ~> s].
-  type(int_tide_input_CS),          intent(in) :: inttide_input_CS !< Internal tide control structure
+  type(int_tide_input_CS),          intent(in)    :: inttide_input_CSp !< Internal tide input control structure
   type(int_tide_CS),                intent(inout) :: CS !< Internal tide control structure
 
   ! Local variables
+  real, dimension(:,:,:), allocatable :: &
+    TKE_itidal_input, & !< The energy input to the internal waves [R Z3 T-3 ~> W m-2].
+    vel_btTide !< Barotropic velocity read from file [L T-1 ~> m s-1].
+
   real, dimension(SZI_(G),SZJ_(G),2) :: &
     test           ! A test unit vector used to determine grid rotation in halos [nondim]
   real, dimension(SZI_(G),SZJ_(G),CS%nMode) :: &
@@ -240,8 +244,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     Umax           ! Maximum horizontal velocity of wave (modal) [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJ_(G),CS%nFreq,CS%nMode) :: &
     drag_scale     ! bottom drag scale [T-1 ~> s-1]
-
   real, dimension(SZI_(G),SZJ_(G)) :: &
+    tot_vel_btTide2, &
     tot_En, &      ! energy summed over angles, modes, frequencies [R Z3 T-2 ~> J m-2]
     tot_leak_loss, tot_quad_loss, tot_itidal_loss, tot_Froude_loss, tot_residual_loss, tot_allprocesses_loss, &
                    ! energy loss rates summed over angle, freq, and mode [R Z3 T-3 ~> W m-2]
@@ -286,6 +290,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   en_subRO = 1e-30*US%W_m2_to_RZ3_T3*US%s_to_T
 
   ! initialize local arrays
+  tot_vel_btTide2(:,:) = 0.
   drag_scale(:,:,:,:) = 0.
   Ub(:,:,:,:) = 0.
   Umax(:,:,:,:) = 0.
@@ -339,6 +344,9 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   !enddo ; enddo ; enddo
 
   ! Add the forcing.***************************************************************
+
+  call get_input_TKE(G, TKE_itidal_input, CS%nFreq, inttide_input_CSp)
+
   if (CS%energized_angle <= 0) then
     frac_per_sector = 1.0 / real(CS%nAngle)
     do m=1,CS%nMode ; do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
@@ -346,7 +354,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
                  (G%CoriolisBu(I-1,J)**2 + G%CoriolisBu(I,J-1)**2))
       if (CS%frequency(fr)**2 > f2) &
         CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + dt*frac_per_sector*(1.0-CS%q_itides) * &
-                            CS%fraction_tidal_input(fr,m) * inttide_input_CS%TKE_itidal_input(i,j,fr)
+                            CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr)
     enddo ; enddo ; enddo ; enddo ; enddo
   elseif (CS%energized_angle <= CS%nAngle) then
     frac_per_sector = 1.0
@@ -356,12 +364,14 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
                  (G%CoriolisBu(I-1,J)**2 + G%CoriolisBu(I,J-1)**2))
       if (CS%frequency(fr)**2 > f2) &
         CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + dt*frac_per_sector*(1.0-CS%q_itides) * &
-                            CS%fraction_tidal_input(fr,m) * inttide_input_CS%TKE_itidal_input(i,j,fr)
+                            CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr)
     enddo ; enddo ; enddo ; enddo
   else
     call MOM_error(WARNING, "Internal tide energy is being put into a angular "//&
                             "band that does not exist.")
   endif
+
+  deallocate(TKE_itidal_input)
 
   ! Pass a test vector to check for grid rotation in the halo updates.
   do j=jsd,jed ; do i=isd,ied ; test(i,j,1) = 1.0 ; test(i,j,2) = 0.0 ; enddo ; enddo
@@ -484,6 +494,15 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   ! Extract the energy for mixing due to bottom drag-------------------------------
   if (CS%apply_bottom_drag) then
     do j=jsd,jed ; do i=isd,ied ; htot(i,j) = 0.0 ; enddo ; enddo
+
+    call get_barotropic_tidal_vel(G, vel_btTide, CS%nFreq, inttide_input_CSp)
+
+    do fr=1,CS%Nfreq ; do j=jsd,jed ; do i=isd,ied
+      tot_vel_btTide2(i,j) =  tot_vel_btTide2(i,j) + vel_btTide(i,j,fr)**2
+    enddo ; enddo ; enddo
+
+    deallocate(vel_btTide)
+
     do k=1,GV%ke ; do j=jsd,jed ; do i=isd,ied
       htot(i,j) = htot(i,j) + h(i,j,k)
     enddo ; enddo ; enddo
@@ -491,14 +510,14 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       ! This is mathematically equivalent to the form in the option below, but they differ at roundoff.
       do m=1,CS%NMode ; do fr=1,CS%Nfreq ; do j=jsd,jed ; do i=isd,ied
         I_D_here = 1.0 / (max(htot(i,j), CS%drag_min_depth))
-        drag_scale(i,j,fr,m) = CS%cdrag * sqrt(max(0.0, US%L_to_Z**2*inttide_input_CS%tideamp(i,j,fr)**2 + &
+        drag_scale(i,j,fr,m) = CS%cdrag * sqrt(max(0.0, US%L_to_Z**2*tot_vel_btTide2(i,j)**2 + &
                              tot_En_mode(i,j,fr,m) * GV%RZ_to_H * I_D_here)) * GV%Z_to_H*I_D_here
       enddo ; enddo ; enddo ; enddo
     else
       do m=1,CS%NMode ; do fr=1,CS%Nfreq ; do j=jsd,jed ; do i=isd,ied
         I_mass = GV%RZ_to_H / (max(htot(i,j), CS%drag_min_depth))
         drag_scale(i,j,fr,m) = (CS%cdrag * (Rho_bot(i,j)*I_mass)) * &
-                              sqrt(max(0.0, US%L_to_Z**2*inttide_input_CS%tideamp(i,j,fr)**2 + &
+                              sqrt(max(0.0, US%L_to_Z**2*tot_vel_btTide2(i,j)**2 + &
                                             tot_En_mode(i,j,fr,m) * I_mass))
       enddo ; enddo ; enddo ; enddo
     endif
@@ -692,7 +711,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     if (CS%id_tot_En > 0)     call post_data(CS%id_tot_En, tot_En, CS%diag)
     do fr=1,CS%nFreq
       if (CS%id_TKE_itidal_input(fr) > 0) call post_data(CS%id_TKE_itidal_input(fr), &
-                                                         inttide_input_CS%TKE_itidal_input(:,:,fr), CS%diag)
+                                                         TKE_itidal_input(:,:,fr), CS%diag)
     enddo
 
     do m=1,CS%nMode ; do fr=1,CS%nFreq
