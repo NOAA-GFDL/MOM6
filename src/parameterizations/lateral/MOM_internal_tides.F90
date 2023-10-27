@@ -230,7 +230,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   type(int_tide_CS),                intent(inout) :: CS !< Internal tide control structure
 
   ! Local variables
-  real, dimension(:,:,:), allocatable :: &
+  real, dimension(SZI_(G),SZJ_(G),CS%nFreq) :: &
     TKE_itidal_input, & !< The energy input to the internal waves [R Z3 T-3 ~> W m-2].
     vel_btTide !< Barotropic velocity read from file [L T-1 ~> m s-1].
 
@@ -291,6 +291,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   en_subRO = 1e-30*US%W_m2_to_RZ3_T3*US%s_to_T
 
   ! initialize local arrays
+  TKE_itidal_input(:,:,:) = 0.
+  vel_btTide(:,:,:) = 0.
   tot_vel_btTide2(:,:) = 0.
   drag_scale(:,:,:,:) = 0.
   Ub(:,:,:,:) = 0.
@@ -374,8 +376,6 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     call MOM_error(WARNING, "Internal tide energy is being put into a angular "//&
                             "band that does not exist.")
   endif
-
-  deallocate(TKE_itidal_input)
 
   ! Pass a test vector to check for grid rotation in the halo updates.
   do j=jsd,jed ; do i=isd,ied ; test(i,j,1) = 1.0 ; test(i,j,2) = 0.0 ; enddo ; enddo
@@ -511,8 +511,6 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     do fr=1,CS%Nfreq ; do j=jsd,jed ; do i=isd,ied
       tot_vel_btTide2(i,j) =  tot_vel_btTide2(i,j) + vel_btTide(i,j,fr)**2
     enddo ; enddo ; enddo
-
-    deallocate(vel_btTide)
 
     do k=1,GV%ke ; do j=jsd,jed ; do i=isd,ied
       htot(i,j) = htot(i,j) + h(i,j,k)
