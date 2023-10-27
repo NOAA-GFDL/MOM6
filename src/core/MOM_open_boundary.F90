@@ -3314,14 +3314,14 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
                   haloshift=0, symmetric=sym, scale=1.0/US%L_T_to_m_s**2)
       call uvchksum("radiation_open_bdry_conds: OBC%cff_normal_[uv]", OBC%cff_normal_u, OBC%cff_normal_v, G%HI, &
                   haloshift=0, symmetric=sym, scale=1.0/US%L_T_to_m_s**2)
-      if (OBC%ntr == 0) return
-      do m=1,OBC%ntr
+    endif
+    if (OBC%ntr == 0) return
+    do m=1,OBC%ntr
 !       write(var_name_x,'("tres_x_",I3.3)') m
 !       write(var_name_y,'("tres_y_",I3.3)') m
         call uvchksum("radiation_open_bdry_conds: OBC%tres_[xy]", OBC%tres_x(:,:,:,m), OBC%tres_y(:,:,:,m), G%HI, &
                   haloshift=0, symmetric=sym, scale=1.0)
-      enddo
-    endif
+    enddo
   endif
 
 end subroutine radiation_open_bdry_conds
