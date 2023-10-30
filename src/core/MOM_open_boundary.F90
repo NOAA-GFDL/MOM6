@@ -2210,23 +2210,28 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
   real :: ry_new, ry_avg ! coefficients for radiation [nondim] or [L2 T-2 ~> m2 s-2]
   real :: cff_new, cff_avg ! denominator in oblique [L2 T-2 ~> m2 s-2]
   real, allocatable, dimension(:,:,:) :: &
-    rx_tang_rad, & ! The phase speed at u-points for tangential oblique OBCs
-                   ! in units of grid points per timestep [nondim],
-                   ! discretized at the corner (PV) points.
-    ry_tang_rad, & ! The phase speed at v-points for tangential oblique OBCs
-                   ! in units of grid points per timestep [nondim],
-                   ! discretized at the corner (PV) points.
-    rx_tang_obl, & ! The x-coefficient for tangential oblique OBCs [L2 T-2 ~> m2 s-2],
-                   ! discretized at the corner (PV) points.
-    ry_tang_obl, & ! The y-coefficient for tangential oblique OBCs [L2 T-2 ~> m2 s-2],
-                   ! discretized at the corner (PV) points.
-    cff_tangential ! The denominator for tangential oblique OBCs [L2 T-2 ~> m2 s-2],
-                   ! discretized at the corner (PV) points.
-  real :: eps      ! A small velocity squared [L2 T-2 ~> m2 s-2]
+    rx_tang_rad, &    ! The phase speed at u-points for tangential oblique OBCs
+                      ! in units of grid points per timestep [nondim],
+                      ! discretized at the corner (PV) points.
+    ry_tang_rad, &    ! The phase speed at v-points for tangential oblique OBCs
+                      ! in units of grid points per timestep [nondim],
+                      ! discretized at the corner (PV) points.
+    rx_tang_obl, &    ! The x-coefficient for tangential oblique OBCs [L2 T-2 ~> m2 s-2],
+                      ! discretized at the corner (PV) points.
+    ry_tang_obl, &    ! The y-coefficient for tangential oblique OBCs [L2 T-2 ~> m2 s-2],
+                      ! discretized at the corner (PV) points.
+    cff_tangential, & ! The denominator for tangential oblique OBCs [L2 T-2 ~> m2 s-2],
+                      ! discretized at the corner (PV) points.
+    tres_tmpx, &      ! Tracer reservoir at u-points array in rescaled units,
+                      ! like [S ~> ppt] for salinity.
+    tres_tmpy         ! Tracer reservoir at v-points array in rescaled units,
+                      ! like [S ~> ppt] for salinity.
+  real :: eps         ! A small velocity squared [L2 T-2 ~> m2 s-2]
   type(OBC_segment_type), pointer :: segment => NULL()
   integer :: i, j, k, is, ie, js, je, m, nz, n
   integer :: is_obc, ie_obc, js_obc, je_obc
   logical :: sym
+  character(len=3) :: var_num
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
@@ -3304,24 +3309,32 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
   if (OBC%debug) then
     sym = G%Domain%symmetric
     if (OBC%radiation_BCs_exist_globally) then
-      call uvchksum("radiation_open_bdry_conds: OBC%r[xy]_normal", OBC%rx_normal, OBC%ry_normal, G%HI, &
+      call uvchksum("radiation_OBCs: OBC%r[xy]_normal", OBC%rx_normal, OBC%ry_normal, G%HI, &
                   haloshift=0, symmetric=sym, scale=1.0)
     endif
     if (OBC%oblique_BCs_exist_globally) then
-      call uvchksum("radiation_open_bdry_conds: OBC%r[xy]_oblique_[uv]", OBC%rx_oblique_u, OBC%ry_oblique_v, G%HI, &
+      call uvchksum("radiation_OBCs: OBC%r[xy]_oblique_[uv]", OBC%rx_oblique_u, OBC%ry_oblique_v, G%HI, &
                   haloshift=0, symmetric=sym, scale=1.0/US%L_T_to_m_s**2)
-      call uvchksum("radiation_open_bdry_conds: OBC%r[yx]_oblique_[uv]", OBC%ry_oblique_u, OBC%rx_oblique_v, G%HI, &
+      call uvchksum("radiation_OBCs: OBC%r[yx]_oblique_[uv]", OBC%ry_oblique_u, OBC%rx_oblique_v, G%HI, &
                   haloshift=0, symmetric=sym, scale=1.0/US%L_T_to_m_s**2)
-      call uvchksum("radiation_open_bdry_conds: OBC%cff_normal_[uv]", OBC%cff_normal_u, OBC%cff_normal_v, G%HI, &
+      call uvchksum("radiation_OBCs: OBC%cff_normal_[uv]", OBC%cff_normal_u, OBC%cff_normal_v, G%HI, &
                   haloshift=0, symmetric=sym, scale=1.0/US%L_T_to_m_s**2)
     endif
     if (OBC%ntr == 0) return
+    allocate(tres_tmpx(SZIB_(G),SZJ_(G),SZK_(GV)))
+    allocate(tres_tmpy(SZI_(G),SZJB_(G),SZK_(GV)))
     do m=1,OBC%ntr
-!       write(var_name_x,'("tres_x_",I3.3)') m
-!       write(var_name_y,'("tres_y_",I3.3)') m
-        call uvchksum("radiation_open_bdry_conds: OBC%tres_[xy]", OBC%tres_x(:,:,:,m), OBC%tres_y(:,:,:,m), G%HI, &
-                  haloshift=0, symmetric=sym, scale=1.0)
+      do k=1,nz ; do j=G%HI%jsd,G%HI%jed ; do I=G%HI%IsdB,G%HI%IedB
+        tres_tmpx(I,j,k) = OBC%tres_x(I,j,k,m)
+      enddo ; enddo ; enddo
+      do k=1,nz ; do J=G%HI%JsdB,G%HI%JedB ; do i=G%HI%isd,G%HI%ied
+        tres_tmpy(i,J,k) = OBC%tres_y(i,J,k,m)
+      enddo ; enddo ; enddo
+      write(var_num,'(I3.3)') m
+      call uvchksum("radiation_OBCs: OBC%tres_[xy]_"//var_num, tres_tmpx(:,:,:), tres_tmpy(:,:,:), G%HI, &
+                    haloshift=0, symmetric=sym, scale=1.0)
     enddo
+    deallocate(tres_tmpx, tres_tmpy)
   endif
 
 end subroutine radiation_open_bdry_conds
