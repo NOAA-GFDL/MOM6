@@ -28,26 +28,32 @@ subroutine particles_init(parts, Grid, Time, dt, u, v, h)
 end subroutine particles_init
 
 !> The main driver the steps updates particles
-subroutine particles_run(parts, time, uo, vo, ho, tv, stagger)
+subroutine particles_run(parts, time, uo, vo, ho, tv, use_uh, stagger)
   ! Arguments
   type(particles), pointer :: parts !< Container for all types and memory
   type(time_type), intent(in) :: time !< Model time
-  real, dimension(:,:,:), intent(in) :: uo !< Ocean zonal velocity [L T-1 ~>m s-1]
-  real, dimension(:,:,:), intent(in) :: vo !< Ocean meridional velocity [L T-1~> m s-1]
+  real, dimension(:,:,:), intent(in) :: uo !< If use_uh is false, ocean zonal velocity [L T-1 ~>m s-1].
+                                           !! If use_uh is true, accumulated zonal thickness fluxes
+                                           !! that are used to advect tracers [H L2 ~> m3 or kg]
+  real, dimension(:,:,:), intent(in) :: vo !< If use_uh is false, ocean meridional velocity [L T-1 ~>m s-1].
+                                           !! If use_uh is true, accumulated meridional thickness fluxes
+                                           !! that are used to advect tracers [H L2 ~> m3 or kg]
   real, dimension(:,:,:), intent(in) :: ho !< Ocean layer thickness [H ~> m or kg m-2]
   type(thermo_var_ptrs),  intent(in) :: tv !< structure containing pointers to available thermodynamic fields
+  logical :: use_uh !< Flag for whether u and v are weighted by thickness
   integer, optional, intent(in) :: stagger !< Flag for whether velocities are staggered
 
 end subroutine particles_run
 
 
 !>Save particle locations (and sometimes other vars) to restart file
-subroutine particles_save_restart(parts, h, temp, salt)
+subroutine particles_save_restart(parts, h, directory, time, time_stamped)
   ! Arguments
   type(particles), pointer :: parts !< Container for all types and memory
   real, dimension(:,:,:),intent(in)      :: h !< Thickness of each layer [H ~> m or kg m-2]
-  real, dimension(:,:,:), optional, intent(in) :: temp !< Optional container for temperature [C ~> degC]
-  real, dimension(:,:,:), optional, intent(in) :: salt !< Optional container for salinity [S ~> ppt]
+  character(len=*), intent(in) :: directory !< The directory where the restart files are to be written
+  type(time_type), intent(in) :: time !< The current model time
+  logical, optional, intent(in) :: time_stamped !< If present and true, add time-stamp to the restart file names
 
 end subroutine particles_save_restart
 
