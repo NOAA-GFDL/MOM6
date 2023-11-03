@@ -1628,8 +1628,8 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
           call remap_dyn_split_RK2_aux_vars(G, GV, CS%dyn_split_RK2_CSp, h, h_new, CS%ALE_CSp, CS%OBC, dzRegrid)
 
         if (associated(CS%OBC)) then
-          call pass_var(h, G%Domain, halo=max(2,CS%cont_stencil), complete=.false.)
-          call pass_var(h_new, G%Domain, halo=max(2,CS%cont_stencil), complete=.true.)
+          call pass_var(h, G%Domain, complete=.false.)
+          call pass_var(h_new, G%Domain, complete=.true.)
           call remap_OBC_fields(G, GV, h, h_new, CS%OBC, PCM_cell=PCM_cell)
         endif
 
