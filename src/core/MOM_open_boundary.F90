@@ -529,14 +529,9 @@ subroutine open_boundary_config(G, US, param_file, OBC)
     endif
 
     call get_param(param_file, mdl, "DEBUG", debug_OBC, default=.false.)
-    call get_param(param_file, mdl, "DEBUG_OBC", debug_OBC, default=debug_OBC)
-    if (debug_OBC) then
-      call log_param(param_file, mdl, "DEBUG_OBC", debug_OBC, &
-                 "If true, do additional calls to help debug the performance "//&
-                 "of the open boundary condition code.", default=.false., &
-                 debuggingParam=.true.)
-      OBC%debug = debug_OBC
-    endif
+    call get_param(param_file, mdl, "DEBUG_OBC", debug_OBC, default=debug_OBC, &
+                   do_not_log=.not.debug_OBC)
+    OBC%debug = debug_OBC
 
     call get_param(param_file, mdl, "OBC_SILLY_THICK", OBC%silly_h, &
                  "A silly value of thicknesses used outside of open boundary "//&
