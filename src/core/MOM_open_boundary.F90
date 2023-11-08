@@ -531,7 +531,13 @@ subroutine open_boundary_config(G, US, param_file, OBC)
     call get_param(param_file, mdl, "DEBUG", debug_OBC, default=.false.)
     call get_param(param_file, mdl, "DEBUG_OBC", debug_OBC, default=debug_OBC, &
                    do_not_log=.not.debug_OBC)
-    OBC%debug = debug_OBC
+    if (debug_OBC) then
+      call log_param(param_file, mdl, "DEBUG_OBC", debug_OBC, &
+                 "If true, do additional calls to help debug the performance "//&
+                 "of the open boundary condition code.", default=.false., &
+                 debuggingParam=.true.)
+      OBC%debug = debug_OBC
+    endif
 
     call get_param(param_file, mdl, "OBC_SILLY_THICK", OBC%silly_h, &
                  "A silly value of thicknesses used outside of open boundary "//&
@@ -851,6 +857,8 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
 !       if (siz(4) == 1) segment%values_needed = .false.
         if (segment%on_pe) then
           if (OBC%brushcutter_mode .and. (modulo(siz(1),2) == 0 .or. modulo(siz(2),2) == 0)) then
+            write(mesg,'("Brushcutter mode sizes ", I6, I6))') siz(1), siz(2)
+            call MOM_error(WARNING, mesg // " " // trim(filename) // " " // trim(fieldname))
             call MOM_error(FATAL,'segment data are not on the supergrid')
           endif
           siz2(1)=1
