@@ -3883,7 +3883,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   endif
 
   if (OBC%number_of_segments >= 1) then
-    call thickness_to_dz(h, tv, dz, G, GV, US, halo_size=G%Domain%nihalo)
+    call thickness_to_dz(h, tv, dz, G, GV, US)
     call pass_var(dz, G%Domain)
   endif
 
