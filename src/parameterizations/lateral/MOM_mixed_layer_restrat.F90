@@ -825,7 +825,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   real :: u_star3         ! Cube of surface fruction velocity [m3 s-3]
   real :: r_wpup          ! reciprocal of vertical momentum flux [T2 L-1 H-1 ~> s2 m-2 or m s2 kg-1]
   real :: absf            ! absolute value of f, interpolated to velocity points [T-1 ~> s-1]
-  real :: f2_h            ! Squared Coriolis parameter at to h-points [T-2 ~> s-2]
+  real :: f2_h            ! Coriolis parameter at h-points squared [T-2 ~> s-2]
   real :: absurdly_small_freq2 ! Frequency squared used to avoid division by 0 [T-2 ~> s-2]
   real :: grid_dsd        ! combination of grid scales [L2 ~> m2]
   real :: h_sml           ! "Little h", the active mixing depth with diurnal cycle removed [H ~> m or kg m-2]
