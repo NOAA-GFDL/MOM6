@@ -825,6 +825,8 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   real :: u_star3         ! Cube of surface fruction velocity [m3 s-3]
   real :: r_wpup          ! reciprocal of vertical momentum flux [T2 L-1 H-1 ~> s2 m-2 or m s2 kg-1]
   real :: absf            ! absolute value of f, interpolated to velocity points [T-1 ~> s-1]
+  real :: f2_h            ! Squared Coriolis parameter at to h-points [T-2 ~> s-2]
+  real :: absurdly_small_freq2 ! Frequency squared used to avoid division by 0 [T-2 ~> s-2]
   real :: grid_dsd        ! combination of grid scales [L2 ~> m2]
   real :: h_sml           ! "Little h", the active mixing depth with diurnal cycle removed [H ~> m or kg m-2]
   real :: h_big           ! "Big H", the mixed layer depth based on a time filtered "little h" [H ~> m or kg m-2]
@@ -853,6 +855,9 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
 
   covTS(:) = 0.0 ! Might be in tv% in the future. Not implemented for the time being.
   varS(:) = 0.0  ! Ditto.
+  
+ ! This value is roughly (pi / (the age of the universe) )^2.
+  absurdly_small_freq2 = 1e-34*US%T_to_s**2 ! LD: Stole this from the MOM_diagnostics.F90
 
   if (.not.associated(tv%eqn_of_state)) call MOM_error(FATAL, "mixedlayer_restrat_Bodner: "// &
          "An equation of state must be used with this module.")
@@ -934,10 +939,11 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
     CS%wpup_filtered(i,j) = wpup(i,j)
 
     ! LD: Calculating Frontlength lf_bodner, used in B22 formula (eq 24).
-    absf = 0.5*(abs(G%CoriolisBu(I-1,J)) + abs(G%CoriolisBu(I,J)))  ! T-1 ~> s-1 
+    f2 = max((0.25*((G%CoriolisBu(I,J)  + G%CoriolisBu(I-1,J-1)) + &
+                   (G%CoriolisBu(I-1,J) + G%CoriolisBu(I,J-1))))**2, absurdly_small_freq2) ! LD: to prevent division by 0
     lf_bodner_diag(i,j) = 0.25 * (( CS%mstar * u_star3 + CS%nstar * w_star3 )**two_thirds  & ! (this line m2 s-2) 
             * ( US%m_to_L * GV%m_to_H * US%T_to_s**2 )) &  ! [L H s2 m-2 T-2 ~> 1 or kg m-3] 
-            / (absf**2 * little_h(i,j))! [T-2 H  ~> m s-2]  
+            / (f2 * little_h(i,j))! [T-2 H  ~> m s-2]  
 
   enddo ; enddo
 
