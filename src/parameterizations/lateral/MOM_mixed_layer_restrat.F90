@@ -114,6 +114,7 @@ type, public :: mixedlayer_restrat_CS ; private
   integer :: id_wpup = -1
   integer :: id_ustar = -1
   integer :: id_bflux = -1
+  integer :: id_lfbod = -1 !LD: diag ID for dynamic front length 
   !>@}
 
 end type mixedlayer_restrat_CS
@@ -801,6 +802,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
     wpup                  ! Turbulent vertical momentum [L H T-2 ~> m2 s-2 or kg m-1 s-2]
   real :: uDml_diag(SZIB_(G),SZJ_(G))  ! A 2D copy of uDml for diagnostics [H L2 T-1 ~> m3 s-1 or kg s-1]
   real :: vDml_diag(SZI_(G),SZJB_(G))  ! A 2D copy of vDml for diagnostics [H L2 T-1 ~> m3 s-1 or kg s-1]
+  real :: lf_bodner_diag(SZI_(G),SZJ_(G)) ! LD: Front width as in Bodner et al., 2023 (B22), eq 24 [L ~> m] 
   real :: U_star_2d(SZI_(G),SZJ_(G))   ! The wind friction velocity, calculated using the Boussinesq
                           ! reference density or the time-evolving surface density in non-Boussinesq
                           ! mode [Z T-1 ~> m s-1]
@@ -823,6 +825,8 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   real :: u_star3         ! Cube of surface fruction velocity [m3 s-3]
   real :: r_wpup          ! reciprocal of vertical momentum flux [T2 L-1 H-1 ~> s2 m-2 or m s2 kg-1]
   real :: absf            ! absolute value of f, interpolated to velocity points [T-1 ~> s-1]
+  real :: f2_h            ! Coriolis parameter at h-points squared [T-2 ~> s-2]
+  real :: absurdly_small_freq2 ! Frequency squared used to avoid division by 0 [T-2 ~> s-2]
   real :: grid_dsd        ! combination of grid scales [L2 ~> m2]
   real :: h_sml           ! "Little h", the active mixing depth with diurnal cycle removed [H ~> m or kg m-2]
   real :: h_big           ! "Big H", the mixed layer depth based on a time filtered "little h" [H ~> m or kg m-2]
@@ -851,6 +855,9 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
 
   covTS(:) = 0.0 ! Might be in tv% in the future. Not implemented for the time being.
   varS(:) = 0.0  ! Ditto.
+  
+ ! This value is roughly (pi / (the age of the universe) )^2.
+  absurdly_small_freq2 = 1e-34*US%T_to_s**2 ! LD: Stole this from the MOM_diagnostics.F90
 
   if (.not.associated(tv%eqn_of_state)) call MOM_error(FATAL, "mixedlayer_restrat_Bodner: "// &
          "An equation of state must be used with this module.")
@@ -930,6 +937,14 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
     wpup(i,j) = rmean2ts(wpup(i,j), CS%wpup_filtered(i,j), &
                          CS%BLD_growing_Tfilt, CS%BLD_decaying_Tfilt, dt)
     CS%wpup_filtered(i,j) = wpup(i,j)
+
+    ! LD: Calculating Frontlength lf_bodner, used in B22 formula (eq 24).
+    f2_h = max((0.25*((G%CoriolisBu(I,J)  + G%CoriolisBu(I-1,J-1)) + &
+                      (G%CoriolisBu(I-1,J) + G%CoriolisBu(I,J-1))))**2, absurdly_small_freq2) ! LD: to prevent division by 0
+    lf_bodner_diag(i,j) = 0.25 * (( CS%mstar * u_star3 + CS%nstar * w_star3 )**two_thirds  & ! (this line m2 s-2) 
+            * ( US%m_to_L * GV%m_to_H * US%T_to_s**2 )) &  ! [L H s2 m-2 T-2 ~> 1 or kg m-3] 
+            / (f2 * little_h(i,j))! [T-2 H  ~> m s-2]  
+
   enddo ; enddo
 
   if (CS%debug) then
@@ -1117,6 +1132,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
     if (CS%id_vhml  > 0) call post_data(CS%id_vhml, vhml, CS%diag)
     if (CS%id_uDml  > 0) call post_data(CS%id_uDml, uDml_diag, CS%diag)
     if (CS%id_vDml  > 0) call post_data(CS%id_vDml, vDml_diag, CS%diag)
+    if (CS%id_lfbod  > 0) call post_data(CS%id_lfbod, lf_bodner_diag, CS%diag) !LD: frontlength averaging 
 
     if (CS%id_uml > 0) then
       do J=js,je ; do i=is-1,ie
@@ -1735,6 +1751,9 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
     CS%id_bflux = register_diag_field('ocean_model', 'MLE_bflux', diag%axesT1, Time, &
         'Surface buoyancy flux, B0, in Bodner mixed layer restratificiation parameterization', &
         'm2 s-3', conversion=(US%Z_to_m**2*US%s_to_T**3))
+    CS%id_lfbod = register_diag_field('ocean_model', 'lf_bodner', diag%axesT1, Time, &
+        'Front length in Bodner mixed layer restratificiation parameterization', &  
+        'm', conversion=(US%L_to_m)) !LD: register diag for dynamic front length
   endif
 
   ! If MLD_filtered is being used, we need to update halo regions after a restart
