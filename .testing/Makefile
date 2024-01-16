@@ -67,11 +67,8 @@
 # TODO: POSIX shell compatibility
 SHELL = bash
 
-# No implicit rules
-.SUFFIXES:
-
-# No implicit variables
-MAKEFLAGS += -R
+# No implicit rules, suffixes, or variables
+MAKEFLAGS += -rR
 
 # User-defined configuration
 -include config.mk
@@ -106,10 +103,7 @@ FCFLAGS_FMS ?= $(FCFLAGS_DEBUG)
 LDFLAGS_COVERAGE ?= --coverage
 LDFLAGS_USER ?=
 
-# Set to `true` to require identical results from DEBUG and REPRO builds
-# NOTE: Many compilers (Intel, GCC on ARM64) do not produce identical results
-#   across DEBUG and REPRO builds (as defined below), so we disable on
-#   default.
+# Set to verify identical DEBUG and REPRO results
 DO_REPRO_TESTS ?=
 
 # Enable profiling
@@ -118,8 +112,11 @@ DO_PROFILE ?=
 # Enable code coverage runs
 DO_COVERAGE ?=
 
-# Enable code coverage runs
+# Enable unit tests
 DO_UNIT_TESTS ?=
+
+# Check for regressions with target branch
+DO_REGRESSION_TESTS ?=
 
 # Report failure if coverage report is not uploaded
 REQUIRE_COVERAGE_UPLOAD ?=
@@ -141,41 +138,50 @@ BUILD ?= build
 DEPS ?= $(BUILD)/deps
 WORK ?= work
 
+# Unit test executables
+UNIT_EXECS ?= \
+  $(basename $(notdir $(wildcard ../config_src/drivers/unit_tests/*.F90)))
+
+# Timing test executables
+TIMING_EXECS ?= \
+  $(basename $(notdir $(wildcard ../config_src/drivers/timing_tests/*.F90)))
+
 
 #---
 # Test configuration
 
-# REPRO tests enable reproducibility with optimization, and often do not match
-# the DEBUG results in older GCCs and vendor compilers, so we can optionally
-# disable them.
-ifeq ($(DO_REPRO_TESTS), true)
+# Set if either DO_COVERAGE or DO_UNIT_TESTS is set
+run_unit_tests =
+
+# REPRO and DEBUG equivalence
+ifdef DO_REPRO_TESTS
   EXECS += repro/MOM6
   TESTS += repro
 endif
 
 # Profiling
-ifeq ($(DO_PROFILE), true)
+ifdef DO_PROFILE
   EXECS += opt/MOM6 opt_target/MOM6
 endif
 
 # Coverage
-ifeq ($(DO_COVERAGE), true)
+ifdef DO_COVERAGE
   EXECS += cov/MOM6
+  run_unit_execs = yes
 endif
 
-# Unit testing (or coverage)
-UNIT_EXECS ?= $(basename $(notdir $(wildcard ../config_src/drivers/unit_tests/*.F90) ) )
-TIMING_EXECS ?= $(basename $(notdir $(wildcard ../config_src/drivers/timing_tests/*.F90) ) )
-ifneq (X$(DO_COVERAGE)$(DO_UNIT_TESTS)X, XX)
-  BUILDS += $(foreach e, $(UNIT_EXECS), unit/$(e))
+# Unit test executables
+ifdef DO_UNIT_TESTS
+  run_unit_tests = yes
 endif
 
-ifeq ($(DO_PROFILE), false)
-  EXECS += opt/MOM6 opt_target/MOM6
+# If either coverage or unit tests are enabled, build the unit test execs
+ifdef run_unit_tests
+  EXECS += $(foreach e, $(UNIT_EXECS), unit/$(e))
 endif
 
-DO_REGRESSION_TESTS ?=
-ifeq ($(DO_REGRESSION_TESTS), true)
+# Regression testing
+ifdef DO_REGRESSION_TESTS
   EXECS += target/MOM6
   TESTS += regression
 
