@@ -15,13 +15,13 @@ When running MOM6 with the Flexible Modelling System (FMS) coupler, forcing can 
 The data table can be written in two formats: "legacy" or as a standard yaml file.
 
 Legacy Format:
-    "ICE", "sic_obs", "sic", "INPUT/hadisst_ice.data.nc", "bilinear", 0.01
+    "ATM", "t_bot",  "t2m", "./INPUT/2t_ERA5.nc", "bilinear", 1.0
 
 Speficying a constant value:
-    Rather than overriding with data from a file, one can also set a field to constant. To do this, pass empty strings to `fieldname_file` and `file_name`. The `factor` now corresponds to the override value. For example: 
+    Rather than overriding with data from a file, one can also set a field to constant. To do this, pass empty strings to `fieldname_file` and `file_name`. The `factor` now corresponds to the override value. For example, the following sets the temperature at the bottom of the atmosphere to 290 Kelvin: 
 
 .. code-block:: rst
-    "ICE", "sic_obs", "", "", "bilinear", 0.01
+    "ATM", "t_bot",  "", "", "bilinear", 290.0
 
 More information can be found in the FMS data_override `readme file <https://github.com/NOAA-GFDL/FMS/tree/main/data_override>`_. 
 
