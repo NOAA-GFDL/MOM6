@@ -9,21 +9,25 @@ When running MOM6 with the Flexible Modelling System (FMS) coupler, forcing can 
 | ``fieldname_file``: The name of the field within the source file. 
 | ``file_name``: Path to the source file.
 | ``interpol_method``: Interpolation method eg. `bilinear`
-| ``factor``: A scalar by which to multiply the field ahead of passing it onto the model.
+| ``factor``: A scalar by which to multiply the field ahead of passing it onto the model. This is a quick way to do unit conversions for example. 
 
 | 
-The data table can be written in two formats: "legacy" or as a standard yaml file.
+The data table is commonly formatted by specifying each of the fields in the order listed above, with a new line for each entry.
 
-Legacy Format:
+Example Format:
     "ATM", "t_bot",  "t2m", "./INPUT/2t_ERA5.nc", "bilinear", 1.0
 
-Speficying a constant value:
-    Rather than overriding with data from a file, one can also set a field to constant. To do this, pass empty strings to `fieldname_file` and `file_name`. The `factor` now corresponds to the override value. For example, the following sets the temperature at the bottom of the atmosphere to 290 Kelvin: 
+A `yaml` format is also possible if you prefer. This is outlined in the `FMS data override <https://github.com/NOAA-GFDL/FMS/tree/main/data_override>`_ github page, along with other details. 
 
-.. code-block:: rst
+Speficying a constant value:
+    Rather than overriding with data from a file, one can also set a field to constant. To do this, pass empty strings to `fieldname_file` and `file_name`. The `factor` now corresponds to the override value. For example, the following sets the temperature at the bottom of the atmosphere to 290 Kelvin.
+
+
     "ATM", "t_bot",  "", "", "bilinear", 290.0
 
-More information can be found in the FMS data_override `readme file <https://github.com/NOAA-GFDL/FMS/tree/main/data_override>`_. 
+Which units do I need?
+    For configurations using SIS2 and MOM, a list of available surface flux variables along with the expected units can be found in the `flux_exchange <https://github.com/NOAA-GFDL/FMScoupler/blob/f4782c2c033df086eeac29fbbefb4a0bdac1649f/full/flux_exchange.F90>`_ file. 
+
 
 .. toctree::
     :maxdepth: 2
