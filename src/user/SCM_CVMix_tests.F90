@@ -42,6 +42,8 @@ type SCM_CVMix_tests_CS ; private
   real :: surf_evap !< (Constant) Evaporation rate [Z T-1 ~> m s-1]
   real :: Max_sw !< maximum of diurnal sw radiation [C Z T-1 ~> degC m s-1]
   real :: Rho0 !< reference density [R ~> kg m-3]
+  real :: rho_restore !< The density that is used to convert piston velocities
+                      !! into salt or heat fluxes [R ~> kg m-3]
 end type
 
 ! This include declares and sets the variable "version".
@@ -86,13 +88,13 @@ subroutine SCM_CVMix_tests_TS_init(T, S, h, G, GV, US, param_file, just_read)
                  'Initial salt mixed layer depth', &
                  units='m', default=0.0, scale=US%m_to_Z, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L1_SALT", UpperLayerSalt, &
-                 'Layer 2 surface salinity', units='1e-3', default=35.0, scale=US%ppt_to_S, do_not_log=just_read)
+                 'Layer 2 surface salinity', units="ppt", default=35.0, scale=US%ppt_to_S, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L1_TEMP", UpperLayerTemp, &
-                 'Layer 1 surface temperature', units='C', default=20.0, scale=US%degC_to_C, do_not_log=just_read)
+                 'Layer 1 surface temperature', units="degC", default=20.0, scale=US%degC_to_C, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L2_SALT", LowerLayerSalt, &
-                 'Layer 2 surface salinity', units='1e-3', default=35.0, scale=US%ppt_to_S, do_not_log=just_read)
+                 'Layer 2 surface salinity', units="ppt", default=35.0, scale=US%ppt_to_S, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L2_TEMP", LowerLayerTemp, &
-                 'Layer 2 surface temperature', units='C', default=20.0, scale=US%degC_to_C, do_not_log=just_read)
+                 'Layer 2 surface temperature', units="degC", default=20.0, scale=US%degC_to_C, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L2_DTDZ", LowerLayerdTdZ,     &
                  'Initial temperature stratification in layer 2', &
                  units='C/m', default=0.0, scale=US%degC_to_C*US%Z_to_m, do_not_log=just_read)
@@ -100,7 +102,7 @@ subroutine SCM_CVMix_tests_TS_init(T, S, h, G, GV, US, param_file, just_read)
                  'Initial salinity stratification in layer 2', &
                  units='PPT/m', default=0.0, scale=US%ppt_to_S*US%Z_to_m, do_not_log=just_read)
   call get_param(param_file, mdl, "SCM_L2_MINTEMP",LowerLayerMinTemp, &
-                 'Layer 2 minimum temperature', units='C', default=4.0, scale=US%degC_to_C, do_not_log=just_read)
+                 'Layer 2 minimum temperature', units="degC", default=4.0, scale=US%degC_to_C, do_not_log=just_read)
 
   if (just_read) return ! All run-time parameters have been read, so return.
 
@@ -184,6 +186,9 @@ subroutine SCM_CVMix_tests_surface_forcing_init(Time, G, param_file, CS)
                  "properties, or with BOUSSINSEQ false to convert some "//&
                  "parameters from vertical units of m to kg m-2.", &
                  units="kg m-3", default=1035.0, scale=US%kg_m3_to_R)
+  call get_param(param_file, mdl, "RESTORE_FLUX_RHO", CS%rho_restore, &
+                 "The density that is used to convert piston velocities into salt or heat fluxes.", &
+                 units="kg m-3", default=CS%Rho0*US%R_to_kg_m3, scale=US%kg_m3_to_R)
 
 end subroutine SCM_CVMix_tests_surface_forcing_init
 
@@ -214,7 +219,11 @@ subroutine SCM_CVMix_tests_wind_forcing(sfc_state, forces, day, G, US, CS)
 
   mag_tau = sqrt(CS%tau_x*CS%tau_x + CS%tau_y*CS%tau_y)
   if (associated(forces%ustar)) then ; do j=js,je ; do i=is,ie
-    forces%ustar(i,j) = sqrt( US%L_to_Z * mag_tau / (CS%Rho0) )
+    forces%ustar(i,j) = sqrt( US%L_to_Z * mag_tau / CS%Rho0 )
+  enddo ; enddo ; endif
+
+  if (associated(forces%tau_mag)) then ; do j=js,je ; do i=is,ie
+    forces%tau_mag(i,j) = mag_tau
   enddo ; enddo ; endif
 
 end subroutine SCM_CVMix_tests_wind_forcing
@@ -246,7 +255,7 @@ subroutine SCM_CVMix_tests_buoyancy_forcing(sfc_state, fluxes, day, G, US, CS)
     ! therefore must convert to [Q R Z T-1 ~> W m-2] by multiplying
     ! by Rho0*Cp
     do J=Jsq,Jeq ; do i=is,ie
-      fluxes%sens(i,J) = CS%surf_HF * CS%Rho0 * fluxes%C_p
+      fluxes%sens(i,J) = CS%surf_HF * CS%rho_restore * fluxes%C_p
     enddo ; enddo
   endif
 
@@ -255,7 +264,7 @@ subroutine SCM_CVMix_tests_buoyancy_forcing(sfc_state, fluxes, day, G, US, CS)
     ! Note CVMix test inputs give evaporation in [Z T-1 ~> m s-1]
     ! This therefore must be converted to mass flux in [R Z T-1 ~> kg m-2 s-1]
     ! by multiplying by density and some unit conversion factors.
-      fluxes%evap(i,J) = CS%surf_evap * CS%Rho0
+      fluxes%evap(i,J) = CS%surf_evap * CS%rho_restore
     enddo ; enddo
   endif
 
@@ -264,7 +273,8 @@ subroutine SCM_CVMix_tests_buoyancy_forcing(sfc_state, fluxes, day, G, US, CS)
     ! Note CVMix test inputs give max sw rad in [Z C T-1 ~> m degC s-1]
     ! therefore must convert to [Q R Z T-1 ~> W m-2] by multiplying by Rho0*Cp
     ! Note diurnal cycle peaks at Noon.
-      fluxes%sw(i,J) = CS%Max_sw *  max(0.0, cos(2*PI*(time_type_to_real(DAY)/86400.0 - 0.5))) * CS%RHO0 * fluxes%C_p
+      fluxes%sw(i,J) = CS%Max_sw *  max(0.0, cos(2*PI*(time_type_to_real(DAY)/86400.0 - 0.5))) * &
+                       CS%rho_restore * fluxes%C_p
     enddo ; enddo
   endif
 
