@@ -362,15 +362,8 @@ $(DEPS):
 	mkdir -p $(DEPS)
 
 #---
-# The following block does a non-library build of a coupled driver interface to
-# MOM, along with everything below it.  This simply checks that we have not
-# broken the ability to compile.  This is not a means to build a complete
-# coupled executable.
-# TODO:
-#   - Avoid re-building FMS and MOM6 src by re-using existing object/mod files
-#   - Use autoconf rather than mkmf templates
-MK_TEMPLATE ?= ../../$(DEPS)/mkmf/templates/ncrc-gnu.mk
-# XXX: Are we even using this?
+# Verify that the coupled model drivers can be compiled.  This does not verify
+# that they can be run, since it would require external submodels.
 
 # NUOPC driver
 $(BUILD)/nuopc/mom_ocean_model_nuopc.o: $(BUILD)/nuopc/Makefile
