@@ -979,6 +979,9 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
     if (CS%id_lfbod > 0) then
       ! Calculate front length used in B22 formula (eq 24).
 
+      w_star3 = max(0., -bflux(i,j)) * BLD(i,j)
+      u_star3 = U_star_2d(i,j)**3
+
       ! Include an absurdly_small_freq2 to prevent division by zero.
       f2_h = max( &
           (0.25*((G%CoriolisBu(I,J)  + G%CoriolisBu(I-1,J-1)) &
@@ -986,9 +989,8 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
           absurdly_small_freq2)
 
       lf_bodner_diag(i,j) = &
-          0.25 * (cuberoot(CS%mstar * u_star3 + CS%nstar * w_star3)**2 &
-            * (US%m_to_L * GV%m_to_H * US%T_to_s**2) &
-          ) / (f2_h * max(little_h(i,j), GV%Angstrom_H))
+          0.25 * cuberoot(CS%mstar * u_star3 + CS%nstar * w_star3)**2 &
+            / (f2_h * max(little_h(i,j), GV%Angstrom_H))
     endif
   enddo ; enddo
 
@@ -1809,7 +1811,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
         'm2 s-3', conversion=(US%Z_to_m**2*US%s_to_T**3))
     CS%id_lfbod = register_diag_field('ocean_model', 'lf_bodner', diag%axesT1, Time, &
         'Front length in Bodner mixed layer restratificiation parameterization', &
-        'm', conversion=(US%L_to_m))
+        'm', conversion=(US%Z_to_m**2)*GV%m_to_H)
   endif
 
   ! If MLD_filtered is being used, we need to update halo regions after a restart
