@@ -831,6 +831,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   real :: u_star3         ! Cube of surface friction velocity [Z3 T-3 ~> m3 s-3]
   real :: r_wpup          ! reciprocal of vertical momentum flux [T2 L-1 H-1 ~> s2 m-2 or m s2 kg-1]
   real :: absf            ! absolute value of f, interpolated to velocity points [T-1 ~> s-1]
+  real :: f_h             ! Coriolis parameter at h-points [T-1 ~> s-1]
   real :: f2_h            ! Coriolis parameter at h-points squared [T-2 ~> s-2]
   real :: absurdly_small_freq2 ! Frequency squared used to avoid division by 0 [T-2 ~> s-2]
   real :: grid_dsd        ! combination of grid scales [L2 ~> m2]
@@ -941,8 +942,8 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
       ! This expression differs by a factor of 1. / (Rho_0 * SpV_avg) compared with the other
       ! expressions below, and it is invariant to the value of Rho_0 in non-Boussinesq mode.
       wpup(i,j) = max((cuberoot( CS%mstar * U_star_2d(i,j)**3 + &
-                                 CS%nstar * max(0., -bflux(i,j)) * BLD(i,j) ))**2, CS%min_wstar2) * &
-                  ( US%Z_to_L * GV%RZ_to_H / tv%SpV_avg(i,j,1))
+                                 CS%nstar * max(0., -bflux(i,j)) * BLD(i,j) ))**2, CS%min_wstar2) &
+                  * (US%Z_to_L * GV%RZ_to_H / tv%SpV_avg(i,j,1))
                 ! The final line above converts from [Z2 T-2 ~> m2 s-2] to [L H T-2 ~> m2 s-2 or Pa].
                 ! Some rescaling factors and the division by specific volume compensating for other
                 ! factors that are in find_ustar_mech, and others effectively converting the wind
@@ -959,14 +960,13 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
       w_star3 = max(0., -bflux(i,j)) * BLD(i,j)    ! In [Z3 T-3 ~> m3 s-3]
       u_star3 = U_star_2d(i,j)**3                  ! In [Z3 T-3 ~> m3 s-3]
       wpup(i,j) = max(m2_s2_to_Z2_T2 * (Z3_T3_to_m3_s3 * ( CS%mstar * u_star3 + CS%nstar * w_star3 ) )**two_thirds, &
-                      CS%min_wstar2) * &
-                  ( US%Z_to_L * US%Z_to_m * GV%m_to_H ) ! In [L H T-2 ~> m2 s-2 or kg m-1 s-2]
+          CS%min_wstar2) * US%Z_to_L * GV%Z_to_H ! In [L H T-2 ~> m2 s-2 or kg m-1 s-2]
     enddo ; enddo
   else
     do j=js-1,je+1 ; do i=is-1,ie+1
       w_star3 = max(0., -bflux(i,j)) * BLD(i,j)    ! In [Z3 T-3 ~> m3 s-3]
-      wpup(i,j) = max( (cuberoot(CS%mstar * U_star_2d(i,j)**3 + CS%nstar * w_star3))**2, CS%min_wstar2 ) * &
-                  ( US%Z_to_L * US%Z_to_m * GV%m_to_H ) ! In [L H T-2 ~> m2 s-2 or kg m-1 s-2]
+      wpup(i,j) = max( (cuberoot(CS%mstar * U_star_2d(i,j)**3 + CS%nstar * w_star3))**2, CS%min_wstar2 ) &
+          * US%Z_to_L * GV%Z_to_H ! In [L H T-2 ~> m2 s-2 or kg m-1 s-2]
     enddo ; enddo
   endif
 
@@ -975,24 +975,36 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
     wpup(i,j) = rmean2ts(wpup(i,j), CS%wpup_filtered(i,j), &
                          CS%BLD_growing_Tfilt, CS%BLD_decaying_Tfilt, dt)
     CS%wpup_filtered(i,j) = wpup(i,j)
+  enddo ; enddo
 
-    if (CS%id_lfbod > 0) then
+  if (CS%id_lfbod > 0) then
+    do j=js-1,je+1 ; do i=is-1,ie+1
       ! Calculate front length used in B22 formula (eq 24).
-
       w_star3 = max(0., -bflux(i,j)) * BLD(i,j)
       u_star3 = U_star_2d(i,j)**3
 
       ! Include an absurdly_small_freq2 to prevent division by zero.
-      f2_h = max( &
-          (0.25*((G%CoriolisBu(I,J)  + G%CoriolisBu(I-1,J-1)) &
-            + (G%CoriolisBu(I-1,J) + G%CoriolisBu(I,J-1))))**2, &
-          absurdly_small_freq2)
+      f_h = 0.25 * ((G%CoriolisBu(I,J)  + G%CoriolisBu(I-1,J-1)) &
+          + (G%CoriolisBu(I-1,J) + G%CoriolisBu(I,J-1)))
+      f2_h = max(f_h**2, absurdly_small_freq2)
 
       lf_bodner_diag(i,j) = &
           0.25 * cuberoot(CS%mstar * u_star3 + CS%nstar * w_star3)**2 &
             / (f2_h * max(little_h(i,j), GV%Angstrom_H))
+    enddo ; enddo
+
+    ! Rescale from [Z2 H-1 to L]
+    if (allocated(tv%SpV_avg) .and. .not.(GV%Boussinesq .or. GV%semi_Boussinesq)) then
+      do j=js-1,je+1 ; do i=is-1,ie+1
+        lf_bodner_diag(i,j) = lf_bodner_diag(i,j) &
+            * (US%Z_to_L * GV%RZ_to_H / tv%SpV_avg(i,j,1))
+      enddo ; enddo
+    else
+      do j=js-1,je+1 ; do i=is-1,ie+1
+        lf_bodner_diag(i,j) = lf_bodner_diag(i,j) * US%Z_to_L * GV%Z_to_H
+      enddo ; enddo
     endif
-  enddo ; enddo
+  endif
 
   if (CS%debug) then
     call hchksum(little_h,'mle_Bodner: little_h', G%HI, haloshift=1, scale=GV%H_to_mks)
@@ -1811,7 +1823,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
         'm2 s-3', conversion=(US%Z_to_m**2*US%s_to_T**3))
     CS%id_lfbod = register_diag_field('ocean_model', 'lf_bodner', diag%axesT1, Time, &
         'Front length in Bodner mixed layer restratificiation parameterization', &
-        'm', conversion=(US%Z_to_m**2)*GV%m_to_H)
+        'm', conversion=US%L_to_m)
   endif
 
   ! If MLD_filtered is being used, we need to update halo regions after a restart
