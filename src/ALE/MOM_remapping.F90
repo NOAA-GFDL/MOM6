@@ -190,12 +190,12 @@ subroutine remapping_core_h(CS, n0, h0, u0, n1, h1, u1, h_neglect, h_neglect_edg
   integer,             intent(in)  :: n1 !< Number of cells on target grid
   real, dimension(n1), intent(in)  :: h1 !< Cell widths on target grid [H]
   real, dimension(n1), intent(out) :: u1 !< Cell averages on target grid [A]
-  real, optional,      intent(in)  :: h_neglect !< A negligibly small width for the
+  real,                intent(in)  :: h_neglect !< A negligibly small width for the
                                          !! purpose of cell reconstructions
                                          !! in the same units as h0 [H]
-  real, optional,      intent(in)  :: h_neglect_edge !< A negligibly small width
-                                         !! for the purpose of edge value
-                                         !! calculations in the same units as h0 [H]
+  real, optional,      intent(in)  :: h_neglect_edge !< A negligibly small width for the purpose
+                                         !! of edge value calculations in the same units as h0 [H].
+                                         !! The default is h_neglect.
   logical, dimension(n0), optional, intent(in) :: PCM_cell !< If present, use PCM remapping for
                                          !! cells in the source grid where this is true.
 
@@ -204,14 +204,13 @@ subroutine remapping_core_h(CS, n0, h0, u0, n1, h1, u1, h_neglect, h_neglect_edg
   real, dimension(n0,2)           :: ppoly_r_S     ! Edge slope of polynomial [A H-1]
   real, dimension(n0,CS%degree+1) :: ppoly_r_coefs ! Coefficients of polynomial reconstructions [A]
   real :: uh_err       ! A bound on the error in the sum of u*h, as estimated by the remapping code [A H]
-  real :: hNeglect, hNeglect_edge ! Negligibly small cell widths in the same units as h0 [H]
+  real :: hNeglect_edge ! Negligibly small cell widths in the same units as h0 [H]
   integer :: iMethod   ! An integer indicating the integration method used
 
-  hNeglect = 1.0e-30 ; if (present(h_neglect)) hNeglect = h_neglect
-  hNeglect_edge = 1.0e-10 ; if (present(h_neglect_edge)) hNeglect_edge = h_neglect_edge
+  hNeglect_edge = h_neglect ; if (present(h_neglect_edge)) hNeglect_edge = h_neglect_edge
 
   call build_reconstructions_1d( CS, n0, h0, u0, ppoly_r_coefs, ppoly_r_E, ppoly_r_S, iMethod, &
-                                 hNeglect, hNeglect_edge, PCM_cell )
+                                 h_neglect, hNeglect_edge, PCM_cell )
 
   if (CS%om4_remap_via_sub_cells) then
 
@@ -244,27 +243,26 @@ subroutine remapping_core_w( CS, n0, h0, u0, n1, dx, u1, h_neglect, h_neglect_ed
   integer,               intent(in)  :: n1 !< Number of cells on target grid
   real, dimension(n1+1), intent(in)  :: dx !< Cell widths on target grid [H]
   real, dimension(n1),   intent(out) :: u1 !< Cell averages on target grid [A]
-  real, optional,        intent(in)  :: h_neglect !< A negligibly small width for the
+  real,                  intent(in)  :: h_neglect !< A negligibly small width for the
                                            !! purpose of cell reconstructions
                                            !! in the same units as h0 [H].
-  real, optional,        intent(in)  :: h_neglect_edge !< A negligibly small width
-                                           !! for the purpose of edge value
-                                           !! calculations in the same units as h0 [H].
+  real, optional,        intent(in)  :: h_neglect_edge !< A negligibly small width for the purpose
+                                           !! of edge value calculations in the same units as h0 [H].
+                                           !! The default is h_neglect.
   ! Local variables
   real, dimension(n0,2)           :: ppoly_r_E     ! Edge value of polynomial [A]
   real, dimension(n0,2)           :: ppoly_r_S     ! Edge slope of polynomial [A H-1]
   real, dimension(n0,CS%degree+1) :: ppoly_r_coefs ! Coefficients of polynomial reconstructions [A]
   real, dimension(n1) :: h1 !< Cell widths on target grid [H]
   real :: uh_err       ! A bound on the error in the sum of u*h, as estimated by the remapping code [A H]
-  real :: hNeglect, hNeglect_edge  ! Negligibly small thicknesses [H]
+  real :: hNeglect_edge  ! Negligibly small thicknesses [H]
   integer :: iMethod   ! An integer indicating the integration method used
   integer :: k
 
-  hNeglect = 1.0e-30 ; if (present(h_neglect)) hNeglect = h_neglect
-  hNeglect_edge = 1.0e-10 ; if (present(h_neglect_edge)) hNeglect_edge = h_neglect_edge
+  hNeglect_edge = h_neglect ; if (present(h_neglect_edge)) hNeglect_edge = h_neglect_edge
 
   call build_reconstructions_1d( CS, n0, h0, u0, ppoly_r_coefs, ppoly_r_E, ppoly_r_S, iMethod,&
-                                  hNeglect, hNeglect_edge )
+                                  h_neglect, hNeglect_edge )
 
   if (CS%check_reconstruction) call check_reconstructions_1d(n0, h0, u0, CS%degree, &
                                    CS%boundary_extrapolation, ppoly_r_coefs, ppoly_r_E)
@@ -300,18 +298,22 @@ subroutine build_reconstructions_1d( CS, n0, h0, u0, ppoly_r_coefs, &
   real, dimension(n0,2), intent(out) :: ppoly_r_E !< Edge value of polynomial [A]
   real, dimension(n0,2), intent(out) :: ppoly_r_S !< Edge slope of polynomial [A H-1]
   integer,               intent(out) :: iMethod !< Integration method
-  real, optional,        intent(in)  :: h_neglect !< A negligibly small width for the
+  real,                  intent(in)  :: h_neglect !< A negligibly small width for the
                                          !! purpose of cell reconstructions
                                          !! in the same units as h0 [H]
-  real, optional,        intent(in)  :: h_neglect_edge !< A negligibly small width
-                                         !! for the purpose of edge value
-                                         !! calculations in the same units as h0 [H]
+  real, optional,        intent(in)  :: h_neglect_edge !< A negligibly small width for the purpose
+                                         !! of edge value calculations in the same units as h0 [H].
+                                         !! The default is h_neglect.
   logical, optional,     intent(in)  :: PCM_cell(n0) !< If present, use PCM remapping for
                                          !! cells from the source grid where this is true.
 
   ! Local variables
+  real :: h_neg_edge  ! A negligibly small width for the purpose of edge value
+                      ! calculations in the same units as h0 [H]
   integer :: local_remapping_scheme
   integer :: k, n
+
+  h_neg_edge = h_neglect ; if (present(h_neglect_edge)) h_neg_edge = h_neglect_edge
 
   ! Reset polynomial
   ppoly_r_E(:,:) = 0.0
@@ -349,7 +351,7 @@ subroutine build_reconstructions_1d( CS, n0, h0, u0, ppoly_r_coefs, &
       iMethod = INTEGRATION_PLM
     case ( REMAPPING_PPM_CW )
       ! identical to REMAPPING_PPM_HYBGEN
-      call edge_values_explicit_h4cw( n0, h0, u0, ppoly_r_E, h_neglect_edge )
+      call edge_values_explicit_h4cw( n0, h0, u0, ppoly_r_E, h_neg_edge )
       call PPM_monotonicity(   n0,     u0, ppoly_r_E )
       call PPM_reconstruction( n0, h0, u0, ppoly_r_E, ppoly_r_coefs, h_neglect, answer_date=CS%answer_date )
       if ( CS%boundary_extrapolation ) then
@@ -357,14 +359,14 @@ subroutine build_reconstructions_1d( CS, n0, h0, u0, ppoly_r_coefs, &
       endif
       iMethod = INTEGRATION_PPM
     case ( REMAPPING_PPM_H4 )
-      call edge_values_explicit_h4( n0, h0, u0, ppoly_r_E, h_neglect_edge, answer_date=CS%answer_date )
+      call edge_values_explicit_h4( n0, h0, u0, ppoly_r_E, h_neg_edge, answer_date=CS%answer_date )
       call PPM_reconstruction( n0, h0, u0, ppoly_r_E, ppoly_r_coefs, h_neglect, answer_date=CS%answer_date )
       if ( CS%boundary_extrapolation ) then
         call PPM_boundary_extrapolation( n0, h0, u0, ppoly_r_E, ppoly_r_coefs, h_neglect )
       endif
       iMethod = INTEGRATION_PPM
     case ( REMAPPING_PPM_IH4 )
-      call edge_values_implicit_h4( n0, h0, u0, ppoly_r_E, h_neglect_edge, answer_date=CS%answer_date )
+      call edge_values_implicit_h4( n0, h0, u0, ppoly_r_E, h_neg_edge, answer_date=CS%answer_date )
       call PPM_reconstruction( n0, h0, u0, ppoly_r_E, ppoly_r_coefs, h_neglect, answer_date=CS%answer_date )
       if ( CS%boundary_extrapolation ) then
         call PPM_boundary_extrapolation( n0, h0, u0, ppoly_r_E, ppoly_r_coefs, h_neglect )
@@ -383,7 +385,7 @@ subroutine build_reconstructions_1d( CS, n0, h0, u0, ppoly_r_coefs, &
         call PPM_boundary_extrapolation( n0, h0, u0, ppoly_r_E, ppoly_r_coefs, h_neglect )
       iMethod = INTEGRATION_PPM
     case ( REMAPPING_PQM_IH4IH3 )
-      call edge_values_implicit_h4( n0, h0, u0, ppoly_r_E, h_neglect_edge, answer_date=CS%answer_date )
+      call edge_values_implicit_h4( n0, h0, u0, ppoly_r_E, h_neg_edge, answer_date=CS%answer_date )
       call edge_slopes_implicit_h3( n0, h0, u0, ppoly_r_S, h_neglect, answer_date=CS%answer_date )
       call PQM_reconstruction( n0, h0, u0, ppoly_r_E, ppoly_r_S, ppoly_r_coefs, h_neglect, &
                                answer_date=CS%answer_date )
@@ -393,7 +395,7 @@ subroutine build_reconstructions_1d( CS, n0, h0, u0, ppoly_r_coefs, &
       endif
       iMethod = INTEGRATION_PQM
     case ( REMAPPING_PQM_IH6IH5 )
-      call edge_values_implicit_h6( n0, h0, u0, ppoly_r_E, h_neglect_edge, answer_date=CS%answer_date )
+      call edge_values_implicit_h6( n0, h0, u0, ppoly_r_E, h_neg_edge, answer_date=CS%answer_date )
       call edge_slopes_implicit_h5( n0, h0, u0, ppoly_r_S, h_neglect, answer_date=CS%answer_date )
       call PQM_reconstruction( n0, h0, u0, ppoly_r_E, ppoly_r_S, ppoly_r_coefs, h_neglect, &
                                answer_date=CS%answer_date )
@@ -1615,21 +1617,17 @@ logical function remapping_unit_tests(verbose)
   real :: u02_err ! Error in remaping [A]
   integer, allocatable, dimension(:) :: isrc_start, isrc_end, isrc_max, itgt_start, itgt_end, isub_src ! Indices
   integer :: answer_date  ! The vintage of the expressions to test
-  real, parameter :: hNeglect_dflt = 1.0e-30 ! A thickness [H ~> m or kg m-2] that can be
-                                      ! added to thicknesses in a denominator without
-                                      ! changing the numerical result, except where
-                                      ! a division by zero would otherwise occur.
   real :: err                         ! Errors in the remapped thicknesses [H] or values [A]
   real :: h_neglect, h_neglect_edge   ! Tiny thicknesses used in remapping [H]
   type(testing) :: test ! Unit testing convenience functions
-  integer :: om4
+  integer :: i, om4
   character(len=4) :: om4_tag
 
   call test%set( verbose=verbose ) ! Sets the verbosity flag in test
 
   answer_date = 20190101 ! 20181231
-  h_neglect = hNeglect_dflt
-  h_neglect_edge = hNeglect_dflt ; if (answer_date < 20190101) h_neglect_edge = 1.0e-10
+  h_neglect = 1.0e-30
+  h_neglect_edge = h_neglect ; if (answer_date < 20190101) h_neglect_edge = 1.0e-10
 
   if (verbose) write(test%stdout,*) '  ===== MOM_remapping: remapping_unit_tests ================='
 

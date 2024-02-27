@@ -119,7 +119,7 @@ subroutine build_hycom1_column(CS, remapCS, eqn_of_state, nz, depth, h, T, S, p_
   real, optional,        intent(in)    :: zScale !< Scaling factor from the input coordinate thicknesses in [Z ~> m]
                                                 !! to desired units for zInterface, perhaps GV%Z_to_H in which
                                                 !! case this has units of [H Z-1 ~> nondim or kg m-3]
-  real,        optional, intent(in)    :: h_neglect !< A negligibly small width for the purpose of
+  real,                  intent(in)    :: h_neglect !< A negligibly small width for the purpose of
                                                 !! cell reconstruction [H ~> m or kg m-2]
   real,        optional, intent(in)    :: h_neglect_edge !< A negligibly small width for the purpose of
                                                 !! edge value calculation [H ~> m or kg m-2]
@@ -225,7 +225,7 @@ subroutine build_hycom1_target_anomaly(CS, remapCS, eqn_of_state, nz, depth, h, 
   real, dimension(nz+1), intent(out) :: RiAnom !< The interface density anomaly
                                                !! w.r.t. the interface target
                                                !! densities [R ~> kg m-3]
-  real,        optional, intent(in)  :: h_neglect !< A negligibly small width for the purpose of
+  real,                  intent(in)  :: h_neglect !< A negligibly small width for the purpose of
                                                !! cell reconstruction [H ~> m or kg m-2]
   real,        optional, intent(in)  :: h_neglect_edge !< A negligibly small width for the purpose of
                                                 !! edge value calculation [H ~> m or kg m-2]
