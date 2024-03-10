@@ -263,7 +263,7 @@ type, public :: MOM_control_struct ; private
   type(MOM_stoch_eos_CS) :: stoch_eos_CS !< structure containing random pattern for stoch EOS
   logical :: alternate_first_direction !< If true, alternate whether the x- or y-direction
                     !! updates occur first in directionally split parts of the calculation.
-  real    :: first_dir_restart = -1.0 !< A real copy of G%first_direction for use in restart files
+  real    :: first_dir_restart = -1.0 !< A real copy of G%first_direction for use in restart files [nondim]
   logical :: offline_tracer_mode = .false.
                     !< If true, step_offline() is called instead of step_MOM().
                     !! This is intended for running MOM6 in offline tracer mode
@@ -1205,7 +1205,7 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
   endif
 
   !OBC segment data update for some fields can be less frequent than others
-  if(associated(CS%OBC)) then
+  if (associated(CS%OBC)) then
     CS%OBC%update_OBC_seg_data = .false.
     if (CS%dt_obc_seg_period == 0.0) CS%OBC%update_OBC_seg_data = .true.
     if (CS%dt_obc_seg_period > 0.0) then
@@ -1436,8 +1436,11 @@ subroutine step_MOM_tracer_dyn(CS, G, GV, US, h, Time_local)
                       CS%tracer_diff_CSp, CS%tracer_Reg, CS%tv)
   if (CS%debug) call MOM_tracer_chksum("Post-diffuse ", CS%tracer_Reg, G)
   if (showCallTree) call callTree_waypoint("finished tracer advection/diffusion (step_MOM)")
-  call update_segment_tracer_reservoirs(G, GV, CS%uhtr, CS%vhtr, h, CS%OBC, &
+  if (associated(CS%OBC)) then
+    call pass_vector(CS%uhtr, CS%vhtr, G%Domain)
+    call update_segment_tracer_reservoirs(G, GV, CS%uhtr, CS%vhtr, h, CS%OBC, &
                      CS%t_dyn_rel_adv, CS%tracer_Reg)
+  endif
   call cpu_clock_end(id_clock_tracer) ; call cpu_clock_end(id_clock_thermo)
 
   call cpu_clock_begin(id_clock_other) ; call cpu_clock_begin(id_clock_diagnostics)
@@ -2079,7 +2082,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
 
   real    :: Hmix_z, Hmix_UV_z ! Temporary variables with averaging depths [Z ~> m]
   real    :: HFrz_z            ! Temporary variable with the melt potential depth [Z ~> m]
-  real    :: default_val       ! default value for a parameter
+  real    :: default_val       ! The default value for DTBT_RESET_PERIOD [s]
   logical :: write_geom_files  ! If true, write out the grid geometry files.
   logical :: new_sim           ! If true, this has been determined to be a new simulation
   logical :: use_geothermal    ! If true, apply geothermal heating.
@@ -2958,7 +2961,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     endif
 
     if (associated(ALE_sponge_in_CSp)) then
-      call rotate_ALE_sponge(ALE_sponge_in_CSp, G_in, CS%ALE_sponge_CSp, G, GV, turns, param_file)
+      call rotate_ALE_sponge(ALE_sponge_in_CSp, G_in, CS%ALE_sponge_CSp, G, GV, US, turns, param_file)
       call update_ALE_sponge_field(CS%ALE_sponge_CSp, T_in, G, GV, CS%T)
       call update_ALE_sponge_field(CS%ALE_sponge_CSp, S_in, G, GV, CS%S)
     endif
