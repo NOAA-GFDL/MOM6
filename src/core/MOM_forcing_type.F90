@@ -361,6 +361,7 @@ type, public :: forcing_diags
   integer :: id_saltflux          = -1
   integer :: id_saltFluxIn        = -1
   integer :: id_saltFluxAdded     = -1
+  integer :: id_saltFluxBehind    = -1
 
   integer :: id_total_saltflux        = -1
   integer :: id_total_saltFluxIn      = -1
@@ -2099,7 +2100,7 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
         diag%axesT1,Time,'Salt flux into ocean at surface due to restoring or flux adjustment', &
         units='kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
 
-  handles%id_saltFluxAdded = register_diag_field('ocean_model', 'salt_left_behind', &
+  handles%id_saltFluxBehind = register_diag_field('ocean_model', 'salt_left_behind', &
         diag%axesT1,Time,'Salt left in ocean at surface due to ice formation', &
         units='kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
 
@@ -3130,6 +3131,9 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
       call post_data(handles%id_total_saltFluxIn, total_transport, diag)
     endif
 
+    if (handles%id_saltFluxBehind > 0 .and. associated(fluxes%salt_left_behind)) &
+      call post_data(handles%id_saltFluxBehind, fluxes%salt_left_behind, diag)
+
     if (handles%id_saltFluxGlobalAdj > 0)                                            &
       call post_data(handles%id_saltFluxGlobalAdj, fluxes%saltFluxGlobalAdj, diag)
     if (handles%id_vPrecGlobalAdj > 0)                                               &
@@ -3492,7 +3496,7 @@ end subroutine get_mech_forcing_groups
 
 !> Allocates and zeroes-out array.
 subroutine myAlloc(array, is, ie, js, je, flag)
-  real, dimension(:,:), pointer :: array !< Array to be allocated
+  real, dimension(:,:), pointer :: array !< Array to be allocated [arbitrary]
   integer,           intent(in) :: is !< Start i-index
   integer,           intent(in) :: ie !< End i-index
   integer,           intent(in) :: js !< Start j-index
@@ -3970,11 +3974,12 @@ end subroutine homogenize_forcing
 
 subroutine homogenize_field_t(var, G, tmp_scale)
   type(ocean_grid_type),            intent(in)    :: G   !< The ocean's grid structure
-  real, dimension(SZI_(G),SZJ_(G)), intent(inout) :: var !< The variable to homogenize
-  real,                   optional, intent(in)    :: tmp_scale !< A temporary rescaling factor for the
-                                                         !! variable that is reversed in the return value
+  real, dimension(SZI_(G),SZJ_(G)), intent(inout) :: var !< The variable to homogenize [A ~> a]
+  real,                    optional, intent(in)    :: tmp_scale !< A temporary rescaling factor for the
+                                                         !! variable that is reversed in the
+                                                         !! return value [a A-1 ~> 1]
 
-  real    :: avg   ! Global average of var, in the same units as var
+  real    :: avg   ! Global average of var, in the same units as var [A ~> a]
   integer :: i, j, is, ie, js, je
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
 
@@ -3987,11 +3992,12 @@ end subroutine homogenize_field_t
 
 subroutine homogenize_field_v(var, G, tmp_scale)
   type(ocean_grid_type),             intent(in)    :: G    !< The ocean's grid structure
-  real, dimension(SZI_(G),SZJB_(G)), intent(inout) :: var  !< The variable to homogenize
+  real, dimension(SZI_(G),SZJB_(G)), intent(inout) :: var  !< The variable to homogenize [A ~> a]
   real,                    optional, intent(in)    :: tmp_scale !< A temporary rescaling factor for the
-                                                         !! variable that is reversed in the return value
+                                                           !! variable that is reversed in the
+                                                           !! return value [a A-1 ~> 1]
 
-  real    :: avg   ! Global average of var, in the same units as var
+  real    :: avg   ! Global average of var, in the same units as var [A ~> a]
   integer :: i, j, is, ie, jsB, jeB
   is = G%isc ; ie = G%iec ; jsB = G%jscB ; jeB = G%jecB
 
@@ -4004,11 +4010,12 @@ end subroutine homogenize_field_v
 
 subroutine homogenize_field_u(var, G, tmp_scale)
   type(ocean_grid_type),             intent(in)    :: G    !< The ocean's grid structure
-  real, dimension(SZI_(G),SZJB_(G)), intent(inout) :: var  !< The variable to homogenize
+  real, dimension(SZI_(G),SZJB_(G)), intent(inout) :: var  !< The variable to homogenize [A ~> a]
   real,                    optional, intent(in)    :: tmp_scale !< A temporary rescaling factor for the
-                                                         !! variable that is reversed in the return value
+                                                           !! variable that is reversed in the
+                                                           !! return value [a A-1 ~> 1]
 
-  real    :: avg   ! Global average of var, in the same units as var
+  real    :: avg   ! Global average of var, in the same units as var [A ~> a]
   integer :: i, j, isB, ieB, js, je
   isB = G%iscB ; ieB = G%iecB ; js = G%jsc ; je = G%jec
 
