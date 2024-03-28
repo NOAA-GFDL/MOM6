@@ -330,7 +330,7 @@ def scan_fortran_file(src_file, defines=None):
 
                 # XXX: Don't attempt to parse #if statements, but store the state.
                 # if/endif stack.  For now, assume that these always fail.
-                cpp_exclude = False
+                cpp_exclude = True
 
             # Complement #else condition group
             match = re_cpp_else.match(line)
