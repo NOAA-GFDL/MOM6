@@ -129,13 +129,9 @@ REPORT_ERROR_LOGS ?=
 TIME ?= time
 
 # Legacy external work directory
-#WORKSPACE ?=
 WORKSPACE ?= .
 
 # Set directories for build/ and work/
-#BUILD ?= $(WORKSPACE)build
-#DEPS ?= $(BUILD)/deps
-#WORK ?= $(WORKSPACE)work
 BUILD ?= $(WORKSPACE)/build
 DEPS ?= $(BUILD)/deps
 WORK ?= $(WORKSPACE)/work
@@ -297,12 +293,17 @@ $(BUILD)/timing/Makefile: MOM_ACFLAGS += --with-driver=timing_tests
 # Build executables
 $(BUILD)/unit/test_%: $(BUILD)/unit/Makefile FORCE
 	cd $(@D) && $(TIME) $(MAKE) $(@F) -j
+
 $(BUILD)/unit/Makefile: $(foreach e,$(UNIT_EXECS),../config_src/drivers/unit_tests/$(e).F90)
+
 $(BUILD)/timing/time_%: $(BUILD)/timing/Makefile FORCE
 	cd $(@D) && $(TIME) $(MAKE) $(@F) -j
+
 $(BUILD)/timing/Makefile: $(foreach e,$(TIMING_EXECS),../config_src/drivers/timing_tests/$(e).F90)
+
 $(BUILD)/%/MOM6: $(BUILD)/%/Makefile FORCE
 	cd $(@D) && $(TIME) $(MAKE) $(@F) -j
+
 FORCE:
 
 
