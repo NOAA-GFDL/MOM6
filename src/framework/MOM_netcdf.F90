@@ -39,6 +39,7 @@ public :: write_netcdf_axis
 public :: write_netcdf_attribute
 public :: get_netcdf_size
 public :: get_netcdf_fields
+public :: get_netcdf_filename
 public :: read_netcdf_field
 
 
@@ -217,6 +218,8 @@ function register_netcdf_field(handle, label, axes, longname, units) &
   allocate(dimids(size(axes)))
   dimids(:) = [(axes(i)%dimid, i = 1, size(axes))]
 
+  field%label = label
+
   ! Determine the corresponding netCDF data type
   ! TODO: Support a `pack`-like argument
   select case (kind(1.0))
@@ -225,7 +228,7 @@ function register_netcdf_field(handle, label, axes, longname, units) &
     case (real64)
       xtype = NF90_DOUBLE
     case default
-      call MOM_error(FATAL, "register_netcdf_axis: Unknown kind(real).")
+      call MOM_error(FATAL, "register_netcdf_field: Unknown kind(real).")
   end select
 
   ! Register the field variable
@@ -292,6 +295,8 @@ function register_netcdf_axis(handle, label, units, longname, points, &
     call MOM_error(FATAL, &
         "Axis must either have explicit points or be a time axis ('T').")
   endif
+
+  axis%label = label
 
   if (present(points)) then
     axis_size = size(points)
@@ -722,6 +727,14 @@ subroutine get_netcdf_fields(handle, axes, fields)
   fields(:) = vars(:nfields)
 end subroutine get_netcdf_fields
 
+!> Return the name of a file from a netCDF handle
+function get_netcdf_filename(handle)
+  type(netcdf_file_type), intent(in) :: handle !< A netCDF file handle
+  character(len=:), allocatable :: get_netcdf_filename !< The name of the file that this handle refers to.
+
+  get_netcdf_filename = handle%filename
+
+end function
 
 !> Read the values of a field from a netCDF file
 subroutine read_netcdf_field(handle, field, values, bounds)
