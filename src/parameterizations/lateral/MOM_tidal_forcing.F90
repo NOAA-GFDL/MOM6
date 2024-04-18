@@ -33,7 +33,7 @@ type, public :: astro_longitudes
 end type astro_longitudes
 
 !> The control structure for the MOM_tidal_forcing module
-type, public :: tidal_forcing_CS ; private
+type, public :: tidal_forcing_CS
   logical :: use_tidal_sal_file !< If true, Read the tidal self-attraction
                       !! and loading from input files, specified
                       !! by TIDAL_INPUT_FILE.

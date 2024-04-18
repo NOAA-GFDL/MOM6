@@ -25,11 +25,13 @@ use MOM_restart, only : register_restart_field, register_restart_pair
 use MOM_restart, only : query_initialized, MOM_restart_CS
 use MOM_self_attr_load, only : scalar_SAL_sensitivity
 use MOM_self_attr_load, only : SAL_CS
+use MOM_tidal_forcing, only : tidal_forcing_CS
 use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : BT_cont_type, alloc_bt_cont_type
 use MOM_verticalGrid, only : verticalGrid_type
 use MOM_variables, only : accel_diag_ptrs
+use MOM_HA, only : HA_init, HA_register, HA_accum
 
 implicit none ; private
 
@@ -230,6 +232,7 @@ type, public :: barotropic_CS ; private
   real    :: const_dyn_psurf !< The constant that scales the dynamic surface
                              !! pressure [nondim].  Stable values are < ~1.0.
                              !! The default is 0.9.
+  logical :: tides           !< If true, apply tidal momentum forcing.
   logical :: calculate_SAL   !< If true, calculate self-attration and loading.
   logical :: tidal_sal_bug   !< If true, the tidal self-attraction and loading anomaly in the
                              !! barotropic solver has the wrong sign, replicating a long-standing
@@ -287,6 +290,7 @@ type, public :: barotropic_CS ; private
                              !! the timing of diagnostic output.
   type(MOM_domain_type), pointer :: BT_Domain => NULL()  !< Barotropic MOM domain
   type(hor_index_type), pointer :: debug_BT_HI => NULL() !< debugging copy of horizontal index_type
+  type(tidal_forcing_CS), pointer :: tides_CSp => NULL() !< Control structure for tides
   type(SAL_CS), pointer :: SAL_CSp => NULL() !< Control structure for SAL
   logical :: module_is_initialized = .false.  !< If true, module has been initialized
 
@@ -1808,6 +1812,14 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   enddo
 
   sum_wt_vel = 0.0 ; sum_wt_eta = 0.0 ; sum_wt_accel = 0.0 ; sum_wt_trans = 0.0
+
+  ! Harmonic analysis will not be performed of a field that is not registered.
+  ! Accumulator is updated at every baroclinic time step.
+  if (CS%tides) then
+    call HA_accum('eta', eta, CS%Time, US)
+    call HA_accum('ubt', ubt, CS%Time, US)
+    call HA_accum('vbt', vbt, CS%Time, US)
+  endif
 
   ! The following loop contains all of the time steps.
   isv=is ; iev=ie ; jsv=js ; jev=je
@@ -4374,7 +4386,7 @@ end subroutine bt_mass_source
 !! barotropic calculation and initializes any barotropic fields that have not
 !! already been initialized.
 subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, &
-                           restart_CS, calc_dtbt, BT_cont, SAL_CSp)
+                           restart_CS, calc_dtbt, BT_cont, tides_CSp, SAL_CSp)
   type(ocean_grid_type),   intent(inout) :: G    !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)    :: GV   !< The ocean's vertical grid structure.
   type(unit_scale_type),   intent(in)    :: US   !< A dimensional unit scaling type
@@ -4398,6 +4410,8 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   type(BT_cont_type),      pointer       :: BT_cont    !< A structure with elements that describe the
                                                  !! effective open face areas as a function of
                                                  !! barotropic flow.
+  type(tidal_forcing_CS), target, optional :: tides_CSp  !< A pointer to the control structure of the
+                                                 !! tide module
   type(SAL_CS), target, optional :: SAL_CSp      !< A pointer to the control structure of the
                                                  !! SAL module.
 
@@ -4435,7 +4449,7 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   type(group_pass_type) :: pass_bt_hbt_btav, pass_a_polarity
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   logical :: use_BT_cont_type
-  logical :: use_tides
+  logical :: HA_eta, HA_ubt, HA_vbt
   character(len=48) :: thickness_units, flux_units
   character*(40) :: hvel_str
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
@@ -4457,6 +4471,9 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   CS%module_is_initialized = .true.
 
   CS%diag => diag ; CS%Time => Time
+  if (present(tides_CSp)) then
+    CS%tides_CSp => tides_CSp
+  endif
   if (present(SAL_CSp)) then
     CS%SAL_CSp => SAL_CSp
   endif
@@ -4584,10 +4601,22 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
                  default=default_answer_date, do_not_log=.not.GV%Boussinesq)
   if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
-  call get_param(param_file, mdl, "TIDES", use_tides, &
+  call get_param(param_file, mdl, "TIDES", CS%tides, &
                  "If true, apply tidal momentum forcing.", default=.false.)
+  if (CS%tides .and. associated(CS%tides_CSp)) then
+    call HA_init(Time, G, US, param_file, CS%tides_CSp)
+    call get_param(param_file, mdl, "HA_eta", HA_eta, &
+                   "If true, perform harmonic analysis of SSH.", default=.false.)
+    if (HA_eta) call HA_register('eta')
+    call get_param(param_file, mdl, "HA_ubt", HA_ubt, &
+                   "If true, perform harmonic analysis of zonal barotropic velocity.", default=.false.)
+    if (HA_ubt) call HA_register('ubt')
+    call get_param(param_file, mdl, "HA_vbt", HA_vbt, &
+                   "If true, perform harmonic analysis of meridional barotropic velocity.", default=.false.)
+    if (HA_vbt) call HA_register('vbt')
+  endif
   call get_param(param_file, mdl, "CALCULATE_SAL", CS%calculate_SAL, &
-                 "If true, calculate self-attraction and loading.", default=use_tides)
+                 "If true, calculate self-attraction and loading.", default=CS%tides)
   det_de = 0.0
   if (CS%calculate_SAL .and. associated(CS%SAL_CSp)) &
     call scalar_SAL_sensitivity(CS%SAL_CSp, det_de)
