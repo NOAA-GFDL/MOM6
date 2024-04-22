@@ -64,6 +64,7 @@ use MOM_self_attr_load,        only : SAL_CS
 use MOM_self_attr_load,        only : SAL_init, SAL_end
 use MOM_tidal_forcing,         only : tidal_forcing_CS
 use MOM_tidal_forcing,         only : tidal_forcing_init, tidal_forcing_end
+use MOM_harmonic_analysis,     only : HA_CS
 use MOM_unit_scaling,          only : unit_scale_type
 use MOM_vert_friction,         only : vertvisc, vertvisc_coef, vertvisc_remnant
 use MOM_vert_friction,         only : vertvisc_init, vertvisc_end, vertvisc_CS
@@ -241,6 +242,8 @@ type, public :: MOM_dyn_split_RK2_CS ; private
   type(SAL_CS) :: SAL_CSp
   !> A pointer to the tidal forcing control structure
   type(tidal_forcing_CS) :: tides_CSp
+  !> A pointer to the harmonic analysis control structure
+  type(HA_CS) :: HA_CSp
   !> A pointer to the ALE control structure.
   type(ALE_CS), pointer :: ALE_CSp => NULL()
 
@@ -1473,7 +1476,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
   if (CS%calculate_SAL) call SAL_init(G, US, param_file, CS%SAL_CSp)
-  if (CS%use_tides) call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
+  if (CS%use_tides) call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp, CS%HA_CSp)
   call PressureForce_init(Time, G, GV, US, param_file, diag, CS%PressureForce_CSp, &
                           CS%SAL_CSp, CS%tides_CSp)
   call hor_visc_init(Time, G, GV, US, param_file, diag, CS%hor_visc, ADp=CS%ADp)
@@ -1507,7 +1510,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
   do j=js,je ; do i=is,ie ; eta(i,j) = CS%eta(i,j) ; enddo ; enddo
 
   call barotropic_init(u, v, h, CS%eta, Time, G, GV, US, param_file, diag, &
-                       CS%barotropic_CSp, restart_CS, calc_dtbt, CS%BT_cont, CS%tides_CSp, CS%SAL_CSp)
+                       CS%barotropic_CSp, restart_CS, calc_dtbt, CS%BT_cont, CS%SAL_CSp, CS%HA_CSp)
 
   if (.not. query_initialized(CS%diffu, "diffu", restart_CS) .or. &
       .not. query_initialized(CS%diffv, "diffv", restart_CS)) then
