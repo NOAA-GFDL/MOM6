@@ -1285,7 +1285,7 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: speed  ! The surface speed [L T-1 ~> m s-1]
   real :: ssu_east(SZI_(G),SZJ_(G))        ! Surface velocity due east component [L T-1 ~> m s-1]
-  real :: ssv_north(SZI_(G),SZJ_(G))       ! Surface velocity due norht component [L T-1 ~> m s-1]
+  real :: ssv_north(SZI_(G),SZJ_(G))       ! Surface velocity due north component [L T-1 ~> m s-1]
   integer :: i, j, is, ie, js, je
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
@@ -1928,7 +1928,7 @@ subroutine register_surface_diags(Time, G, US, IDs, diag, tv)
       'Sea Surface Speed', 'm s-1', conversion=US%L_T_to_m_s)
   IDs%id_ssu_east = register_diag_field('ocean_model', 'ssu_east', diag%axesT1, Time, &
       'Eastward velocity', 'm s-1', conversion=US%L_T_to_m_s)
-  IDs%id_ssv_north = register_diag_field('ocean_model', 'ssv_north', diag%axesCvL, Time, &
+  IDs%id_ssv_north = register_diag_field('ocean_model', 'ssv_north', diag%axesT1, Time, &
       'Northward velocity', 'm s-1', conversion=US%L_T_to_m_s)
 
   if (associated(tv%T)) then
