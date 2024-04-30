@@ -1309,10 +1309,10 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
 
   if (IDs%id_ssu_east > 0 .or. IDs%id_ssv_north > 0) then
     do j=js,je ; do i=is,ie
-      ssu_east(i,j) = (0.5*(sfc_state%u(I-1,j) + sfc_state%u(I,j))) * G%cos_rot(i,j) + &
-                      (0.5*(sfc_state%v(i,J-1) + sfc_state%v(i,J))) * G%sin_rot(i,j)
-      ssv_north(i,j) = - (0.5*(sfc_state%u(I-1,j) + sfc_state%u(I,j))) * G%sin_rot(i,j) + &
-                       (0.5*(sfc_state%v(i,J-1) + sfc_state%v(i,J))) * G%cos_rot(i,j)
+      ssu_east(i,j) = ((0.5*(sfc_state%u(I-1,j) + sfc_state%u(I,j))) * G%cos_rot(i,j)) + &
+                      ((0.5*(sfc_state%v(i,J-1) + sfc_state%v(i,J))) * G%sin_rot(i,j))
+      ssv_north(i,j) = ((0.5*(sfc_state%v(i,J-1) + sfc_state%v(i,J))) * G%cos_rot(i,j)) - &
+                       ((0.5*(sfc_state%u(I-1,j) + sfc_state%u(I,j))) * G%sin_rot(i,j))
     enddo ; enddo
     if (IDs%id_ssu_east > 0 ) call post_data(IDs%id_ssu_east, ssu_east, diag, mask=G%mask2dT)
     if (IDs%id_ssv_north > 0 ) call post_data(IDs%id_ssv_north, ssv_north, diag, mask=G%mask2dT)
