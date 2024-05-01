@@ -15,6 +15,7 @@ use MOM_forcing_type,  only : mech_forcing, find_ustar
 use MOM_grid,          only : ocean_grid_type
 use MOM_hor_index,     only : hor_index_type
 use MOM_intrinsic_functions, only : cuberoot
+use MOM_io,            only : MOM_read_data
 use MOM_lateral_mixing_coeffs, only : VarMix_CS
 use MOM_restart,       only : register_restart_field, query_initialized, MOM_restart_CS
 use MOM_unit_scaling,  only : unit_scale_type
@@ -98,11 +99,15 @@ type, public :: mixedlayer_restrat_CS ; private
   real    :: Kv_restrat            !< A viscosity that sets a floor on the momentum mixing rate
                                    !! during restratification, rescaled into thickness-based
                                    !! units [H2 T-1 ~> m2 s-1 or kg2 m-4 s-1]
+  logical :: MLD_grid              !< If true, read a spacially varying field for MLD_decaying_Tfilt
+  logical :: Cr_grid               !< If true, read a spacially varying field for Cr
 
   real, dimension(:,:), allocatable :: &
          MLD_filtered, &           !< Time-filtered MLD [H ~> m or kg m-2]
          MLD_filtered_slow, &      !< Slower time-filtered MLD [H ~> m or kg m-2]
-         wpup_filtered             !< Time-filtered vertical momentum flux [H L T-2 ~> m2 s-2 or kg m-1 s-2]
+         wpup_filtered, &          !< Time-filtered vertical momentum flux [H L T-2 ~> m2 s-2 or kg m-1 s-2]
+         MLD_filtered_space, &     !< Spatially varying time scale for MLD filter [T ~> s]
+         Cr_space                  !< Spatially varying Cr coefficient [nondim]
 
   !>@{
   !! Diagnostic identifier
@@ -1549,6 +1554,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   integer :: i, j
+  character(len=200) :: filename, inputdir, varname
 
   ! Read all relevant parameters and write them to the model log.
   call get_param(param_file, mdl, "MIXEDLAYER_RESTRAT", mixedlayer_restrat_init, &
@@ -1571,11 +1577,14 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   CS%MLE_MLD_stretch = -9.e9
   CS%use_Stanley_ML = .false.
   CS%use_Bodner = .false.
+  CS%MLD_grid = .false.
+  CS%Cr_grid = .false.
 
   call get_param(param_file, mdl, "DEBUG", CS%debug, default=.false., do_not_log=.true.)
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
       "This sets the default value for the various _ANSWER_DATE parameters.", &
       default=99991231, do_not_log=.true.)
+  call get_param(param_file, mdl, "INPUTDIR", inputdir, default=".")
   call openParameterBlock(param_file,'MLE') ! Prepend MLE% to all parameters
   if (GV%nkml==0) then
     call get_param(param_file, mdl, "USE_BODNER23", CS%use_Bodner, &
@@ -1638,6 +1647,32 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
     call get_param(param_file, mdl, "USE_STANLEY_TVAR", CS%use_Stanley_ML, &
              "If true, turn on Stanley SGS T variance parameterization "// &
              "in ML restrat code.", default=.false.)
+    call get_param(param_file, mdl, "USE_CR_GRID", CS%Cr_grid, &
+             "If true, read in a spatially varying Cr field.", default=.false.)
+    call get_param(param_file, mdl, "USE_MLD_GRID", CS%MLD_grid, &
+             "If true, read in a spatially varying MLD_decaying_Tfilt field.", default=.false.)
+    if (CS%MLD_grid) then
+      call get_param(param_file, mdl, "MLD_TFILT_FILE", filename, &
+             "The path to the file containing the MLD_decaying_Tfilt fields.", &
+             default="")
+      call get_param(param_file, mdl, "MLD_TFILT_VAR", varname, &
+              "The variable name for MLD_decaying_Tfilt field.", &
+              default="MLD_tfilt")
+      filename = trim(inputdir) // "/" // trim(filename)
+      allocate(CS%MLD_filtered_space(G%isd:G%ied,G%jsd:G%jed), source=0.0)
+      call MOM_read_data(filename, varname, CS%MLD_filtered_space, G%domain, scale=US%s_to_T)
+    endif
+    if (CS%Cr_grid) then
+      call get_param(param_file, mdl, "CR_FILE", filename, &
+             "The path to the file containing the Cr fields.", &
+             default="")
+      call get_param(param_file, mdl, "CR_VAR", varname, &
+              "The variable name for Cr field.", &
+              default="Cr")
+      filename = trim(inputdir) // "/" // trim(filename)
+      allocate(CS%Cr_space(G%isd:G%ied,G%jsd:G%jed), source=0.0)
+      call MOM_read_data(filename, varname, CS%Cr_space, G%domain, scale=US%s_to_T)
+    endif
     call closeParameterBlock(param_file) ! The remaining parameters do not have MLE% prepended
     call get_param(param_file, mdl, "MLE_USE_PBL_MLD", CS%MLE_use_PBL_MLD, &
              "If true, the MLE parameterization will use the mixed-layer "//&
