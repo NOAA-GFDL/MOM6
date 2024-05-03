@@ -22,11 +22,13 @@ integer, parameter :: MAX_CONSTITUENTS = 10  !< The maximum number of tidal cons
 !> The private control structure for storing the HA info of a particular field
 type, private :: HA_type
   character(len=16) :: key = "none"          !< Name of the field of which harmonic analysis is to be performed
-  real :: old_time = -1.0                    !< The time of the previous accumulating step
+  real :: old_time = -1.0                    !< The time of the previous accumulating step [T ~> s]
   integer :: is, ie, js, je                  !< Lower and upper bounds of input data
-  real, allocatable :: ref(:,:)              !< The initial field
-  real, allocatable :: FtF(:,:)              !< Accumulator of (F' * F)
-  real, allocatable :: FtSSH(:,:,:)          !< Accumulator of (F' * SSH_in)
+  real, allocatable :: ref(:,:)              !< The initial field in various units depending on the input
+                                             !! e.g., [m] for SSH
+  real, allocatable :: FtF(:,:)              !< Accumulator of (F' * F) [nondim]
+  real, allocatable :: FtSSH(:,:,:)          !< Accumulator of (F' * SSH_in) in various units depending on
+                                             !! the input, e.g., [m] for SSH
 end type HA_type
 
 !> A linked list of control structures that store the HA info of different fields
@@ -36,7 +38,7 @@ type, private :: HA_node
 end type HA_node
 
 !> The public control structure of the MOM_harmonic_analysis module
-type, public :: HA_CS ; private
+type, public :: harmonic_analysis_CS ; private
   logical :: HAready = .true.                !< If true, perform harmonic analysis
   type(time_type) :: &
     time_start, &                            !< Start time of harmonic analysis
@@ -50,7 +52,7 @@ type, public :: HA_CS ; private
   character(len=16)  :: const_name(MAX_CONSTITUENTS) !< The name of each constituent
   character(len=255) :: path                 !< Path to directory where output will be written
   type(HA_node), pointer :: list => NULL()   !< A linked list for storing the HA info of different fields
-end type HA_CS
+end type harmonic_analysis_CS
 
 contains
 
@@ -66,12 +68,12 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
                                         phase0      !< The phase of a tidal constituent at time 0 [rad]
   integer,               intent(in)  :: nc          !< The number of tidal constituents in use
   character(len=16),     intent(in)  :: const_name(MAX_CONSTITUENTS) !< The name of each constituent
-  type(HA_CS),           intent(out) :: CS          !< Control structure of the MOM_harmonic_analysis module
+  type(harmonic_analysis_CS), intent(out) :: CS     !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
   type(HA_type) :: ha1                              !< A temporary, null field used for initializing CS%list
-  real :: HA_start_time                             !< Start time of harmonic analysis [day]
-  real :: Time_unit                                 !< The time unit for CS%time_end [s]
+  real :: HA_start_time                             !< Start time of harmonic analysis [T ~> s]
+  real :: Time_unit                                 !< The time unit for CS%time_end [T ~> s]
   character(len=40)  :: mdl="MOM_harmonic_analysis" !< This module's name
   character(len=255) :: mesg
   integer :: year, month, day, hour, minute, second
@@ -120,7 +122,7 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
   endif
 
   ! Determine CS%time_start
-  call get_param(param_file, mdl, "HA_start_time", HA_start_time, &
+  call get_param(param_file, mdl, "HA_START_TIME", HA_start_time, &
                  "Start time of harmonic analysis (HA), in units of days after "//&
                  "the start of the current run segment. If equal to or greater than "//&
                  "the length of the run segment, HA will not be performed. "//&
@@ -128,10 +130,10 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
                  "over which HA will be performed. In this case, HA will start |HA_start_time| days "//&
                  "before the end of the run segment, or at the beginning of the run segment, "//&
                  "whichever occurs later. HA will always finish at the end of the run segment.", &
-                 units="days", default=0.0, scale=US%T_to_s, do_not_log=.True., fail_if_missing=.false.)
+                 units="days", default=0.0, scale=86400.0*US%s_to_T, do_not_log=.True., fail_if_missing=.false.)
 
   if (HA_start_time >= 0.0) then
-    CS%time_start = Time + real_to_time(US%T_to_s * HA_start_time * 8.64e4)
+    CS%time_start = Time + real_to_time(US%T_to_s * HA_start_time)
     if (CS%time_start >= CS%time_end) then
       call MOM_mesg('HAmod: HA_start_time equal to or greater than the length of run segment, '//&
                     'harmonic analysis will not be performed.')
@@ -139,8 +141,8 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
     endif
   else
     HA_start_time = 0.0 - HA_start_time
-    if (time_type_to_real(CS%time_end - Time) >= HA_start_time * 8.64e4) then
-      CS%time_start = CS%time_end - real_to_time(US%T_to_s * HA_start_time * 8.64e4)
+    if (time_type_to_real(CS%time_end - Time) >= HA_start_time) then
+      CS%time_start = CS%time_end - real_to_time(US%T_to_s * HA_start_time)
     else
       call MOM_mesg('HAmod: harmonic analysis will be performed over the entire run segment.')
       CS%time_start = Time
@@ -166,8 +168,8 @@ end subroutine HA_init
 
 !> This subroutine registers each of the fields on which HA is to be performed.
 subroutine HA_register(key, CS)
-  character(len=*), intent(in)    :: key    !< Name of the current field
-  type(HA_CS),      intent(inout) :: CS     !< Control structure of the MOM_harmonic_analysis module
+  character(len=*),           intent(in)    :: key    !< Name of the current field
+  type(harmonic_analysis_CS), intent(inout) :: CS     !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
   type(HA_type)          :: ha1             !< Control structure for the current field
@@ -193,13 +195,13 @@ subroutine HA_accum(key, data, Time, G, US, CS)
   type(time_type),       intent(in) :: Time !< The current model time
   type(ocean_grid_type), intent(in) :: G    !< The ocean's grid structure
   type(unit_scale_type), intent(in) :: US   !< A dimensional unit scaling type
-  type(HA_CS),           intent(in) :: CS   !< Control structure of the MOM_harmonic_analysis module
+  type(harmonic_analysis_CS), intent(in) :: CS   !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
   type(HA_type), pointer :: ha1
   type(HA_node), pointer :: tmp
   real :: now                               !< The relative time compared with the tidal reference [T ~> s]
-  real :: dt                                !< The current time step size of the accumulator
+  real :: dt                                !< The current time step size of the accumulator [T ~> s]
   real :: cosomegat, sinomegat, ccosomegat, ssinomegat !< The components of the phase [nondim]
   integer :: nc, i, j, k, c, icos, isin, cc, iccos, issin, is, ie, js, je
   character(len=128) :: mesg
@@ -292,7 +294,7 @@ subroutine HA_write(ha1, Time, G, CS)
   type(HA_type), pointer, intent(in) :: ha1
   type(time_type),        intent(in) :: Time       !< The current model time
   type(ocean_grid_type),  intent(in) :: G          !< The ocean's grid structure
-  type(HA_CS),            intent(in) :: CS         !< Control structure of the MOM_harmonic_analysis module
+  type(harmonic_analysis_CS), intent(in) :: CS     !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
   real, dimension(:,:,:), allocatable :: FtSSHw    !< An array containing the harmonic constants
@@ -350,9 +352,11 @@ subroutine HA_solver(ha1, nc, FtSSHw)
   type(HA_type), pointer,              intent(in)  :: ha1
   integer,                             intent(in)  :: nc
   real, dimension(:,:,:), allocatable, intent(out) :: FtSSHw !< Work array for Cholesky decomposition
+                                                             !! in arbitrary units [A] 
 
   ! Local variables
-  real, dimension(:,:), allocatable :: tmp, FtFw             !< Work arrays for Cholesky decomposition
+  real, dimension(:,:), allocatable :: tmp              !< Work array for Cholesky decomposition [A]
+  real, dimension(:,:), allocatable :: FtFw             !< Work array for Cholesky decomposition [nondim]
   integer :: k, l, is, ie, js, je
 
   is = ha1%is ; ie = ha1%ie ; js = ha1%js ; je = ha1%je

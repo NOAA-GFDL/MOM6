@@ -25,7 +25,7 @@ use MOM_restart, only : register_restart_field, register_restart_pair
 use MOM_restart, only : query_initialized, MOM_restart_CS
 use MOM_self_attr_load, only : scalar_SAL_sensitivity
 use MOM_self_attr_load, only : SAL_CS
-use MOM_harmonic_analysis, only : HA_accum, HA_CS
+use MOM_harmonic_analysis, only : HA_accum, harmonic_analysis_CS
 use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : BT_cont_type, alloc_bt_cont_type
@@ -290,7 +290,7 @@ type, public :: barotropic_CS ; private
   type(MOM_domain_type), pointer :: BT_Domain => NULL()  !< Barotropic MOM domain
   type(hor_index_type), pointer :: debug_BT_HI => NULL() !< debugging copy of horizontal index_type
   type(SAL_CS), pointer :: SAL_CSp => NULL() !< Control structure for SAL
-  type(HA_CS),  pointer :: HA_CSp  => NULL() !< Control structure for harmonic analysis
+  type(harmonic_analysis_CS), pointer :: HA_CSp => NULL() !< Control structure for harmonic analysis
   logical :: module_is_initialized = .false.  !< If true, module has been initialized
 
   integer :: isdw !< The lower i-memory limit for the wide halo arrays.
@@ -4411,7 +4411,7 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
                                                  !! barotropic flow.
   type(SAL_CS), target, optional :: SAL_CSp      !< A pointer to the control structure of the
                                                  !! SAL module.
-  type(HA_CS),  target, optional :: HA_CSp       !< A pointer to the control structure of the
+  type(harmonic_analysis_CS), target, optional :: HA_CSp !< A pointer to the control structure of the
                                                  !! harmonic analysis module
 
   ! This include declares and sets the variable "version".

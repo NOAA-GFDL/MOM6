@@ -66,7 +66,7 @@ use MOM_self_attr_load,        only : SAL_CS
 use MOM_self_attr_load,        only : SAL_init, SAL_end
 use MOM_tidal_forcing,         only : tidal_forcing_CS
 use MOM_tidal_forcing,         only : tidal_forcing_init, tidal_forcing_end
-use MOM_harmonic_analysis,     only : HA_CS
+use MOM_harmonic_analysis,     only : harmonic_analysis_CS
 use MOM_unit_scaling,          only : unit_scale_type
 use MOM_vert_friction,         only : vertvisc, vertvisc_coef, vertvisc_remnant
 use MOM_vert_friction,         only : vertvisc_init, vertvisc_end, vertvisc_CS
@@ -240,7 +240,7 @@ type, public :: MOM_dyn_split_RK2b_CS ; private
   !> A pointer to the tidal forcing control structure
   type(tidal_forcing_CS) :: tides_CSp
   !> A pointer to the harmonic analysis control structure
-  type(HA_CS) :: HA_CSp
+  type(harmonic_analysis_CS) :: HA_CSp
   !> A pointer to the ALE control structure.
   type(ALE_CS), pointer :: ALE_CSp => NULL()
 
