@@ -24,11 +24,10 @@ type, private :: HA_type
   character(len=16) :: key = "none"          !< Name of the field of which harmonic analysis is to be performed
   real :: old_time = -1.0                    !< The time of the previous accumulating step [T ~> s]
   integer :: is, ie, js, je                  !< Lower and upper bounds of input data
-  real, allocatable :: ref(:,:)              !< The initial field in various units depending on the input
-                                             !! e.g., [m] for SSH
+  real, allocatable :: ref(:,:)              !< The initial field in arbitrary units [A]
+                                             !! depending on the input, e.g., [m] for SSH
   real, allocatable :: FtF(:,:)              !< Accumulator of (F' * F) [nondim]
-  real, allocatable :: FtSSH(:,:,:)          !< Accumulator of (F' * SSH_in) in various units depending on
-                                             !! the input, e.g., [m] for SSH
+  real, allocatable :: FtSSH(:,:,:)          !< Accumulator of (F' * SSH_in) in arbitrary units [A]
 end type HA_type
 
 !> A linked list of control structures that store the HA info of different fields
@@ -192,6 +191,7 @@ end subroutine HA_register
 subroutine HA_accum(key, data, Time, G, US, CS)
   character(len=*),      intent(in) :: key  !< Name of the current field
   real, dimension(:,:),  intent(in) :: data !< Input data of which harmonic analysis is to be performed
+                                            !! in arbitrary units [A]
   type(time_type),       intent(in) :: Time !< The current model time
   type(ocean_grid_type), intent(in) :: G    !< The ocean's grid structure
   type(unit_scale_type), intent(in) :: US   !< A dimensional unit scaling type
@@ -297,7 +297,7 @@ subroutine HA_write(ha1, Time, G, CS)
   type(harmonic_analysis_CS), intent(in) :: CS     !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
-  real, dimension(:,:,:), allocatable :: FtSSHw    !< An array containing the harmonic constants
+  real, dimension(:,:,:), allocatable :: FtSSHw    !< An array containing the harmonic constants [A]
   integer :: year, month, day, hour, minute, second
   integer :: nc, k, is, ie, js, je
 
@@ -351,8 +351,7 @@ end subroutine HA_write
 subroutine HA_solver(ha1, nc, FtSSHw)
   type(HA_type), pointer,              intent(in)  :: ha1
   integer,                             intent(in)  :: nc
-  real, dimension(:,:,:), allocatable, intent(out) :: FtSSHw !< Work array for Cholesky decomposition
-                                                             !! in arbitrary units [A] 
+  real, dimension(:,:,:), allocatable, intent(out) :: FtSSHw !< Work array for Cholesky decomposition [A]
 
   ! Local variables
   real, dimension(:,:), allocatable :: tmp              !< Work array for Cholesky decomposition [A]
