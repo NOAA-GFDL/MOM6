@@ -25,7 +25,7 @@ use MOM_restart, only : register_restart_field, register_restart_pair
 use MOM_restart, only : query_initialized, MOM_restart_CS
 use MOM_self_attr_load, only : scalar_SAL_sensitivity
 use MOM_self_attr_load, only : SAL_CS
-use MOM_harmonic_analysis, only : HA_accum, harmonic_analysis_CS
+use MOM_harmonic_analysis, only : HA_accum_FtF, HA_accum_FtSSH, harmonic_analysis_CS
 use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : BT_cont_type, alloc_bt_cont_type
@@ -2468,10 +2468,11 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
 
   ! Accumulator is updated at the end of every baroclinic time step.
   ! Harmonic analysis will not be performed of a field that is not registered.
-  if (CS%tides .and. associated(CS%HA_CSp)) then
-    call HA_accum('eta', eta, CS%Time, G, US, CS%HA_CSp)
-    call HA_accum('ubt', ubt, CS%Time, G, US, CS%HA_CSp)
-    call HA_accum('vbt', vbt, CS%Time, G, US, CS%HA_CSp)
+  if (CS%tides .and. associated(CS%HA_CSp) .and. find_etaav) then
+    call HA_accum_FtF(CS%Time, US, CS%HA_CSp)
+    call HA_accum_FtSSH('eta', eta, CS%Time, G, US, CS%HA_CSp)
+    call HA_accum_FtSSH('ubt', ubt, CS%Time, G, US, CS%HA_CSp)
+    call HA_accum_FtSSH('vbt', vbt, CS%Time, G, US, CS%HA_CSp)
   endif
 
   ! Reset the time information in the diag type.
