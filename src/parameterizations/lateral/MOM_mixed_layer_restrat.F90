@@ -106,7 +106,7 @@ type, public :: mixedlayer_restrat_CS ; private
          MLD_filtered, &           !< Time-filtered MLD [H ~> m or kg m-2]
          MLD_filtered_slow, &      !< Slower time-filtered MLD [H ~> m or kg m-2]
          wpup_filtered, &          !< Time-filtered vertical momentum flux [H L T-2 ~> m2 s-2 or kg m-1 s-2]
-         MLD_filtered_space, &     !< Spatially varying time scale for MLD filter [T ~> s]
+         MLD_Tfilt_space, &        !< Spatially varying time scale for MLD filter [T ~> s]
          Cr_space                  !< Spatially varying Cr coefficient [nondim]
 
   !>@{
@@ -895,7 +895,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   if (CS%MLD_grid) then
     do j=js-1,je+1 ; do i=is-1,ie+1
       big_H(i,j) = rmean2ts(little_h(i,j), CS%MLD_filtered_slow(i,j), &
-                            CS%MLD_growing_Tfilt, CS%MLD_filtered_space(i,j), dt)
+                            CS%MLD_growing_Tfilt, CS%MLD_Tfilt_space(i,j), dt)
       CS%MLD_filtered_slow(i,j) = big_H(i,j)
     enddo ; enddo
   else
@@ -1667,8 +1667,8 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
               "The variable name for MLD_decaying_Tfilt field.", &
               default="MLD_tfilt")
       filename = trim(inputdir) // "/" // trim(filename)
-      allocate(CS%MLD_filtered_space(G%isd:G%ied,G%jsd:G%jed), source=0.0)
-      call MOM_read_data(filename, varname, CS%MLD_filtered_space, G%domain, scale=US%s_to_T)
+      allocate(CS%MLD_Tfilt_space(G%isd:G%ied,G%jsd:G%jed), source=0.0)
+      call MOM_read_data(filename, varname, CS%MLD_Tfilt_space, G%domain, scale=US%s_to_T)
     endif
     allocate(CS%Cr_space(G%isd:G%ied,G%jsd:G%jed), source=CS%Cr)
     if (CS%Cr_grid) then
@@ -1679,7 +1679,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
               "The variable name for Cr field.", &
               default="Cr")
       filename = trim(inputdir) // "/" // trim(filename)
-      call MOM_read_data(filename, varname, CS%Cr_space, G%domain, scale=US%s_to_T)
+      call MOM_read_data(filename, varname, CS%Cr_space, G%domain)
     endif
     call closeParameterBlock(param_file) ! The remaining parameters do not have MLE% prepended
     call get_param(param_file, mdl, "MLE_USE_PBL_MLD", CS%MLE_use_PBL_MLD, &
