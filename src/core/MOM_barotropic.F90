@@ -2466,15 +2466,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   if (id_clock_calc > 0) call cpu_clock_end(id_clock_calc)
   if (id_clock_calc_post > 0) call cpu_clock_begin(id_clock_calc_post)
 
-  ! Accumulator is updated at the end of every baroclinic time step.
-  ! Harmonic analysis will not be performed of a field that is not registered.
-  if (CS%tides .and. associated(CS%HA_CSp) .and. find_etaav) then
-    call HA_accum_FtF(CS%Time, US, CS%HA_CSp)
-    call HA_accum_FtSSH('eta', eta, CS%Time, G, US, CS%HA_CSp)
-    call HA_accum_FtSSH('ubt', ubt, CS%Time, G, US, CS%HA_CSp)
-    call HA_accum_FtSSH('vbt', vbt, CS%Time, G, US, CS%HA_CSp)
-  endif
-
   ! Reset the time information in the diag type.
   if (do_hifreq_output) call enable_averaging(time_int_in, time_end_in, CS%diag)
 
@@ -2534,6 +2525,15 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   do j=js,je ; do i=is,ie
     eta_out(i,j) = eta_wtd(i,j) * I_sum_wt_eta
   enddo ; enddo
+
+  ! Accumulator is updated at the end of every baroclinic time step.
+  ! Harmonic analysis will not be performed of a field that is not registered.
+  if (CS%tides .and. associated(CS%HA_CSp) .and. find_etaav) then
+    call HA_accum_FtF(CS%Time, US, CS%HA_CSp)
+    call HA_accum_FtSSH('eta', eta_out, CS%Time, G, US, CS%HA_CSp)
+    call HA_accum_FtSSH('ubt', ubt, CS%Time, G, US, CS%HA_CSp)
+    call HA_accum_FtSSH('vbt', vbt, CS%Time, G, US, CS%HA_CSp)
+  endif
 
   if (id_clock_calc_post > 0) call cpu_clock_end(id_clock_calc_post)
   if (id_clock_pass_post > 0) call cpu_clock_begin(id_clock_pass_post)
