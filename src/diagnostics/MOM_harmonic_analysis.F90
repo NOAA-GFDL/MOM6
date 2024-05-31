@@ -23,9 +23,11 @@ integer, parameter :: MAX_CONSTITUENTS = 10  !< The maximum number of tidal cons
 type, private :: HA_type
   character(len=16) :: key = "none"          !< Name of the field of which harmonic analysis is to be performed
   real :: old_time = -1.0                    !< The time of the previous accumulating step [T ~> s]
-  integer :: is, ie, js, je                  !< Lower and upper bounds of input data
   real, allocatable :: ref(:,:)              !< The initial field in arbitrary units [A]
   real, allocatable :: FtSSH(:,:,:)          !< Accumulator of (F' * SSH_in) in arbitrary units [A]
+  !>@{ Lower and upper bounds of input data
+  integer :: is, ie, js, je
+  !>@}
 end type HA_type
 
 !> A linked list of control structures that store the HA info of different fields
