@@ -59,13 +59,12 @@ contains
 !> This subroutine sets static variables used by this module and initializes CS%list.
 !! THIS MUST BE CALLED AT THE END OF tidal_forcing_init.
 subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name, CS)
-  type(time_type),       intent(in)  :: Time, &     !< The current model time
-                                        time_ref    !< Reference time (t = 0) used to calculate tidal forcing
+  type(time_type),       intent(in)  :: Time        !< The current model time
+  type(time_type),       intent(in)  :: time_ref    !< Reference time (t = 0) used to calculate tidal forcing
   type(unit_scale_type), intent(in)  :: US          !< A dimensional unit scaling type
   type(param_file_type), intent(in)  :: param_file  !< A structure to parse for run-time parameters
-  real, dimension(MAX_CONSTITUENTS), &
-                         intent(in)  :: freq, &     !< The frequency of a tidal constituent [T-1 ~> s-1]
-                                        phase0      !< The phase of a tidal constituent at time 0 [rad]
+  real, dimension(MAX_CONSTITUENTS), intent(in) :: freq   !< The frequency of a tidal constituent [T-1 ~> s-1]
+  real, dimension(MAX_CONSTITUENTS), intent(in) :: phase0 !< The phase of a tidal constituent at time 0 [rad]
   integer,               intent(in)  :: nc          !< The number of tidal constituents in use
   character(len=16),     intent(in)  :: const_name(MAX_CONSTITUENTS) !< The name of each constituent
   type(harmonic_analysis_CS), intent(out) :: CS     !< Control structure of the MOM_harmonic_analysis module
@@ -322,7 +321,7 @@ end subroutine HA_accum_FtSSH
 
 !> This subroutine computes the harmonic constants and write output for the current field
 subroutine HA_write(ha1, Time, G, CS)
-  type(HA_type), pointer,     intent(in) :: ha1
+  type(HA_type), pointer,     intent(in) :: ha1    !< Control structure for the current field
   type(time_type),            intent(in) :: Time   !< The current model time
   type(ocean_grid_type),      intent(in) :: G      !< The ocean's grid structure
   type(harmonic_analysis_CS), intent(in) :: CS     !< Control structure of the MOM_harmonic_analysis module
@@ -381,8 +380,8 @@ end subroutine HA_write
 !! basis functions accumulated in FtF, and the dot products of the SSH (or other fields) with the temporal basis
 !! functions accumulated in FtSSH. The system is solved by Cholesky decomposition.
 subroutine HA_solver(ha1, nc, FtF, FtSSHw)
-  type(HA_type), pointer,              intent(in)  :: ha1
-  integer,                             intent(in)  :: nc
+  type(HA_type), pointer,              intent(in)  :: ha1    !< Control structure for the current field
+  integer,                             intent(in)  :: nc     !< Number of harmonic constituents
   real, dimension(:,:),                intent(in)  :: FtF    !< Accumulator of (F' * F) for all fields [nondim]
   real, dimension(:,:,:), allocatable, intent(out) :: FtSSHw !< Work array for Cholesky decomposition [A]
 
