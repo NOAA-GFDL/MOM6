@@ -528,13 +528,13 @@ subroutine tidal_forcing_init(Time, G, US, param_file, CS, HA_CS)
 
   if (present(HA_CS)) then
     call HA_init(Time, US, param_file, CS%time_ref, CS%nc, CS%freq, CS%phase0, CS%const_name, HA_CS)
-    call get_param(param_file, mdl, "HA_eta", HA_eta, &
+    call get_param(param_file, mdl, "HA_ETA", HA_eta, &
                    "If true, perform harmonic analysis of SSH.", default=.false.)
     if (HA_eta) call HA_register('eta', HA_CS)
-    call get_param(param_file, mdl, "HA_ubt", HA_ubt, &
+    call get_param(param_file, mdl, "HA_UBT", HA_ubt, &
                    "If true, perform harmonic analysis of zonal barotropic velocity.", default=.false.)
     if (HA_ubt) call HA_register('ubt', HA_CS)
-    call get_param(param_file, mdl, "HA_vbt", HA_vbt, &
+    call get_param(param_file, mdl, "HA_VBT", HA_vbt, &
                    "If true, perform harmonic analysis of meridional barotropic velocity.", default=.false.)
     if (HA_vbt) call HA_register('vbt', HA_CS)
   endif

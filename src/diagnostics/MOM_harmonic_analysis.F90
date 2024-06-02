@@ -72,83 +72,60 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
   ! Local variables
   type(HA_type) :: ha1                              !< A temporary, null field used for initializing CS%list
   real :: HA_start_time                             !< Start time of harmonic analysis [T ~> s]
-  real :: Time_unit                                 !< The time unit for CS%time_end [T ~> s]
+  real :: HA_end_time                               !< End time of harmonic analysis [T ~> s]
   character(len=40)  :: mdl="MOM_harmonic_analysis" !< This module's name
   character(len=255) :: mesg
   integer :: year, month, day, hour, minute, second
 
-  integer :: unit, io_status
-  integer :: date_init(6)=0                         !< The start date of the whole simulation.
-  character(len=16) :: calendar = 'julian'          !< The name of the calendar type.
-  integer :: years=0, months=0, days=0              !< These may determine the segment run
-  integer :: hours=0, minutes=0, seconds=0          !! length, if read from a namelist
-
-  namelist /ocean_solo_nml/ date_init, calendar, months, days, hours, minutes, seconds
-
-  ! Determine CS%time_end by end time of the run segment
-  if (file_exists('input.nml')) then
-    call open_ASCII_file(unit, 'input.nml', action=READONLY_FILE)
-    read(unit, ocean_solo_nml, iostat=io_status)
-    call close_file(unit)
-  endif
-
-  if (years+months+days+hours+minutes+seconds > 0) then
-    CS%time_end = increment_date(Time, years, months, days, hours, minutes, seconds)
-    call MOM_mesg('HAmod: end time of harmonic analysis determined from ocean_solo_nml.', 2)
-  else
-    call get_param(param_file, mdl, "TIMEUNIT", Time_unit, &
-                   "The time unit for DAYMAX, ENERGYSAVEDAYS, and RESTINT.", &
-                   units="s", default=86400.0)
-    call get_param(param_file, mdl, "DAYMAX", CS%time_end, &
-                   "The final time of the whole simulation, in units of "//&
-                   "TIMEUNIT seconds.  This also sets the potential end "//&
-                   "time of the present run segment if the end time is "//&
-                   "not set via ocean_solo_nml in input.nml.", &
-                   timeunit=Time_unit, fail_if_missing=.true.)
-  endif
-
-  ! Determine CS%time_start
+  ! Determine CS%time_start and CS%time_end
   call get_param(param_file, mdl, "HA_START_TIME", HA_start_time, &
-                 "Start time of harmonic analysis (HA), in units of days after "//&
-                 "the start of the current run segment. If equal to or greater than "//&
-                 "the length of the run segment, HA will not be performed. "//&
-                 "If negative, |HA_start_time| determines the length of simulation time "//&
-                 "over which HA will be performed. In this case, HA will start |HA_start_time| days "//&
-                 "before the end of the run segment, or at the beginning of the run segment, "//&
-                 "whichever occurs later. HA will always finish at the end of the run segment.", &
-                 units="days", default=0.0, scale=86400.0*US%s_to_T, do_not_log=.True., fail_if_missing=.false.)
+                 "Start time of harmonic analysis, in units of days after "//&
+                 "the start of the current run segment. Must be smaller than "//&
+                 "HA_END_TIME, otherwise harmonic analysis will not be performed. "//&
+                 "If negative, |HA_START_TIME| determines the length of harmonic analysis, "//&
+                 "and harmonic analysis will start |HA_START_TIME| days before HA_END_TIME, "//&
+                 "or at the beginning of the run segment, whichever occurs later.", &
+                 units="days", default=0.0, scale=86400.0*US%s_to_T)
+  call get_param(param_file, mdl, "HA_END_TIME", HA_end_time, &
+                 "End time of harmonic analysis, in units of days after "//&
+                 "the start of the current run segment. Must be positive "//&
+                 "and smaller than the length of the currnet run segment, "//&
+                 "otherwise harmonic analysis will not be performed.", &
+                 units="days", default=0.0, scale=86400.0*US%s_to_T)
 
-  if (HA_start_time >= 0.0) then
-    CS%time_start = Time + real_to_time(US%T_to_s * HA_start_time)
-    if (CS%time_start >= CS%time_end) then
-      call MOM_mesg('HAmod: HA_start_time equal to or greater than the length of run segment, '//&
-                    'harmonic analysis will not be performed.')
-      CS%HAready = .false. ; return
-    endif
-  else
-    HA_start_time = 0.0 - HA_start_time
-    if (time_type_to_real(CS%time_end - Time) >= HA_start_time) then
-      CS%time_start = CS%time_end - real_to_time(US%T_to_s * HA_start_time)
-    else
-      call MOM_mesg('HAmod: harmonic analysis will be performed over the entire run segment.')
-      CS%time_start = Time
-    endif
+  if (HA_end_time <= 0.0) then
+    call MOM_mesg('MOM_harmonic_analysis: HA_END_TIME is zero or negative. '//&
+                  'Harmonic analysis will not be performed.')
+    CS%HAready = .false. ; return
   endif
+
+  if (HA_end_time <= HA_start_time) then
+    call MOM_mesg('MOM_harmonic_analysis: HA_END_TIME is smaller than or equal to HA_START_TIME. '//&
+                  'Harmonic analysis will not be performed.')
+    CS%HAready = .false. ; return
+  endif
+
+  if (HA_start_time < 0.0) then
+    HA_start_time = HA_end_time + HA_start_time
+    if (HA_start_time <= 0.0) HA_start_time = 0.0
+  endif
+
+  CS%time_start = Time + real_to_time(US%T_to_s * HA_start_time)
+  CS%time_end = Time + real_to_time(US%T_to_s * HA_end_time)
 
   call get_date(Time, year, month, day, hour, minute, second)
-  write(mesg,*) "HAmod: run segment starts on ", year, month, day, hour, minute, second
+  write(mesg,*) "MOM_harmonic_analysis: run segment starts on ", year, month, day, hour, minute, second
   call MOM_error(NOTE, trim(mesg))
   call get_date(CS%time_start, year, month, day, hour, minute, second)
-  write(mesg,*) "HAmod: harmonic analysis starts on ", year, month, day, hour, minute, second
+  write(mesg,*) "MOM_harmonic_analysis: harmonic analysis starts on ", year, month, day, hour, minute, second
   call MOM_error(NOTE, trim(mesg))
   call get_date(CS%time_end, year, month, day, hour, minute, second)
-  write(mesg,*) "HAmod: harmonic analysis ends on ", year, month, day, hour, minute, second
+  write(mesg,*) "MOM_harmonic_analysis: harmonic analysis ends on ", year, month, day, hour, minute, second
   call MOM_error(NOTE, trim(mesg))
 
   ! Set path to directory where output will be written
-  call get_param(param_file, mdl, "HA_path", CS%path, &
-                 "Path to output files for runtime harmonic analysis.", &
-                 default="./", fail_if_missing=.false.)
+  call get_param(param_file, mdl, "HA_PATH", CS%path, &
+                 "Path to output files for runtime harmonic analysis.", default="./")
 
   ! Populate some parameters of the control structure
   CS%time_ref   =  time_ref
@@ -241,7 +218,7 @@ subroutine HA_accum_FtSSH(key, data, Time, G, US, CS)
   type(time_type),            intent(in) :: Time !< The current model time
   type(ocean_grid_type),      intent(in) :: G    !< The ocean's grid structure
   type(unit_scale_type),      intent(in) :: US   !< A dimensional unit scaling type
-  type(harmonic_analysis_CS), intent(in) :: CS   !< Control structure of the MOM_harmonic_analysis module
+  type(harmonic_analysis_CS), intent(inout) :: CS   !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
   type(HA_type), pointer :: ha1
@@ -273,7 +250,7 @@ subroutine HA_accum_FtSSH(key, data, Time, G, US, CS)
   if (ha1%old_time < 0.0) then
     ha1%old_time = now
 
-    write(mesg,*) "HAmod: initializing accumulator, key = ", trim(ha1%key)
+    write(mesg,*) "MOM_harmonic_analysis: initializing accumulator, key = ", trim(ha1%key)
     call MOM_error(NOTE, trim(mesg))
 
     ! Get the lower and upper bounds of input data
@@ -310,9 +287,10 @@ subroutine HA_accum_FtSSH(key, data, Time, G, US, CS)
   if (time_type_to_real(CS%time_end - Time) <= dt) then
     call HA_write(ha1, Time, G, CS)
 
-    write(mesg,*) "HAmod: harmonic analysis done, key = ", trim(ha1%key)
+    write(mesg,*) "MOM_harmonic_analysis: harmonic analysis done, key = ", trim(ha1%key)
     call MOM_error(NOTE, trim(mesg))
 
+    CS%HAready = .false.
     deallocate(ha1%ref)
     deallocate(ha1%FtSSH)
   endif
