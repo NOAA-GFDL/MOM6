@@ -73,9 +73,6 @@ use MOM_vert_friction,         only : updateCFLtruncationValue, vertFPmix
 use MOM_verticalGrid,          only : verticalGrid_type, get_thickness_units
 use MOM_verticalGrid,          only : get_flux_units, get_tr_flux_units
 use MOM_wave_interface,        only: wave_parameters_CS, Stokes_PGF
-use MOM_CVMix_KPP,             only : KPP_get_BLD, KPP_CS
-use MOM_energetic_PBL,         only : energetic_PBL_get_MLD, energetic_PBL_CS
-use MOM_diabatic_driver,       only : diabatic_CS, extract_diabatic_member
 
 implicit none ; private
 
@@ -147,8 +144,6 @@ type, public :: MOM_dyn_split_RK2b_CS ; private
   real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_)        :: dv_av_inst !< The barotropic meridional velocity increment
                                                                   !! between filtered and instantaneous velocities
                                                                   !! [L T-1 ~> m s-1]
-  type(KPP_CS),           pointer :: KPP_CSp => NULL() !< KPP control structure needed to ge
-  type(energetic_PBL_CS), pointer :: energetic_PBL_CSp => NULL()  !< ePBL control structure
 
   real, pointer, dimension(:,:) :: taux_bot => NULL() !< frictional x-bottom stress from the ocean
                                                       !! to the seafloor [R L Z T-2 ~> Pa]
@@ -558,7 +553,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
 ! diffu = horizontal viscosity terms (u_av)
   call cpu_clock_begin(id_clock_horvisc)
   call horizontal_viscosity(u_av, v_av, h_av, CS%diffu, CS%diffv, MEKE, Varmix, G, GV, US, CS%hor_visc, &
-                            OBC=CS%OBC, BT=CS%barotropic_CSp, TD=thickness_diffuse_CSp, ADp=CS%AD_pred)
+                            tv, dt, OBC=CS%OBC, BT=CS%barotropic_CSp, TD=thickness_diffuse_CSp, ADp=CS%AD_pred)
   call cpu_clock_end(id_clock_horvisc)
   if (showCallTree) call callTree_wayPoint("done with predictor horizontal_viscosity (step_MOM_dyn_split_RK2b)")
 
@@ -734,9 +729,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
 
   !  if (CS%fpmix) then
   !    hbl(:,:) = 0.0
-  !    if (ASSOCIATED(CS%KPP_CSp)) call KPP_get_BLD(CS%KPP_CSp, hbl, G, US, m_to_BLD_units=GV%m_to_H)
-  !    if (ASSOCIATED(CS%energetic_PBL_CSp)) &
-  !      call energetic_PBL_get_MLD(CS%energetic_PBL_CSp, hbl, G, US, m_to_MLD_units=GV%m_to_H)
+  !    if (associated(visc%h_ML)) hbl(:,:) = visc%h_ML(:,:)
   !    call vertFPmix(up, vp, uold, vold, hbl, h, forces, &
   !                   dt_pred, G, GV, US, CS%vertvisc_CSp, CS%OBC)
   !    call vertvisc(up, vp, h, forces, visc, dt_pred, CS%OBC, CS%ADp, CS%CDp, G, &
@@ -837,7 +830,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   if (CS%debug) then
     call MOM_state_chksum("Predictor ", up, vp, hp, uh, vh, G, GV, US, symmetric=sym)
     call uvchksum("Predictor avg [uv]", u_av, v_av, G%HI, haloshift=1, symmetric=sym, scale=US%L_T_to_m_s)
-    call hchksum(h_av, "Predictor avg h", G%HI, haloshift=0, scale=GV%H_to_MKS)
+    call hchksum(h_av, "Predictor avg h", G%HI, haloshift=2, scale=GV%H_to_MKS)
   ! call MOM_state_chksum("Predictor avg ", u_av, v_av, h_av, uh, vh, G, GV, US)
     call check_redundant("Predictor up ", up, vp, G, unscale=US%L_T_to_m_s)
     call check_redundant("Predictor uh ", uh, vh, G, unscale=GV%H_to_MKS*US%L_to_m**2*US%s_to_T)
@@ -845,7 +838,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
 
 ! diffu = horizontal viscosity terms (u_av)
   call cpu_clock_begin(id_clock_horvisc)
-  call horizontal_viscosity(u_av, v_av, h_av, CS%diffu, CS%diffv, MEKE, Varmix, G, GV, US, CS%hor_visc, &
+  call horizontal_viscosity(u_av, v_av, h_av, CS%diffu, CS%diffv, MEKE, Varmix, G, GV, US, CS%hor_visc, tv, dt, &
                             OBC=CS%OBC, BT=CS%barotropic_CSp, TD=thickness_diffuse_CSp, ADp=CS%ADp)
   call cpu_clock_end(id_clock_horvisc)
   if (showCallTree) call callTree_wayPoint("done with horizontal_viscosity (step_MOM_dyn_split_RK2b)")
@@ -1222,7 +1215,7 @@ end subroutine remap_dyn_split_RK2b_aux_vars
 
 !> This subroutine initializes all of the variables that are used by this
 !! dynamic core, including diagnostics and the cpu clocks.
-subroutine initialize_dyn_split_RK2b(u, v, h, uh, vh, eta, Time, G, GV, US, param_file, &
+subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, param_file, &
                       diag, CS, restart_CS, dt, Accel_diag, Cont_diag, MIS, &
                       VarMix, MEKE, thickness_diffuse_CSp,                  &
                       OBC, update_OBC_CSp, ALE_CSp, set_visc, &
@@ -1236,6 +1229,7 @@ subroutine initialize_dyn_split_RK2b(u, v, h, uh, vh, eta, Time, G, GV, US, para
                                     intent(inout) :: v          !< merid velocity [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  &
                                     intent(inout) :: h          !< layer thickness [H ~> m or kg m-2]
+  type(thermo_var_ptrs),            intent(in)    :: tv         !< Thermodynamic type
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), &
                             target, intent(inout) :: uh    !< zonal volume/mass transport [H L2 T-1 ~> m3 s-1 or kg s-1]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), &
