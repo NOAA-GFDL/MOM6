@@ -51,6 +51,7 @@ type, public :: harmonic_analysis_CS ; private
   integer :: length                          !< Number of fields of which harmonic analysis is to be performed
   character(len=16)  :: const_name(MAX_CONSTITUENTS) !< The name of each constituent
   character(len=255) :: path                 !< Path to directory where output will be written
+  type(unit_scale_type)  :: US               !< A dimensional unit scaling type
   type(HA_node), pointer :: list => NULL()   !< A linked list for storing the HA info of different fields
 end type harmonic_analysis_CS
 
@@ -134,6 +135,7 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
   CS%nc         =  nc
   CS%const_name =  const_name
   CS%length     =  0
+  CS%US         =  US
 
   allocate(CS%FtF(2*nc+1,2*nc+1), source=0.0)
 
@@ -166,9 +168,8 @@ end subroutine HA_register
 
 !> This subroutine accumulates the temporal basis functions in FtF.
 !! The tidal constituents are those used in MOM_tidal_forcing, plus the mean (of zero frequency).
-subroutine HA_accum_FtF(Time, US, CS)
+subroutine HA_accum_FtF(Time, CS)
   type(time_type),            intent(in)    :: Time    !< The current model time
-  type(unit_scale_type),      intent(in)    :: US      !< A dimensional unit scaling type
   type(harmonic_analysis_CS), intent(inout) :: CS      !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
@@ -180,9 +181,10 @@ subroutine HA_accum_FtF(Time, US, CS)
   if (.not. CS%HAready) return
   if (CS%length == 0) return
   if (Time < CS%time_start) return
+  if (Time > CS%time_end) return
 
   nc  = CS%nc
-  now = US%s_to_T * time_type_to_real(Time - CS%time_ref)
+  now = CS%US%s_to_T * time_type_to_real(Time - CS%time_ref)
 
   ! Accumulate FtF
   CS%FtF(1,1) = CS%FtF(1,1) + 1.0         !< For the zero frequency
@@ -212,12 +214,11 @@ end subroutine HA_accum_FtF
 !> This subroutine accumulates the temporal basis functions in FtSSH and then calls HA_write to compute
 !! harmonic constants and write results. The tidal constituents are those used in MOM_tidal_forcing, plus the
 !! mean (of zero frequency).
-subroutine HA_accum_FtSSH(key, data, Time, G, US, CS)
+subroutine HA_accum_FtSSH(key, data, Time, G, CS)
   character(len=*),           intent(in) :: key  !< Name of the current field
   real, dimension(:,:),       intent(in) :: data !< Input data of which harmonic analysis is to be performed [A]
   type(time_type),            intent(in) :: Time !< The current model time
   type(ocean_grid_type),      intent(in) :: G    !< The ocean's grid structure
-  type(unit_scale_type),      intent(in) :: US   !< A dimensional unit scaling type
   type(harmonic_analysis_CS), intent(inout) :: CS   !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
@@ -233,6 +234,7 @@ subroutine HA_accum_FtSSH(key, data, Time, G, US, CS)
   if (.not. CS%HAready) return
   if (CS%length == 0) return
   if (Time < CS%time_start) return
+  if (Time > CS%time_end) return
 
   ! Loop through the full list to find the current field
   tmp => CS%list
@@ -244,7 +246,7 @@ subroutine HA_accum_FtSSH(key, data, Time, G, US, CS)
   enddo
 
   nc  = CS%nc
-  now = US%s_to_T * time_type_to_real(Time - CS%time_ref)
+  now = CS%US%s_to_T * time_type_to_real(Time - CS%time_ref)
 
   ! Additional processing at the initial accumulating step
   if (ha1%old_time < 0.0) then
@@ -290,7 +292,8 @@ subroutine HA_accum_FtSSH(key, data, Time, G, US, CS)
     write(mesg,*) "MOM_harmonic_analysis: harmonic analysis done, key = ", trim(ha1%key)
     call MOM_error(NOTE, trim(mesg))
 
-    CS%HAready = .false.
+    ! De-register the current field and deallocate memory
+    ha1%key = 'none'
     deallocate(ha1%ref)
     deallocate(ha1%FtSSH)
   endif
