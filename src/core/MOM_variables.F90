@@ -31,11 +31,11 @@ public rotate_surface_state
 
 !> A structure for creating arrays of pointers to 3D arrays
 type, public :: p3d
-  real, dimension(:,:,:), pointer :: p => NULL() !< A pointer to a 3D array
+  real, dimension(:,:,:), pointer :: p => NULL() !< A pointer to a 3D array [various]
 end type p3d
 !> A structure for creating arrays of pointers to 2D arrays
 type, public :: p2d
-  real, dimension(:,:), pointer :: p => NULL() !< A pointer to a 2D array
+  real, dimension(:,:), pointer :: p => NULL() !< A pointer to a 2D array [various]
 end type p2d
 
 !> Pointers to various fields which may be used describe the surface state of MOM, and which
@@ -263,7 +263,8 @@ type, public :: vertvisc_type
     Ray_v       !< The Rayleigh drag velocity to be applied to each layer at v-points [H T-1 ~> m s-1 or Pa s m-1].
 
   ! The following elements are pointers so they can be used as targets for pointers in the restart registry.
-  real, pointer, dimension(:,:) :: MLD => NULL() !< Instantaneous active mixing layer depth [Z ~> m].
+  real, pointer, dimension(:,:) :: MLD => NULL()  !< Instantaneous active mixing layer depth [Z ~> m].
+  real, pointer, dimension(:,:) :: h_ML => NULL() !< Instantaneous active mixing layer thickness [H ~> m or kg m-2].
   real, pointer, dimension(:,:) :: sfc_buoy_flx => NULL() !< Surface buoyancy flux (derived) [Z2 T-3 ~> m2 s-3].
   real, pointer, dimension(:,:,:) :: Kd_shear => NULL()
                 !< The shear-driven turbulent diapycnal diffusivity at the interfaces between layers

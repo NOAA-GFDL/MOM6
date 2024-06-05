@@ -15,6 +15,7 @@ use MOM_forcing_type,  only : mech_forcing, find_ustar
 use MOM_grid,          only : ocean_grid_type
 use MOM_hor_index,     only : hor_index_type
 use MOM_intrinsic_functions, only : cuberoot
+use MOM_io,            only : MOM_read_data
 use MOM_lateral_mixing_coeffs, only : VarMix_CS
 use MOM_restart,       only : register_restart_field, query_initialized, MOM_restart_CS
 use MOM_unit_scaling,  only : unit_scale_type
@@ -98,11 +99,15 @@ type, public :: mixedlayer_restrat_CS ; private
   real    :: Kv_restrat            !< A viscosity that sets a floor on the momentum mixing rate
                                    !! during restratification, rescaled into thickness-based
                                    !! units [H2 T-1 ~> m2 s-1 or kg2 m-4 s-1]
+  logical :: MLD_grid              !< If true, read a spacially varying field for MLD_decaying_Tfilt
+  logical :: Cr_grid               !< If true, read a spacially varying field for Cr
 
   real, dimension(:,:), allocatable :: &
          MLD_filtered, &           !< Time-filtered MLD [H ~> m or kg m-2]
          MLD_filtered_slow, &      !< Slower time-filtered MLD [H ~> m or kg m-2]
-         wpup_filtered             !< Time-filtered vertical momentum flux [H L T-2 ~> m2 s-2 or kg m-1 s-2]
+         wpup_filtered, &          !< Time-filtered vertical momentum flux [H L T-2 ~> m2 s-2 or kg m-1 s-2]
+         MLD_Tfilt_space, &        !< Spatially varying time scale for MLD filter [T ~> s]
+         Cr_space                  !< Spatially varying Cr coefficient [nondim]
 
   !>@{
   !! Diagnostic identifier
@@ -132,7 +137,7 @@ contains
 !> Driver for the mixed-layer restratification parameterization.
 !! The code branches between two different implementations depending
 !! on whether the bulk-mixed layer or a general coordinate are in use.
-subroutine mixedlayer_restrat(h, uhtr, vhtr, tv, forces, dt, MLD, bflux, VarMix, G, GV, US, CS)
+subroutine mixedlayer_restrat(h, uhtr, vhtr, tv, forces, dt, MLD, h_MLD, bflux, VarMix, G, GV, US, CS)
   type(ocean_grid_type),                      intent(inout) :: G      !< Ocean grid structure
   type(verticalGrid_type),                    intent(in)    :: GV     !< Ocean vertical grid structure
   type(unit_scale_type),                      intent(in)    :: US     !< A dimensional unit scaling type
@@ -146,10 +151,14 @@ subroutine mixedlayer_restrat(h, uhtr, vhtr, tv, forces, dt, MLD, bflux, VarMix,
   real,                                       intent(in)    :: dt     !< Time increment [T ~> s]
   real, dimension(:,:),                       pointer       :: MLD    !< Mixed layer depth provided by the
                                                                       !! planetary boundary layer scheme [Z ~> m]
+  real, dimension(:,:),                       pointer       :: h_MLD  !< Mixed layer thickness provided
+                                                                      !! by the planetary boundary layer
+                                                                      !! scheme [H ~> m or kg m-2]
   real, dimension(:,:),                       pointer       :: bflux  !< Surface buoyancy flux provided by the
                                                                       !! PBL scheme [Z2 T-3 ~> m2 s-3]
   type(VarMix_CS),                            intent(in)    :: VarMix !< Variable mixing control structure
   type(mixedlayer_restrat_CS),                intent(inout) :: CS     !< Module control structure
+
 
   if (.not. CS%initialized) call MOM_error(FATAL, "mixedlayer_restrat: "// &
          "Module must be initialized before it is used.")
@@ -159,16 +168,16 @@ subroutine mixedlayer_restrat(h, uhtr, vhtr, tv, forces, dt, MLD, bflux, VarMix,
     call mixedlayer_restrat_BML(h, uhtr, vhtr, tv, forces, dt, G, GV, US, CS)
   elseif (CS%use_Bodner) then
     ! Implementation of Bodner et al., 2023
-    call mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, dt, MLD, bflux)
+    call mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, dt, MLD, h_MLD, bflux)
   else
     ! Implementation of Fox-Kemper et al., 2008, to work in general coordinates
-    call mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, MLD, VarMix, G, GV, US, CS)
+    call mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, G, GV, US, CS)
   endif
 
 end subroutine mixedlayer_restrat
 
 !> Calculates a restratifying flow in the mixed layer, following the formulation used in OM4
-subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, MLD_in, VarMix, G, GV, US, CS)
+subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, G, GV, US, CS)
   ! Arguments
   type(ocean_grid_type),                      intent(inout) :: G      !< Ocean grid structure
   type(verticalGrid_type),                    intent(in)    :: GV     !< Ocean vertical grid structure
@@ -181,8 +190,9 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, MLD_in, VarMix,
   type(thermo_var_ptrs),                      intent(in)    :: tv     !< Thermodynamic variables structure
   type(mech_forcing),                         intent(in)    :: forces !< A structure with the driving mechanical forces
   real,                                       intent(in)    :: dt     !< Time increment [T ~> s]
-  real, dimension(:,:),                       pointer       :: MLD_in !< Mixed layer depth provided by the
-                                                                      !! PBL scheme [Z ~> m]
+  real, dimension(:,:),                       pointer       :: h_MLD  !< Thickness of water within the
+                                                                      !! mixed layer depth provided by
+                                                                      !!  the PBL scheme [H ~> m or kg m-2]
   type(VarMix_CS),                            intent(in)    :: VarMix !< Variable mixing control structure
   type(mixedlayer_restrat_CS),                intent(inout) :: CS     !< Module control structure
 
@@ -212,8 +222,6 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, MLD_in, VarMix,
   real :: SpV_ml(SZI_(G)) ! Specific volume evaluated at the surface pressure [R-1 ~> m3 kg-1]
   real :: SpV_int_fast(SZI_(G)) ! Specific volume integrated through the mixed layer [H R-1 ~> m4 kg-1 or m]
   real :: SpV_int_slow(SZI_(G)) ! Specific volume integrated through the mixed layer [H R-1 ~> m4 kg-1 or m]
-  real :: H_mld(SZI_(G))  ! The thickness of water within the topmost MLD_in of height [H ~> m or kg m-2]
-  real :: MLD_rem(SZI_(G))  ! The vertical extent of the MLD_in that has not yet been accounted for [Z ~> m]
   real :: p0(SZI_(G))     ! A pressure of 0 [R L2 T-2 ~> Pa]
 
   real :: h_vel           ! htot interpolated onto velocity points [H ~> m or kg m-2]
@@ -326,30 +334,9 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, MLD_in, VarMix,
       enddo
     enddo ! j-loop
   elseif (CS%MLE_use_PBL_MLD) then
-    if (GV%Boussinesq .or. (.not.allocated(tv%SpV_avg))) then
-      do j=js-1,je+1 ; do i=is-1,ie+1
-        MLD_fast(i,j) = CS%MLE_MLD_stretch * GV%Z_to_H * MLD_in(i,j)
-      enddo ; enddo
-    else  ! The fully non-Boussinesq conversion between height in MLD_in and thickness.
-      do j=js-1,je+1
-        do i=is-1,ie+1 ; MLD_rem(i) = MLD_in(i,j) ; H_mld(i) = 0.0 ; enddo
-        do k=1,nz
-          keep_going = .false.
-          do i=is-1,ie+1 ; if (MLD_rem(i) > 0.0) then
-            if (MLD_rem(i) > GV%H_to_RZ * h(i,j,k) * tv%SpV_avg(i,j,k)) then
-              H_mld(i) = H_mld(i) + h(i,j,k)
-              MLD_rem(i) = MLD_rem(i) - GV%H_to_RZ * h(i,j,k) * tv%SpV_avg(i,j,k)
-              keep_going = .true.
-            else
-              H_mld(i) = H_mld(i) + GV%RZ_to_H * MLD_rem(i) / tv%SpV_avg(i,j,k)
-              MLD_rem(i) = 0.0
-            endif
-          endif ; enddo
-          if (.not.keep_going) exit
-        enddo
-        do i=is-1,ie+1 ; MLD_fast(i,j) = CS%MLE_MLD_stretch * H_mld(i) ; enddo
-      enddo
-    endif
+    do j=js-1,je+1 ; do i=is-1,ie+1
+      MLD_fast(i,j) = CS%MLE_MLD_stretch * h_MLD(i,j)
+    enddo ; enddo
   else
     call MOM_error(FATAL, "mixedlayer_restrat_OM4: "// &
          "No MLD to use for MLE parameterization.")
@@ -359,7 +346,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, MLD_in, VarMix,
   if (CS%MLE_MLD_decay_time>0.) then
     if (CS%debug) then
       call hchksum(CS%MLD_filtered, 'mixed_layer_restrat: MLD_filtered', G%HI, haloshift=1, scale=GV%H_to_mks)
-      call hchksum(MLD_in, 'mixed_layer_restrat: MLD in', G%HI, haloshift=1, scale=US%Z_to_m)
+      call hchksum(h_MLD, 'mixed_layer_restrat: MLD in', G%HI, haloshift=1, scale=GV%H_to_mks)
     endif
     aFac = CS%MLE_MLD_decay_time / ( dt + CS%MLE_MLD_decay_time )
     bFac = dt / ( dt + CS%MLE_MLD_decay_time )
@@ -776,7 +763,7 @@ end function mu
 
 !> Calculates a restratifying flow in the mixed layer, following the formulation
 !! used in Bodner et al., 2023 (B22)
-subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, dt, BLD, bflux)
+subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, dt, BLD, h_MLD, bflux)
   ! Arguments
   type(mixedlayer_restrat_CS),                intent(inout) :: CS     !< Module control structure
   type(ocean_grid_type),                      intent(inout) :: G      !< Ocean grid structure
@@ -792,6 +779,9 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   real,                                       intent(in)    :: dt     !< Time increment [T ~> s]
   real, dimension(:,:),                       pointer       :: BLD    !< Active boundary layer depth provided by the
                                                                       !! PBL scheme [Z ~> m] (not H)
+  real, dimension(:,:),                       pointer       :: h_MLD  !< Thickness of water within the
+                                                                      !! active boundary layer depth provided by
+                                                                      !! the PBL scheme [H ~> m or kg m-2]
   real, dimension(:,:),                       pointer       :: bflux  !< Surface buoyancy flux provided by the
                                                                       !! PBL scheme [Z2 T-3 ~> m2 s-3]
   ! Local variables
@@ -812,16 +802,12 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   real :: U_star_2d(SZI_(G),SZJ_(G))   ! The wind friction velocity, calculated using the Boussinesq
                           ! reference density or the time-evolving surface density in non-Boussinesq
                           ! mode [Z T-1 ~> m s-1]
-  real :: BLD_in_H(SZI_(G)) ! The thickness of the active boundary layer with the topmost BLD of
-                          ! height [H ~> m or kg m-2]
   real :: covTS(SZI_(G))  ! SGS TS covariance in Stanley param; currently 0 [C S ~> degC ppt]
   real :: varS(SZI_(G))   ! SGS S variance in Stanley param; currently 0 [S2 ~> ppt2]
   real :: dmu(SZK_(GV))   ! Change in mu(z) across layer k [nondim]
   real :: Rml_int(SZI_(G)) ! Potential density integrated through the mixed layer [R H ~> kg m-2 or kg2 m-5]
   real :: SpV_ml(SZI_(G)) ! Specific volume evaluated at the surface pressure [R-1 ~> m3 kg-1]
   real :: SpV_int(SZI_(G)) ! Specific volume integrated through the mixed layer [H R-1 ~> m4 kg-1 or m]
-  real :: H_mld(SZI_(G))  ! The thickness of water within the topmost BLD of height [H ~> m or kg m-2]
-  real :: MLD_rem(SZI_(G))  ! The vertical extent of the BLD that has not yet been accounted for [Z ~> m]
   real :: rho_ml(SZI_(G)) ! Potential density relative to the surface [R ~> kg m-3]
   real :: p0(SZI_(G))     ! A pressure of 0 [R L2 T-2 ~> Pa]
   real :: g_Rho0          ! G_Earth/Rho0 times a thickness conversion factor
@@ -886,7 +872,8 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
 
   if (CS%debug) then
     call hchksum(h,'mixed_Bodner: h', G%HI, haloshift=1, scale=GV%H_to_mks)
-    call hchksum(BLD, 'mle_Bodner: BLD in', G%HI, haloshift=1, scale=US%Z_to_m)
+    call hchksum(BLD, 'mle_Bodner: BLD', G%HI, haloshift=1, scale=US%Z_to_m)
+    call hchksum(h_MLD, 'mle_Bodner: h_MLD', G%HI, haloshift=1, scale=GV%H_to_mks)
     if (associated(bflux)) &
       call hchksum(bflux, 'mle_Bodner: bflux', G%HI, haloshift=1, scale=US%Z_to_m**2*US%s_to_T**3)
     call hchksum(U_star_2d, 'mle_Bodner: u*', G%HI, haloshift=1, scale=US%Z_to_m*US%s_to_T)
@@ -896,45 +883,28 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
                  G%HI, haloshift=1, scale=GV%H_to_mks)
   endif
 
-  ! Apply time filter to BLD (to remove diurnal cycle) to obtain "little h".
+  ! Apply time filter to h_MLD (to remove diurnal cycle) to obtain "little h".
   ! "little h" is representative of the active mixing layer depth, used in B22 formula (eq 27).
-  if (GV%Boussinesq .or. (.not.allocated(tv%SpV_avg))) then
-    do j=js-1,je+1 ; do i=is-1,ie+1
-      little_h(i,j) = rmean2ts(GV%Z_to_H*BLD(i,j), CS%MLD_filtered(i,j), &
-                               CS%BLD_growing_Tfilt, CS%BLD_decaying_Tfilt, dt)
-      CS%MLD_filtered(i,j) = little_h(i,j)
-    enddo ; enddo
-  else ! The fully non-Boussinesq conversion between height in BLD and thickness.
-    do j=js-1,je+1
-      do i=is-1,ie+1 ; MLD_rem(i) = BLD(i,j) ; H_mld(i) = 0.0 ; enddo
-      do k=1,nz
-        keep_going = .false.
-        do i=is-1,ie+1 ; if (MLD_rem(i) > 0.0) then
-          if (MLD_rem(i) > GV%H_to_RZ * h(i,j,k) * tv%SpV_avg(i,j,k)) then
-            H_mld(i) = H_mld(i) + h(i,j,k)
-            MLD_rem(i) = MLD_rem(i) - GV%H_to_RZ * h(i,j,k) * tv%SpV_avg(i,j,k)
-            keep_going = .true.
-          else
-            H_mld(i) = H_mld(i) + GV%RZ_to_H * MLD_rem(i) / tv%SpV_avg(i,j,k)
-            MLD_rem(i) = 0.0
-          endif
-        endif ; enddo
-        if (.not.keep_going) exit
-      enddo
-      do i=is-1,ie+1
-        little_h(i,j) = rmean2ts(H_mld(i), CS%MLD_filtered(i,j), &
-                                 CS%BLD_growing_Tfilt, CS%BLD_decaying_Tfilt, dt)
-        CS%MLD_filtered(i,j) = little_h(i,j)
-      enddo
-    enddo
-  endif
+  do j=js-1,je+1 ; do i=is-1,ie+1
+    little_h(i,j) = rmean2ts(h_MLD(i,j), CS%MLD_filtered(i,j), &
+                             CS%BLD_growing_Tfilt, CS%BLD_decaying_Tfilt, dt)
+    CS%MLD_filtered(i,j) = little_h(i,j)
+  enddo ; enddo
 
   ! Calculate "big H", representative of the mixed layer depth, used in B22 formula (eq 27).
-  do j=js-1,je+1 ; do i=is-1,ie+1
-    big_H(i,j) = rmean2ts(little_h(i,j), CS%MLD_filtered_slow(i,j), &
-                          CS%MLD_growing_Tfilt, CS%MLD_decaying_Tfilt, dt)
-    CS%MLD_filtered_slow(i,j) = big_H(i,j)
-  enddo ; enddo
+  if (CS%MLD_grid) then
+    do j=js-1,je+1 ; do i=is-1,ie+1
+      big_H(i,j) = rmean2ts(little_h(i,j), CS%MLD_filtered_slow(i,j), &
+                            CS%MLD_growing_Tfilt, CS%MLD_Tfilt_space(i,j), dt)
+      CS%MLD_filtered_slow(i,j) = big_H(i,j)
+    enddo ; enddo
+  else
+    do j=js-1,je+1 ; do i=is-1,ie+1
+      big_H(i,j) = rmean2ts(little_h(i,j), CS%MLD_filtered_slow(i,j), &
+                            CS%MLD_growing_Tfilt, CS%MLD_decaying_Tfilt, dt)
+      CS%MLD_filtered_slow(i,j) = big_H(i,j)
+    enddo ; enddo
+  endif
 
   ! Estimate w'u' at h-points, with a floor to avoid division by zero later.
   if (allocated(tv%SpV_avg) .and. .not.(GV%Boussinesq .or. GV%semi_Boussinesq)) then
@@ -1093,7 +1063,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
       h_big = 0.5*( big_H(i,j) + big_H(i+1,j) )                       ! H ~> m or kg m-3
       grd_b = ( buoy_av(i+1,j) - buoy_av(i,j) ) * G%IdxCu(I,j)        ! L H-1 T-2 ~> s-2 or m3 kg-1 s-2
       r_wpup = 2. / ( wpup(i,j) + wpup(i+1,j) )                       ! T2 L-1 H-1 ~> s2 m-2 or m s2 kg-1
-      psi_mag = ( ( ( CS%Cr * grid_dsd ) * ( absf * h_sml ) ) &       ! L2 H T-1 ~> m3 s-1 or kg s-1
+      psi_mag = ( ( ( CS%Cr_space(i,j) * grid_dsd ) * ( absf * h_sml ) ) &       ! L2 H T-1 ~> m3 s-1 or kg s-1
                   * ( ( h_big**2 ) * grd_b ) ) * r_wpup
     else  ! There is no flux on land and no gradient at open boundary points.
       psi_mag = 0.0
@@ -1134,7 +1104,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
       h_big = 0.5*( big_H(i,j) + big_H(i,j+1) )                       ! H ~> m or kg m-3
       grd_b = ( buoy_av(i,j+1) - buoy_av(i,j) ) * G%IdyCv(I,j)        ! L H-1 T-2 ~> s-2 or m3 kg-1 s-2
       r_wpup = 2. / ( wpup(i,j) + wpup(i,j+1) )                       ! T2 L-1 H-1 ~> s2 m-2 or m s2 kg-1
-      psi_mag = ( ( ( CS%Cr * grid_dsd ) * ( absf * h_sml ) ) &       ! L2 H T-1 ~> m3 s-1 or kg s-1
+      psi_mag = ( ( ( CS%Cr_space(i,j) * grid_dsd ) * ( absf * h_sml ) ) &       ! L2 H T-1 ~> m3 s-1 or kg s-1
                   * ( ( h_big**2 ) * grd_b ) ) * r_wpup
     else  ! There is no flux on land and no gradient at open boundary points.
       psi_mag = 0.0
@@ -1592,6 +1562,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   integer :: i, j
+  character(len=200) :: filename, inputdir, varname
 
   ! Read all relevant parameters and write them to the model log.
   call get_param(param_file, mdl, "MIXEDLAYER_RESTRAT", mixedlayer_restrat_init, &
@@ -1614,11 +1585,14 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   CS%MLE_MLD_stretch = -9.e9
   CS%use_Stanley_ML = .false.
   CS%use_Bodner = .false.
+  CS%MLD_grid = .false.
+  CS%Cr_grid = .false.
 
   call get_param(param_file, mdl, "DEBUG", CS%debug, default=.false., do_not_log=.true.)
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
       "This sets the default value for the various _ANSWER_DATE parameters.", &
       default=99991231, do_not_log=.true.)
+  call get_param(param_file, mdl, "INPUTDIR", inputdir, default=".")
   call openParameterBlock(param_file,'MLE') ! Prepend MLE% to all parameters
   if (GV%nkml==0) then
     call get_param(param_file, mdl, "USE_BODNER23", CS%use_Bodner, &
@@ -1627,7 +1601,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
              default=.false.)
   endif
   if (CS%use_Bodner) then
-    call get_param(param_file, mdl, "CR", CS%CR, &
+    call get_param(param_file, mdl, "CR", CS%Cr, &
              "The efficiency coefficient in eq 27 of Bodner et al., 2023.", &
              units="nondim", default=0.0)
     call get_param(param_file, mdl, "BODNER_NSTAR", CS%Nstar, &
@@ -1681,6 +1655,32 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
     call get_param(param_file, mdl, "USE_STANLEY_TVAR", CS%use_Stanley_ML, &
              "If true, turn on Stanley SGS T variance parameterization "// &
              "in ML restrat code.", default=.false.)
+    call get_param(param_file, mdl, "USE_CR_GRID", CS%Cr_grid, &
+             "If true, read in a spatially varying Cr field.", default=.false.)
+    call get_param(param_file, mdl, "USE_MLD_GRID", CS%MLD_grid, &
+             "If true, read in a spatially varying MLD_decaying_Tfilt field.", default=.false.)
+    if (CS%MLD_grid) then
+      call get_param(param_file, mdl, "MLD_TFILT_FILE", filename, &
+             "The path to the file containing the MLD_decaying_Tfilt fields.", &
+             default="")
+      call get_param(param_file, mdl, "MLD_TFILT_VAR", varname, &
+              "The variable name for MLD_decaying_Tfilt field.", &
+              default="MLD_tfilt")
+      filename = trim(inputdir) // "/" // trim(filename)
+      allocate(CS%MLD_Tfilt_space(G%isd:G%ied,G%jsd:G%jed), source=0.0)
+      call MOM_read_data(filename, varname, CS%MLD_Tfilt_space, G%domain, scale=US%s_to_T)
+    endif
+    allocate(CS%Cr_space(G%isd:G%ied,G%jsd:G%jed), source=CS%Cr)
+    if (CS%Cr_grid) then
+      call get_param(param_file, mdl, "CR_FILE", filename, &
+             "The path to the file containing the Cr fields.", &
+             default="")
+      call get_param(param_file, mdl, "CR_VAR", varname, &
+              "The variable name for Cr field.", &
+              default="Cr")
+      filename = trim(inputdir) // "/" // trim(filename)
+      call MOM_read_data(filename, varname, CS%Cr_space, G%domain)
+    endif
     call closeParameterBlock(param_file) ! The remaining parameters do not have MLE% prepended
     call get_param(param_file, mdl, "MLE_USE_PBL_MLD", CS%MLE_use_PBL_MLD, &
              "If true, the MLE parameterization will use the mixed-layer "//&
