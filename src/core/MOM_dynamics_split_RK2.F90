@@ -71,9 +71,6 @@ use MOM_vert_friction,         only : updateCFLtruncationValue, vertFPmix
 use MOM_verticalGrid,          only : verticalGrid_type, get_thickness_units
 use MOM_verticalGrid,          only : get_flux_units, get_tr_flux_units
 use MOM_wave_interface,        only : wave_parameters_CS, Stokes_PGF
-use MOM_CVMix_KPP,             only : KPP_get_BLD, KPP_CS
-use MOM_energetic_PBL,         only : energetic_PBL_get_MLD, energetic_PBL_CS
-use MOM_diabatic_driver,       only : diabatic_CS, extract_diabatic_member
 
 implicit none ; private
 
@@ -139,8 +136,6 @@ type, public :: MOM_dyn_split_RK2_CS ; private
   real ALLOCABLE_, dimension(NIMEM_,NJMEM_,NKMEM_)      :: pbce   !< pbce times eta gives the baroclinic pressure
                                                                   !! anomaly in each layer due to free surface height
                                                                   !! anomalies [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
-  type(KPP_CS),           pointer :: KPP_CSp => NULL() !< KPP control structure needed to ge
-  type(energetic_PBL_CS), pointer :: energetic_PBL_CSp => NULL()  !< ePBL control structure
 
   real, pointer, dimension(:,:) :: taux_bot => NULL() !< frictional x-bottom stress from the ocean
                                                       !! to the seafloor [R L Z T-2 ~> Pa]
@@ -182,6 +177,7 @@ type, public :: MOM_dyn_split_RK2_CS ; private
   logical :: debug_OBC !< If true, do debugging calls for open boundary conditions.
   logical :: fpmix = .false.                 !< If true, applies profiles of momentum flux magnitude and direction.
   logical :: module_is_initialized = .false. !< Record whether this module has been initialized.
+  logical :: visc_rem_dt_fix = .false. !<If true, use dt rather than dt_pred for vertvisc_rem at the end of predictor.
 
   !>@{ Diagnostic IDs
   integer :: id_uold   = -1, id_vold   = -1
@@ -717,9 +713,7 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
 
   if (CS%fpmix) then
     hbl(:,:) = 0.0
-    if (ASSOCIATED(CS%KPP_CSp)) call KPP_get_BLD(CS%KPP_CSp, hbl, G, US, m_to_BLD_units=GV%m_to_H)
-    if (ASSOCIATED(CS%energetic_PBL_CSp)) &
-      call energetic_PBL_get_MLD(CS%energetic_PBL_CSp, hbl, G, US, m_to_MLD_units=GV%m_to_H)
+    if (associated(visc%h_ML)) hbl(:,:) = visc%h_ML(:,:)
     call vertFPmix(up, vp, uold, vold, hbl, h, forces, &
                    dt_pred, G, GV, US, CS%vertvisc_CSp, CS%OBC)
     call vertvisc(up, vp, h, forces, visc, dt_pred, CS%OBC, CS%ADp, CS%CDp, G, &
@@ -732,7 +726,11 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
     call start_group_pass(CS%pass_uvp, G%Domain, clock=id_clock_pass)
     call cpu_clock_begin(id_clock_vertvisc)
   endif
-  call vertvisc_remnant(visc, CS%visc_rem_u, CS%visc_rem_v, dt_pred, G, GV, US, CS%vertvisc_CSp)
+  if (CS%visc_rem_dt_fix) then
+    call vertvisc_remnant(visc, CS%visc_rem_u, CS%visc_rem_v, dt, G, GV, US, CS%vertvisc_CSp)
+  else
+    call vertvisc_remnant(visc, CS%visc_rem_u, CS%visc_rem_v, dt_pred, G, GV, US, CS%vertvisc_CSp)
+  endif
   call cpu_clock_end(id_clock_vertvisc)
 
   call do_group_pass(CS%pass_visc_rem, G%Domain, clock=id_clock_pass)
@@ -746,8 +744,8 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   ! hp = h + dt * div . uh
   call cpu_clock_begin(id_clock_continuity)
   call continuity(up, vp, h, hp, uh, vh, dt, G, GV, US, CS%continuity_CSp, CS%OBC, pbv, &
-                  CS%uhbt, CS%vhbt, CS%visc_rem_u, CS%visc_rem_v, &
-                  u_av, v_av, BT_cont=CS%BT_cont)
+                  uhbt=CS%uhbt, vhbt=CS%vhbt, visc_rem_u=CS%visc_rem_u, visc_rem_v=CS%visc_rem_v, &
+                  u_cor=u_av, v_cor=v_av, BT_cont=CS%BT_cont)
   call cpu_clock_end(id_clock_continuity)
   if (showCallTree) call callTree_wayPoint("done with continuity (step_MOM_dyn_split_RK2)")
 
@@ -840,7 +838,7 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   if (CS%debug) then
     call MOM_state_chksum("Predictor ", up, vp, hp, uh, vh, G, GV, US, symmetric=sym)
     call uvchksum("Predictor avg [uv]", u_av, v_av, G%HI, haloshift=1, symmetric=sym, scale=US%L_T_to_m_s)
-    call hchksum(h_av, "Predictor avg h", G%HI, haloshift=0, scale=GV%H_to_MKS)
+    call hchksum(h_av, "Predictor avg h", G%HI, haloshift=2, scale=GV%H_to_MKS)
   ! call MOM_state_chksum("Predictor avg ", u_av, v_av, h_av, uh, vh, G, GV, US)
     call check_redundant("Predictor up ", up, vp, G, unscale=US%L_T_to_m_s)
     call check_redundant("Predictor uh ", uh, vh, G, unscale=GV%H_to_MKS*US%L_to_m**2*US%s_to_T)
@@ -849,7 +847,7 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
 ! diffu = horizontal viscosity terms (u_av)
   call cpu_clock_begin(id_clock_horvisc)
   call horizontal_viscosity(u_av, v_av, h_av, CS%diffu, CS%diffv, &
-                            MEKE, Varmix, G, GV, US, CS%hor_visc, &
+                            MEKE, Varmix, G, GV, US, CS%hor_visc, tv, dt, &
                             OBC=CS%OBC, BT=CS%barotropic_CSp, TD=thickness_diffuse_CSp, &
                             ADp=CS%ADp, hu_cont=CS%BT_cont%h_u, hv_cont=CS%BT_cont%h_v)
   call cpu_clock_end(id_clock_horvisc)
@@ -1001,7 +999,8 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   ! u_av and v_av adjusted so their mass transports match uhbt and vhbt.
   call cpu_clock_begin(id_clock_continuity)
   call continuity(u_inst, v_inst, h, h, uh, vh, dt, G, GV, US, CS%continuity_CSp, CS%OBC, pbv, &
-                  CS%uhbt, CS%vhbt, CS%visc_rem_u, CS%visc_rem_v, u_av, v_av)
+                  uhbt=CS%uhbt, vhbt=CS%vhbt, visc_rem_u=CS%visc_rem_u, visc_rem_v=CS%visc_rem_v, &
+                  u_cor=u_av, v_cor=v_av)
   call cpu_clock_end(id_clock_continuity)
   call do_group_pass(CS%pass_h, G%Domain, clock=id_clock_pass)
   ! Whenever thickness changes let the diag manager know, target grids
@@ -1296,7 +1295,7 @@ end subroutine remap_dyn_split_RK2_aux_vars
 
 !> This subroutine initializes all of the variables that are used by this
 !! dynamic core, including diagnostics and the cpu clocks.
-subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param_file, &
+subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, param_file, &
                       diag, CS, restart_CS, dt, Accel_diag, Cont_diag, MIS, &
                       VarMix, MEKE, thickness_diffuse_CSp,                  &
                       OBC, update_OBC_CSp, ALE_CSp, set_visc, &
@@ -1310,6 +1309,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
                                     intent(inout) :: v          !< merid velocity [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  &
                                     intent(inout) :: h          !< layer thickness [H ~> m or kg m-2]
+  type(thermo_var_ptrs),            intent(in)    :: tv         !< Thermodynamic type
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), &
                             target, intent(inout) :: uh    !< zonal volume/mass transport [H L2 T-1 ~> m3 s-1 or kg s-1]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), &
@@ -1353,6 +1353,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   type(group_pass_type) :: pass_av_h_uvh
   logical :: debug_truncations
   logical :: read_uv, read_h2
+  logical :: visc_rem_bug ! Stores the value of runtime paramter VISC_REM_BUG.
 
   integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed, nz
   integer :: IsdB, IedB, JsdB, JedB
@@ -1420,6 +1421,18 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   call get_param(param_file, mdl, "DEBUG_OBC", CS%debug_OBC, default=.false.)
   call get_param(param_file, mdl, "DEBUG_TRUNCATIONS", debug_truncations, &
                  default=.false.)
+  call get_param(param_file, mdl, "VISC_REM_BUG", visc_rem_bug, &
+                 "If true, visc_rem_[uv] in split mode is incorrectly calculated or accounted "//&
+                 "for in three places. This parameter controls the defaults of three individual "//&
+                 "flags, VISC_REM_TIMESTEP_FIX in MOM_dynamics_split_RK2(b), "//&
+                 "VISC_REM_BT_WEIGHT_FIX in MOM_barotropic, and VISC_REM_CONT_HVEL_FIX in "//&
+                 "MOM_continuity_PPM. Eventually, the three individual flags should be removed "//&
+                 "after tests and the default of VISC_REM_BUG should be to False.", default=.true.)
+  call get_param(param_file, mdl, "VISC_REM_TIMESTEP_FIX", CS%visc_rem_dt_fix, &
+                 "If true, use dt rather than dt_pred in vertvisc_remnant() at the end of "//&
+                 "predictor stage for the following continuity() call and btstep() call "//&
+                 "in the corrector step. This flag should be used with "//&
+                 "VISC_REM_BT_WEIGHT_FIX.", default=.not.visc_rem_bug)
 
   allocate(CS%taux_bot(IsdB:IedB,jsd:jed), source=0.0)
   allocate(CS%tauy_bot(isd:ied,JsdB:JedB), source=0.0)
@@ -1518,7 +1531,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   if (.not. query_initialized(CS%diffu, "diffu", restart_CS) .or. &
       .not. query_initialized(CS%diffv, "diffv", restart_CS)) then
     call horizontal_viscosity(u, v, h, CS%diffu, CS%diffv, MEKE, VarMix, G, GV, US, CS%hor_visc, &
-                              OBC=CS%OBC, BT=CS%barotropic_CSp, TD=thickness_diffuse_CSp, &
+                              tv, dt, OBC=CS%OBC, BT=CS%barotropic_CSp, TD=thickness_diffuse_CSp, &
                               hu_cont=CS%BT_cont%h_u, hv_cont=CS%BT_cont%h_v)
     call set_initialized(CS%diffu, "diffu", restart_CS)
     call set_initialized(CS%diffv, "diffv", restart_CS)

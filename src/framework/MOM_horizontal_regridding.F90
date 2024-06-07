@@ -125,7 +125,7 @@ subroutine fill_miss_2d(aout, good, fill, prev, G, acrit, num_pass, relc, debug,
   real, dimension(SZI_(G),SZJ_(G)) :: good_new ! The values of good_ to use for the next iteration [nondim]
 
   real    :: east, west, north, south ! Valid neighboring values or 0 for invalid values [arbitrary]
-  real    :: ge, gw, gn, gs  ! Flags indicating which neighbors have valid values [nondim]
+  real    :: ge, gw, gn, gs  ! Flags set to 0 or 1 indicating which neighbors have valid values [nondim]
   real    :: ngood     ! The number of valid values in neighboring points [nondim]
   real    :: nfill     ! The remaining number of points to fill [nondim]
   real    :: nfill_prev ! The previous value of nfill [nondim]
@@ -227,23 +227,30 @@ subroutine fill_miss_2d(aout, good, fill, prev, G, acrit, num_pass, relc, debug,
   ! Do Laplacian smoothing for the points that have been filled in.
   do k=1,npass
     call pass_var(aout,G%Domain)
-    do j=js,je ; do i=is,ie
-      if (fill(i,j) == 1) then
-        east = max(good(i+1,j),fill(i+1,j)) ; west = max(good(i-1,j),fill(i-1,j))
-        north = max(good(i,j+1),fill(i,j+1)) ; south = max(good(i,j-1),fill(i,j-1))
-        if (ans_2018) then
+
+    a_chg(:,:) = 0.0
+    if (ans_2018) then
+      do j=js,je ; do i=is,ie
+        if (fill(i,j) == 1) then
+          east = max(good(i+1,j),fill(i+1,j)) ; west = max(good(i-1,j),fill(i-1,j))
+          north = max(good(i,j+1),fill(i,j+1)) ; south = max(good(i,j-1),fill(i,j-1))
           a_chg(i,j) = relax_coeff*(south*aout(i,j-1)+north*aout(i,j+1) + &
                                     west*aout(i-1,j)+east*aout(i+1,j) - &
                                    (south+north+west+east)*aout(i,j))
-        else
-          a_chg(i,j) = relax_coeff*( ((south*aout(i,j-1) + north*aout(i,j+1)) + &
-                                  (west*aout(i-1,j)+east*aout(i+1,j))) - &
-                                 ((south+north)+(west+east))*aout(i,j) )
         endif
-      else
-        a_chg(i,j) = 0.
-      endif
-    enddo ; enddo
+      enddo ; enddo
+    else
+      do j=js,je ; do i=is,ie
+        if (fill(i,j) == 1) then
+          ge = max(good(i+1,j),fill(i+1,j)) ; gw = max(good(i-1,j),fill(i-1,j))
+          gn = max(good(i,j+1),fill(i,j+1)) ; gs = max(good(i,j-1),fill(i,j-1))
+          a_chg(i,j) = relax_coeff*( ((gs*aout(i,j-1) + gn*aout(i,j+1)) + &
+                                      (gw*aout(i-1,j) + ge*aout(i+1,j))) - &
+                                     ((gs + gn) + (gw + ge))*aout(i,j) )
+        endif
+      enddo ; enddo
+    endif
+
     ares = 0.0
     do j=js,je ; do i=is,ie
       aout(i,j) = a_chg(i,j) + aout(i,j)
@@ -620,7 +627,8 @@ end subroutine horiz_interp_and_extrap_tracer_record
 subroutine horiz_interp_and_extrap_tracer_fms_id(field, Time, G, tr_z, mask_z, &
                                                  z_in, z_edges_in, missing_value, scale, &
                                                  homogenize, spongeOngrid, m_to_Z, &
-                                                 answers_2018, tr_iter_tol, answer_date)
+                                                 answers_2018, tr_iter_tol, answer_date, &
+                                                 axes)
 
   type(external_field), intent(in)     :: field      !< Handle for the time interpolated field
   type(time_type),       intent(in)    :: Time       !< A FMS time type
@@ -656,6 +664,7 @@ subroutine horiz_interp_and_extrap_tracer_fms_id(field, Time, G, tr_z, mask_z, &
                                                      !! Dates before 20190101 give the same  answers
                                                      !! as the code did in late 2018, while later versions
                                                      !! add parentheses for rotational symmetry.
+  type(axis_info), allocatable, dimension(:), optional, intent(inout) :: axes !< Axis types for the input data
 
   ! Local variables
   ! In the following comments, [A] is used to indicate the arbitrary, possibly rescaled units of the
@@ -735,7 +744,16 @@ subroutine horiz_interp_and_extrap_tracer_fms_id(field, Time, G, tr_z, mask_z, &
 
   call cpu_clock_begin(id_clock_read)
 
-  call get_external_field_info(field, size=fld_sz, axes=axes_data, missing=missing_val_in)
+  if (present(axes) .and. allocated(axes)) then
+    call get_external_field_info(field, size=fld_sz, missing=missing_val_in)
+    axes_data = axes
+  else
+    call get_external_field_info(field, size=fld_sz, axes=axes_data, missing=missing_val_in)
+    if (present(axes)) then
+      allocate(axes(4))
+      axes = axes_data
+    endif
+  endif
   missing_value = scale*missing_val_in
 
   verbosity = MOM_get_verbosity()
