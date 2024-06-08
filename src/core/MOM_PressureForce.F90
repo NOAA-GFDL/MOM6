@@ -7,6 +7,7 @@ use MOM_diag_mediator, only : diag_ctrl, time_type
 use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : get_param, log_version, param_file_type
 use MOM_grid, only : ocean_grid_type
+use MOM_harmonic_analysis, only : harmonic_analysis_CS
 use MOM_PressureForce_FV, only : PressureForce_FV_Bouss, PressureForce_FV_nonBouss
 use MOM_PressureForce_FV, only : PressureForce_FV_init
 use MOM_PressureForce_FV, only : PressureForce_FV_CS
@@ -81,7 +82,7 @@ subroutine PressureForce(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm, pbce, e
 end subroutine Pressureforce
 
 !> Initialize the pressure force control structure
-subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, tides_CSp)
+subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, tides_CSp, HA_CSp)
   type(time_type), target, intent(in)    :: Time !< Current model time
   type(ocean_grid_type),   intent(in)    :: G    !< Ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV   !< Vertical grid structure
@@ -91,6 +92,8 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, ti
   type(PressureForce_CS),  intent(inout) :: CS   !< Pressure force control structure
   type(SAL_CS),           intent(in), optional :: SAL_CSp !< SAL control structure
   type(tidal_forcing_CS), intent(in), optional :: tides_CSp !< Tide control structure
+  type(harmonic_analysis_CS), intent(in), optional :: HA_CSp !< A pointer to the control
+                                                 !! structure of the harmonic analysis module
 #include "version_variable.h"
   character(len=40)  :: mdl = "MOM_PressureForce" ! This module's name.
 
@@ -105,10 +108,10 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, ti
 
   if (CS%Analytic_FV_PGF) then
     call PressureForce_FV_init(Time, G, GV, US, param_file, diag, &
-             CS%PressureForce_FV, SAL_CSp, tides_CSp)
+             CS%PressureForce_FV, SAL_CSp, tides_CSp, HA_CSp)
   else
     call PressureForce_Mont_init(Time, G, GV, US, param_file, diag, &
-             CS%PressureForce_Mont, SAL_CSp, tides_CSp)
+             CS%PressureForce_Mont, SAL_CSp, tides_CSp, HA_CSp)
   endif
 end subroutine PressureForce_init
 

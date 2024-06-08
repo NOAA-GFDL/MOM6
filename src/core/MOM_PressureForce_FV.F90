@@ -8,6 +8,7 @@ use MOM_diag_mediator, only : safe_alloc_ptr, diag_ctrl, time_type
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : get_param, log_param, log_version, param_file_type
 use MOM_grid, only : ocean_grid_type
+use MOM_harmonic_analysis, only : HA_accum_FtSSH, harmonic_analysis_CS
 use MOM_PressureForce_Mont, only : set_pbce_Bouss, set_pbce_nonBouss
 use MOM_self_attr_load, only : calc_SAL, SAL_CS
 use MOM_tidal_forcing, only : calc_tidal_forcing, tidal_forcing_CS
@@ -72,6 +73,7 @@ type, public :: PressureForce_FV_CS ; private
   integer :: id_rho_stanley_pgf = -1 !< Diagnostic identifier
   integer :: id_p_stanley = -1 !< Diagnostic identifier
   type(SAL_CS), pointer :: SAL_CSp => NULL() !< SAL control structure
+  type(harmonic_analysis_CS), pointer :: HA_CSp => NULL() !< Control structure for harmonic analysis
   type(tidal_forcing_CS), pointer :: tides_CSp => NULL() !< Tides control structure
 end type PressureForce_FV_CS
 
@@ -313,19 +315,24 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
   enddo
 
   ! Calculate and add the self-attraction and loading geopotential anomaly.
-  if (CS%calculate_SAL) then
+  if (CS%calculate_SAL .or. CS%tides) then
     !$OMP parallel do default(shared)
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
       SSH(i,j) = (za(i,j) - alpha_ref*p(i,j,1)) * I_gEarth - G%Z_ref &
                  - max(-G%bathyT(i,j)-G%Z_ref, 0.0)
     enddo ; enddo
-    call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
 
-    if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq) .or. (.not.CS%tides)) then
-      !$OMP parallel do default(shared)
-      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-        za(i,j) = za(i,j) - GV%g_Earth * e_sal(i,j)
-      enddo ; enddo
+    if (CS%tides .and. associated(CS%HA_CSp)) call HA_accum_FtSSH('ssh', SSH, CS%Time, G, CS%HA_CSp)
+
+    if (CS%calculate_SAL) then
+      call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
+
+      if ((CS%tides_answer_date>20230630) .or. (.not.GV%semi_Boussinesq) .or. (.not.CS%tides)) then
+        !$OMP parallel do default(shared)
+        do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+          za(i,j) = za(i,j) - GV%g_Earth * e_sal(i,j)
+        enddo ; enddo
+      endif
     endif
   endif
 
@@ -573,7 +580,7 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm
     enddo ; enddo
 
     ! Calculate and add the self-attraction and loading geopotential anomaly.
-    if (CS%calculate_SAL) then
+    if (CS%calculate_SAL .or. CS%tides) then
       !   Determine the surface height anomaly for calculating self attraction
       ! and loading.  This should really be based on bottom pressure anomalies,
       ! but that is not yet implemented, and the current form is correct for
@@ -587,11 +594,14 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm
           SSH(i,j) = SSH(i,j) + h(i,j,k)*GV%H_to_Z
         enddo ; enddo
       enddo
-      call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
-      !$OMP parallel do default(shared)
-      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-        e(i,j,nz+1) = e(i,j,nz+1) - e_sal(i,j)
-      enddo ; enddo
+      if (CS%tides .and. associated(CS%HA_CSp)) call HA_accum_FtSSH('ssh', SSH, CS%Time, G, CS%HA_CSp)
+      if (CS%calculate_SAL) then
+        call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
+        !$OMP parallel do default(shared)
+        do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+          e(i,j,nz+1) = e(i,j,nz+1) - e_sal(i,j)
+        enddo ; enddo
+      endif
     endif
 
     ! Calculate and add the tidal geopotential anomaly.
@@ -604,7 +614,7 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm
     endif
   else  ! Old answers
     ! Calculate and add the self-attraction and loading geopotential anomaly.
-    if (CS%calculate_SAL) then
+    if (CS%calculate_SAL .or. CS%tides) then
       !   Determine the surface height anomaly for calculating self attraction
       ! and loading.  This should really be based on bottom pressure anomalies,
       ! but that is not yet implemented, and the current form is correct for
@@ -618,8 +628,10 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm
           SSH(i,j) = SSH(i,j) + h(i,j,k)*GV%H_to_Z
         enddo ; enddo
       enddo
-      call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
-    else
+      if (CS%tides .and. associated(CS%HA_CSp)) call HA_accum_FtSSH('ssh', SSH, CS%Time, G, CS%HA_CSp)
+      if (CS%calculate_SAL) call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
+    endif
+    if (.not.CS%calculate_SAL) then
       !$OMP parallel do default(shared)
       do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
         e_sal(i,j) = 0.0
@@ -919,7 +931,7 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm
 end subroutine PressureForce_FV_Bouss
 
 !> Initializes the finite volume pressure gradient control structure
-subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, tides_CSp)
+subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, tides_CSp, HA_CSp)
   type(time_type), target,    intent(in)    :: Time !< Current model time
   type(ocean_grid_type),      intent(in)    :: G  !< Ocean grid structure
   type(verticalGrid_type),    intent(in)    :: GV !< Vertical grid structure
@@ -929,6 +941,8 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp,
   type(PressureForce_FV_CS),  intent(inout) :: CS !< Finite volume PGF control structure
   type(SAL_CS),           intent(in), target, optional :: SAL_CSp !< SAL control structure
   type(tidal_forcing_CS), intent(in), target, optional :: tides_CSp !< Tides control structure
+  type(harmonic_analysis_CS), intent(in), target, optional :: HA_CSp !< A pointer to the control
+                                                 !! structure of the harmonic analysis module
 
   ! Local variables
   real :: Stanley_coeff    ! Coefficient relating the temperature gradient and sub-gridscale
@@ -945,6 +959,8 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp,
     CS%tides_CSp => tides_CSp
   if (present(SAL_CSp)) &
     CS%SAL_CSp => SAL_CSp
+  if (present(HA_CSp)) &
+    CS%HA_CSp => HA_CSp
 
   mdl = "MOM_PressureForce_FV"
   call log_version(param_file, mdl, version, "")

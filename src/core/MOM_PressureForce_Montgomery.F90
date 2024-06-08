@@ -9,6 +9,7 @@ use MOM_diag_mediator, only : safe_alloc_ptr, diag_ctrl, time_type
 use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : get_param, log_param, log_version, param_file_type
 use MOM_grid, only : ocean_grid_type
+use MOM_harmonic_analysis, only : HA_accum_FtSSH, harmonic_analysis_CS
 use MOM_self_attr_load, only : calc_SAL, SAL_CS
 use MOM_tidal_forcing, only : calc_tidal_forcing, tidal_forcing_CS
 use MOM_unit_scaling, only : unit_scale_type
@@ -51,6 +52,7 @@ type, public :: PressureForce_Mont_CS ; private
   integer :: id_e_tide = -1,  id_e_tide_eq = -1, id_e_tide_sal = -1
   !>@}
   type(SAL_CS), pointer :: SAL_CSp => NULL() !< SAL control structure
+  type(harmonic_analysis_CS), pointer :: HA_CSp => NULL() !< Control structure for harmonic analysis
   type(tidal_forcing_CS), pointer :: tides_CSp => NULL() !< The tidal forcing control structure
 end type PressureForce_Mont_CS
 
@@ -192,7 +194,7 @@ subroutine PressureForce_Mont_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, p_atm, pb
   enddo ; enddo
 
   ! Calculate and add the self-attraction and loading geopotential anomaly.
-  if (CS%calculate_SAL) then
+  if (CS%calculate_SAL .or. CS%tides) then
     !   Determine the sea surface height anomalies, to enable the calculation
     ! of self-attraction and loading.
     !$OMP parallel do default(shared)
@@ -216,11 +218,15 @@ subroutine PressureForce_Mont_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, p_atm, pb
       enddo ; enddo ; enddo
     endif
 
-    call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
-    !$OMP parallel do default(shared)
-    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-      geopot_bot(i,j) = geopot_bot(i,j) - GV%g_Earth*e_sal(i,j)
-    enddo ; enddo
+    if (CS%tides .and. associated(CS%HA_CSp)) call HA_accum_FtSSH('ssh', SSH, CS%Time, G, CS%HA_CSp)
+
+    if (CS%calculate_SAL) then
+      call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
+      !$OMP parallel do default(shared)
+      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+        geopot_bot(i,j) = geopot_bot(i,j) - GV%g_Earth*e_sal(i,j)
+      enddo ; enddo
+    endif
   endif
 
   ! Calculate and add the tidal geopotential anomaly.
@@ -469,7 +475,7 @@ subroutine PressureForce_Mont_Bouss(h, tv, PFu, PFv, G, GV, US, CS, p_atm, pbce,
   enddo ; enddo
 
   ! Calculate and add the self-attraction and loading geopotential anomaly.
-  if (CS%calculate_SAL) then
+  if (CS%calculate_SAL .or. CS%tides) then
     !   Determine the surface height anomaly for calculating self attraction
     ! and loading.  This should really be based on bottom pressure anomalies,
     ! but that is not yet implemented, and the current form is correct for
@@ -481,11 +487,14 @@ subroutine PressureForce_Mont_Bouss(h, tv, PFu, PFv, G, GV, US, CS, p_atm, pbce,
         SSH(i,j) = SSH(i,j) + h(i,j,k)*GV%H_to_Z
       enddo ; enddo
     enddo
-    call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
-    !$OMP parallel do default(shared)
-    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-      e(i,j,nz+1) = e(i,j,nz+1) - e_sal(i,j)
-    enddo ; enddo
+    if (CS%tides .and. associated(CS%HA_CSp)) call HA_accum_FtSSH('ssh', SSH, CS%Time, G, CS%HA_CSp)
+    if (CS%calculate_SAL) then
+      call calc_SAL(SSH, e_sal, G, CS%SAL_CSp, tmp_scale=US%Z_to_m)
+      !$OMP parallel do default(shared)
+      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+        e(i,j,nz+1) = e(i,j,nz+1) - e_sal(i,j)
+      enddo ; enddo
+    endif
   endif
 
   ! Calculate and add the tidal geopotential anomaly.
@@ -861,7 +870,7 @@ subroutine Set_pbce_nonBouss(p, tv, G, GV, US, GFS_scale, pbce, alpha_star)
 end subroutine Set_pbce_nonBouss
 
 !> Initialize the Montgomery-potential form of PGF control structure
-subroutine PressureForce_Mont_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, tides_CSp)
+subroutine PressureForce_Mont_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp, tides_CSp, HA_CSp)
   type(time_type), target, intent(in)    :: Time !< Current model time
   type(ocean_grid_type),   intent(in)    :: G  !< ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV !< Vertical grid structure
@@ -871,6 +880,8 @@ subroutine PressureForce_Mont_init(Time, G, GV, US, param_file, diag, CS, SAL_CS
   type(PressureForce_Mont_CS), intent(inout) :: CS !< Montgomery PGF control structure
   type(SAL_CS), intent(in), target, optional :: SAL_CSp !< SAL control structure
   type(tidal_forcing_CS), intent(in), target, optional :: tides_CSp !< Tides control structure
+  type(harmonic_analysis_CS), intent(in), target, optional :: HA_CSp !< A pointer to the control
+                                                 !! structure of the harmonic analysis module
 
   ! Local variables
   logical :: use_EOS
@@ -884,6 +895,8 @@ subroutine PressureForce_Mont_init(Time, G, GV, US, param_file, diag, CS, SAL_CS
     CS%tides_CSp => tides_CSp
   if (present(SAL_CSp)) &
     CS%SAL_CSp => SAL_CSp
+  if (present(HA_CSp)) &
+    CS%HA_CSp => HA_CSp
 
   mdl = "MOM_PressureForce_Mont"
   call log_version(param_file, mdl, version, "")

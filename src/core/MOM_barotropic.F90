@@ -16,6 +16,7 @@ use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : get_param, log_param, log_version, param_file_type
 use MOM_forcing_type, only : mech_forcing
 use MOM_grid, only : ocean_grid_type
+use MOM_harmonic_analysis, only : HA_accum_FtSSH, harmonic_analysis_CS
 use MOM_hor_index, only : hor_index_type
 use MOM_io, only : vardesc, var_desc, MOM_read_data, slasher
 use MOM_open_boundary, only : ocean_OBC_type, OBC_NONE, open_boundary_query
@@ -25,7 +26,6 @@ use MOM_restart, only : register_restart_field, register_restart_pair
 use MOM_restart, only : query_initialized, MOM_restart_CS
 use MOM_self_attr_load, only : scalar_SAL_sensitivity
 use MOM_self_attr_load, only : SAL_CS
-use MOM_harmonic_analysis, only : HA_accum_FtF, HA_accum_FtSSH, harmonic_analysis_CS
 use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : BT_cont_type, alloc_bt_cont_type
@@ -2529,7 +2529,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   ! Accumulator is updated at the end of every baroclinic time step.
   ! Harmonic analysis will not be performed of a field that is not registered.
   if (CS%tides .and. associated(CS%HA_CSp) .and. find_etaav) then
-    call HA_accum_FtF(CS%Time, CS%HA_CSp)
     call HA_accum_FtSSH('eta', eta_out, CS%Time, G, CS%HA_CSp)
     call HA_accum_FtSSH('ubt', ubt, CS%Time, G, CS%HA_CSp)
     call HA_accum_FtSSH('vbt', vbt, CS%Time, G, CS%HA_CSp)

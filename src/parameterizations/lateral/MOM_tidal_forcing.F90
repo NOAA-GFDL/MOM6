@@ -253,7 +253,7 @@ subroutine tidal_forcing_init(Time, G, US, param_file, CS, HA_CS)
   logical :: use_M2, use_S2, use_N2, use_K2, use_K1, use_O1, use_P1, use_Q1
   logical :: use_MF, use_MM
   logical :: tides      ! True if a tidal forcing is to be used.
-  logical :: HA_eta, HA_ubt, HA_vbt
+  logical :: HA_SSH, HA_eta, HA_ubt, HA_vbt
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_tidal_forcing" ! This module's name.
@@ -528,8 +528,13 @@ subroutine tidal_forcing_init(Time, G, US, param_file, CS, HA_CS)
 
   if (present(HA_CS)) then
     call HA_init(Time, US, param_file, CS%time_ref, CS%nc, CS%freq, CS%phase0, CS%const_name, HA_CS)
+    call get_param(param_file, mdl, "HA_SSH", HA_SSH, &
+                   "If true, perform harmonic analysis of sea surface height "//&
+                   "determined from the total layer thickness.", default=.false.)
+    if (HA_SSH) call HA_register('ssh', HA_CS)
     call get_param(param_file, mdl, "HA_ETA", HA_eta, &
-                   "If true, perform harmonic analysis of SSH.", default=.false.)
+                   "If true, perform harmonic analysis of free serface height "//&
+                   "determined from the barotropic solver.", default=.false.)
     if (HA_eta) call HA_register('eta', HA_CS)
     call get_param(param_file, mdl, "HA_UBT", HA_ubt, &
                    "If true, perform harmonic analysis of zonal barotropic velocity.", default=.false.)
