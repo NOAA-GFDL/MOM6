@@ -22,6 +22,7 @@ integer, parameter :: MAX_CONSTITUENTS = 10  !< The maximum number of tidal cons
 !> The private control structure for storing the HA info of a particular field
 type, private :: HA_type
   character(len=16) :: key = "none"          !< Name of the field of which harmonic analysis is to be performed
+  character(len=1)  :: grid                  !< The grid on which the field is defined ('h', 'q', 'u', or 'v')
   real :: old_time = -1.0                    !< The time of the previous accumulating step [T ~> s]
   real, allocatable :: ref(:,:)              !< The initial field in arbitrary units [A]
   real, allocatable :: FtSSH(:,:,:)          !< Accumulator of (F' * SSH_in) in arbitrary units [A]
@@ -147,8 +148,9 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
 end subroutine HA_init
 
 !> This subroutine registers each of the fields on which HA is to be performed.
-subroutine HA_register(key, CS)
+subroutine HA_register(key, grid, CS)
   character(len=*),           intent(in)    :: key     !< Name of the current field
+  character(len=1),           intent(in)    :: grid    !< The grid on which the key field is defined
   type(harmonic_analysis_CS), intent(inout) :: CS      !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
@@ -159,6 +161,7 @@ subroutine HA_register(key, CS)
 
   allocate(tmp)
   ha1%key   =  trim(key)
+  ha1%grid  =  trim(grid)
   tmp%this  =  ha1
   tmp%next  => CS%list
   CS%list   => tmp
@@ -333,10 +336,10 @@ subroutine HA_write(ha1, Time, G, CS)
   allocate(cdf_fields(2*nc+1))
 
   ! Variable names
-  cdf_vars(1) = var_desc("z0", "m" ,"mean value", 'h', '1')
+  cdf_vars(1) = var_desc("z0", "m" ,"mean value", ha1%grid, '1', '1')
   do k=1,nc
-    cdf_vars(2*k  ) = var_desc(trim(CS%const_name(k))//"cos", "m", "cosine coefficient", 'h', '1')
-    cdf_vars(2*k+1) = var_desc(trim(CS%const_name(k))//"sin", "m", "sine coefficient",   'h', '1')
+    cdf_vars(2*k  ) = var_desc(trim(CS%const_name(k))//"cos", "m", "cosine coefficient", ha1%grid, '1', '1')
+    cdf_vars(2*k+1) = var_desc(trim(CS%const_name(k))//"sin", "m", "sine coefficient", ha1%grid, '1', '1')
   enddo
 
   ! Create output file

@@ -531,17 +531,17 @@ subroutine tidal_forcing_init(Time, G, US, param_file, CS, HA_CS)
     call get_param(param_file, mdl, "HA_SSH", HA_SSH, &
                    "If true, perform harmonic analysis of sea surface height "//&
                    "determined from the total layer thickness.", default=.false.)
-    if (HA_SSH) call HA_register('ssh', HA_CS)
+    if (HA_SSH) call HA_register('ssh', 'h', HA_CS)
     call get_param(param_file, mdl, "HA_ETA", HA_eta, &
                    "If true, perform harmonic analysis of free serface height "//&
                    "determined from the barotropic solver.", default=.false.)
-    if (HA_eta) call HA_register('eta', HA_CS)
+    if (HA_eta) call HA_register('eta', 'h', HA_CS)
     call get_param(param_file, mdl, "HA_UBT", HA_ubt, &
                    "If true, perform harmonic analysis of zonal barotropic velocity.", default=.false.)
-    if (HA_ubt) call HA_register('ubt', HA_CS)
+    if (HA_ubt) call HA_register('ubt', 'u', HA_CS)
     call get_param(param_file, mdl, "HA_VBT", HA_vbt, &
                    "If true, perform harmonic analysis of meridional barotropic velocity.", default=.false.)
-    if (HA_vbt) call HA_register('vbt', HA_CS)
+    if (HA_vbt) call HA_register('vbt', 'v', HA_CS)
   endif
 
   id_clock_tides = cpu_clock_id('(Ocean tides)', grain=CLOCK_MODULE)
