@@ -211,8 +211,8 @@ type, public :: MOM_control_struct ; private
   real ALLOCABLE_, dimension(NIMEM_,NJMEM_) :: eta_av_bc
                     !< free surface height or column mass time averaged over the last
                     !! baroclinic dynamics time step [H ~> m or kg m-2]
-  real, dimension(:,:), pointer :: &
-    Hml => NULL()   !< active mixed layer depth [Z ~> m]
+  real, dimension(:,:), pointer :: Hml => NULL()
+                    !< active mixed layer depth, or 0 if there is no boundary layer scheme [Z ~> m]
   real :: time_in_cycle !< The running time of the current time-stepping cycle
                     !! in calls that step the dynamics, and also the length of
                     !! the time integral of ssh_rint [T ~> s].
@@ -624,7 +624,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
     call rotate_mech_forcing(forces_in, turns, forces)
 
     allocate(fluxes)
-    call allocate_forcing_type(fluxes_in, G, fluxes)
+    call allocate_forcing_type(fluxes_in, G, fluxes, turns=turns)
     call rotate_forcing(fluxes_in, fluxes, turns)
   else
     forces => forces_in
@@ -1044,6 +1044,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
 
   ! Do diagnostics that only occur at the end of a complete forcing step.
   if (cycle_end) then
+    if (showCallTree) call callTree_waypoint("Do cycle end diagnostics (step_MOM)")
     if (CS%rotate_index) then
       allocate(sfc_state_diag)
       call rotate_surface_state(sfc_state, sfc_state_diag, G, turns)
@@ -1063,6 +1064,10 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
     endif
     call disable_averaging(CS%diag)
     call cpu_clock_end(id_clock_diagnostics)
+    if (CS%rotate_index) then
+      call deallocate_surface_state(sfc_state_diag)
+    endif
+    if (showCallTree) call callTree_waypoint("Done with end cycle diagnostics (step_MOM)")
   endif
 
   ! Accumulate the surface fluxes for assessing conservation
@@ -1327,7 +1332,7 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
                     CS%uhtr, CS%vhtr, G%HI, haloshift=0, scale=GV%H_to_MKS*US%L_to_m**2)
     endif
     call cpu_clock_begin(id_clock_ml_restrat)
-    call mixedlayer_restrat(h, CS%uhtr, CS%vhtr, CS%tv, forces, dt, CS%visc%MLD, &
+    call mixedlayer_restrat(h, CS%uhtr, CS%vhtr, CS%tv, forces, dt, CS%visc%MLD, CS%visc%h_ML, &
                             CS%visc%sfc_buoy_flx, CS%VarMix, G, GV, US, CS%mixedlayer_restrat_CSp)
     call cpu_clock_end(id_clock_ml_restrat)
     call pass_var(h, G%Domain, clock=id_clock_pass, halo=max(2,CS%cont_stencil))
@@ -1433,7 +1438,7 @@ subroutine step_MOM_tracer_dyn(CS, G, GV, US, h, Time_local)
   call advect_tracer(h, CS%uhtr, CS%vhtr, CS%OBC, CS%t_dyn_rel_adv, G, GV, US, &
                      CS%tracer_adv_CSp, CS%tracer_Reg, x_first_in=x_first)
   if (CS%debug) call MOM_tracer_chksum("Post-advect ", CS%tracer_Reg, G)
-  call tracer_hordiff(h, CS%t_dyn_rel_adv, CS%MEKE, CS%VarMix, G, GV, US, &
+  call tracer_hordiff(h, CS%t_dyn_rel_adv, CS%MEKE, CS%VarMix, CS%visc, G, GV, US, &
                       CS%tracer_diff_CSp, CS%tracer_Reg, CS%tv)
   if (CS%debug) call MOM_tracer_chksum("Post-diffuse ", CS%tracer_Reg, G)
   if (showCallTree) call callTree_waypoint("finished tracer advection/diffusion (step_MOM)")
@@ -1882,7 +1887,7 @@ subroutine step_offline(forces, fluxes, sfc_state, Time_start, time_interval, CS
             call calc_depth_function(G, CS%VarMix)
             call calc_slope_functions(CS%h, CS%tv, dt_offline, G, GV, US, CS%VarMix, OBC=CS%OBC)
           endif
-          call tracer_hordiff(CS%h, dt_offline, CS%MEKE, CS%VarMix, G, GV, US, &
+          call tracer_hordiff(CS%h, dt_offline, CS%MEKE, CS%VarMix, CS%visc, G, GV, US, &
                               CS%tracer_diff_CSp, CS%tracer_Reg, CS%tv)
         endif
       endif
@@ -1909,7 +1914,7 @@ subroutine step_offline(forces, fluxes, sfc_state, Time_start, time_interval, CS
             call calc_depth_function(G, CS%VarMix)
             call calc_slope_functions(CS%h, CS%tv, dt_offline, G, GV, US, CS%VarMix, OBC=CS%OBC)
           endif
-          call tracer_hordiff(CS%h, dt_offline, CS%MEKE, CS%VarMix, G, GV, US, &
+          call tracer_hordiff(CS%h, dt_offline, CS%MEKE, CS%VarMix, CS%visc, G, GV, US, &
               CS%tracer_diff_CSp, CS%tracer_Reg, CS%tv)
         endif
       endif
@@ -1966,7 +1971,7 @@ subroutine step_offline(forces, fluxes, sfc_state, Time_start, time_interval, CS
                                  CS%h, eatr, ebtr, uhtr, vhtr)
     ! Perform offline diffusion if requested
     if (.not. skip_diffusion) then
-      call tracer_hordiff(h_end, dt_offline, CS%MEKE, CS%VarMix, G, GV, US, &
+      call tracer_hordiff(h_end, dt_offline, CS%MEKE, CS%VarMix, CS%visc, G, GV, US, &
                           CS%tracer_diff_CSp, CS%tracer_Reg, CS%tv)
     endif
 
@@ -2007,7 +2012,8 @@ end subroutine step_offline
 !! initializing the ocean state variables, and initializing subsidiary modules
 subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                           Time_in, offline_tracer_mode, input_restart_file, diag_ptr, &
-                          count_calls, tracer_flow_CSp,  ice_shelf_CSp, waves_CSp, ensemble_num)
+                          count_calls, tracer_flow_CSp,  ice_shelf_CSp, waves_CSp, ensemble_num, &
+                          calve_ice_shelf_bergs)
   type(time_type), target,   intent(inout) :: Time        !< model time, set in this routine
   type(time_type),           intent(in)    :: Time_init   !< The start time for the coupled model's calendar
   type(param_file_type),     intent(out)   :: param_file  !< structure indicating parameter file to parse
@@ -2030,6 +2036,8 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                    optional, pointer       :: Waves_CSp   !< An optional pointer to a wave property CS
   integer, optional :: ensemble_num                       !< Ensemble index provided by the cap (instead of FMS
                                                           !! ensemble manager)
+  logical, optional :: calve_ice_shelf_bergs !< If true, will add point iceberg calving variables to the ice
+                                             !! shelf restart
   ! local variables
   type(ocean_grid_type),  pointer :: G => NULL()    ! A pointer to the metric grid use for the run
   type(ocean_grid_type),  pointer :: G_in => NULL() ! Pointer to the input grid
@@ -2043,6 +2051,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   type(MOM_restart_CS),   pointer :: restart_CSp => NULL()
   character(len=4), parameter :: vers_num = 'v2.0'
   integer :: turns   ! Number of grid quarter-turns
+  logical :: point_calving
 
   ! Initial state on the input index map
   real, allocatable         :: u_in(:,:,:) ! Initial zonal velocities [L T-1 ~> m s-1]
@@ -2124,6 +2133,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   logical :: Boussinesq        ! If true, this run is fully Boussinesq
   logical :: semi_Boussinesq   ! If true, this run is partially non-Boussinesq
   logical :: use_KPP           ! If true, diabatic is using KPP vertical mixing
+  logical :: MLE_use_PBL_MLD   ! If true, use stored boundary layer depths for submesoscale restratification.
   integer :: nkml, nkbl, verbosity, write_geom
   integer :: dynamics_stencil  ! The computational stencil for the calculations
                                ! in the dynamic core.
@@ -2728,7 +2738,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   if (use_frazil) allocate(CS%tv%frazil(isd:ied,jsd:jed), source=0.0)
   if (bound_salinity) allocate(CS%tv%salt_deficit(isd:ied,jsd:jed), source=0.0)
 
-  if (bulkmixedlayer .or. use_temperature) allocate(CS%Hml(isd:ied,jsd:jed), source=0.0)
+  allocate(CS%Hml(isd:ied,jsd:jed), source=0.0)
 
   if (bulkmixedlayer) then
     GV%nkml = nkml ; GV%nk_rho_varies = nkml + nkbl
@@ -2902,6 +2912,10 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   ! Consider removing this later?
   G%ke = GV%ke
 
+  if (use_ice_shelf) then
+    point_calving=.false.; if (present(calve_ice_shelf_bergs)) point_calving=calve_ice_shelf_bergs
+  endif
+
   if (CS%rotate_index) then
     G_in%ke = GV%ke
 
@@ -2927,7 +2941,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
       ! when using an ice shelf. Passing the ice shelf diagnostics CS from MOM
       ! for legacy reasons. The actual ice shelf diag CS is internal to the ice shelf
       call initialize_ice_shelf(param_file, G_in, Time, ice_shelf_CSp, diag_ptr, &
-                                Time_init, dirs%output_directory)
+                                Time_init, dirs%output_directory, calve_ice_shelf_bergs=point_calving)
       allocate(frac_shelf_in(G_in%isd:G_in%ied, G_in%jsd:G_in%jed), source=0.0)
       allocate(mass_shelf_in(G_in%isd:G_in%ied, G_in%jsd:G_in%jed), source=0.0)
       allocate(CS%frac_shelf_h(isd:ied, jsd:jed), source=0.0)
@@ -2986,7 +3000,8 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
       deallocate(frac_shelf_in,mass_shelf_in)
   else
     if (use_ice_shelf) then
-      call initialize_ice_shelf(param_file, G, Time, ice_shelf_CSp, diag_ptr, Time_init, dirs%output_directory)
+      call initialize_ice_shelf(param_file, G, Time, ice_shelf_CSp, diag_ptr, Time_init, &
+                               dirs%output_directory, calve_ice_shelf_bergs=point_calving)
       allocate(CS%frac_shelf_h(isd:ied, jsd:jed), source=0.0)
       allocate(CS%mass_shelf(isd:ied, jsd:jed), source=0.0)
       call ice_shelf_query(ice_shelf_CSp,G,CS%frac_shelf_h, CS%mass_shelf)
@@ -3270,11 +3285,23 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   CS%mixedlayer_restrat = mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, &
                                                   CS%mixedlayer_restrat_CSp, restart_CSp)
   if (CS%mixedlayer_restrat) then
+    if (GV%Boussinesq .and. associated(CS%visc%h_ML)) then
+      ! This is here to allow for a transition of restart files between model versions.
+      call get_param(param_file, "MOM", "MLE_USE_PBL_MLD", MLE_use_PBL_MLD, &
+                     default=.false., do_not_log=.true.)
+      if (MLE_use_PBL_MLD .and. .not.query_initialized(CS%visc%h_ML, "h_ML", restart_CSp) .and. &
+          associated(CS%visc%MLD)) then
+        do j=js,je ; do i=is,ie ; CS%visc%h_ML(i,j) = GV%Z_to_H * CS%visc%MLD(i,j) ; enddo ; enddo
+      endif
+    endif
+
     if (.not.(bulkmixedlayer .or. CS%use_ALE_algorithm)) &
       call MOM_error(FATAL, "MOM: MIXEDLAYER_RESTRAT true requires a boundary layer scheme.")
     ! When DIABATIC_FIRST=False and using CS%visc%ML in mixedlayer_restrat we need to update after a restart
     if (.not. CS%diabatic_first .and. associated(CS%visc%MLD)) &
       call pass_var(CS%visc%MLD, G%domain, halo=1)
+    if (.not. CS%diabatic_first .and. associated(CS%visc%h_ML)) &
+      call pass_var(CS%visc%h_ML, G%domain, halo=1)
   endif
 
   call MOM_diagnostics_init(MOM_internal_state, CS%ADp, CS%CDp, Time, G, GV, US, &
@@ -3566,7 +3593,7 @@ subroutine set_restart_fields(GV, US, param_file, CS, restart_CSp)
   ! hML is needed when using the ice shelf module
   call get_param(param_file, '', "ICE_SHELF", use_ice_shelf, default=.false., &
                  do_not_log=.true.)
-  if (use_ice_shelf .and. associated(CS%Hml)) then
+  if (use_ice_shelf) then
     call register_restart_field(CS%Hml, "hML", .false., restart_CSp, &
                                 "Mixed layer thickness", "m", conversion=US%Z_to_m)
   endif
@@ -3688,8 +3715,8 @@ subroutine extract_surface_state(CS, sfc_state_in)
   if (CS%rotate_index) then
     allocate(sfc_state)
     call allocate_surface_state(sfc_state, G, use_temperature, &
-         do_integrals=.true., omit_frazil=.not.associated(CS%tv%frazil),&
-         use_iceshelves=use_iceshelves)
+              do_integrals=.true., omit_frazil=.not.associated(CS%tv%frazil),&
+              use_iceshelves=use_iceshelves, sfc_state_in=sfc_state_in, turns=turns)
   else
     sfc_state => sfc_state_in
   endif
@@ -3706,11 +3733,9 @@ subroutine extract_surface_state(CS, sfc_state_in)
   enddo ; enddo ; endif
 
   ! copy Hml into sfc_state, so that caps can access it
-  if (associated(CS%Hml)) then
-    do j=js,je ; do i=is,ie
-      sfc_state%Hml(i,j) = CS%Hml(i,j)
-    enddo ; enddo
-  endif
+  do j=js,je ; do i=is,ie
+    sfc_state%Hml(i,j) = CS%Hml(i,j)
+  enddo ; enddo
 
   if (CS%Hmix < 0.0) then  ! A bulk mixed layer is in use, so layer 1 has the properties
     if (use_temperature) then ; do j=js,je ; do i=is,ie
@@ -3875,7 +3900,7 @@ subroutine extract_surface_state(CS, sfc_state_in)
       do k=1,nz
         call calculate_TFreeze(CS%tv%S(is:ie,j,k), pres(is:ie), T_freeze(is:ie), CS%tv%eqn_of_state)
         do i=is,ie
-          depth_ml = min(CS%HFrz, (US%Z_to_m*GV%m_to_H)*CS%visc%MLD(i,j))
+          depth_ml = min(CS%HFrz, CS%visc%h_ML(i,j))
           if (depth(i) + h(i,j,k) < depth_ml) then
             dh = h(i,j,k)
           elseif (depth(i) < depth_ml) then
@@ -4193,7 +4218,7 @@ subroutine MOM_end(CS)
   if (associated(CS%tv%internal_heat)) deallocate(CS%tv%internal_heat)
   if (associated(CS%tv%TempxPmE)) deallocate(CS%tv%TempxPmE)
 
-  DEALLOC_(CS%ave_ssh_ibc) ; DEALLOC_(CS%ssh_rint)
+  DEALLOC_(CS%ave_ssh_ibc) ; DEALLOC_(CS%ssh_rint) ; DEALLOC_(CS%eta_av_bc)
 
   ! TODO: debug_truncations deallocation
 
