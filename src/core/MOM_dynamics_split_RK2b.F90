@@ -73,9 +73,6 @@ use MOM_vert_friction,         only : updateCFLtruncationValue, vertFPmix
 use MOM_verticalGrid,          only : verticalGrid_type, get_thickness_units
 use MOM_verticalGrid,          only : get_flux_units, get_tr_flux_units
 use MOM_wave_interface,        only: wave_parameters_CS, Stokes_PGF
-use MOM_CVMix_KPP,             only : KPP_get_BLD, KPP_CS
-use MOM_energetic_PBL,         only : energetic_PBL_get_MLD, energetic_PBL_CS
-use MOM_diabatic_driver,       only : diabatic_CS, extract_diabatic_member
 
 implicit none ; private
 
@@ -147,8 +144,6 @@ type, public :: MOM_dyn_split_RK2b_CS ; private
   real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_)        :: dv_av_inst !< The barotropic meridional velocity increment
                                                                   !! between filtered and instantaneous velocities
                                                                   !! [L T-1 ~> m s-1]
-  type(KPP_CS),           pointer :: KPP_CSp => NULL() !< KPP control structure needed to ge
-  type(energetic_PBL_CS), pointer :: energetic_PBL_CSp => NULL()  !< ePBL control structure
 
   real, pointer, dimension(:,:) :: taux_bot => NULL() !< frictional x-bottom stress from the ocean
                                                       !! to the seafloor [R L Z T-2 ~> Pa]
@@ -179,6 +174,7 @@ type, public :: MOM_dyn_split_RK2b_CS ; private
   logical :: debug_OBC !< If true, do debugging calls for open boundary conditions.
   logical :: fpmix = .false.                 !< If true, applies profiles of momentum flux magnitude and direction.
   logical :: module_is_initialized = .false. !< Record whether this module has been initialized.
+  logical :: visc_rem_dt_fix = .false. !<If true, use dt rather than dt_pred for vertvisc_rem at the end of predictor.
 
   !>@{ Diagnostic IDs
   !  integer :: id_uold   = -1, id_vold   = -1
@@ -734,9 +730,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
 
   !  if (CS%fpmix) then
   !    hbl(:,:) = 0.0
-  !    if (ASSOCIATED(CS%KPP_CSp)) call KPP_get_BLD(CS%KPP_CSp, hbl, G, US, m_to_BLD_units=GV%m_to_H)
-  !    if (ASSOCIATED(CS%energetic_PBL_CSp)) &
-  !      call energetic_PBL_get_MLD(CS%energetic_PBL_CSp, hbl, G, US, m_to_MLD_units=GV%m_to_H)
+  !    if (associated(visc%h_ML)) hbl(:,:) = visc%h_ML(:,:)
   !    call vertFPmix(up, vp, uold, vold, hbl, h, forces, &
   !                   dt_pred, G, GV, US, CS%vertvisc_CSp, CS%OBC)
   !    call vertvisc(up, vp, h, forces, visc, dt_pred, CS%OBC, CS%ADp, CS%CDp, G, &
@@ -749,7 +743,11 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
     call start_group_pass(CS%pass_uvp, G%Domain, clock=id_clock_pass)
     call cpu_clock_begin(id_clock_vertvisc)
   endif
-  call vertvisc_remnant(visc, CS%visc_rem_u, CS%visc_rem_v, dt_pred, G, GV, US, CS%vertvisc_CSp)
+  if (CS%visc_rem_dt_fix) then
+    call vertvisc_remnant(visc, CS%visc_rem_u, CS%visc_rem_v, dt, G, GV, US, CS%vertvisc_CSp)
+  else
+    call vertvisc_remnant(visc, CS%visc_rem_u, CS%visc_rem_v, dt_pred, G, GV, US, CS%vertvisc_CSp)
+  endif
   call cpu_clock_end(id_clock_vertvisc)
 
   call do_group_pass(CS%pass_visc_rem, G%Domain, clock=id_clock_pass)
@@ -1279,6 +1277,7 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
   character(len=48) :: thickness_units, flux_units, eta_rest_name
   logical :: debug_truncations
   logical :: read_uv, read_h2
+  logical :: visc_rem_bug ! Stores the value of runtime paramter VISC_REM_BUG.
 
   integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed, nz
   integer :: IsdB, IedB, JsdB, JedB
@@ -1337,6 +1336,18 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
   call get_param(param_file, mdl, "DEBUG_OBC", CS%debug_OBC, default=.false.)
   call get_param(param_file, mdl, "DEBUG_TRUNCATIONS", debug_truncations, &
                  default=.false.)
+  call get_param(param_file, mdl, "VISC_REM_BUG", visc_rem_bug, &
+                 "If true, visc_rem_[uv] in split mode is incorrectly calculated or accounted "//&
+                 "for in three places. This parameter controls the defaults of three individual "//&
+                 "flags, VISC_REM_TIMESTEP_FIX in MOM_dynamics_split_RK2(b), "//&
+                 "VISC_REM_BT_WEIGHT_FIX in MOM_barotropic, and VISC_REM_CONT_HVEL_FIX in "//&
+                 "MOM_continuity_PPM. Eventually, the three individual flags should be removed "//&
+                 "after tests and the default of VISC_REM_BUG should be to False.", default=.true.)
+  call get_param(param_file, mdl, "VISC_REM_TIMESTEP_FIX", CS%visc_rem_dt_fix, &
+                 "If true, use dt rather than dt_pred in vertvisc_remnant() at the end of "//&
+                 "predictor stage for the following continuity() call and btstep() call "//&
+                 "in the corrector step. Default of this flag is set by VISC_REM_BUG. "//&
+                 "This flag should be used with VISC_REM_BT_WEIGHT_FIX.", default=.not.visc_rem_bug)
 
   allocate(CS%taux_bot(IsdB:IedB,jsd:jed), source=0.0)
   allocate(CS%tauy_bot(isd:ied,JsdB:JedB), source=0.0)
