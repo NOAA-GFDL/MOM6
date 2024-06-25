@@ -10,8 +10,8 @@ use MOM_diag_mediator, only : post_data, query_averaging_enabled, diag_axis_init
 use MOM_diag_mediator, only : disable_averaging, enable_averages
 use MOM_diag_mediator, only : register_diag_field, diag_ctrl, safe_alloc_ptr
 use MOM_diag_mediator, only : axes_grp, define_axes_group
-use MOM_domains, only       : AGRID, To_South, To_West, To_All
-use MOM_domains, only       : create_group_pass, do_group_pass, pass_var
+use MOM_domains, only       : AGRID, To_South, To_West, To_All, CGRID_NE
+use MOM_domains, only       : create_group_pass, pass_var, pass_vector
 use MOM_domains, only       : group_pass_type, start_group_pass, complete_group_pass
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, MOM_mesg, is_root_pe
 use MOM_file_parser, only   : read_param, get_param, log_param, log_version, param_file_type
@@ -93,6 +93,8 @@ type, public :: int_tide_CS ; private
   real, allocatable, dimension(:,:,:,:,:) :: TKE_itidal_loss
                         !< energy lost due to small-scale wave drag [R Z3 T-3 ~> W m-2]
   real, allocatable, dimension(:,:,:,:,:) :: TKE_residual_loss
+                        !< internal tide energy loss due to the residual at slopes [R Z3 T-3 ~> W m-2]
+  real, allocatable, dimension(:,:,:,:,:) :: TKE_slope_loss
                         !< internal tide energy loss due to the residual at slopes [R Z3 T-3 ~> W m-2]
   real, allocatable, dimension(:,:) :: tot_leak_loss !< Energy loss rates due to misc background processes,
                         !! summed over angle, frequency and mode [R Z3 T-3 ~> W m-2]
@@ -250,7 +252,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   real, dimension(SZI_(G),SZJ_(G),CS%nFreq,CS%nMode) :: &
     drag_scale     ! bottom drag scale [T-1 ~> s-1]
   real, dimension(SZI_(G),SZJ_(G)) :: &
-    tot_vel_btTide2, &
+    tot_vel_btTide2, & ! [L2 T-2 ~> m2 s-2]
     tot_En, &      ! energy summed over angles, modes, frequencies [R Z3 T-2 ~> J m-2]
     tot_leak_loss, tot_quad_loss, tot_itidal_loss, tot_Froude_loss, tot_residual_loss, tot_allprocesses_loss, &
                    ! energy loss rates summed over angle, freq, and mode [R Z3 T-3 ~> W m-2]
@@ -278,6 +280,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   real :: Fr2_max    ! The column maximum internal wave Froude number squared [nondim]
   real :: cn_subRO        ! A tiny wave speed to prevent division by zero [L T-1 ~> m s-1]
   real :: en_subRO        ! A tiny energy to prevent division by zero [R Z3 T-2 ~> J m-2]
+  real :: En_a, En_b                                 ! Energies for time stepping [R Z3 T-2 ~> J m-2]
   real :: En_new, En_check                           ! Energies for debugging [R Z3 T-2 ~> J m-2]
   real :: En_initial, Delta_E_check                  ! Energies for debugging [R Z3 T-2 ~> J m-2]
   real :: TKE_Froude_loss_check, TKE_Froude_loss_tot ! Energy losses for debugging [R Z3 T-3 ~> W m-2]
@@ -347,6 +350,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
                    ! It can be 1 point smaller if teleport is not used.
   endif
 
+  call pass_var(cn,G%Domain)
   ! Set the wave speeds for the modes, using cg(n) ~ cg(1)/n.**********************
   ! This is wrong, of course, but it works reasonably in some cases.
   ! Uncomment if wave_speed is not used to calculate the true values (BDM).
@@ -366,6 +370,10 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       if (CS%frequency(fr)**2 > f2) &
         CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + dt*frac_per_sector*(1.0-CS%q_itides) * &
                             CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr)
+      else
+        ! zero out input TKE value to get correct diagnostics
+        TKE_itidal_input(i,j,fr) = 0.
+      endif
     enddo ; enddo ; enddo ; enddo ; enddo
   elseif (CS%energized_angle <= CS%nAngle) then
     frac_per_sector = 1.0
@@ -376,6 +384,10 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       if (CS%frequency(fr)**2 > f2) &
         CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + dt*frac_per_sector*(1.0-CS%q_itides) * &
                             CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr)
+      else
+        ! zero out input TKE value to get correct diagnostics
+        TKE_itidal_input(i,j,fr) = 0.
+      endif
     enddo ; enddo ; enddo ; enddo
   else
     call MOM_error(WARNING, "Internal tide energy is being put into a angular "//&
@@ -384,9 +396,6 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
 
   ! Pass a test vector to check for grid rotation in the halo updates.
   do j=jsd,jed ; do i=isd,ied ; test(i,j,1) = 1.0 ; test(i,j,2) = 0.0 ; enddo ; enddo
-  do m=1,CS%nMode ; do fr=1,CS%nFreq
-    call create_group_pass(pass_En, CS%En(:,:,:,fr,m), G%domain)
-  enddo ; enddo
   call create_group_pass(pass_test, test(:,:,1), test(:,:,2), G%domain, stagger=AGRID)
   call start_group_pass(pass_test, G%domain)
 
@@ -411,7 +420,6 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     enddo ; enddo
   enddo ; enddo ; enddo
 
-  call do_group_pass(pass_En, G%domain)
 
   call complete_group_pass(pass_test, G%domain)
 
@@ -428,9 +436,10 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
 
     ! initialize residual loss, will be computed in propagate
     CS%TKE_residual_loss(:,:,:,fr,m) = 0.
+    CS%TKE_slope_loss(:,:,:,fr,m) = 0.
 
     call propagate(CS%En(:,:,:,fr,m), cn(:,:,m), CS%frequency(fr), dt, &
-                   G, US, CS, CS%NAngle, CS%TKE_residual_loss(:,:,:,fr,m))
+                   G, US, CS, CS%NAngle, CS%TKE_slope_loss(:,:,:,fr,m))
   enddo ; enddo
 
   ! Check for En<0 - for debugging, delete later
@@ -487,10 +496,12 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   ! Extract the energy for mixing due to misc. processes (background leakage)------
   if (CS%apply_background_drag) then
     do m=1,CS%nMode ; do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
-    ! Calculate loss rate and apply loss over the time step ; apply the same drag timescale
-    ! to each En component (technically not correct; fix later)
-    CS%TKE_leak_loss(i,j,a,fr,m)  = CS%En(i,j,a,fr,m) * CS%decay_rate ! loss rate [R Z3 T-3 ~> W m-2]
-    CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) / (1.0 + dt * CS%decay_rate) ! implicit update
+      ! Calculate loss rate and apply loss over the time step ; apply the same drag timescale
+      ! to each En component (technically not correct; fix later)
+      En_b = CS%En(i,j,a,fr,m) ! save previous value
+      En_a = CS%En(i,j,a,fr,m) / (1.0 + dt * CS%decay_rate) ! implicit update
+      CS%TKE_leak_loss(i,j,a,fr,m) = (En_b - En_a) / dt ! compute exact loss rate [R Z3 T-3 ~> W m-2]
+      CS%En(i,j,a,fr,m) = En_a ! update value
     enddo ; enddo ; enddo ; enddo ; enddo
   endif
   ! Check for En<0 - for debugging, delete later
@@ -524,22 +535,24 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       ! This is mathematically equivalent to the form in the option below, but they differ at roundoff.
       do m=1,CS%NMode ; do fr=1,CS%Nfreq ; do j=jsd,jed ; do i=isd,ied
         I_D_here = 1.0 / (max(htot(i,j), CS%drag_min_depth))
-        drag_scale(i,j,fr,m) = CS%cdrag * sqrt(max(0.0, US%L_to_Z**2*tot_vel_btTide2(i,j)**2 + &
+        drag_scale(i,j,fr,m) = CS%cdrag * sqrt(max(0.0, US%L_to_Z**2*tot_vel_btTide2(i,j) + &
                              tot_En_mode(i,j,fr,m) * GV%RZ_to_H * I_D_here)) * GV%Z_to_H*I_D_here
       enddo ; enddo ; enddo ; enddo
     else
       do m=1,CS%NMode ; do fr=1,CS%Nfreq ; do j=jsd,jed ; do i=isd,ied
         I_mass = GV%RZ_to_H / (max(htot(i,j), CS%drag_min_depth))
         drag_scale(i,j,fr,m) = (CS%cdrag * (Rho_bot(i,j)*I_mass)) * &
-                              sqrt(max(0.0, US%L_to_Z**2*tot_vel_btTide2(i,j)**2 + &
+                              sqrt(max(0.0, US%L_to_Z**2*tot_vel_btTide2(i,j) + &
                                             tot_En_mode(i,j,fr,m) * I_mass))
       enddo ; enddo ; enddo ; enddo
     endif
     do m=1,CS%nMode ; do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
       ! Calculate loss rate and apply loss over the time step ; apply the same drag timescale
       ! to each En component (technically not correct; fix later)
-      CS%TKE_quad_loss(i,j,a,fr,m)  = CS%En(i,j,a,fr,m) * drag_scale(i,j,fr,m) ! loss rate
-      CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) / (1.0 + dt * drag_scale(i,j,fr,m)) ! implicit update
+      En_b = CS%En(i,j,a,fr,m)
+      En_a = CS%En(i,j,a,fr,m) / (1.0 + dt * drag_scale(i,j,fr,m)) ! implicit update
+      CS%TKE_quad_loss(i,j,a,fr,m)  = (En_b - En_a) / dt
+      CS%En(i,j,a,fr,m) = En_a
     enddo ; enddo ; enddo ; enddo ; enddo
   endif
   ! Check for En<0 - for debugging, delete later
@@ -634,41 +647,22 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
                    (G%Coriolis2Bu(I-1,J) + G%Coriolis2Bu(I,J-1)))
         Kmag2 = (freq2 - f2) / (cn(i,j,m)**2 + cn_subRO**2)
         c_phase = 0.0
+        CS%TKE_Froude_loss(i,j,:,fr,m) = 0. ! init for all angles
         if (Kmag2 > 0.0) then
           c_phase = sqrt(freq2/Kmag2)
           Fr2_max = (Umax(i,j,fr,m) / c_phase)**2
           ! Dissipate energy if Fr>1; done here with an arbitrary time scale
           if (Fr2_max > 1.0) then
-            En_initial = sum(CS%En(i,j,:,fr,m)) ! for debugging
             ! Calculate effective decay rate [T-1 ~> s-1] if breaking occurs over a time step
-            loss_rate = (1.0 - Fr2_max) / (Fr2_max * dt)
+            !loss_rate = (1.0 - Fr2_max) / (Fr2_max * dt)
             do a=1,CS%nAngle
               ! Determine effective dissipation rate (Wm-2)
-              CS%TKE_Froude_loss(i,j,a,fr,m) = CS%En(i,j,a,fr,m) * abs(loss_rate)
-              ! Update energy
-              En_new = CS%En(i,j,a,fr,m)/Fr2_max ! for debugging
-              En_check = CS%En(i,j,a,fr,m) - CS%TKE_Froude_loss(i,j,a,fr,m)*dt ! for debugging
-              ! Re-scale (reduce) energy due to breaking
-              CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m)/Fr2_max
-              ! Check (for debugging only)
-              if (abs(En_new - En_check) > CS%En_check_tol) then
-                call MOM_error(WARNING, "MOM_internal_tides: something is wrong with Fr-breaking.", &
-                               all_print=.true.)
-                write(mesg,*) "En_new=", En_new , "En_check=", En_check
-                call MOM_error(WARNING, "MOM_internal_tides: "//trim(mesg), all_print=.true.)
-              endif
+              !CS%TKE_Froude_loss(i,j,a,fr,m) = CS%En(i,j,a,fr,m) * abs(loss_rate)
+              En_b = CS%En(i,j,a,fr,m)
+              En_a = CS%En(i,j,a,fr,m)/Fr2_max
+              CS%TKE_Froude_loss(i,j,a,fr,m) = (En_b - En_a) / dt
+              CS%En(i,j,a,fr,m) = En_a
             enddo
-            ! Check (for debugging)
-            Delta_E_check = En_initial - sum(CS%En(i,j,:,fr,m))
-            TKE_Froude_loss_check = abs(Delta_E_check)/dt
-            TKE_Froude_loss_tot = sum(CS%TKE_Froude_loss(i,j,:,fr,m))
-            if (abs(TKE_Froude_loss_check - TKE_Froude_loss_tot)*dt > CS%En_check_tol) then
-              call MOM_error(WARNING, "MOM_internal_tides: something is wrong with Fr energy update.", &
-                             all_print=.true.)
-              write(mesg,*) "TKE_Froude_loss_check=", TKE_Froude_loss_check, &
-                            "TKE_Froude_loss_tot=", TKE_Froude_loss_tot
-              call MOM_error(WARNING, "MOM_internal_tides: "//trim(mesg), all_print=.true.)
-            endif
           endif ! Fr2>1
         endif ! Kmag2>0
         CS%cp(i,j,fr,m) = c_phase
@@ -694,15 +688,23 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   if (CS%apply_residual_drag) then
 
     do m=1,CS%nMode ; do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
-      ! implicit form
+      ! implicit form is rewritten to minimize number of divisions
       !CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) / (1.0 + dt * CS%TKE_residual_loss(i,j,a,fr,m) / &
       !                                        (CS%En(i,j,a,fr,m) + en_subRO))
-      ! rewritten to minimize number of divisions:
-      CS%En(i,j,a,fr,m) = (CS%En(i,j,a,fr,m) * (CS%En(i,j,a,fr,m) + en_subRO)) / &
-                         ((CS%En(i,j,a,fr,m) + en_subRO) + dt * CS%TKE_residual_loss(i,j,a,fr,m))
+      ! only compute when partial reflection is present not to create noise elsewhere
+      if (CS%refl_pref_logical(i,j)) then
+        En_b = CS%En(i,j,a,fr,m)
+        En_a = (CS%En(i,j,a,fr,m) * (CS%En(i,j,a,fr,m) + en_subRO)) / &
+               ((CS%En(i,j,a,fr,m) + en_subRO) + dt * CS%TKE_slope_loss(i,j,a,fr,m))
+        CS%TKE_residual_loss(i,j,a,fr,m) = (En_b - En_a) / dt
+        CS%En(i,j,a,fr,m) = En_a
+      endif
+    enddo ; enddo ; enddo ; enddo ; enddo
 
-      ! explicit form
-      !CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) - dt * CS%TKE_residual_loss(i,j,a,fr,m)
+  else
+    ! zero out the residual loss term so it does not count towards diagnostics
+    do m=1,CS%nMode ; do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+       CS%TKE_residual_loss(i,j,a,fr,m) = 0.
     enddo ; enddo ; enddo ; enddo ; enddo
   endif
 
@@ -960,6 +962,7 @@ subroutine itidal_lowmode_loss(G, GV, US, CS, Nb, Rho_bot, Ub, En, TKE_loss_fixe
                              ! assumed to stay in propagating mode for now - BDM) [nondim]
   real    :: loss_rate       ! approximate loss rate for implicit calc [T-1 ~> s-1]
   real    :: En_negl         ! negligibly small number to prevent division by zero [R Z3 T-2 ~> J m-2]
+  real    :: En_a, En_b      ! energy before and after timestep [R Z3 T-2 ~> J m-2]
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
 
@@ -993,7 +996,10 @@ subroutine itidal_lowmode_loss(G, GV, US, CS, Nb, Rho_bot, Ub, En, TKE_loss_fixe
         frac_per_sector = En(i,j,a,fr,m)/En_tot
         TKE_loss(i,j,a,fr,m) = frac_per_sector*TKE_loss_tot           ! [R Z3 T-3  ~> W m-2]
         loss_rate = TKE_loss(i,j,a,fr,m) / (En(i,j,a,fr,m) + En_negl) ! [T-1 ~> s-1]
-        En(i,j,a,fr,m) = En(i,j,a,fr,m) / (1.0 + dt*loss_rate)
+        En_b = En(i,j,a,fr,m)
+        En_a = En(i,j,a,fr,m) / (1.0 + dt*loss_rate)
+        TKE_loss(i,j,a,fr,m) = (En_b - En_a) / dt ! overwrite with exact value
+        En(i,j,a,fr,m) = En_a
       enddo
     else
       ! no loss if no energy
@@ -1001,24 +1007,6 @@ subroutine itidal_lowmode_loss(G, GV, US, CS, Nb, Rho_bot, Ub, En, TKE_loss_fixe
         TKE_loss(i,j,a,fr,m) = 0.0
       enddo
     endif
-
-    ! Update energy remaining (this is the old explicit calc)
-    !if (En_tot > 0.0) then
-    !  do a=1,CS%nAngle
-    !    frac_per_sector = En(i,j,a,fr,m)/En_tot
-    !    TKE_loss(i,j,a,fr,m) = frac_per_sector*TKE_loss_tot
-    !    if (TKE_loss(i,j,a,fr,m)*dt <= En(i,j,a,fr,m))then
-    !      En(i,j,a,fr,m) = En(i,j,a,fr,m) - TKE_loss(i,j,a,fr,m)*dt
-    !    else
-    !      call MOM_error(WARNING, "itidal_lowmode_loss: energy loss greater than available, "// &
-    !                        " setting En to zero.", all_print=.true.)
-    !      En(i,j,a,fr,m) = 0.0
-    !    endif
-    !  enddo
-    !else
-    !  ! no loss if no energy
-    !  TKE_loss(i,j,:,fr,m) = 0.0
-    !endif
 
   enddo ; enddo ; enddo ; enddo
 
@@ -1359,6 +1347,9 @@ subroutine propagate(En, cn, freq, dt, G, US, CS, NAngle, residual_loss)
       speed(I,J) = 0.25*((cn(i,j) + cn(i+1,j+1)) + (cn(i+1,j) + cn(i,j+1))) * &
                      sqrt(max(freq2 - f2, 0.0)) * Ifreq
     enddo ; enddo
+
+    call pass_var(speed, G%Domain)
+
     do a=1,na
       ! Apply the propagation WITH CORNER ADVECTION/FINITE VOLUME APPROACH.
       LB%jsh = js ; LB%jeh = je ; LB%ish = is ; LB%ieh = ie
@@ -1384,16 +1375,22 @@ subroutine propagate(En, cn, freq, dt, G, US, CS, NAngle, residual_loss)
                      Cgy_av(a)**2)
     enddo
 
+    speed_x(:,:) = 0.
     do j=jsh,jeh ; do I=ish-1,ieh
       f2 = 0.5 * (G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I,J-1))
       speed_x(I,j) = 0.5*(cn(i,j) + cn(i+1,j)) * G%mask2dCu(I,j) * &
                      sqrt(max(freq2 - f2, 0.0)) * Ifreq
     enddo ; enddo
+
+    speed_y(:,:) = 0.
     do J=jsh-1,jeh ; do i=ish,ieh
       f2 = 0.5 * (G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J))
       speed_y(i,J) = 0.5*(cn(i,j) + cn(i,j+1)) * G%mask2dCv(i,J) * &
                      sqrt(max(freq2 - f2, 0.0)) * Ifreq
     enddo ; enddo
+
+    call pass_vector(speed_x, speed_y, G%Domain, stagger=CGRID_NE)
+    call pass_var(En, G%domain)
 
     ! Apply propagation in x-direction (reflection included)
     LB%jsh = jsh ; LB%jeh = jeh ; LB%ish = ish ; LB%ieh = ieh
@@ -1410,6 +1407,9 @@ subroutine propagate(En, cn, freq, dt, G, US, CS, NAngle, residual_loss)
     ! LB%jsh = js ; LB%jeh = je ; LB%ish = is ; LB%ieh = ie ! Use if no teleport
     LB%jsh = jsh ; LB%jeh = jeh ; LB%ish = ish ; LB%ieh = ieh
     call propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, CS%nAngle, CS, LB, residual_loss)
+
+    call pass_var(En, G%domain)
+    call pass_var(residual_loss, G%domain)
 
     ! Check for energy conservation on computational domain (for debugging)
     !call sum_En(G, US, CS, En, 'post-propagate_y')
@@ -1766,9 +1766,12 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, res
       Fdt_m(i,j,a) = dt*flux_x(I-1,j) ! left face influx  [R Z3 L2 T-2 ~> J]
       Fdt_p(i,j,a) = -dt*flux_x(I,j)  ! right face influx [R Z3 L2 T-2 ~> J]
 
-      residual_loss(i,j,a) = residual_loss(i,j,a) + &
-                            ((abs(flux_x(I-1,j)) * CS%residual(i,j) * G%IareaT(i,j)) + &
-                             (abs(flux_x(I,j)) * CS%residual(i,j) * G%IareaT(i,j)))
+      ! only compute residual loss on partial reflection cells, remove numerical noise elsewhere
+      if (CS%refl_pref_logical(i,j)) then
+        residual_loss(i,j,a) = residual_loss(i,j,a) + &
+                              ((abs(flux_x(I-1,j)) * CS%residual(i,j) * G%IareaT(i,j)) + &
+                               (abs(flux_x(I,j)) * CS%residual(i,j) * G%IareaT(i,j)))
+      endif
     enddo ; enddo
 
   enddo ! a-loop
@@ -1847,10 +1850,12 @@ subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB, res
       Fdt_m(i,j,a) = dt*flux_y(i,J-1) ! south face influx [R Z3 L2 T-2 ~> J]
       Fdt_p(i,j,a) = -dt*flux_y(i,J)  ! north face influx [R Z3 L2 T-2 ~> J]
 
-      residual_loss(i,j,a) = residual_loss(i,j,a) + &
-                            ((abs(flux_y(i,J-1)) * CS%residual(i,j) * G%IareaT(i,j)) + &
-                             (abs(flux_y(i,J)) * CS%residual(i,j) * G%IareaT(i,j)))
-
+      ! only compute residual loss on partial reflection cells, remove numerical noise elsewhere
+      if (CS%refl_pref_logical(i,j)) then
+        residual_loss(i,j,a) = residual_loss(i,j,a) + &
+                              ((abs(flux_y(i,J-1)) * CS%residual(i,j) * G%IareaT(i,j)) + &
+                               (abs(flux_y(i,J)) * CS%residual(i,j) * G%IareaT(i,j)))
+      endif
       !if ((En(i,j,a) + G%IareaT(i,j)*(Fdt_m(i,j,a) + Fdt_p(i,j,a))) < 0.0) then ! for debugging
       !  call MOM_error(WARNING, "propagate_y: OutFlux>Available prior to reflection", .true.)
       !  write(mesg,*) "flux_y_south=",flux_y(i,J-1),"flux_y_north=",flux_y(i,J),"En=",En(i,j,a), &
@@ -1887,7 +1892,7 @@ subroutine zonal_flux_En(u, h, hL, hR, uh, dt, G, US, j, ish, ieh, vol_CFL)
                                                  !! [R Z3 T-2 ~> J m-2].
   real, dimension(SZI_(G)),  intent(in)    :: hR !< Right- Energy densities in the reconstruction
                                                  !! [R Z3 T-2 ~> J m-2].
-  real, dimension(SZIB_(G)), intent(inout) :: uh !< The zonal energy transport [R Z3 L2 T-3 ~> J s-1].
+  real, dimension(SZIB_(G)), intent(out) :: uh !< The zonal energy transport [R Z3 L2 T-3 ~> J s-1].
   real,                      intent(in)    :: dt !< Time increment [T ~> s].
   type(unit_scale_type),     intent(in)    :: US !< A dimensional unit scaling type
   integer,                   intent(in)    :: j  !< The j-index to work on.
@@ -1930,7 +1935,7 @@ subroutine merid_flux_En(v, h, hL, hR, vh, dt, G, US, J, ish, ieh, vol_CFL)
                                                         !! reconstruction [R Z3 T-2 ~> J m-2].
   real, dimension(SZI_(G),SZJ_(G)), intent(in)    :: hR !< Right- Energy densities in the
                                                         !! reconstruction [R Z3 T-2 ~> J m-2].
-  real, dimension(SZI_(G)),         intent(inout) :: vh !< The meridional energy transport [R Z3 L2 T-3 ~> J s-1].
+  real, dimension(SZI_(G)),         intent(out) :: vh !< The meridional energy transport [R Z3 L2 T-3 ~> J s-1].
   real,                             intent(in)    :: dt !< Time increment [T ~> s].
   type(unit_scale_type),            intent(in)    :: US !< A dimensional unit scaling type
   integer,                          intent(in)    :: J  !< The j-index to work on.
@@ -2621,7 +2626,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   do fr=1,num_freq
     period = extract_real(periods, " ,", fr, 0.)
     if (period == 0.) call MOM_error(FATAL, "MOM_internal_tides: invalid tidal period")
-    CS%frequency(fr) = 8.0*atan(1.0)/period
+    CS%frequency(fr) = 8.0*atan(1.0)/(US%s_to_T*period)
   enddo
 
   ! Read all relevant parameters and write them to the model log.
@@ -2762,6 +2767,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   allocate(CS%TKE_itidal_loss(isd:ied,jsd:jed,num_angle,num_freq,num_mode), source=0.0)
   allocate(CS%TKE_Froude_loss(isd:ied,jsd:jed,num_angle,num_freq,num_mode), source=0.0)
   allocate(CS%TKE_residual_loss(isd:ied,jsd:jed,num_angle,num_freq,num_mode), source=0.0)
+  allocate(CS%TKE_slope_loss(isd:ied,jsd:jed,num_angle,num_freq,num_mode), source=0.0)
   allocate(CS%tot_leak_loss(isd:ied,jsd:jed), source=0.0)
   allocate(CS%tot_quad_loss(isd:ied,jsd:jed), source=0.0)
   allocate(CS%tot_itidal_loss(isd:ied,jsd:jed), source=0.0)
