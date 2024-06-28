@@ -25,6 +25,7 @@ use MOM_restart, only : register_restart_field, register_restart_pair
 use MOM_restart, only : query_initialized, MOM_restart_CS
 use MOM_self_attr_load, only : scalar_SAL_sensitivity
 use MOM_self_attr_load, only : SAL_CS
+use MOM_streaming_filter, only : Filt_init, Filt_register, Filt_accum, streaming_filter_CS
 use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : BT_cont_type, alloc_bt_cont_type
@@ -289,6 +290,7 @@ type, public :: barotropic_CS ; private
   type(MOM_domain_type), pointer :: BT_Domain => NULL()  !< Barotropic MOM domain
   type(hor_index_type), pointer :: debug_BT_HI => NULL() !< debugging copy of horizontal index_type
   type(SAL_CS), pointer :: SAL_CSp => NULL() !< Control structure for SAL
+  type(streaming_filter_CS) :: Filt_CS !< Control structure for streaming filters
   logical :: module_is_initialized = .false.  !< If true, module has been initialized
 
   integer :: isdw !< The lower i-memory limit for the wide halo arrays.
@@ -596,6 +598,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     DCor_v, &     ! An averaged total thickness at v points [H ~> m or kg m-2].
     Datv          ! Basin depth at v-velocity grid points times the x-grid
                   ! spacing [H L ~> m2 or kg m-1].
+  real, dimension(:,:), pointer :: um2, uk1, vm2, vk1
+                  ! M2 and K1 velocities from the output of streaming filters [m s-1]
   real, target, dimension(SZIW_(CS),SZJW_(CS)) :: &
     eta, &        ! The barotropic free surface height anomaly or column mass
                   ! anomaly [H ~> m or kg m-2]
@@ -1583,6 +1587,13 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       Rayleigh_v(i,J) = CS%lin_drag_v(i,J) / Htot
     endif ; enddo ; enddo
   endif
+
+  ! Here is an example of how the filter equations are time stepped to determine the M2 and K1 velocities.
+  ! The filters are initialized and registered in subroutine barotropic_init.
+  call Filt_accum('um2', ubt, um2, CS%Time, US, CS%Filt_CS)
+  call Filt_accum('uk1', ubt, uk1, CS%Time, US, CS%Filt_CS)
+  call Filt_accum('vm2', vbt, vm2, CS%Time, US, CS%Filt_CS)
+  call Filt_accum('vk1', vbt, vk1, CS%Time, US, CS%Filt_CS)
 
   ! Zero out the arrays for various time-averaged quantities.
   if (find_etaav) then
@@ -4443,6 +4454,8 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   real :: dtbt_tmp      ! A temporary copy of CS%dtbt read from a restart file [T ~> s]
   real :: wave_drag_scale ! A scaling factor for the barotropic linear wave drag
                           ! piston velocities [nondim].
+  real :: am2, ak1      !< Bandwidth parameters of the M2 and K1 streaming filters [nondim]
+  real :: om2, ok1      !< Target frequencies of the M2 and K1 streaming filters [s-1]
   character(len=200) :: inputdir       ! The directory in which to find input files.
   character(len=200) :: wave_drag_file ! The file from which to read the wave
                                        ! drag piston velocity.
@@ -4696,6 +4709,17 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
                  "piston velocities.", default=1.0, units="nondim", &
                  do_not_log=.not.CS%linear_wave_drag)
 
+  call get_param(param_file, mdl, "FILTER_ALPHA_M2", am2, &
+                 "Bandwidth parameter of the streaming filter targeting the M2 frequency. "//&
+                 "Must be positive. To turn off filtering, set FILTER_ALPHA_M2 <= 0.0.", &
+                 default=0.0, units="nondim")
+  call get_param(param_file, mdl, "FILTER_ALPHA_K1", ak1, &
+                 "Bandwidth parameter of the streaming filter targeting the K1 frequency. "//&
+                 "Must be positive. To turn off filtering, set FILTER_ALPHA_K1 <= 0.0.", &
+                 default=0.0, units="nondim")
+  om2 = 1.4051890e-4
+  ok1 = 0.7292117e-4
+
   call get_param(param_file, mdl, "CLIP_BT_VELOCITY", CS%clip_velocity, &
                  "If true, limit any velocity components that exceed "//&
                  "CFL_TRUNCATE.  This should only be used as a desperate "//&
@@ -4923,6 +4947,13 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
       deallocate(lin_drag_h)
     endif
   endif
+
+  ! Initialize and register streaming filters
+  call Filt_init(CS%Filt_CS)
+  call Filt_register('um2', am2, om2, CS%Filt_CS)
+  call Filt_register('vm2', am2, om2, CS%Filt_CS)
+  call Filt_register('uk1', ak1, ok1, CS%Filt_CS)
+  call Filt_register('vk1', ak1, ok1, CS%Filt_CS)
 
   CS%dtbt_fraction = 0.98 ; if (dtbt_input < 0.0) CS%dtbt_fraction = -dtbt_input
 
