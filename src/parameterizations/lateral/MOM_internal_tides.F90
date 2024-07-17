@@ -166,8 +166,8 @@ type, public :: int_tide_CS ; private
                         !< If true, apply scattering due to small-scale roughness as a sink.
   logical :: apply_Froude_drag
                         !< If true, apply wave breaking as a sink.
-  real :: En_check_tol  !< An energy density tolerance for flagging points with an imbalance in the
-                        !! internal tide energy budget when apply_Froude_drag is True [R Z3 T-2 ~> J m-2]
+  real :: En_check_tol  !< An energy density tolerance for flagging points with small negative
+                        !! internal tide energy [R Z3 T-2 ~> J m-2]
   logical :: apply_residual_drag
                         !< If true, apply sink from residual term of reflection/transmission.
   real, allocatable :: En(:,:,:,:,:)
@@ -305,6 +305,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   real :: Kmag2    ! A squared horizontal wavenumber [L-2 ~> m-2]
   real :: I_D_here ! The inverse of the local water column thickness [H-1 ~> m-1 or m2 kg-1]
   real :: I_mass   ! The inverse of the local water mass [R-1 Z-1 ~> m2 kg-1]
+  real :: I_dt     ! The inverse of the timestep [T-1 ~> s-1]
   real :: freq2    ! The frequency squared [T-2 ~> s-2]
   real :: PE_term  ! total potential energy of profile [R Z ~> kg m-2]
   real :: KE_term  ! total kinetic energy of profile [R Z ~> kg m-2]
@@ -333,6 +334,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
 
   cn_subRO = 1e-30*US%m_s_to_L_T
   en_subRO = 1e-30*US%W_m2_to_RZ3_T3*US%s_to_T
+
+  I_dt = 1.0 / dt
 
   ! initialize local arrays
   TKE_itidal_input(:,:,:) = 0.
@@ -560,7 +563,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       do j=js,je ; do i=is,ie
         if (CS%En(i,j,a,fr,m)<0.0) then
           id_g = i + G%idg_offset ; jd_g = j + G%jdg_offset
-          if (abs(CS%En(i,j,a,fr,m))>1.0) then ! only print if large
+          if (abs(CS%En(i,j,a,fr,m))>CS%En_check_tol) then ! only print if large
             write(mesg,*)  'After propagation: En<0.0 at ig=', id_g, ', jg=', jd_g, &
                            'En=', CS%En(i,j,a,fr,m)
             call MOM_error(WARNING, "propagate_int_tide: "//trim(mesg))
@@ -622,7 +625,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       ! to each En component (technically not correct; fix later)
       En_b = CS%En(i,j,a,fr,m) ! save previous value
       En_a = CS%En(i,j,a,fr,m) / (1.0 + dt * CS%decay_rate) ! implicit update
-      CS%TKE_leak_loss(i,j,a,fr,m) = (En_b - En_a) / dt ! compute exact loss rate [R Z3 T-3 ~> W m-2]
+      CS%TKE_leak_loss(i,j,a,fr,m) = (En_b - En_a) * I_dt ! compute exact loss rate [R Z3 T-3 ~> W m-2]
       CS%En(i,j,a,fr,m) = En_a ! update value
     enddo ; enddo ; enddo ; enddo ; enddo
   endif
@@ -695,7 +698,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       ! to each En component (technically not correct; fix later)
       En_b = CS%En(i,j,a,fr,m)
       En_a = CS%En(i,j,a,fr,m) / (1.0 + dt * drag_scale(i,j,fr,m)) ! implicit update
-      CS%TKE_quad_loss(i,j,a,fr,m)  = (En_b - En_a) / dt
+      CS%TKE_quad_loss(i,j,a,fr,m)  = (En_b - En_a) * I_dt
       CS%En(i,j,a,fr,m) = En_a
     enddo ; enddo ; enddo ; enddo ; enddo
   endif
@@ -831,7 +834,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
               !CS%TKE_Froude_loss(i,j,a,fr,m) = CS%En(i,j,a,fr,m) * abs(loss_rate)
               En_b = CS%En(i,j,a,fr,m)
               En_a = CS%En(i,j,a,fr,m)/Fr2_max
-              CS%TKE_Froude_loss(i,j,a,fr,m) = (En_b - En_a) / dt
+              CS%TKE_Froude_loss(i,j,a,fr,m) = (En_b - En_a) * I_dt
               CS%En(i,j,a,fr,m) = En_a
             enddo
           endif ! Fr2>1
@@ -884,7 +887,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         En_b = CS%En(i,j,a,fr,m)
         En_a = (CS%En(i,j,a,fr,m) * (CS%En(i,j,a,fr,m) + en_subRO)) / &
                ((CS%En(i,j,a,fr,m) + en_subRO) + dt * CS%TKE_slope_loss(i,j,a,fr,m))
-        CS%TKE_residual_loss(i,j,a,fr,m) = (En_b - En_a) / dt
+        CS%TKE_residual_loss(i,j,a,fr,m) = (En_b - En_a) * I_dt
         CS%En(i,j,a,fr,m) = En_a
       endif
     enddo ; enddo ; enddo ; enddo ; enddo
@@ -1181,9 +1184,11 @@ subroutine itidal_lowmode_loss(G, GV, US, CS, Nb, Rho_bot, Ub, En, TKE_loss_fixe
   real    :: loss_rate       ! approximate loss rate for implicit calc [T-1 ~> s-1]
   real    :: En_negl         ! negligibly small number to prevent division by zero [R Z3 T-2 ~> J m-2]
   real    :: En_a, En_b      ! energy before and after timestep [R Z3 T-2 ~> J m-2]
+  real    :: I_dt            ! The inverse of the timestep [T-1 ~> s-1]
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
 
+  I_dt = 1.0 / dt
   q_itides = CS%q_itides
   En_negl = 1e-30*US%kg_m3_to_R*US%m_to_Z**3*US%T_to_s**2
 
@@ -1223,7 +1228,7 @@ subroutine itidal_lowmode_loss(G, GV, US, CS, Nb, Rho_bot, Ub, En, TKE_loss_fixe
         loss_rate = TKE_loss(i,j,a,fr,m) / (En(i,j,a,fr,m) + En_negl) ! [T-1 ~> s-1]
         En_b = En(i,j,a,fr,m)
         En_a = En(i,j,a,fr,m) / (1.0 + dt*loss_rate)
-        TKE_loss(i,j,a,fr,m) = (En_b - En_a) / dt ! overwrite with exact value
+        TKE_loss(i,j,a,fr,m) = (En_b - En_a) * I_dt ! overwrite with exact value
         En(i,j,a,fr,m) = En_a
       enddo
     else
@@ -1819,11 +1824,8 @@ subroutine refract(En, cn, freq, dt, G, US, NAngle, use_PPMang)
       df_dy = 0.5*G%IdyT(i,j)*((G%CoriolisBu(I,J) - G%CoriolisBu(I-1,J-1)) + &
                                (G%CoriolisBu(I-1,J) - G%CoriolisBu(I,J-1)))
 
-      !dlnCn_dx = G%IdxT(i,j) * (cn_u(I,j) - cn_u(I-1,j)) / (0.5 * (cn_u(I,j) + cn_u(I-1,j)) + cn_subRO)
-      !dlnCn_dy = G%IdyT(i,j) * (cn_v(i,J) - cn_v(i,J-1)) / (0.5 * (cn_v(i,J) + cn_v(i,J-1)) + cn_subRO)
-      ! to avoid substractions in cn, this can be rewritten as:
-      dlnCn_dx = 2*G%IdxT(i,j)*( (2*cn_u(I,j))/(cn_u(I,j) + cn_u(I-1,j) + cn_subRO) - 1.0 )
-      dlnCn_dy = 2*G%IdyT(i,j)*( (2*cn_v(i,J))/(cn_v(i,J) + cn_v(i,J-1) + cn_subRO) - 1.0 )
+      dlnCn_dx = G%IdxT(i,j) * (cn_u(I,j) - cn_u(I-1,j)) / (0.5 * (cn_u(I,j) + cn_u(I-1,j)) + cn_subRO)
+      dlnCn_dy = G%IdyT(i,j) * (cn_v(i,J) - cn_v(i,J-1)) / (0.5 * (cn_v(i,J) + cn_v(i,J-1)) + cn_subRO)
 
       Kmag2 = (freq**2 - f2) / (cn(i,j)**2 + cn_subRO**2)
       if (Kmag2 > 0.0) then
@@ -1899,7 +1901,7 @@ subroutine PPM_angular_advect(En2d, CFL_ang, Flux_En, NAngle, dt, halo_ang)
   real, parameter :: oneSixth = 1.0/6.0  ! One sixth [nondim]
   integer :: a
 
-  I_dt = 1 / dt
+  I_dt = 1.0 / dt
   Angle_size = (8.0*atan(1.0)) / (real(NAngle))
   I_Angle_size = 1 / Angle_size
   Flux_En(:) = 0
@@ -3337,9 +3339,9 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call read_param(param_file, "TIDAL_PERIODS", periods)
 
   do fr=1,num_freq
-    period = extract_real(periods, " ,", fr, 0.)
+    period = US%s_to_T*extract_real(periods, " ,", fr, 0.)
     if (period == 0.) call MOM_error(FATAL, "MOM_internal_tides: invalid tidal period")
-    CS%frequency(fr) = 8.0*atan(1.0)/(US%s_to_T*period)
+    CS%frequency(fr) = 8.0*atan(1.0)/period
   enddo
 
   ! Read all relevant parameters and write them to the model log.
@@ -3453,9 +3455,9 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
                  "If true, apply wave breaking as a sink.", &
                  default=.false.)
   call get_param(param_file, mdl, "EN_CHECK_TOLERANCE", CS%En_check_tol, &
-                 "An energy density tolerance for flagging points with an imbalance in the "//&
-                 "internal tide energy budget when INTERNAL_TIDE_FROUDE_DRAG is True.", &
-                 units="J m-2", default=1.0e-10, scale=US%W_m2_to_RZ3_T3*US%s_to_T, &
+                 "An energy density tolerance for flagging points with small negative "//&
+                 "internal tide energy.", &
+                 units="J m-2", default=1.0, scale=US%W_m2_to_RZ3_T3*US%s_to_T, &
                  do_not_log=.not.CS%apply_Froude_drag)
   call get_param(param_file, mdl, "CDRAG", CS%cdrag, &
                  "CDRAG is the drag coefficient relating the magnitude of "//&
@@ -3650,7 +3652,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   if (CS%apply_residual_drag) then
     do j=G%jsc,G%jec ; do i=G%isc,G%iec
       if (CS%refl_pref_logical(i,j)) then
-        CS%residual(i,j) = 1. - CS%refl_pref(i,j) - CS%trans(i,j)
+        CS%residual(i,j) = 1. - (CS%refl_pref(i,j) - CS%trans(i,j))
       endif
     enddo ; enddo
     call pass_var(CS%residual, G%domain)
