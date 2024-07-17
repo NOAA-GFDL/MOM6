@@ -1562,7 +1562,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, visc, dz, j, N2_lay, N2_int
           if (non_Bous) then
             Kd_leak_lay(k) = GV%Z_to_H * TKE_loss * TKE_to_Kd_lim * profile_leak(i,k) * dz(i,k) * tv%SpV_avg(i,j,k)
           else
-            Kd_leak_lay(k) = GV%Z_to_H * TKE_loss * TKE_to_Kd_lim * profile_leak(i,k) * dz(i,k) / GV%Rho0
+            Kd_leak_lay(k) = TKE_loss * TKE_to_Kd_lim * profile_leak(i,k) * dz(i,k) * GV%RZ_to_H
           endif
         else
           Kd_leak_lay(k) = 0.
@@ -1588,7 +1588,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, visc, dz, j, N2_lay, N2_int
           if (non_Bous) then
             Kd_Froude_lay(k) = GV%Z_to_H * TKE_loss * TKE_to_Kd_lim * profile_Froude(i,k) * dz(i,k) * tv%SpV_avg(i,j,k)
           else
-            Kd_Froude_lay(k) = GV%Z_to_H * TKE_loss * TKE_to_Kd_lim * profile_Froude(i,k) * dz(i,k) / GV%Rho0
+            Kd_Froude_lay(k) = TKE_loss * TKE_to_Kd_lim * profile_Froude(i,k) * dz(i,k) * GV%RZ_to_H
           endif
         else
           Kd_Froude_lay(k) = 0.
@@ -1614,7 +1614,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, visc, dz, j, N2_lay, N2_int
           if (non_Bous) then
             Kd_itidal_lay(k) = GV%Z_to_H * TKE_loss * TKE_to_Kd_lim * profile_itidal(i,k) * dz(i,k) * tv%SpV_avg(i,j,k)
           else
-            Kd_itidal_lay(k) = GV%Z_to_H * TKE_loss * TKE_to_Kd_lim * profile_itidal(i,k) * dz(i,k) / GV%Rho0
+            Kd_itidal_lay(k) = TKE_loss * TKE_to_Kd_lim * profile_itidal(i,k) * dz(i,k) * GV%RZ_to_H
           endif
         else
           Kd_itidal_lay(k) = 0.
@@ -1640,7 +1640,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, visc, dz, j, N2_lay, N2_int
           if (non_Bous) then
             Kd_slope_lay(k) = GV%Z_to_H * TKE_loss * TKE_to_Kd_lim * profile_slope(i,k) * dz(i,k) * tv%SpV_avg(i,j,k)
           else
-            Kd_slope_lay(k) = GV%Z_to_H * TKE_loss * TKE_to_Kd_lim * profile_slope(i,k) * dz(i,k) / GV%Rho0
+            Kd_slope_lay(k) = TKE_loss * TKE_to_Kd_lim * profile_slope(i,k) * dz(i,k) * GV%RZ_to_H
           endif
         else
           Kd_slope_lay(k) = 0.
@@ -1666,7 +1666,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, visc, dz, j, N2_lay, N2_int
           if (non_Bous) then
             Kd_quad_lay(k) = GV%Z_to_H * TKE_loss * TKE_to_Kd_lim * profile_quad(i,k) * dz(i,k) * tv%SpV_avg(i,j,k)
           else
-            Kd_quad_lay(k) = GV%Z_to_H * TKE_loss * TKE_to_Kd_lim * profile_quad(i,k) * dz(i,k) / GV%Rho0
+            Kd_quad_lay(k) = TKE_loss * TKE_to_Kd_lim * profile_quad(i,k) * dz(i,k) * GV%RZ_to_H
           endif
         else
           Kd_quad_lay(k) = 0.
