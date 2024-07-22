@@ -15,7 +15,7 @@ public Filt_init, Filt_register, Filt_accum
 type, private :: Filt_type
   character(len=16)        :: key = 'none'           !< Name of the current field
   real                     :: a, &                   !< Parameter that determines the bandwidth [nondim]
-                              om, &                  !< Target frequency of the filter [s-1]
+                              om, &                  !< Target frequency of the filter [T-1 ~> s-1]
                               old_time = -1.0        !< The time of the previous accumulating step [T ~> s]
   integer                  :: is, ie, js, je         !< Lower and upper bounds of input data
   real, allocatable        :: s1(:,:), &             !< Dummy variable [A]
@@ -54,7 +54,7 @@ end subroutine Filt_init
 subroutine Filt_register(key, a, om, CS)
   character(len=*),          intent(in)    :: key    !< Name of the current field
   real,                      intent(in)    :: a      !< Parameter that determines the bandwidth [nondim]
-  real,                      intent(in)    :: om     !< Target frequency of the filter [s-1]
+  real,                      intent(in)    :: om     !< Target frequency of the filter [T-1 ~> s-1]
   type(streaming_filter_CS), intent(inout) :: CS     !< Control structure of the MOM_streaming_filter module
 
   ! Local variables

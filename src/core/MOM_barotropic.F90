@@ -4466,7 +4466,7 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   real :: wave_drag_scale ! A scaling factor for the barotropic linear wave drag
                           ! piston velocities [nondim].
   real :: am2, ak1      !< Bandwidth parameters of the M2 and K1 streaming filters [nondim]
-  real :: om2, ok1      !< Target frequencies of the M2 and K1 streaming filters [s-1]
+  real :: om2, ok1      !< Target frequencies of the M2 and K1 streaming filters [T-1 ~> s-1]
   character(len=200) :: inputdir       ! The directory in which to find input files.
   character(len=200) :: wave_drag_file ! The file from which to read the wave
                                        ! drag piston velocity.
@@ -4742,8 +4742,18 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
                  "Bandwidth parameter of the streaming filter targeting the K1 frequency. "//&
                  "Must be positive. To turn off filtering, set FILTER_ALPHA_K1 <= 0.0.", &
                  default=0.0, units="nondim")
-  om2 = 1.4051890e-4
-  ok1 = 0.7292117e-4
+  call get_param(param_file, mdl, "TIDE_M2_FREQ", om2, &
+                 "Frequency of the M2 tidal constituent. "//&
+                 "This is only used if TIDES and TIDE_M2"// &
+                 " are true, or if OBC_TIDE_N_CONSTITUENTS > 0 and M2"// &
+                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=1.4051890e-4, &
+                 scale=US%T_to_s, do_not_log=.true.)
+  call get_param(param_file, mdl, "TIDE_K1_FREQ", ok1, &
+                 "Frequency of the K1 tidal constituent. "//&
+                 "This is only used if TIDES and TIDE_K1"// &
+                 " are true, or if OBC_TIDE_N_CONSTITUENTS > 0 and K1"// &
+                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=0.7292117e-4, &
+                 scale=US%T_to_s, do_not_log=.true.)
 
   call get_param(param_file, mdl, "CLIP_BT_VELOCITY", CS%clip_velocity, &
                  "If true, limit any velocity components that exceed "//&
