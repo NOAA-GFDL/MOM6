@@ -228,7 +228,9 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, US, N2_bot, rho_bo
     hb, &         ! The thickness of the water column below the midpoint of a layer [H ~> m or kg m-2]
     z_from_bot, & ! The distance of a layer center from the bottom [Z ~> m]
     dRho_dT, &    ! The partial derivative of density with temperature [R C-1 ~> kg m-3 degC-1]
-    dRho_dS       ! The partial derivative of density with salinity [R S-1 ~> kg m-3 ppt-1].
+    dRho_dS, &    ! The partial derivative of density with salinity [R S-1 ~> kg m-3 ppt-1].
+    h_bot         ! The bottom boundary layer thickness [H ~> m].
+  integer, dimension(SZI_(G)) :: k_bot ! Bottom boundary layer top layer index [nondim].
 
   real :: dz_int  ! The vertical extent of water associated with an interface [Z ~> m]
   real :: G_Rho0  ! The gravitational acceleration, sometimes divided by the Boussinesq
@@ -247,7 +249,7 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, US, N2_bot, rho_bo
   enddo
 
   !$OMP parallel do default(none) shared(is,ie,js,je,nz,tv,fluxes,G,GV,US,h,T_f,S_f, &
-  !$OMP                                  h2,N2_bot,rho_bot,G_Rho0,EOSdom) &
+  !$OMP                                  h2,N2_bot,rho_bot,h_bot,k_bot,G_Rho0,EOSdom) &
   !$OMP                          private(pres,Temp_Int,Salin_Int,dRho_dT,dRho_dS, &
   !$OMP                                  dz,hb,dRho_bot,z_from_bot,do_i,h_amp,do_any,dz_int) &
   !$OMP                     firstprivate(dRho_int)
@@ -324,7 +326,7 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, US, N2_bot, rho_bo
       enddo
     else
       ! Average the density over the envelope of the topography.
-      call find_rho_bottom(h, dz, pres, h_amp, tv, j, G, GV, US, Rho_bot(:,j))
+      call find_rho_bottom(h, dz, pres, h_amp, tv, j, G, GV, US, Rho_bot(:,j), h_bot, k_bot)
     endif
   enddo
 
