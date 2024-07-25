@@ -204,12 +204,12 @@ type diffusivity_diags
     Kd_itidal => NULL(), & !< internal tides wave drag diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_Froude => NULL(), & !< internal tides high Froude diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_slope  => NULL(), & !< internal tides critical slopes diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    prof_leak   => NULL(), & !< vertical profile for leakage [Z-1 ~> m-1]
-    prof_quad   => NULL(), & !< vertical profile for bottom drag [Z-1 ~> m-1]
-    prof_itidal => NULL(), & !< vertical profile for wave drag [Z-1 ~> m-1]
-    prof_Froude => NULL(), & !< vertical profile for Froude drag [Z-1 ~> m-1]
-    prof_slope  => NULL()    !< vertical profile for critical slopes [Z-1 ~> m-1]
-  real, pointer, dimension(:,:) ::  bbl_thick => NULL(), & !< bottom boundary layer thickness [Z ~> m]
+    prof_leak   => NULL(), & !< vertical profile for leakage [H-1 ~> m-1]
+    prof_quad   => NULL(), & !< vertical profile for bottom drag [H-1 ~> m-1]
+    prof_itidal => NULL(), & !< vertical profile for wave drag [H-1 ~> m-1]
+    prof_Froude => NULL(), & !< vertical profile for Froude drag [H-1 ~> m-1]
+    prof_slope  => NULL()    !< vertical profile for critical slopes [H-1 ~> m-1]
+  real, pointer, dimension(:,:) ::  bbl_thick => NULL(), & !< bottom boundary layer thickness [H ~> m]
                                     kbbl => NULL() !< top of bottom boundary layer [nondim]
 
   real, pointer, dimension(:,:,:) :: TKE_to_Kd => NULL()
@@ -571,18 +571,16 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
     ! Add diffusivity from internal tides ray tracing
     if (CS%use_int_tides) then
 
-      call thickness_to_dz(h, tv, dz, j, G, GV)
-
-      call get_lowmode_diffusivity(G, GV, h, tv, US, visc, dz, j, N2_lay, N2_int, TKE_to_Kd, CS%Kd_max, &
+      call get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2_int, TKE_to_Kd, CS%Kd_max, &
                                    CS%int_tide_CSp, Kd_leak_2d, Kd_quad_2d, Kd_itidal_2d, Kd_Froude_2d, Kd_slope_2d, &
                                    Kd_lay_2d, Kd_int_2d, prof_leak_2d, prof_quad_2d, prof_itidal_2d, prof_froude_2d, &
-                                   prof_slope_2d, bbl_thick_1d, kbbl_1d)
+                                   prof_slope_2d)
 
       if (CS%id_kbbl > 0) then ; do i=is,ie
-        dd%kbbl(i,j) = kbbl_1d(i)
+        dd%kbbl(i,j) = k_bot(i)
       enddo ; endif
       if (CS%id_bbl_thick > 0) then ; do i=is,ie
-        dd%bbl_thick(i,j) = bbl_thick_1d(i)
+        dd%bbl_thick(i,j) = h_bot(i)
       enddo ; endif
       if (CS%id_Kd_leak > 0) then ; do K=1,nz+1 ; do i=is,ie
         dd%Kd_leak(i,j,K) = Kd_leak_2d(i,K)
@@ -722,11 +720,11 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
   endif
 
   if (CS%debug) then
-    if (CS%id_prof_leak > 0) call hchksum(dd%prof_leak, "leakage_profile", G%HI, haloshift=0, scale=US%m_to_Z)
-    if (CS%id_prof_slope > 0) call hchksum(dd%prof_slope, "slope_profile", G%HI, haloshift=0, scale=US%m_to_Z)
-    if (CS%id_prof_Froude > 0) call hchksum(dd%prof_Froude, "Froude_profile", G%HI, haloshift=0, scale=US%m_to_Z)
-    if (CS%id_prof_quad > 0) call hchksum(dd%prof_quad, "quad_profile", G%HI, haloshift=0, scale=US%m_to_Z)
-    if (CS%id_prof_itidal > 0) call hchksum(dd%prof_itidal, "itidal_profile", G%HI, haloshift=0, scale=US%m_to_Z)
+    if (CS%id_prof_leak > 0) call hchksum(dd%prof_leak, "leakage_profile", G%HI, haloshift=0, scale=GV%m_to_H)
+    if (CS%id_prof_slope > 0) call hchksum(dd%prof_slope, "slope_profile", G%HI, haloshift=0, scale=GV%m_to_H)
+    if (CS%id_prof_Froude > 0) call hchksum(dd%prof_Froude, "Froude_profile", G%HI, haloshift=0, scale=GV%m_to_H)
+    if (CS%id_prof_quad > 0) call hchksum(dd%prof_quad, "quad_profile", G%HI, haloshift=0, scale=GV%m_to_H)
+    if (CS%id_prof_itidal > 0) call hchksum(dd%prof_itidal, "itidal_profile", G%HI, haloshift=0, scale=GV%m_to_H)
     if (CS%id_TKE_to_Kd > 0) call hchksum(dd%TKE_to_Kd, "TKE_to_Kd", G%HI, haloshift=0, scale=US%m_to_Z*US%T_to_s**2)
     if (CS%id_Kd_leak > 0) call hchksum(dd%Kd_leak,   "Kd_leak",   G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
     if (CS%id_Kd_quad > 0) call hchksum(dd%Kd_quad,   "Kd_quad",   G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
@@ -1058,7 +1056,7 @@ subroutine find_N2(h, tv, T_f, S_f, fluxes, j, G, GV, US, CS, dRho_int, &
   real, dimension(SZI_(G)), intent(out) :: N2_bot !< The near-bottom squared buoyancy frequency [T-2 ~> s-2].
   real, dimension(SZI_(G)), intent(out) :: Rho_bot !< Near-bottom density [R ~> kg m-3].
   real, dimension(SZI_(G)), optional, intent(out) :: h_bot !< Bottom boundary layer thickness [H ~> m].
-  integer, dimension(SZI_(G)), optional, intent(out) :: k_bot !< Bottom boundary layer thickness top layer index [nondim].
+  integer, dimension(SZI_(G)), optional, intent(out) :: k_bot !< Bottom boundary layer top layer index [nondim].
 
   ! Local variables
   real, dimension(SZI_(G),SZK_(GV)+1) :: &
