@@ -1704,7 +1704,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
              "mesoscale eddy kinetic energy to the large-scale "//&
              "geostrophic kinetic energy or 1 plus the square of the "//&
              "grid spacing over the deformation radius, as detailed "//&
-             "by Fox-Kemper et al. (2010)", units="nondim", default=0.0)
+             "by Fox-Kemper et al. (2011)", units="nondim", default=0.0)
     ! These parameters are only used in the OM4-era version of Fox-Kemper
     call get_param(param_file, mdl, "USE_STANLEY_ML", CS%use_Stanley_ML, &
                    "If true, turn on Stanley SGS T variance parameterization "// &
@@ -1750,7 +1750,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
         call get_param(param_file, mdl, "MLE_DENSITY_DIFF", CS%MLE_density_diff, &
              "Density difference used to detect the mixed-layer "//&
              "depth used for the mixed-layer eddy parameterization "//&
-             "by Fox-Kemper et al. (2010)", units="kg/m3", default=0.03, scale=US%kg_m3_to_R)
+             "by Fox-Kemper et al. (2011)", units="kg/m3", default=0.03, scale=US%kg_m3_to_R)
       endif
       call get_param(param_file, mdl, "MLE_TAIL_DH", CS%MLE_tail_dh, &
              "Fraction by which to extend the mixed-layer restratification "//&
@@ -1965,29 +1965,29 @@ end function test_answer
 !! \section section_mle Mixed-layer eddy parameterization module
 !!
 !! The subroutines in this module implement a parameterization of unresolved viscous
-!! mixed layer restratification of the mixed layer as described in Fox-Kemper et
-!! al., 2008, and whose impacts are described in Fox-Kemper et al., 2011.
+!! mixed layer restratification of the mixed layer as described in \cite fox-kemper2008,
+!! and whose impacts are described in \cite fox-kemper2011.
 !! This is derived in part from the older parameterization that is described in
-!! Hallberg (Aha Hulikoa, 2003), which this new parameterization surpasses, which
-!! in turn is based on the sub-inertial mixed layer theory of Young (JPO, 1994).
+!! \cite Hallberg2003, which this new parameterization surpasses, which
+!! in turn is based on the sub-inertial mixed layer theory of \cite Young1994.
 !! There is no net horizontal volume transport due to this parameterization, and
-!! no direct effect below the mixed layer. A revised of the parameterization by
-!! Bodner et al., 2023, is also available as an option.
+!! no direct effect below the mixed layer. A revised version of the parameterization by
+!! \cite Bodner2023 is also available as an option.
 !!
 !! This parameterization sets the restratification timescale to agree with
 !! high-resolution studies of mixed layer restratification.
 !!
-!! The run-time parameter FOX_KEMPER_ML_RESTRAT_COEF is a non-dimensional number of
+!! The run-time parameter <code>FOX_KEMPER_ML_RESTRAT_COEF</code> is a non-dimensional number of
 !! order a few tens, proportional to the ratio of the deformation radius or the
-!! grid scale (whichever is smaller to the dominant horizontal length-scale of the
+!! grid scale (whichever is smaller) to the dominant horizontal length-scale of the
 !! sub-meso-scale mixed layer instabilities.
 !!
 !! \subsection section_mle_nutshell "Sub-meso" in a nutshell
 !!
 !! The parameterization is colloquially referred to as "sub-meso".
 !!
-!! The original Fox-Kemper et al., (2008b) paper proposed a quasi-Stokes
-!! advection described by the stream function (eq. 5 of Fox-Kemper et al., 2011):
+!! The original \cite fox-kemper2008-2 paper proposed a quasi-Stokes
+!! advection described by the stream function (eq. 5 of \cite fox-kemper2011):
 !! \f[
 !!    {\bf \Psi}_o = C_e \frac{ H^2 \nabla \bar{b} \times \hat{\bf z} }{ |f| } \mu(z)
 !! \f]
@@ -2001,7 +2001,7 @@ end function test_answer
 !! \f$ \nabla \bar{b} \f$ is a depth mean buoyancy gradient averaged over the mixed layer.
 !!
 !! For use in coarse-resolution models, an upscaling of the buoyancy gradients and adaption for the equator
-!! leads to the following parameterization (eq. 6 of Fox-Kemper et al., 2011):
+!! leads to the following parameterization (eq. 6 of \cite fox-kemper2011):
 !! \f[
 !!    {\bf \Psi} = C_e \Gamma_\Delta \frac{\Delta s}{l_f} \frac{ H^2 \nabla \bar{b} \times \hat{\bf z} }
 !!                 { \sqrt{ f^2 + \tau^{-2}} } \mu(z)
@@ -2011,14 +2011,15 @@ end function test_answer
 !! \f$ \tau \f$ is a time-scale for mixing momentum across the mixed layer.
 !! \f$ l_f \f$ is thought to be of order hundreds of meters.
 !!
-!! The upscaling factor \f$ \frac{\Delta s}{l_f} \f$ can be a global constant, model parameter FOX_KEMPER_ML_RESTRAT,
-!! so that in practice the parameterization is:
+!! The upscaling factor \f$ \frac{\Delta s}{l_f} \f$ can be a global constant, model parameter
+!! <code>FOX_KEMPER_ML_RESTRAT</code>, so that in practice the parameterization is:
 !! \f[
 !!    {\bf \Psi} = C_e \Gamma_\Delta \frac{ H^2 \nabla \bar{b} \times \hat{\bf z} }{ \sqrt{ f^2 + \tau^{-2}} } \mu(z)
 !! \f]
 !! with non-unity \f$ \Gamma_\Delta \f$.
 !!
 !! \f$ C_e \f$ is hard-coded as 0.0625. \f$ \tau \f$ is calculated from the surface friction velocity \f$ u^* \f$.
+!!
 !! \todo Explain expression for momentum mixing time-scale.
 !!
 !! | Symbol                       | Module parameter      |
@@ -2057,7 +2058,7 @@ end function test_answer
 !! available parameters.
 !! MLE_USE_PBL_MLD must be True to use the B23 modification.
 !!
-!! Bodner et al., 2023, (B23) use an expression for the frontal width which changes the scaling from \f$ H^2 \f$
+!! \cite Bodner2023, (B23) use an expression for the frontal width which changes the scaling from \f$ H^2 \f$
 !! to \f$ h H^2 \f$:
 !! \f[
 !!    {\bf \Psi} = C_r \frac{\Delta s |f| \bar{h} \bar{H}^2 \nabla \bar{b} \times \hat{\bf z} }
@@ -2102,7 +2103,7 @@ end function test_answer
 !! | \f$ \tau_{h+} \f$            | MLE\%BLD_GROWING_TFILTER  |
 !! | \f$ \tau_{h-} \f$            | MLE\%BLD_DECAYING_TFILTER |
 !! | \f$ \tau_{H+} \f$            | MLE\%MLD_GROWING_TFILTER  |
-!! | \f$ \tau_{H-} \f$            | MLE\%BLD_DECAYING_TFILTER |
+!! | \f$ \tau_{H-} \f$            | MLE\%MLD_DECAYING_TFILTER |
 !!
 !! \subsection section_mle_ref References
 !!
