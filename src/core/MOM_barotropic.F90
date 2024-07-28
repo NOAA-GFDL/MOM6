@@ -296,8 +296,10 @@ type, public :: barotropic_CS ; private
   type(hor_index_type), pointer :: debug_BT_HI => NULL() !< debugging copy of horizontal index_type
   type(SAL_CS), pointer :: SAL_CSp => NULL() !< Control structure for SAL
   type(harmonic_analysis_CS), pointer :: HA_CSp => NULL() !< Control structure for harmonic analysis
-  type(Filter_CS) :: Filt_CS_um2, Filt_CS_vm2, & !< Control structures for the M2 streaming filter
-                     Filt_CS_uk1, Filt_CS_vk1    !< Control structures for the K1 streaming filter
+  type(Filter_CS) :: Filt_CS_um2, & !< Control structures for the M2 streaming filter
+                     Filt_CS_vm2, & !< Control structures for the M2 streaming filter
+                     Filt_CS_uk1, & !< Control structures for the K1 streaming filter
+                     Filt_CS_vk1    !< Control structures for the K1 streaming filter
   logical :: module_is_initialized = .false.  !< If true, module has been initialized
 
   integer :: isdw !< The lower i-memory limit for the wide halo arrays.
