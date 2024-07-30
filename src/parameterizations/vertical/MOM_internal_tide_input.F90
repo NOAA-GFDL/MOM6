@@ -43,7 +43,7 @@ type, public :: int_tide_input_CS ; private
   type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
                         !! regulate the timing of diagnostic output.
   real :: TKE_itide_max !< Maximum Internal tide conversion
-                        !! available to mix above the BBL [R Z3 T-3 ~> W m-2]
+                        !! available to mix above the BBL [H Z2 T-3 ~> W m-2]
   real :: kappa_fill    !< Vertical diffusivity used to interpolate sensible values
                         !! of T & S into thin layers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
 
@@ -51,7 +51,7 @@ type, public :: int_tide_input_CS ; private
             !< The time-invariant field that enters the TKE_itidal input calculation noting that the
             !! stratification and perhaps density are time-varying [R Z4 H-1 T-2 ~> J m-2 or J m kg-1].
   real, allocatable, dimension(:,:,:) :: &
-    TKE_itidal_input, & !< The internal tide TKE input at the bottom of the ocean [R Z3 T-3 ~> W m-2].
+    TKE_itidal_input, & !< The internal tide TKE input at the bottom of the ocean [H Z2 T-3 ~> W m-2].
     tideamp             !< The amplitude of the tidal velocities [Z T-1 ~> m s-1].
 
   character(len=200) :: inputdir !< The directory for input files.
@@ -114,10 +114,15 @@ subroutine set_int_tide_input(u, v, h, tv, fluxes, itide, dt, G, GV, US, CS)
                         ! equation of state.
   logical :: avg_enabled  ! for testing internal tides (BDM)
   type(time_type) :: time_end        !< For use in testing internal tides (BDM)
+  real :: HZ2_T3_to_W_m2  ! unit conversion factor for TKE from internal to mks
+  real :: W_m2_to_HZ2_T3  ! unit conversion factor for TKE from internal to mks
 
   integer :: i, j, is, ie, js, je, nz, isd, ied, jsd, jed
   integer :: i_global, j_global
   integer :: fr
+
+  HZ2_T3_to_W_m2 = GV%H_to_m*(US%Z_to_m**2)*(US%s_to_T**3)
+  W_m2_to_HZ2_T3 = GV%m_to_H*(US%m_to_Z**2)*(US%T_to_s**3)
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
@@ -143,14 +148,15 @@ subroutine set_int_tide_input(u, v, h, tv, fluxes, itide, dt, G, GV, US, CS)
     !$OMP parallel do default(shared)
     do fr=1,CS%nFreq ; do j=js,je ; do i=is,ie
       itide%Nb(i,j) = G%mask2dT(i,j) * sqrt(N2_bot(i,j))
-      CS%TKE_itidal_input(i,j,fr) = min(GV%Z_to_H*CS%TKE_itidal_coef(i,j,fr)*itide%Nb(i,j), CS%TKE_itide_max)
+      CS%TKE_itidal_input(i,j,fr) = min(GV%RZ_to_H*GV%Z_to_H*CS%TKE_itidal_coef(i,j,fr)*itide%Nb(i,j), &
+                                        CS%TKE_itide_max)
     enddo ; enddo ; enddo
   else
     !$OMP parallel do default(shared)
     do fr=1,CS%nFreq ; do j=js,je ; do i=is,ie
       itide%Nb(i,j) = G%mask2dT(i,j) * sqrt(N2_bot(i,j))
       itide%Rho_bot(i,j) = G%mask2dT(i,j) * Rho_bot(i,j)
-      CS%TKE_itidal_input(i,j,fr) = min((GV%RZ_to_H*Rho_bot(i,j)) * CS%TKE_itidal_coef(i,j,fr)*itide%Nb(i,j), &
+      CS%TKE_itidal_input(i,j,fr) = min((GV%RZ_to_H*GV%RZ_to_H*Rho_bot(i,j))*CS%TKE_itidal_coef(i,j,fr)*itide%Nb(i,j), &
                                         CS%TKE_itide_max)
     enddo ; enddo ; enddo
   endif
@@ -163,7 +169,7 @@ subroutine set_int_tide_input(u, v, h, tv, fluxes, itide, dt, G, GV, US, CS)
           i_global = i + G%idg_offset
           j_global = j + G%jdg_offset
           if ((i_global == CS%int_tide_source_i) .and. (j_global == CS%int_tide_source_j)) then
-            CS%TKE_itidal_input(i,j,fr) = 1.0*US%kg_m3_to_R*US%m_to_Z**3*US%T_to_s**3
+            CS%TKE_itidal_input(i,j,fr) = 1.0*W_m2_to_HZ2_T3
           endif
         enddo ; enddo ; enddo
       else
@@ -171,7 +177,7 @@ subroutine set_int_tide_input(u, v, h, tv, fluxes, itide, dt, G, GV, US, CS)
           ! Input  an arbitrary energy point source.id_
           if (((G%geoLonCu(I-1,j)-CS%int_tide_source_x) * (G%geoLonBu(I,j)-CS%int_tide_source_x) <= 0.0) .and. &
               ((G%geoLatCv(i,J-1)-CS%int_tide_source_y) * (G%geoLatCv(i,j)-CS%int_tide_source_y) <= 0.0)) then
-            CS%TKE_itidal_input(i,j,fr) = 1.0*US%kg_m3_to_R*US%m_to_Z**3*US%T_to_s**3
+            CS%TKE_itidal_input(i,j,fr) = 1.0*W_m2_to_HZ2_T3
           endif
         enddo ; enddo ; enddo
       endif
@@ -181,7 +187,7 @@ subroutine set_int_tide_input(u, v, h, tv, fluxes, itide, dt, G, GV, US, CS)
   if (CS%debug) then
     call hchksum(N2_bot, "N2_bot", G%HI, haloshift=0, unscale=US%s_to_T**2)
     call hchksum(CS%TKE_itidal_input,"TKE_itidal_input", G%HI, haloshift=0, &
-                 unscale=US%RZ3_T3_to_W_m2)
+                 unscale=HZ2_T3_to_W_m2)
   endif
 
   call enable_averages(dt, time_end, CS%diag)
@@ -336,7 +342,7 @@ end subroutine find_N2_bottom
 subroutine get_input_TKE(G, TKE_itidal_input, nFreq, CS)
   type(ocean_grid_type), intent(in)    :: G !< The ocean's grid structure (in).
   real, dimension(SZI_(G),SZJ_(G),nFreq), &
-                         intent(out) :: TKE_itidal_input !< The energy input to the internal waves [R Z3 T-3 ~> W m-2].
+                         intent(out) :: TKE_itidal_input !< The energy input to the internal waves [H Z2 T-3 ~> W m-2].
   integer, intent(in) :: nFreq !< number of frequencies
   type(int_tide_input_CS),   target       :: CS !< A pointer that is set to point to the control
                                                  !! structure for the internal tide input module.
@@ -394,6 +400,7 @@ subroutine int_tide_input_init(Time, G, GV, US, param_file, diag, CS, itide)
   real :: kappa_h2_factor    ! factor for the product of wavenumber * rms sgs height [nondim].
   real :: kappa_itides       ! topographic wavenumber and non-dimensional scaling [L-1 ~> m-1]
   real :: min_zbot_itides    ! Minimum ocean depth for internal tide conversion [Z ~> m].
+  real :: W_m2_to_HZ2_T3     ! unit conversion factor for TKE from mks to internal
   integer :: tlen_days       !< Time interval from start for adding wave source
                              !! for testing internal tides (BDM)
   integer :: i, j, is, ie, js, je, isd, ied, jsd, jed
@@ -418,6 +425,8 @@ subroutine int_tide_input_init(Time, G, GV, US, param_file, diag, CS, itide)
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
 
   CS%diag => diag
+
+  W_m2_to_HZ2_T3 = GV%m_to_H*(US%m_to_Z**2)*(US%T_to_s**3)
 
   ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, "")
@@ -460,7 +469,7 @@ subroutine int_tide_input_init(Time, G, GV, US, param_file, diag, CS, itide)
   call get_param(param_file, mdl, "TKE_ITIDE_MAX", CS%TKE_itide_max, &
                "The maximum internal tide energy source available to mix "//&
                "above the bottom boundary layer with INT_TIDE_DISSIPATION.", &
-               units="W m-2", default=1.0e3, scale=US%W_m2_to_RZ3_T3)
+               units="W m-2", default=1.0e3, scale=W_m2_to_HZ2_T3)
 
   call get_param(param_file, mdl, "READ_TIDEAMP", read_tideamp, &
                "If true, read a file (given by TIDEAMP_FILE) containing "//&
