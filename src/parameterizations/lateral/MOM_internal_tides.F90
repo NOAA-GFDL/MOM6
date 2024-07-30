@@ -1303,9 +1303,9 @@ subroutine itidal_lowmode_loss(G, GV, US, CS, Nb, Rho_bot, Ub, En, TKE_loss_fixe
 
     ! Calculate TKE loss rate; units of [H Z2 T-3 ~> W m-2] here.
     if (GV%Boussinesq .or. GV%semi_Boussinesq) then
-      TKE_loss_tot = q_itides * GV%RZ_to_H * GV%Z_to_H * TKE_loss_fixed(i,j) * Nb(i,j) * Ub(i,j,fr,m)**2
+      TKE_loss_tot = q_itides * GV%RZ_to_H*GV%Z_to_H*TKE_loss_fixed(i,j)*Nb(i,j)*Ub(i,j,fr,m)**2
     else
-      TKE_loss_tot = q_itides * (GV%RZ_to_H * GV%RZ_to_H * Rho_bot(i,j)) * TKE_loss_fixed(i,j) * Nb(i,j) * Ub(i,j,fr,m)**2
+      TKE_loss_tot = q_itides * (GV%RZ_to_H*GV%RZ_to_H*Rho_bot(i,j))*TKE_loss_fixed(i,j)*Nb(i,j)*Ub(i,j,fr,m)**2
     endif
 
     ! Update energy remaining (this is a pseudo implicit calc)
