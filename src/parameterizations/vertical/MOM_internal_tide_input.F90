@@ -43,7 +43,7 @@ type, public :: int_tide_input_CS ; private
   type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
                         !! regulate the timing of diagnostic output.
   real :: TKE_itide_max !< Maximum Internal tide conversion
-                        !! available to mix above the BBL [H Z2 T-3 ~> W m-2]
+                        !! available to mix above the BBL [H Z2 T-3 ~> m3 s-3 or W m-2]
   real :: kappa_fill    !< Vertical diffusivity used to interpolate sensible values
                         !! of T & S into thin layers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
 
@@ -51,7 +51,7 @@ type, public :: int_tide_input_CS ; private
             !< The time-invariant field that enters the TKE_itidal input calculation noting that the
             !! stratification and perhaps density are time-varying [R Z4 H-1 T-2 ~> J m-2 or J m kg-1].
   real, allocatable, dimension(:,:,:) :: &
-    TKE_itidal_input, & !< The internal tide TKE input at the bottom of the ocean [H Z2 T-3 ~> W m-2].
+    TKE_itidal_input, & !< The internal tide TKE input at the bottom of the ocean [H Z2 T-3 ~> m3 s-3 or W m-2].
     tideamp             !< The amplitude of the tidal velocities [Z T-1 ~> m s-1].
 
   character(len=200) :: inputdir !< The directory for input files.
@@ -115,14 +115,14 @@ subroutine set_int_tide_input(u, v, h, tv, fluxes, itide, dt, G, GV, US, CS)
   logical :: avg_enabled  ! for testing internal tides (BDM)
   type(time_type) :: time_end        !< For use in testing internal tides (BDM)
   real :: HZ2_T3_to_W_m2  ! unit conversion factor for TKE from internal to mks
-  real :: W_m2_to_HZ2_T3  ! unit conversion factor for TKE from internal to mks
+  real :: W_m2_to_HZ2_T3  ! unit conversion factor for TKE from mks to internal
 
   integer :: i, j, is, ie, js, je, nz, isd, ied, jsd, jed
   integer :: i_global, j_global
   integer :: fr
 
-  HZ2_T3_to_W_m2 = GV%H_to_m*(US%Z_to_m**2)*(US%s_to_T**3)
-  W_m2_to_HZ2_T3 = GV%m_to_H*(US%m_to_Z**2)*(US%T_to_s**3)
+  HZ2_T3_to_W_m2 = GV%H_to_kg_m2*(US%Z_to_m**2)*(US%s_to_T**3)
+  W_m2_to_HZ2_T3 = GV%kg_m2_to_H*(US%m_to_Z**2)*(US%T_to_s**3)
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
@@ -235,8 +235,8 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, US, N2_bot, rho_bo
     z_from_bot, & ! The distance of a layer center from the bottom [Z ~> m]
     dRho_dT, &    ! The partial derivative of density with temperature [R C-1 ~> kg m-3 degC-1]
     dRho_dS, &    ! The partial derivative of density with salinity [R S-1 ~> kg m-3 ppt-1].
-    h_bot         ! The bottom boundary layer thickness [H ~> m].
-  integer, dimension(SZI_(G)) :: k_bot ! Bottom boundary layer top layer index [nondim].
+    h_bot         ! The bottom boundary layer thickness [H ~> m or kg m-2]
+  integer, dimension(SZI_(G)) :: k_bot ! Bottom boundary layer top layer index
 
   real :: dz_int  ! The vertical extent of water associated with an interface [Z ~> m]
   real :: G_Rho0  ! The gravitational acceleration, sometimes divided by the Boussinesq
@@ -342,7 +342,8 @@ end subroutine find_N2_bottom
 subroutine get_input_TKE(G, TKE_itidal_input, nFreq, CS)
   type(ocean_grid_type), intent(in)    :: G !< The ocean's grid structure (in).
   real, dimension(SZI_(G),SZJ_(G),nFreq), &
-                         intent(out) :: TKE_itidal_input !< The energy input to the internal waves [H Z2 T-3 ~> W m-2].
+                         intent(out) :: TKE_itidal_input !< The energy input to the internal waves
+                                                         !! [H Z2 T-3 ~> m3 s-3 or W m-2].
   integer, intent(in) :: nFreq !< number of frequencies
   type(int_tide_input_CS),   target       :: CS !< A pointer that is set to point to the control
                                                  !! structure for the internal tide input module.

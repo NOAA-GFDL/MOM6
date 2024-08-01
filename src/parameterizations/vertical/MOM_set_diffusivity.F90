@@ -204,13 +204,13 @@ type diffusivity_diags
     Kd_itidal => NULL(), & !< internal tides wave drag diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_Froude => NULL(), & !< internal tides high Froude diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_slope  => NULL(), & !< internal tides critical slopes diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    prof_leak   => NULL(), & !< vertical profile for leakage [H-1 ~> m-1]
-    prof_quad   => NULL(), & !< vertical profile for bottom drag [H-1 ~> m-1]
-    prof_itidal => NULL(), & !< vertical profile for wave drag [H-1 ~> m-1]
-    prof_Froude => NULL(), & !< vertical profile for Froude drag [H-1 ~> m-1]
-    prof_slope  => NULL()    !< vertical profile for critical slopes [H-1 ~> m-1]
-  real, pointer, dimension(:,:) ::  bbl_thick => NULL(), & !< bottom boundary layer thickness [H ~> m]
-                                    kbbl => NULL() !< top of bottom boundary layer [nondim]
+    prof_leak   => NULL(), & !< vertical profile for leakage [H-1 ~> m-1 or m2 kg-1]
+    prof_quad   => NULL(), & !< vertical profile for bottom drag [H-1 ~> m-1 or m2 kg-1]
+    prof_itidal => NULL(), & !< vertical profile for wave drag [H-1 ~> m-1 or m2 kg-1]
+    prof_Froude => NULL(), & !< vertical profile for Froude drag [H-1 ~> m-1 or m2 kg-1]
+    prof_slope  => NULL()    !< vertical profile for critical slopes [H-1 ~> m-1 or m2 kg-1]
+  real, pointer, dimension(:,:) ::  bbl_thick => NULL(), & !< bottom boundary layer thickness [H ~> m or kg m-2]
+                                    kbbl => NULL() !< top of bottom boundary layer
 
   real, pointer, dimension(:,:,:) :: TKE_to_Kd => NULL()
                           !< conversion rate (~1.0 / (G_Earth + dRho_lay)) between TKE
@@ -269,8 +269,8 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
   ! local variables
   real :: N2_bot(SZI_(G))  ! Bottom squared buoyancy frequency [T-2 ~> s-2]
   real :: rho_bot(SZI_(G)) ! In situ near-bottom density [T-2 ~> s-2]
-  real :: h_bot(SZI_(G))   ! Bottom boundary layer thickness [H ~> m].
-  integer :: k_bot(SZI_(G))   ! Bottom boundary layer thickness top layer index [nondim].
+  real :: h_bot(SZI_(G))   ! Bottom boundary layer thickness [H ~> m or kg m-2]
+  integer :: k_bot(SZI_(G))   ! Bottom boundary layer thickness top layer index
 
   type(diffusivity_diags)  :: dd ! structure with arrays of available diags
 
@@ -278,10 +278,6 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
     T_f, S_f      ! Temperature and salinity [C ~> degC] and [S ~> ppt] with properties in massless layers
                   ! filled vertically by diffusion or the properties after full convective adjustment.
 
-  real, dimension(SZI_(G)) :: &
-    bbl_thick_1d  !< bottom boundary layer thickness [Z ~> m]
-  integer, dimension(SZI_(G)) :: &
-    kbbl_1d       !< index of the top of boundary layer [nondim]
   real, dimension(SZI_(G),SZK_(GV)) :: &
     N2_lay, &     !< Squared buoyancy frequency associated with layers [T-2 ~> s-2]
     Kd_lay_2d, &  !< The layer diffusivities [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
@@ -1055,8 +1051,8 @@ subroutine find_N2(h, tv, T_f, S_f, fluxes, j, G, GV, US, CS, dRho_int, &
                             intent(out) :: N2_lay !< The squared buoyancy frequency of the layers [T-2 ~> s-2].
   real, dimension(SZI_(G)), intent(out) :: N2_bot !< The near-bottom squared buoyancy frequency [T-2 ~> s-2].
   real, dimension(SZI_(G)), intent(out) :: Rho_bot !< Near-bottom density [R ~> kg m-3].
-  real, dimension(SZI_(G)), optional, intent(out) :: h_bot !< Bottom boundary layer thickness [H ~> m].
-  integer, dimension(SZI_(G)), optional, intent(out) :: k_bot !< Bottom boundary layer top layer index [nondim].
+  real, dimension(SZI_(G)), optional, intent(out) :: h_bot !< Bottom boundary layer thickness [H ~> m or kg m-2].
+  integer, dimension(SZI_(G)), optional, intent(out) :: k_bot !< Bottom boundary layer top layer index.
 
   ! Local variables
   real, dimension(SZI_(G),SZK_(GV)+1) :: &
@@ -2506,15 +2502,15 @@ subroutine set_diffusivity_init(Time, G, GV, US, param_file, diag, CS, int_tide_
     CS%id_Kd_slope = register_diag_field('ocean_model', 'Kd_slope', diag%axesTi, Time, &
         'internal tides slope viscosity added by MOM_internal tides module', 'm2/s', conversion=GV%HZ_T_to_m2_s)
     CS%id_prof_leak = register_diag_field('ocean_model', 'prof_leak', diag%axesTl, Time, &
-        'internal tides leakage profile added by MOM_internal tides module', 'm-1', conversion=US%m_to_Z)
+        'internal tides leakage profile added by MOM_internal tides module', 'm-1', conversion=GV%m_to_H)
     CS%id_prof_Froude = register_diag_field('ocean_model', 'prof_Froude', diag%axesTl, Time, &
-        'internal tides Froude profile added by MOM_internal tides module', 'm-1', conversion=US%m_to_Z)
+        'internal tides Froude profile added by MOM_internal tides module', 'm-1', conversion=GV%m_to_H)
     CS%id_prof_itidal = register_diag_field('ocean_model', 'prof_itidal', diag%axesTl, Time, &
-        'internal tides wave drag profile added by MOM_internal tides module', 'm-1', conversion=US%m_to_Z)
+        'internal tides wave drag profile added by MOM_internal tides module', 'm-1', conversion=GV%m_to_H)
     CS%id_prof_quad = register_diag_field('ocean_model', 'prof_quad', diag%axesTl, Time, &
-        'internal tides bottom profile added by MOM_internal tides module', 'm-1', conversion=US%m_to_Z)
+        'internal tides bottom profile added by MOM_internal tides module', 'm-1', conversion=GV%m_to_H)
     CS%id_prof_slope = register_diag_field('ocean_model', 'prof_slope', diag%axesTl, Time, &
-        'internal tides slope profile added by MOM_internal tides module', 'm-1', conversion=US%m_to_Z)
+        'internal tides slope profile added by MOM_internal tides module', 'm-1', conversion=GV%m_to_H)
   endif
 
   CS%id_Kd_layer = register_diag_field('ocean_model', 'Kd_layer', diag%axesTL, Time, &

@@ -409,8 +409,8 @@ subroutine find_rho_bottom(h, dz, pres_int, dz_avg, tv, j, G, GV, US, Rho_bot, h
                                                 !! thermodynamic fields.
   integer,                  intent(in)  :: j    !< j-index of row to work on
   real, dimension(SZI_(G)), intent(out) :: Rho_bot  !< Near-bottom density [R ~> kg m-3].
-  real, dimension(SZI_(G)), optional, intent(out) :: h_bot !< Bottom boundary layer thickness [H ~> m].
-  integer, dimension(SZI_(G)), optional, intent(out) :: k_bot !< Bottom boundary layer top layer index [nondim].
+  real, dimension(SZI_(G)), optional, intent(out) :: h_bot !< Bottom boundary layer thickness [H ~> m or kg m-2]
+  integer, dimension(SZI_(G)), optional, intent(out) :: k_bot !< Bottom boundary layer top layer index
 
   ! Local variables
   real :: hb(SZI_(G))         ! Running sum of the thickness in the bottom boundary layer [H ~> m or kg m-2]
