@@ -4947,7 +4947,7 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
                            position=NORTH_FACE, scale=GV%m_to_H*US%T_to_s)
         call pass_var(CS%lin_drag_v, G%Domain)
         CS%lin_drag_v(:,:) = wave_drag_scale * CS%lin_drag_v(:,:)
- 
+
       else
         allocate(lin_drag_h(isd:ied,jsd:jed), source=0.0)
 
