@@ -14,7 +14,6 @@ use MOM_diabatic_aux,        only : diabatic_aux_init, diabatic_aux_end, diabati
 use MOM_diabatic_aux,        only : make_frazil, adjust_salt, differential_diffuse_T_S, triDiagTS
 use MOM_diabatic_aux,        only : triDiagTS_Eulerian, find_uv_at_h
 use MOM_diabatic_aux,        only : applyBoundaryFluxesInOut, set_pen_shortwave
-use MOM_diabatic_aux,        only : diagnoseMLDbyDensityDifference, diagnoseMLDbyEnergy
 use MOM_diag_mediator,       only : post_data, register_diag_field, safe_alloc_ptr
 use MOM_diag_mediator,       only : post_product_sum_u, post_product_sum_v
 use MOM_diag_mediator,       only : diag_ctrl, time_type, diag_update_remap_grids
@@ -22,6 +21,7 @@ use MOM_diag_mediator,       only : diag_ctrl, query_averaging_enabled, enable_a
 use MOM_diag_mediator,       only : diag_grid_storage, diag_grid_storage_init, diag_grid_storage_end
 use MOM_diag_mediator,       only : diag_copy_diag_to_storage, diag_copy_storage_to_diag
 use MOM_diag_mediator,       only : diag_save_grids, diag_restore_grids
+use MOM_diagnose_mld,        only : diagnoseMLDbyDensityDifference, diagnoseMLDbyEnergy
 use MOM_diapyc_energy_req,   only : diapyc_energy_req_init, diapyc_energy_req_end
 use MOM_diapyc_energy_req,   only : diapyc_energy_req_calc, diapyc_energy_req_test, diapyc_energy_req_CS
 use MOM_CVMix_conv,          only : CVMix_conv_init, CVMix_conv_cs
@@ -175,6 +175,8 @@ type, public :: diabatic_CS ; private
   real    :: dz_subML_N2             !< The distance over which to calculate a diagnostic of the
                                      !! average stratification at the base of the mixed layer [Z ~> m].
   real    :: MLD_En_vals(3)          !< Energy values for energy mixed layer diagnostics [R Z3 T-2 ~> J m-2]
+  real    :: ref_h_mld = 0.0         !< The depth of the "surface"  density used in a difference mixed based
+                                     !! MLD calculation [Z ~> m].
 
   !>@{ Diagnostic IDs
   integer :: id_ea       = -1, id_eb       = -1 ! used by layer diabatic
@@ -183,6 +185,7 @@ type, public :: diabatic_CS ; private
   integer :: id_Tdif     = -1, id_Sdif     = -1, id_Tadv   = -1, id_Sadv     = -1
   ! These are handles to diagnostics related to the mixed layer properties.
   integer :: id_MLD_003 = -1, id_MLD_0125 = -1, id_MLD_user = -1, id_mlotstsq = -1
+  integer :: id_MLD_003_zr = -1, id_MLD_003_rr = -1
   integer :: id_MLD_EN1 = -1, id_MLD_EN2  = -1, id_MLD_EN3  = -1, id_subMLN2  = -1
 
   ! These are handles to diagnostics that are only available in non-ALE layered mode.
@@ -479,13 +482,16 @@ subroutine diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
   call enable_averages(dt, Time_end, CS%diag)
   if (CS%id_MLD_003 > 0 .or. CS%id_subMLN2 > 0 .or. CS%id_mlotstsq > 0) then
     call diagnoseMLDbyDensityDifference(CS%id_MLD_003, h, tv, 0.03*US%kg_m3_to_R, G, GV, US, CS%diag, &
+                                        CS%ref_h_mld, CS%id_MLD_003_zr, CS%id_MLD_003_rr, &
                                         id_N2subML=CS%id_subMLN2, id_MLDsq=CS%id_mlotstsq, dz_subML=CS%dz_subML_N2)
   endif
   if (CS%id_MLD_0125 > 0) then
-    call diagnoseMLDbyDensityDifference(CS%id_MLD_0125, h, tv, 0.125*US%kg_m3_to_R, G, GV, US, CS%diag)
+    call diagnoseMLDbyDensityDifference(CS%id_MLD_0125, h, tv, 0.125*US%kg_m3_to_R, G, GV, US, CS%diag, &
+                                        ref_H_MLD=0.0, id_ref_z=-1, id_ref_rho=-1)
   endif
   if (CS%id_MLD_user > 0) then
-    call diagnoseMLDbyDensityDifference(CS%id_MLD_user, h, tv, CS%MLDdensityDifference, G, GV, US, CS%diag)
+    call diagnoseMLDbyDensityDifference(CS%id_MLD_user, h, tv, CS%MLDdensityDifference, G, GV, US, CS%diag, &
+                                        ref_H_MLD=0.0, id_ref_z=-1, id_ref_rho=-1)
   endif
   if ((CS%id_MLD_EN1 > 0) .or. (CS%id_MLD_EN2 > 0) .or. (CS%id_MLD_EN3 > 0)) then
     call diagnoseMLDbyEnergy((/CS%id_MLD_EN1, CS%id_MLD_EN2, CS%id_MLD_EN3/),&
@@ -648,7 +654,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     call MOM_state_chksum("after set_diffusivity ", u, v, h, G, GV, US, haloshift=0)
     call MOM_forcing_chksum("after set_diffusivity ", fluxes, G, US, haloshift=0)
     call MOM_thermovar_chksum("after set_diffusivity ", tv, G, US)
-    call hchksum(Kd_Int, "after set_diffusivity Kd_Int", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_Int, "after set_diffusivity Kd_Int", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
   endif
 
   ! Set diffusivities for heat and salt separately
@@ -669,12 +675,20 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     endif
 
     if (CS%debug) then
-      call hchksum(Kd_heat, "after set_diffusivity Kd_heat", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-      call hchksum(Kd_salt, "after set_diffusivity Kd_salt", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_heat, "after set_diffusivity Kd_heat", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_salt, "after set_diffusivity Kd_salt", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
     endif
 
     call cpu_clock_begin(id_clock_kpp)
     ! total vertical viscosity in the interior is represented via visc%Kv_shear
+
+    ! NOTE: The following do not require initialization, but their checksums do
+    !   require initialization, and past versions were initialized to zero.
+    KPP_NLTheat(:,:,:) = 0.
+    KPP_NLTscalar(:,:,:) = 0.
+    KPP_buoy_flux(:,:,:) = 0.
+    KPP_temp_flux(:,:) = 0.
+    KPP_salt_flux(:,:) = 0.
 
     ! KPP needs the surface buoyancy flux but does not update state variables.
     ! We could make this call higher up to avoid a repeat unpacking of the surface fluxes.
@@ -727,12 +741,12 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
       call MOM_state_chksum("after KPP", u, v, h, G, GV, US, haloshift=0)
       call MOM_forcing_chksum("after KPP", fluxes, G, US, haloshift=0)
       call MOM_thermovar_chksum("after KPP", tv, G, US)
-      call hchksum(Kd_heat, "after KPP Kd_heat", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-      call hchksum(Kd_salt, "after KPP Kd_salt", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_heat, "after KPP Kd_heat", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_salt, "after KPP Kd_salt", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
       call hchksum(KPP_temp_flux, "before KPP_applyNLT netHeat", G%HI, haloshift=0, &
-                   scale=US%C_to_degC*GV%H_to_m*US%s_to_T)
+                   unscale=US%C_to_degC*GV%H_to_m*US%s_to_T)
       call hchksum(KPP_salt_flux, "before KPP_applyNLT netSalt", G%HI, haloshift=0, &
-                   scale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
+                   unscale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
       call hchksum(KPP_NLTheat, "before KPP_applyNLT NLTheat", G%HI, haloshift=0)
       call hchksum(KPP_NLTscalar, "before KPP_applyNLT NLTscalar", G%HI, haloshift=0)
     endif
@@ -802,7 +816,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     call MOM_forcing_chksum("after calc_entrain ", fluxes, G, US, haloshift=0)
     call MOM_thermovar_chksum("after calc_entrain ", tv, G, US)
     call MOM_state_chksum("after calc_entrain ", u, v, h, G, GV, US, haloshift=0)
-    call hchksum(ent_s, "after calc_entrain ent_s", G%HI, haloshift=0, scale=GV%H_to_MKS)
+    call hchksum(ent_s, "after calc_entrain ent_s", G%HI, haloshift=0, unscale=GV%H_to_MKS)
   endif
 
   ! Save fields before boundary forcing is applied for tendency diagnostics
@@ -828,19 +842,19 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
             CS%minimum_forcing_depth, cTKE, dSV_dT, dSV_dS, SkinBuoyFlux=SkinBuoyFlux, MLD_h=visc%h_ML)
 
     if (CS%debug) then
-      call hchksum(ent_t, "after applyBoundaryFluxes ent_t", G%HI, haloshift=0, scale=GV%H_to_mks)
-      call hchksum(ent_s, "after applyBoundaryFluxes ent_s", G%HI, haloshift=0, scale=GV%H_to_mks)
+      call hchksum(ent_t, "after applyBoundaryFluxes ent_t", G%HI, haloshift=0, unscale=GV%H_to_mks)
+      call hchksum(ent_s, "after applyBoundaryFluxes ent_s", G%HI, haloshift=0, unscale=GV%H_to_mks)
       call hchksum(cTKE, "after applyBoundaryFluxes cTKE", G%HI, haloshift=0, &
-                   scale=US%RZ3_T3_to_W_m2*US%T_to_s)
+                   unscale=US%RZ3_T3_to_W_m2*US%T_to_s)
       call hchksum(dSV_dT, "after applyBoundaryFluxes dSV_dT", G%HI, haloshift=0, &
-                   scale=US%kg_m3_to_R*US%degC_to_C)
+                   unscale=US%kg_m3_to_R*US%degC_to_C)
       call hchksum(dSV_dS, "after applyBoundaryFluxes dSV_dS", G%HI, haloshift=0, &
-                   scale=US%kg_m3_to_R*US%ppt_to_S)
-      call hchksum(h, "after applyBoundaryFluxes h", G%HI, haloshift=0, scale=GV%H_to_mks)
-      call hchksum(tv%T, "after applyBoundaryFluxes tv%T", G%HI, haloshift=0, scale=US%C_to_degC)
-      call hchksum(tv%S, "after applyBoundaryFluxes tv%S", G%HI, haloshift=0, scale=US%S_to_ppt)
+                   unscale=US%kg_m3_to_R*US%ppt_to_S)
+      call hchksum(h, "after applyBoundaryFluxes h", G%HI, haloshift=0, unscale=GV%H_to_mks)
+      call hchksum(tv%T, "after applyBoundaryFluxes tv%T", G%HI, haloshift=0, unscale=US%C_to_degC)
+      call hchksum(tv%S, "after applyBoundaryFluxes tv%S", G%HI, haloshift=0, unscale=US%S_to_ppt)
       call hchksum(SkinBuoyFlux, "after applyBdryFlux SkinBuoyFlux", G%HI, haloshift=0, &
-                   scale=US%Z_to_m**2*US%s_to_T**3)
+                   unscale=US%Z_to_m**2*US%s_to_T**3)
     endif
 
     call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
@@ -877,9 +891,9 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     enddo ; enddo ; enddo
 
     if (CS%debug) then
-      call hchksum(ent_t, "after ePBL ent_t", G%HI, haloshift=0, scale=GV%H_to_MKS)
-      call hchksum(ent_s, "after ePBL ent_s", G%HI, haloshift=0, scale=GV%H_to_MKS)
-      call hchksum(Kd_ePBL, "after ePBL Kd_ePBL", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+      call hchksum(ent_t, "after ePBL ent_t", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(ent_s, "after ePBL ent_s", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(Kd_ePBL, "after ePBL Kd_ePBL", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
     endif
 
   else
@@ -922,8 +936,8 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
   if (associated(tv%T)) then
 
     if (CS%debug) then
-      call hchksum(ent_t, "before triDiagTS ent_t ", G%HI, haloshift=0, scale=GV%H_to_MKS)
-      call hchksum(ent_s, "before triDiagTS ent_s ", G%HI, haloshift=0, scale=GV%H_to_MKS)
+      call hchksum(ent_t, "before triDiagTS ent_t ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(ent_s, "before triDiagTS ent_s ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
     endif
 
     call cpu_clock_begin(id_clock_tridiag)
@@ -1255,7 +1269,7 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     call MOM_state_chksum("after set_diffusivity ", u, v, h, G, GV, US, haloshift=0)
     call MOM_forcing_chksum("after set_diffusivity ", fluxes, G, US, haloshift=0)
     call MOM_thermovar_chksum("after set_diffusivity ", tv, G, US)
-    call hchksum(Kd_heat, "after set_diffusivity Kd_heat", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_heat, "after set_diffusivity Kd_heat", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
   endif
 
   ! Set diffusivities for heat and salt separately, and possibly change the meaning of Kd_heat.
@@ -1274,8 +1288,8 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
   endif
 
   if (CS%debug) then
-    call hchksum(Kd_heat, "after double diffuse Kd_heat", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-    call hchksum(Kd_salt, "after double diffuse Kd_salt", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_heat, "after double diffuse Kd_heat", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_salt, "after double diffuse Kd_salt", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
   endif
 
   if (CS%useKPP) then
@@ -1284,6 +1298,14 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     do k=1,nz+1 ; do j=js,je ; do i=is,ie
       visc%Kv_shear(i,j,k) = visc%Kv_shear(i,j,k) + visc%Kv_slow(i,j,k)
     enddo ; enddo ; enddo
+
+    ! NOTE: The following do not require initialization, but their checksums do
+    !   require initialization, and past versions were initialized to zero.
+    KPP_NLTheat(:,:,:) = 0.
+    KPP_NLTscalar(:,:,:) = 0.
+    KPP_buoy_flux(:,:,:) = 0.
+    KPP_temp_flux(:,:) = 0.
+    KPP_salt_flux(:,:) = 0.
 
     ! KPP needs the surface buoyancy flux but does not update state variables.
     ! We could make this call higher up to avoid a repeat unpacking of the surface fluxes.
@@ -1322,12 +1344,12 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
       call MOM_state_chksum("after KPP", u, v, h, G, GV, US, haloshift=0)
       call MOM_forcing_chksum("after KPP", fluxes, G, US, haloshift=0)
       call MOM_thermovar_chksum("after KPP", tv, G, US)
-      call hchksum(Kd_heat, "after KPP Kd_heat", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-      call hchksum(Kd_salt, "after KPP Kd_salt", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_heat, "after KPP Kd_heat", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_salt, "after KPP Kd_salt", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
       call hchksum(KPP_temp_flux, "before KPP_applyNLT netHeat", G%HI, haloshift=0, &
-                   scale=US%C_to_degC*GV%H_to_m*US%s_to_T)
+                   unscale=US%C_to_degC*GV%H_to_m*US%s_to_T)
       call hchksum(KPP_salt_flux, "before KPP_applyNLT netSalt", G%HI, haloshift=0, &
-                   scale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
+                   unscale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
       call hchksum(KPP_NLTheat, "before KPP_applyNLT NLTheat", G%HI, haloshift=0)
       call hchksum(KPP_NLTscalar, "before KPP_applyNLT NLTscalar", G%HI, haloshift=0)
     endif
@@ -1377,14 +1399,14 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
             CS%minimum_forcing_depth, cTKE, dSV_dT, dSV_dS, SkinBuoyFlux=SkinBuoyFlux, MLD_h=visc%h_ML)
 
     if (CS%debug) then
-      call hchksum(ent_t, "after applyBoundaryFluxes ent_t", G%HI, haloshift=0, scale=GV%H_to_MKS)
-      call hchksum(ent_s, "after applyBoundaryFluxes ent_s", G%HI, haloshift=0, scale=GV%H_to_MKS)
+      call hchksum(ent_t, "after applyBoundaryFluxes ent_t", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(ent_s, "after applyBoundaryFluxes ent_s", G%HI, haloshift=0, unscale=GV%H_to_MKS)
       call hchksum(cTKE, "after applyBoundaryFluxes cTKE", G%HI, haloshift=0, &
-                   scale=US%RZ3_T3_to_W_m2*US%T_to_s)
+                   unscale=US%RZ3_T3_to_W_m2*US%T_to_s)
       call hchksum(dSV_dT, "after applyBoundaryFluxes dSV_dT", G%HI, haloshift=0, &
-                   scale=US%kg_m3_to_R*US%degC_to_C)
+                   unscale=US%kg_m3_to_R*US%degC_to_C)
       call hchksum(dSV_dS, "after applyBoundaryFluxes dSV_dS", G%HI, haloshift=0, &
-                   scale=US%kg_m3_to_R*US%ppt_to_S)
+                   unscale=US%kg_m3_to_R*US%ppt_to_S)
     endif
 
     call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
@@ -1412,9 +1434,9 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     enddo ; enddo ; enddo
 
     if (CS%debug) then
-      call hchksum(ent_t, "after ePBL ent_t", G%HI, haloshift=0, scale=GV%H_to_MKS)
-      call hchksum(ent_s, "after ePBL ent_s", G%HI, haloshift=0, scale=GV%H_to_MKS)
-      call hchksum(Kd_ePBL, "after ePBL Kd_ePBL", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+      call hchksum(ent_t, "after ePBL ent_t", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(ent_s, "after ePBL ent_s", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(Kd_ePBL, "after ePBL Kd_ePBL", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
     endif
 
   else
@@ -1449,8 +1471,8 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
   if (associated(tv%T)) then
 
     if (CS%debug) then
-      call hchksum(ent_t, "before triDiagTS ent_t ", G%HI, haloshift=0, scale=GV%H_to_MKS)
-      call hchksum(ent_s, "before triDiagTS ent_s ", G%HI, haloshift=0, scale=GV%H_to_MKS)
+      call hchksum(ent_t, "before triDiagTS ent_t ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(ent_s, "before triDiagTS ent_s ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
     endif
 
     call cpu_clock_begin(id_clock_tridiag)
@@ -1844,8 +1866,8 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
     if ((CS%ML_mix_first > 0.0) .or. CS%use_geothermal) then
       call find_uv_at_h(u, v, h_orig, u_h, v_h, G, GV, US, eaml, ebml)
       if (CS%debug) then
-        call hchksum(eaml, "after find_uv_at_h eaml", G%HI, scale=GV%H_to_MKS)
-        call hchksum(ebml, "after find_uv_at_h ebml", G%HI, scale=GV%H_to_MKS)
+        call hchksum(eaml, "after find_uv_at_h eaml", G%HI, unscale=GV%H_to_MKS)
+        call hchksum(ebml, "after find_uv_at_h ebml", G%HI, unscale=GV%H_to_MKS)
       endif
     else
       call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
@@ -1883,13 +1905,22 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
     call MOM_state_chksum("after set_diffusivity ", u, v, h, G, GV, US, haloshift=0)
     call MOM_forcing_chksum("after set_diffusivity ", fluxes, G, US, haloshift=0)
     call MOM_thermovar_chksum("after set_diffusivity ", tv, G, US)
-    call hchksum(Kd_lay, "after set_diffusivity Kd_lay", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-    call hchksum(Kd_Int, "after set_diffusivity Kd_Int", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_lay, "after set_diffusivity Kd_lay", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_Int, "after set_diffusivity Kd_Int", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
   endif
 
 
   if (CS%useKPP) then
     call cpu_clock_begin(id_clock_kpp)
+
+    ! NOTE: The following do not require initialization, but their checksums do
+    !   require initialization, and past versions were initialized to zero.
+    KPP_NLTheat(:,:,:) = 0.
+    KPP_NLTscalar(:,:,:) = 0.
+    KPP_buoy_flux(:,:,:) = 0.
+    KPP_temp_flux(:,:) = 0.
+    KPP_salt_flux(:,:) = 0.
+
     ! KPP needs the surface buoyancy flux but does not update state variables.
     ! We could make this call higher up to avoid a repeat unpacking of the surface fluxes.
     ! Sets: KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux
@@ -1959,8 +1990,8 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
       call MOM_state_chksum("after KPP", u, v, h, G, GV, US, haloshift=0)
       call MOM_forcing_chksum("after KPP", fluxes, G, US, haloshift=0)
       call MOM_thermovar_chksum("after KPP", tv, G, US)
-      call hchksum(Kd_lay, "after KPP Kd_lay", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-      call hchksum(Kd_Int, "after KPP Kd_Int", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_lay, "after KPP Kd_lay", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_Int, "after KPP Kd_Int", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
     endif
   endif  ! endif for KPP
 
@@ -1973,9 +2004,9 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
     call cpu_clock_begin(id_clock_kpp)
     if (CS%debug) then
       call hchksum(KPP_temp_flux, "before KPP_applyNLT netHeat", G%HI, haloshift=0, &
-                   scale=US%C_to_degC*GV%H_to_m*US%s_to_T)
+                   unscale=US%C_to_degC*GV%H_to_m*US%s_to_T)
       call hchksum(KPP_salt_flux, "before KPP_applyNLT netSalt", G%HI, haloshift=0, &
-                   scale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
+                   unscale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
       call hchksum(KPP_NLTheat, "before KPP_applyNLT NLTheat", G%HI, haloshift=0)
       call hchksum(KPP_NLTscalar, "before KPP_applyNLT NLTscalar", G%HI, haloshift=0)
     endif
@@ -2032,8 +2063,8 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
     call MOM_forcing_chksum("after calc_entrain ", fluxes, G, US, haloshift=0)
     call MOM_thermovar_chksum("after calc_entrain ", tv, G, US)
     call MOM_state_chksum("after calc_entrain ", u, v, h, G, GV, US, haloshift=0)
-    call hchksum(ea, "after calc_entrain ea", G%HI, haloshift=0, scale=GV%H_to_MKS)
-    call hchksum(eb, "after calc_entrain eb", G%HI, haloshift=0, scale=GV%H_to_MKS)
+    call hchksum(ea, "after calc_entrain ea", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+    call hchksum(eb, "after calc_entrain eb", G%HI, haloshift=0, unscale=GV%H_to_MKS)
   endif
 
   ! Save fields before boundary forcing is applied for tendency diagnostics
@@ -2188,8 +2219,8 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
         eb(i,j,k) = eb(i,j,k) + ebml(i,j,k)
       enddo ; enddo ; enddo
       if (CS%debug) then
-        call hchksum(ea, "after ea = ea + eaml", G%HI, haloshift=0, scale=GV%H_to_MKS)
-        call hchksum(eb, "after eb = eb + ebml", G%HI, haloshift=0, scale=GV%H_to_MKS)
+        call hchksum(ea, "after ea = ea + eaml", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+        call hchksum(eb, "after eb = eb + ebml", G%HI, haloshift=0, unscale=GV%H_to_MKS)
       endif
     endif
 
@@ -2234,8 +2265,8 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
     if (associated(tv%T)) then
 
       if (CS%debug) then
-        call hchksum(ea, "before triDiagTS ea ", G%HI, haloshift=0, scale=GV%H_to_MKS)
-        call hchksum(eb, "before triDiagTS eb ", G%HI, haloshift=0, scale=GV%H_to_MKS)
+        call hchksum(ea, "before triDiagTS ea ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+        call hchksum(eb, "before triDiagTS eb ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
       endif
       call cpu_clock_begin(id_clock_tridiag)
 
@@ -2282,8 +2313,8 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
   if (CS%debug) then
     call MOM_state_chksum("after mixed layer ", u, v, h, G, GV, US, haloshift=0)
     call MOM_thermovar_chksum("after mixed layer ", tv, G, US)
-    call hchksum(ea, "after mixed layer ea", G%HI, scale=GV%H_to_MKS)
-    call hchksum(eb, "after mixed layer eb", G%HI, scale=GV%H_to_MKS)
+    call hchksum(ea, "after mixed layer ea", G%HI, unscale=GV%H_to_MKS)
+    call hchksum(eb, "after mixed layer eb", G%HI, unscale=GV%H_to_MKS)
   endif
 
   call cpu_clock_begin(id_clock_remap)
@@ -2473,8 +2504,8 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
 ! mixed layer turbulence is applied elsewhere.
   if (CS%use_bulkmixedlayer) then
     if (CS%debug) then
-      call hchksum(ea, "before net flux rearrangement ea", G%HI, scale=GV%H_to_MKS)
-      call hchksum(eb, "before net flux rearrangement eb", G%HI, scale=GV%H_to_MKS)
+      call hchksum(ea, "before net flux rearrangement ea", G%HI, unscale=GV%H_to_MKS)
+      call hchksum(eb, "before net flux rearrangement eb", G%HI, unscale=GV%H_to_MKS)
     endif
     !$OMP parallel do default(shared) private(net_ent)
     do j=js,je
@@ -2485,8 +2516,8 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
       enddo ; enddo
     enddo
     if (CS%debug) then
-      call hchksum(ea, "after net flux rearrangement ea", G%HI, scale=GV%H_to_MKS)
-      call hchksum(eb, "after net flux rearrangement eb", G%HI, scale=GV%H_to_MKS)
+      call hchksum(ea, "after net flux rearrangement ea", G%HI, unscale=GV%H_to_MKS)
+      call hchksum(eb, "after net flux rearrangement eb", G%HI, unscale=GV%H_to_MKS)
     endif
   endif
 
@@ -2517,9 +2548,9 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
   !  or enters the ocean with the surface velocity.
   if (CS%debug) then
     call MOM_state_chksum("before u/v tridiag ", u, v, h, G, GV, US, haloshift=0)
-    call hchksum(ea, "before u/v tridiag ea", G%HI, scale=GV%H_to_MKS)
-    call hchksum(eb, "before u/v tridiag eb", G%HI, scale=GV%H_to_MKS)
-    call hchksum(hold, "before u/v tridiag hold", G%HI, scale=GV%H_to_MKS)
+    call hchksum(ea, "before u/v tridiag ea", G%HI, unscale=GV%H_to_MKS)
+    call hchksum(eb, "before u/v tridiag eb", G%HI, unscale=GV%H_to_MKS)
+    call hchksum(hold, "before u/v tridiag hold", G%HI, unscale=GV%H_to_MKS)
   endif
   call cpu_clock_begin(id_clock_tridiag)
 
@@ -3248,6 +3279,15 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
         'Squared buoyancy frequency below mixed layer', units='s-2', conversion=US%s_to_T**2)
     CS%id_MLD_user = register_diag_field('ocean_model', 'MLD_user', diag%axesT1, Time, &
         'Mixed layer depth (used defined)', units='m', conversion=US%Z_to_m)
+    if (CS%id_MLD_003 > 0) then
+      call get_param(param_file, mdl, "HREF_FOR_MLD", CS%ref_h_mld, &
+           "Reference depth used to calculate the potential density used to find the mixed layer depth "//&
+           "based on a delta rho = 0.03 kg/m3.", units='m', default=0.0, scale=US%m_to_Z)
+      CS%id_MLD_003_zr = register_diag_field('ocean_model', 'MLD_003_refZ', diag%axesT1, Time, &
+           'Depth of reference density for MLD (delta rho = 0.03)', units='m', conversion=US%Z_to_m)
+      CS%id_MLD_003_rr = register_diag_field('ocean_model', 'MLD_003_refRho', diag%axesT1, Time, &
+           'Reference density for MLD (delta rho = 0.03)', units='kg/m3', conversion=US%R_to_kg_m3)
+    endif
   endif
   call get_param(param_file, mdl, "DIAG_MLD_DENSITY_DIFF", CS%MLDdensityDifference, &
                  "The density difference used to determine a diagnostic mixed "//&

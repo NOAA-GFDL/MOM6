@@ -221,7 +221,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
       (dt * (G%IdxCu(I,j)*G%IdxCu(I,j) + G%IdyCu(I,j)*G%IdyCu(I,j)))
   enddo ; enddo
   !$OMP parallel do default(shared)
-  do j=js-1,je ; do I=is,ie
+  do J=js-1,je ; do i=is,ie
     KH_v_CFL(i,J) = (0.25*CS%max_Khth_CFL) / &
       (dt * (G%IdxCv(i,J)*G%IdxCv(i,J) + G%IdyCv(i,J)*G%IdyCv(i,J)))
   enddo ; enddo
@@ -426,7 +426,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
     if (CS%MEKE_GEOMETRIC) then
       if (CS%MEKE_GEOM_answer_date < 20190101) then
         !$OMP do
-        do j=js,je ; do I=is,ie
+        do j=js,je ; do i=is,ie
           ! This does not give bitwise rotational symmetry.
           MEKE%Kh(i,j) = CS%MEKE_GEOMETRIC_alpha * MEKE%MEKE(i,j) / &
                          (0.25*(VarMix%SN_u(I,j)+VarMix%SN_u(I-1,j) + &
@@ -435,7 +435,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
         enddo ; enddo
       else
         !$OMP do
-        do j=js,je ; do I=is,ie
+        do j=js,je ; do i=is,ie
           ! With the additional parentheses this gives bitwise rotational symmetry.
           MEKE%Kh(i,j) = CS%MEKE_GEOMETRIC_alpha * MEKE%MEKE(i,j) / &
                          (0.25*((VarMix%SN_u(I,j)+VarMix%SN_u(I-1,j)) + &
@@ -463,23 +463,23 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
 
   if (CS%debug) then
     call uvchksum("Kh_[uv]", Kh_u, Kh_v, G%HI, haloshift=0, &
-                  scale=(US%L_to_m**2)*US%s_to_T, scalar_pair=.true.)
+                  unscale=(US%L_to_m**2)*US%s_to_T, scalar_pair=.true.)
     call uvchksum("Kh_[uv]_CFL", Kh_u_CFL, Kh_v_CFL, G%HI, haloshift=0, &
-                  scale=(US%L_to_m**2)*US%s_to_T, scalar_pair=.true.)
+                  unscale=(US%L_to_m**2)*US%s_to_T, scalar_pair=.true.)
     if (Resoln_scaled) then
       call uvchksum("Res_fn_[uv]", VarMix%Res_fn_u, VarMix%Res_fn_v, G%HI, haloshift=0, &
-                    scale=1.0, scalar_pair=.true.)
+                    unscale=1.0, scalar_pair=.true.)
     endif
     call uvchksum("int_slope_[uv]", int_slope_u, int_slope_v, G%HI, haloshift=0)
-    call hchksum(h, "thickness_diffuse_1 h", G%HI, haloshift=1, scale=GV%H_to_m)
-    call hchksum(e, "thickness_diffuse_1 e", G%HI, haloshift=1, scale=US%Z_to_m)
+    call hchksum(h, "thickness_diffuse_1 h", G%HI, haloshift=1, unscale=GV%H_to_m)
+    call hchksum(e, "thickness_diffuse_1 e", G%HI, haloshift=1, unscale=US%Z_to_m)
     if (use_stored_slopes) then
       call uvchksum("VarMix%slope_[xy]", VarMix%slope_x, VarMix%slope_y, &
-                    G%HI, haloshift=0, scale=US%Z_to_L)
+                    G%HI, haloshift=0, unscale=US%Z_to_L)
     endif
     if (associated(tv%eqn_of_state)) then
-      call hchksum(tv%T, "thickness_diffuse T", G%HI, haloshift=1, scale=US%C_to_degC)
-      call hchksum(tv%S, "thickness_diffuse S", G%HI, haloshift=1, scale=US%S_to_ppt)
+      call hchksum(tv%T, "thickness_diffuse T", G%HI, haloshift=1, unscale=US%C_to_degC)
+      call hchksum(tv%S, "thickness_diffuse S", G%HI, haloshift=1, unscale=US%S_to_ppt)
     endif
   endif
 
@@ -588,10 +588,10 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
 
   if (CS%debug) then
     call uvchksum("thickness_diffuse [uv]hD", uhD, vhD, &
-                  G%HI, haloshift=0, scale=GV%H_to_m*US%L_to_m**2*US%s_to_T)
+                  G%HI, haloshift=0, unscale=GV%H_to_m*US%L_to_m**2*US%s_to_T)
     call uvchksum("thickness_diffuse [uv]htr", uhtr, vhtr, &
-                  G%HI, haloshift=0, scale=US%L_to_m**2*GV%H_to_m)
-    call hchksum(h, "thickness_diffuse h", G%HI, haloshift=0, scale=GV%H_to_m)
+                  G%HI, haloshift=0, unscale=US%L_to_m**2*GV%H_to_m)
+    call hchksum(h, "thickness_diffuse h", G%HI, haloshift=0, unscale=GV%H_to_m)
   endif
 
 end subroutine thickness_diffuse
@@ -1589,11 +1589,11 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
       enddo ; enddo ; enddo
     endif
     if (CS%debug) then
-      call hchksum(MEKE%GM_src, 'MEKE%GM_src', G%HI, scale=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
-      call uvchksum("KH_[uv]", Kh_u, Kh_v, G%HI, scale=US%L_to_m**2*US%s_to_T, &
+      call hchksum(MEKE%GM_src, 'MEKE%GM_src', G%HI, unscale=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
+      call uvchksum("KH_[uv]", Kh_u, Kh_v, G%HI, unscale=US%L_to_m**2*US%s_to_T, &
                     scalar_pair=.true.)
-      call uvchksum("Slope_[xy]_PE", Slope_x_PE, Slope_y_PE, G%HI, scale=US%Z_to_L)
-      call uvchksum("hN2_[xy]_PE", hN2_x_PE, hN2_y_PE, G%HI, scale=GV%H_to_mks*US%L_to_Z**2*US%s_to_T**2, &
+      call uvchksum("Slope_[xy]_PE", Slope_x_PE, Slope_y_PE, G%HI, unscale=US%Z_to_L)
+      call uvchksum("hN2_[xy]_PE", hN2_x_PE, hN2_y_PE, G%HI, unscale=GV%H_to_mks*US%L_to_Z**2*US%s_to_T**2, &
                     scalar_pair=.true.)
     endif
   endif ; endif
@@ -2460,7 +2460,7 @@ end subroutine thickness_diffuse_end
 !! since the quantity \f$\frac{M^2}{\sqrt{N^4 + M^4}}\f$ is bounded between $-1$ and $1$ and does not change sign
 !! if \f$N^2<0\f$.
 !!
-!! Optionally, the method of Ferrari et al, 2010, can be used to obtain the streamfunction which solves the
+!! Optionally, the method of \cite ferrari2010, can be used to obtain the streamfunction which solves the
 !! vertically elliptic equation:
 !! \f[
 !! \gamma_F \partial_z c^2 \partial_z \psi - N_*^2 \psi  = -( 1 + \gamma_F ) \kappa_h N_*^2 \frac{M^2}{\sqrt{N^4+M^4}}
@@ -2478,7 +2478,7 @@ end subroutine thickness_diffuse_end
 !! \f$ r(\Delta x,L_d) \f$ is a function of the local resolution (ratio of grid-spacing, \f$\Delta x\f$,
 !! to deformation radius, \f$L_d\f$). The length \f$L_s\f$ is provided by the mom_lateral_mixing_coeffs module
 !! (enabled with <code>USE_VARIABLE_MIXING=True</code> and the term \f$<SN>\f$ is the vertical average slope
-!! times the buoyancy frequency prescribed by Visbeck et al., 1996.
+!! times the buoyancy frequency prescribed by \cite visbeck1996.
 !!
 !! The result of the above expression is subsequently bounded by minimum and maximum values, including an upper
 !! diffusivity consistent with numerical stability (\f$ \kappa_{cfl} \f$ is calculated internally).

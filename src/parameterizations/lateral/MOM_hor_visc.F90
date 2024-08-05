@@ -594,7 +594,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
     call pass_vector(KH_u_GME, KH_v_GME, G%domain, To_All+Scalar_Pair)
 
     if (CS%debug) &
-    call uvchksum("GME KH[u,v]_GME", KH_u_GME, KH_v_GME, G%HI, haloshift=2, scale=US%L_to_m**2*US%s_to_T)
+      call uvchksum("GME KH[u,v]_GME", KH_u_GME, KH_v_GME, G%HI, haloshift=2, unscale=US%L_to_m**2*US%s_to_T)
 
   endif ! use_GME
 
@@ -1996,11 +1996,11 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
 
   if (CS%debug) then
     if (CS%Laplacian) then
-      call hchksum(Kh_h, "Kh_h", G%HI, haloshift=0, scale=US%L_to_m**2*US%s_to_T)
-      call Bchksum(Kh_q, "Kh_q", G%HI, haloshift=0, scale=US%L_to_m**2*US%s_to_T)
+      call hchksum(Kh_h, "Kh_h", G%HI, haloshift=0, unscale=US%L_to_m**2*US%s_to_T)
+      call Bchksum(Kh_q, "Kh_q", G%HI, haloshift=0, unscale=US%L_to_m**2*US%s_to_T)
     endif
-    if (CS%biharmonic) call hchksum(Ah_h, "Ah_h", G%HI, haloshift=0, scale=US%L_to_m**4*US%s_to_T)
-    if (CS%biharmonic) call Bchksum(Ah_q, "Ah_q", G%HI, haloshift=0, scale=US%L_to_m**4*US%s_to_T)
+    if (CS%biharmonic) call hchksum(Ah_h, "Ah_h", G%HI, haloshift=0, unscale=US%L_to_m**4*US%s_to_T)
+    if (CS%biharmonic) call Bchksum(Ah_q, "Ah_q", G%HI, haloshift=0, unscale=US%L_to_m**4*US%s_to_T)
   endif
 
   if (CS%id_FrictWorkIntz > 0) then
@@ -2044,9 +2044,9 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
 
 end subroutine horizontal_viscosity
 
-!> Allocates space for and calculates static variables used by horizontal_viscosity().
+!> Allocates space for and calculates static variables used by horizontal_viscosity.
 !! hor_visc_init calculates and stores the values of a number of metric functions that
-!! are used in horizontal_viscosity().
+!! are used in horizontal_viscosity.
 subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
   type(time_type),         intent(in)    :: Time !< Current model time.
   type(ocean_grid_type),   intent(inout) :: G    !< The ocean's grid structure.
@@ -2722,8 +2722,8 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
         CS%Kh_Max_xy(I,J) = CS%bound_coef * 0.25 * Idt / denom
     enddo ; enddo
     if (CS%debug) then
-      call hchksum(CS%Kh_Max_xx, "Kh_Max_xx", G%HI, haloshift=0, scale=US%L_to_m**2*US%s_to_T)
-      call Bchksum(CS%Kh_Max_xy, "Kh_Max_xy", G%HI, haloshift=0, scale=US%L_to_m**2*US%s_to_T)
+      call hchksum(CS%Kh_Max_xx, "Kh_Max_xx", G%HI, haloshift=0, unscale=US%L_to_m**2*US%s_to_T)
+      call Bchksum(CS%Kh_Max_xy, "Kh_Max_xy", G%HI, haloshift=0, unscale=US%L_to_m**2*US%s_to_T)
     endif
   endif
   ! The biharmonic bounds should avoid overshoots when CS%bound_coef < 0.5, but
@@ -2778,8 +2778,8 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
         CS%Ah_Max_xy(I,J) = CS%bound_coef * 0.5 * Idt / denom
     enddo ; enddo
     if (CS%debug) then
-      call hchksum(CS%Ah_Max_xx, "Ah_Max_xx", G%HI, haloshift=0, scale=US%L_to_m**4*US%s_to_T)
-      call Bchksum(CS%Ah_Max_xy, "Ah_Max_xy", G%HI, haloshift=0, scale=US%L_to_m**4*US%s_to_T)
+      call hchksum(CS%Ah_Max_xx, "Ah_Max_xx", G%HI, haloshift=0, unscale=US%L_to_m**4*US%s_to_T)
+      call Bchksum(CS%Ah_Max_xy, "Ah_Max_xy", G%HI, haloshift=0, unscale=US%L_to_m**4*US%s_to_T)
     endif
   endif
   ! Register fields for output from this module.
@@ -3193,24 +3193,24 @@ subroutine hor_visc_end(CS)
 end subroutine hor_visc_end
 !> \namespace mom_hor_visc
 !!
-!! This module contains the subroutine horizontal_viscosity() that calculates the
+!! \section section_horizontal_viscosity Horizontal viscosity in MOM
+!!
+!! This module contains the subroutine horizontal_viscosity that calculates the
 !! effects of horizontal viscosity, including parameterizations of the value of
-!! the viscosity itself. horizontal_viscosity() calculates the acceleration due to
+!! the viscosity itself. Subroutine horizontal_viscosity calculates the acceleration due to
 !! some combination of a biharmonic viscosity and a Laplacian viscosity. Either or
 !! both may use a coefficient that depends on the shear and strain of the flow.
 !! All metric terms are retained. The Laplacian is calculated as the divergence of
-!! a stress tensor, using the form suggested by Smagorinsky (1993). The biharmonic
+!! a stress tensor, using the form suggested by \cite Smagorinsky1993. The biharmonic
 !! is calculated by twice applying the divergence of the stress tensor that is
 !! used to calculate the Laplacian, but without the dependence on thickness in the
 !! first pass. This form permits a variable viscosity, and indicates no
 !! acceleration for either resting fluid or solid body rotation.
 !!
-!! The form of the viscous accelerations is discussed extensively in Griffies and
-!! Hallberg (2000), and the implementation here follows that discussion closely.
-!! We use the notation of Smith and McWilliams (2003) with the exception that the
+!! The form of the viscous accelerations is discussed extensively in \cite griffies2000,
+!! and the implementation here follows that discussion closely.
+!! We use the notation of \cite Smith2003 with the exception that the
 !! isotropic viscosity is \f$\kappa_h\f$.
-!!
-!! \section section_horizontal_viscosity Horizontal viscosity in MOM
 !!
 !! In general, the horizontal stress tensor can be written as
 !! \f[
@@ -3259,7 +3259,7 @@ end subroutine hor_visc_end
 !! \f}
 !!
 !! The viscosity \f$\kappa_h\f$ may either be a constant or variable. For example,
-!! \f$\kappa_h\f$ may vary with the shear, as proposed by Smagorinsky (1993).
+!! \f$\kappa_h\f$ may vary with the shear, as proposed by \cite Smagorinsky1993.
 !!
 !! The accelerations resulting form the divergence of the stress tensor are
 !! \f{eqnarray*}{
@@ -3357,8 +3357,8 @@ end subroutine hor_visc_end
 !!
 !! \subsection section_anisotropic_viscosity Anisotropic viscosity
 !!
-!! Large et al., 2001, proposed enhancing viscosity in a particular direction and the
-!! approach was generalized in Smith and McWilliams, 2003. We use the second form of their
+!! \cite Large2001 proposed enhancing viscosity in a particular direction and the
+!! approach was generalized in \cite Smith2003. We use the second form of their
 !! two coefficient anisotropic viscosity (section 4.3). We also replace their
 !! \f$A^\prime\f$ and $D$ such that \f$2A^\prime = 2 \kappa_h + D\f$ and
 !! \f$\kappa_a = D\f$ so that \f$\kappa_h\f$ can be considered the isotropic

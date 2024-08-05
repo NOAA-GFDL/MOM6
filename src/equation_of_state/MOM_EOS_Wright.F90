@@ -12,6 +12,7 @@ implicit none ; private
 public buggy_Wright_EOS
 public int_density_dz_wright, int_spec_vol_dp_wright
 public avg_spec_vol_buggy_Wright
+public set_params_buggy_Wright
 
 !>@{ Parameters in the Wright equation of state using the reduced range formula, which is a fit to the UNESCO
 !    equation of state for the restricted range: -2 < theta < 30 [degC], 28 < S < 38 [PSU], 0  < p < 5e7 [Pa].
@@ -39,6 +40,8 @@ real, parameter :: c5 = -3.079464    ! A parameter in the Wright lambda fit [m2 
 !> The EOS_base implementation of the Wright 1997 equation of state with some bugs
 type, extends (EOS_base) :: buggy_Wright_EOS
 
+  real :: three = 3.0 !< A constant that can be adjusted to recreate some bugs [nondim]
+
 contains
   !> Implementation of the in-situ density as an elemental function [kg m-3]
   procedure :: density_elem => density_elem_buggy_Wright
@@ -58,6 +61,9 @@ contains
   procedure :: calculate_compress_elem => calculate_compress_elem_buggy_Wright
   !> Implementation of the range query function
   procedure :: EOS_fit_range => EOS_fit_range_buggy_Wright
+
+  !> Instance specific function to set internal parameters
+  procedure :: set_params_buggy_Wright => set_params_buggy_Wright
 
   !> Local implementation of generic calculate_density_array for efficiency
   procedure :: calculate_density_array => calculate_density_array_buggy_Wright
@@ -228,13 +234,16 @@ elemental subroutine calculate_density_second_derivs_elem_buggy_Wright(this, T, 
   real :: z11    ! A local work variable [Pa m2 s-2 PSU-1] = [kg m s-4 PSU-1]
   real :: z2_2   ! A local work variable [m4 s-4]
   real :: z2_3   ! A local work variable [m6 s-6]
+  real :: six    ! A constant that can be adjusted from 6. to 4. to recreate a bug [nondim]
 
   ! Based on the above expression with common terms factored, there probably exists a more numerically stable
   ! and/or efficient expression
 
+  six = 2.0*this%three  ! When recreating a bug from the original version of this routine, six = 4.
+
   z0 = T*(b1 + b5*S + T*(b2 + b3*T))
   z1 = (b0 + pressure + b4*S + z0)
-  z3 = (b1 + b5*S + T*(2.*b2 + 2.*b3*T)) ! BUG: This should be z3 = b1 + b5*S + T*(2.*b2 + 3.*b3*T)
+  z3 = (b1 + b5*S + T*(2.*b2 + this%three*b3*T))  ! When recreating a bug here this%three = 2.
   z4 = (c0 + c4*S + T*(c1 + c5*S + T*(c2 + c3*T)))
   z5 = (b1 + b5*S + T*(b2 + b3*T) + T*(b2 + 2.*b3*T))
   z6 = c1 + c5*S + T*(c2 + c3*T) + T*(c2 + 2.*c3*T)
@@ -249,8 +258,7 @@ elemental subroutine calculate_density_second_derivs_elem_buggy_Wright(this, T, 
 
   drho_ds_ds = (z10*(c4 + c5*T) - a2*z10*z1 - z10*z7)/z2_2 - (2.*(c4 + c5*T + z9*z10 + a2*z1)*z11)/z2_3
   drho_ds_dt = (z10*z6 - z1*(c5 + a2*z5) + b5*z4 - z5*z7)/z2_2 - (2.*(z6 + z9*z5 + a1*z1)*z11)/z2_3
-  ! BUG: In the following line: (2.*b2 + 4.*b3*T) should be (2.*b2 + 6.*b3*T)
-  drho_dt_dt = (z3*z6 - z1*(2.*c2 + 6.*c3*T + a1*z5) + (2.*b2 + 4.*b3*T)*z4 - z5*z8)/z2_2 - &
+  drho_dt_dt = (z3*z6 - z1*(2.*c2 + 6.*c3*T + a1*z5) + (2.*b2 + six*b3*T)*z4 - z5*z8)/z2_2 - &
                   (2.*(z6 + z9*z5 + a1*z1)*(z3*z4 - z1*z8))/z2_3
   drho_ds_dp = (-c4 - c5*T - 2.*a2*z1)/z2_2 - (2.*z9*z11)/z2_3
   drho_dt_dp = (-c1 - c5*S - T*(2.*c2 + 3.*c3*T) - 2.*a1*z1)/z2_2 - (2.*z9*(z3*z4 - z1*z8))/z2_3
@@ -380,7 +388,7 @@ end subroutine EoS_fit_range_buggy_Wright
 !! that assumes that |eps| < 0.34.
 subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
                                  dpa, intz_dpa, intx_dpa, inty_dpa, bathyT, dz_neglect, &
-                                 useMassWghtInterp, rho_scale, pres_scale, temp_scale, saln_scale, Z_0p)
+                                 MassWghtInterp, rho_scale, pres_scale, temp_scale, saln_scale, Z_0p)
   type(hor_index_type), intent(in)  :: HI       !< The horizontal index type for the arrays.
   real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed), &
                         intent(in)  :: T        !< Potential temperature relative to the surface
@@ -417,8 +425,8 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
   real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed), &
               optional, intent(in)  :: bathyT   !< The depth of the bathymetry [Z ~> m].
   real,       optional, intent(in)  :: dz_neglect !< A miniscule thickness change [Z ~> m].
-  logical,    optional, intent(in)  :: useMassWghtInterp !< If true, uses mass weighting to
-                                                !! interpolate T/S for top and bottom integrals.
+  integer,    optional, intent(in)  :: MassWghtInterp !< A flag indicating whether and how to use
+                                                 !! mass weighting to interpolate T/S in integrals
   real,       optional, intent(in)  :: rho_scale !< A multiplicative factor by which to scale density
                                                  !! from kg m-3 to the desired units [R m3 kg-1 ~> 1]
   real,       optional, intent(in)  :: pres_scale !< A multiplicative factor to convert pressure
@@ -517,13 +525,13 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
   endif ; endif
 
   do_massWeight = .false.
-  if (present(useMassWghtInterp)) then ; if (useMassWghtInterp) then
-    do_massWeight = .true.
-  ! if (.not.present(bathyT)) call MOM_error(FATAL, "int_density_dz_generic: "//&
-  !     "bathyT must be present if useMassWghtInterp is present and true.")
-  ! if (.not.present(dz_neglect)) call MOM_error(FATAL, "int_density_dz_generic: "//&
-  !     "dz_neglect must be present if useMassWghtInterp is present and true.")
-  endif ; endif
+  if (present(MassWghtInterp)) do_massWeight = BTEST(MassWghtInterp, 0) ! True for odd values
+  ! if (do_massWeight) then
+  !   if (.not.present(bathyT)) call MOM_error(FATAL, "int_density_dz_generic: "//&
+  !       "bathyT must be present if MassWghtInterp is present and true.")
+  !   if (.not.present(dz_neglect)) call MOM_error(FATAL, "int_density_dz_generic: "//&
+  !      "dz_neglect must be present if MassWghtInterp is present and true.")
+  ! endif
 
   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
     al0_2d(i,j) = (a0 + a1s*T(i,j)) + a2s*S(i,j)
@@ -640,7 +648,7 @@ end subroutine int_density_dz_wright
 !! that assumes that |eps| < 0.34.
 subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
                                   intp_dza, intx_dza, inty_dza, halo_size, bathyP, dP_neglect, &
-                                  useMassWghtInterp, SV_scale, pres_scale, temp_scale, saln_scale)
+                                  MassWghtInterp, SV_scale, pres_scale, temp_scale, saln_scale)
   type(hor_index_type), intent(in)  :: HI        !< The ocean's horizontal index type.
   real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed), &
                         intent(in)  :: T         !< Potential temperature relative to the surface
@@ -678,8 +686,8 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
               optional, intent(in)  :: bathyP    !< The pressure at the bathymetry [R L2 T-2 ~> Pa]
   real,       optional, intent(in)  :: dP_neglect !< A miniscule pressure change with
                                                  !! the same units as p_t [R L2 T-2 ~> Pa]
-  logical,    optional, intent(in)  :: useMassWghtInterp !< If true, uses mass weighting
-                            !! to interpolate T/S for top and bottom integrals.
+  integer,    optional, intent(in)  :: MassWghtInterp !< A flag indicating whether and how to use
+                                                 !! mass weighting to interpolate T/S in integrals
   real,       optional, intent(in)  :: SV_scale  !< A multiplicative factor by which to scale specific
                             !! volume from m3 kg-1 to the desired units [kg m-3 R-1 ~> 1]
   real,       optional, intent(in)  :: pres_scale !< A multiplicative factor to convert pressure
@@ -726,6 +734,7 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
   real :: c4s        ! Partly rescaled version of c4 [m2 s-2 S-1 ~> m2 s-2 PSU-1]
   real :: c5s        ! Partly rescaled version of c5 [m2 s-2 C-1 S-1 ~> m2 s-2 degC-1 PSU-1]
   logical :: do_massWeight ! Indicates whether to do mass weighting.
+  logical :: massWeight_bug ! If true, use an incorrect expression to determine where to apply mass weighting
   real, parameter :: C1_3 = 1.0/3.0, C1_7 = 1.0/7.0    ! Rational constants [nondim]
   real, parameter :: C1_9 = 1.0/9.0, C1_90 = 1.0/90.0  ! Rational constants [nondim]
   integer :: Isq, Ieq, Jsq, Jeq, ish, ieh, jsh, jeh, i, j, m, halo
@@ -762,14 +771,15 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
     c4s = c4s * saln_scale ; c5s = c5s * saln_scale
   endif ; endif
 
-  do_massWeight = .false.
-  if (present(useMassWghtInterp)) then ; if (useMassWghtInterp) then
-    do_massWeight = .true.
+  do_massWeight = .false. ; massWeight_bug = .false.
+  if (present(MassWghtInterp)) do_massWeight = BTEST(MassWghtInterp, 0) ! True for odd values
+  if (present(MassWghtInterp)) massWeight_bug = BTEST(MassWghtInterp, 3) ! True if the 8 bit is set
+!  if (do_massWeight) then
 !    if (.not.present(bathyP)) call MOM_error(FATAL, "int_spec_vol_dp_generic: "//&
-!        "bathyP must be present if useMassWghtInterp is present and true.")
+!        "bathyP must be present if MassWghtInterp is present and true.")
 !    if (.not.present(dP_neglect)) call MOM_error(FATAL, "int_spec_vol_dp_generic: "//&
-!        "dP_neglect must be present if useMassWghtInterp is present and true.")
-  endif ; endif
+!        "dP_neglect must be present if MassWghtInterp is present and true.")
+!  endif
 
   !  alpha(j) = (lambda + al0*(pressure(j) + p0)) / (pressure(j) + p0)
   do j=jsh,jeh ; do i=ish,ieh
@@ -794,8 +804,11 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
     ! hydrostatic consistency. For large hWght we bias the interpolation of
     ! T & S along the top and bottom integrals, akin to thickness weighting.
     hWght = 0.0
-    if (do_massWeight) &
+    if (do_massWeight .and. massWeight_bug) then
       hWght = max(0., bathyP(i,j)-p_t(i+1,j), bathyP(i+1,j)-p_t(i,j))
+    elseif (do_massWeight) then
+      hWght = max(0., p_t(i+1,j)-bathyP(i,j), p_t(i,j)-bathyP(i+1,j))
+    endif
     if (hWght > 0.) then
       hL = (p_b(i,j) - p_t(i,j)) + dP_neglect
       hR = (p_b(i+1,j) - p_t(i+1,j)) + dP_neglect
@@ -835,8 +848,11 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
     ! hydrostatic consistency. For large hWght we bias the interpolation of
     ! T & S along the top and bottom integrals, akin to thickness weighting.
     hWght = 0.0
-    if (do_massWeight) &
+    if (do_massWeight .and. massWeight_bug) then
       hWght = max(0., bathyP(i,j)-p_t(i,j+1), bathyP(i,j+1)-p_t(i,j))
+    elseif (do_massWeight) then
+      hWght = max(0., p_t(i,j+1)-bathyP(i,j), p_t(i,j)-bathyP(i,j+1))
+    endif
     if (hWght > 0.) then
       hL = (p_b(i,j) - p_t(i,j)) + dP_neglect
       hR = (p_b(i,j+1) - p_t(i,j+1)) + dP_neglect
@@ -923,6 +939,23 @@ subroutine calculate_spec_vol_array_buggy_Wright(this, T, S, pressure, specvol, 
   endif
 
 end subroutine calculate_spec_vol_array_buggy_Wright
+
+
+!> Set coefficients that can correct bugs un the buggy Wright equation of state.
+subroutine set_params_buggy_Wright(this, use_Wright_2nd_deriv_bug)
+  class(buggy_Wright_EOS), intent(inout) :: this !< This EOS
+  logical, optional, intent(in)    :: use_Wright_2nd_deriv_bug !< If true, use a buggy
+                           !! buggy version of the calculations of the second
+                           !! derivative of density with temperature and with temperature and
+                           !! pressure.  This bug is corrected in the default version.
+
+  this%three = 3.0
+  if (present(use_Wright_2nd_deriv_bug)) then
+    if (use_Wright_2nd_deriv_bug) then ; this%three = 2.0
+    else  ; this%three = 3.0 ; endif
+  endif
+
+end subroutine set_params_buggy_Wright
 
 
 !> \namespace mom_eos_wright

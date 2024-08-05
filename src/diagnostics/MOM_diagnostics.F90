@@ -970,9 +970,7 @@ subroutine calculate_energy_diagnostics(u, v, h, uh, vh, ADp, CDp, G, GV, US, CS
 
   if (.not.(CS%KE_term_on .or. (CS%id_KE > 0))) return
 
-  do j=js-1,je ; do i=is-1,ie
-    KE_u(I,j) = 0.0 ; KE_v(i,J) = 0.0
-  enddo ; enddo
+  KE_u(:,:) = 0. ; KE_v(:,:) = 0.
 
   do k=1,nz ; do j=js,je ; do i=is,ie
     KE(i,j,k) = ((u(I,j,k) * u(I,j,k) + u(I-1,j,k) * u(I-1,j,k)) &
@@ -1377,7 +1375,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     do j=js,je ; do i=is,ie
       work_2d(i,j) = G%mask2dT(i,j) * (ssh(i,j) + G%bathyT(i,j))
     enddo ; enddo
-    volo = global_area_integral(work_2d, G, scale=US%Z_to_m)
+    volo = global_area_integral(work_2d, G, unscale=US%Z_to_m)
     call post_data(IDs%id_volo, volo, diag)
   endif
 

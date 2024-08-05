@@ -157,7 +157,12 @@ type, public :: set_diffusivity_CS ; private
   integer :: answer_date      !< The vintage of the order of arithmetic and expressions in this module's
                               !! calculations.  Values below 20190101 recover the answers from the
                               !! end of 2018, while higher values use updated and more robust forms
-                              !! of the same expressions.
+                              !! of the same expressions.  Values above 20240630 use more accurate
+                              !! expressions for cases where USE_LOTW_BBL_DIFFUSIVITY is true.
+  integer :: LOTW_BBL_answer_date !< The vintage of the order of arithmetic and expressions
+                              !! in the LOTW_BBL calculations.  Values below 20240630 recover the
+                              !! original answers, while higher values use more accurate expressions.
+                              !! This only applies when USE_LOTW_BBL_DIFFUSIVITY is true.
 
   character(len=200) :: inputdir !< The directory in which input files are found
   type(user_change_diff_CS), pointer :: user_change_diff_CSp => NULL() !< Control structure for a child module
@@ -343,7 +348,7 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
 
   if (CS%useKappaShear) then
     if (CS%debug) then
-      call hchksum_pair("before calc_KS [uv]_h", u_h, v_h, G%HI, scale=US%L_T_to_m_s)
+      call hchksum_pair("before calc_KS [uv]_h", u_h, v_h, G%HI, unscale=US%L_T_to_m_s)
     endif
     call cpu_clock_begin(id_clock_kappaShear)
     if (CS%Vertex_shear) then
@@ -354,18 +359,18 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
                                    visc%TKE_turb, visc%Kv_shear_Bu, dt, G, GV, US, CS%kappaShear_CSp)
       if (associated(visc%Kv_shear)) visc%Kv_shear(:,:,:) = 0.0 ! needed for other parameterizations
       if (CS%debug) then
-        call hchksum(visc%Kd_shear, "after calc_KS_vert visc%Kd_shear", G%HI, scale=GV%HZ_T_to_m2_s)
-        call Bchksum(visc%Kv_shear_Bu, "after calc_KS_vert visc%Kv_shear_Bu", G%HI, scale=GV%HZ_T_to_m2_s)
-        call Bchksum(visc%TKE_turb, "after calc_KS_vert visc%TKE_turb", G%HI, scale=US%Z_to_m**2*US%s_to_T**2)
+        call hchksum(visc%Kd_shear, "after calc_KS_vert visc%Kd_shear", G%HI, unscale=GV%HZ_T_to_m2_s)
+        call Bchksum(visc%Kv_shear_Bu, "after calc_KS_vert visc%Kv_shear_Bu", G%HI, unscale=GV%HZ_T_to_m2_s)
+        call Bchksum(visc%TKE_turb, "after calc_KS_vert visc%TKE_turb", G%HI, unscale=US%Z_to_m**2*US%s_to_T**2)
       endif
     else
       ! Changes: visc%Kd_shear ;  Sets: visc%Kv_shear and visc%TKE_turb
       call calculate_kappa_shear(u_h, v_h, h, tv, fluxes%p_surf, visc%Kd_shear, visc%TKE_turb, &
                                  visc%Kv_shear, dt, G, GV, US, CS%kappaShear_CSp)
       if (CS%debug) then
-        call hchksum(visc%Kd_shear, "after calc_KS visc%Kd_shear", G%HI, scale=GV%HZ_T_to_m2_s)
-        call hchksum(visc%Kv_shear, "after calc_KS visc%Kv_shear", G%HI, scale=GV%HZ_T_to_m2_s)
-        call hchksum(visc%TKE_turb, "after calc_KS visc%TKE_turb", G%HI, scale=US%Z_to_m**2*US%s_to_T**2)
+        call hchksum(visc%Kd_shear, "after calc_KS visc%Kd_shear", G%HI, unscale=GV%HZ_T_to_m2_s)
+        call hchksum(visc%Kv_shear, "after calc_KS visc%Kv_shear", G%HI, unscale=GV%HZ_T_to_m2_s)
+        call hchksum(visc%TKE_turb, "after calc_KS visc%TKE_turb", G%HI, unscale=US%Z_to_m**2*US%s_to_T**2)
       endif
     endif
     call cpu_clock_end(id_clock_kappaShear)
@@ -374,8 +379,8 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
     !NOTE{BGR}: this needs to be cleaned up.  It works in 1D case, but has not been tested outside.
     call calculate_CVMix_shear(u_h, v_h, h, tv, visc%Kd_shear, visc%Kv_shear, G, GV, US, CS%CVMix_shear_CSp)
     if (CS%debug) then
-      call hchksum(visc%Kd_shear, "after CVMix_shear visc%Kd_shear", G%HI, scale=GV%HZ_T_to_m2_s)
-      call hchksum(visc%Kv_shear, "after CVMix_shear visc%Kv_shear", G%HI, scale=GV%HZ_T_to_m2_s)
+      call hchksum(visc%Kd_shear, "after CVMix_shear visc%Kd_shear", G%HI, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(visc%Kv_shear, "after CVMix_shear visc%Kv_shear", G%HI, unscale=GV%HZ_T_to_m2_s)
     endif
   elseif (associated(visc%Kv_shear)) then
     visc%Kv_shear(:,:,:) = 0.0 ! needed if calculate_kappa_shear is not enabled
@@ -384,15 +389,15 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
   ! Smooth the properties through massless layers.
   if (use_EOS) then
     if (CS%debug) then
-      call hchksum(tv%T, "before vert_fill_TS tv%T", G%HI, scale=US%C_to_degC)
-      call hchksum(tv%S, "before vert_fill_TS tv%S", G%HI, scale=US%S_to_ppt)
-      call hchksum(h, "before vert_fill_TS h",G%HI, scale=GV%H_to_m)
+      call hchksum(tv%T, "before vert_fill_TS tv%T", G%HI, unscale=US%C_to_degC)
+      call hchksum(tv%S, "before vert_fill_TS tv%S", G%HI, unscale=US%S_to_ppt)
+      call hchksum(h, "before vert_fill_TS h",G%HI, unscale=GV%H_to_m)
     endif
     call vert_fill_TS(h, tv%T, tv%S, kappa_dt_fill, T_f, S_f, G, GV, US, larger_h_denom=.true.)
     if (CS%debug) then
-      call hchksum(tv%T, "after vert_fill_TS tv%T", G%HI, scale=US%C_to_degC)
-      call hchksum(tv%S, "after vert_fill_TS tv%S", G%HI, scale=US%S_to_ppt)
-      call hchksum(h, "after vert_fill_TS h",G%HI, scale=GV%H_to_m)
+      call hchksum(tv%T, "after vert_fill_TS tv%T", G%HI, unscale=US%C_to_degC)
+      call hchksum(tv%S, "after vert_fill_TS tv%S", G%HI, unscale=US%S_to_ppt)
+      call hchksum(h, "after vert_fill_TS h",G%HI, unscale=GV%H_to_m)
     endif
   endif
 
@@ -591,30 +596,30 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
   endif
 
   if (CS%debug) then
-    if (present(Kd_lay)) call hchksum(Kd_lay, "Kd_lay", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+    if (present(Kd_lay)) call hchksum(Kd_lay, "Kd_lay", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
 
-    if (CS%useKappaShear) call hchksum(visc%Kd_shear, "Turbulent Kd", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+    if (CS%useKappaShear) call hchksum(visc%Kd_shear, "Turbulent Kd", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
 
     if (CS%use_CVMix_ddiff) then
-      call hchksum(Kd_extra_T, "MOM_set_diffusivity: Kd_extra_T", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-      call hchksum(Kd_extra_S, "MOM_set_diffusivity: Kd_extra_S", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_extra_T, "MOM_set_diffusivity: Kd_extra_T", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_extra_S, "MOM_set_diffusivity: Kd_extra_S", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
     endif
 
     if (allocated(visc%kv_bbl_u) .and. allocated(visc%kv_bbl_v)) then
       call uvchksum("BBL Kv_bbl_[uv]", visc%kv_bbl_u, visc%kv_bbl_v, G%HI, &
-                    haloshift=0, symmetric=.true., scale=GV%HZ_T_to_m2_s, &
+                    haloshift=0, symmetric=.true., unscale=GV%HZ_T_to_m2_s, &
                     scalar_pair=.true.)
     endif
 
     if (allocated(visc%bbl_thick_u) .and. allocated(visc%bbl_thick_v)) then
       call uvchksum("BBL bbl_thick_[uv]", visc%bbl_thick_u, visc%bbl_thick_v, &
-                    G%HI, haloshift=0, symmetric=.true., scale=US%Z_to_m, &
+                    G%HI, haloshift=0, symmetric=.true., unscale=US%Z_to_m, &
                     scalar_pair=.true.)
     endif
 
     if (allocated(visc%Ray_u) .and. allocated(visc%Ray_v)) then
       call uvchksum("Ray_[uv]", visc%Ray_u, visc%Ray_v, G%HI, 0, &
-          symmetric=.true., scale=GV%H_to_m*US%s_to_T, scalar_pair=.true.)
+          symmetric=.true., unscale=GV%H_to_m*US%s_to_T, scalar_pair=.true.)
     endif
 
   endif
@@ -1426,6 +1431,7 @@ subroutine add_LOTW_BBL_diffusivity(h, u, v, tv, fluxes, visc, j, N2_int, Rho_bo
 
   ! Local variables
   real :: dz(SZI_(G),SZK_(GV)) ! Height change across layers [Z ~> m]
+  real :: dz_above(SZK_(GV)+1) ! Distance from each interface to the surface [Z ~> m]
   real :: TKE_column       ! net TKE input into the column [H Z2 T-3 ~> m3 s-3 or W m-2]
   real :: TKE_remaining    ! remaining TKE available for mixing in this layer and above [H Z2 T-3 ~> m3 s-3 or W m-2]
   real :: TKE_consumed     ! TKE used for mixing in this layer [H Z2 T-3 ~> m3 s-3 or W m-2]
@@ -1500,7 +1506,15 @@ subroutine add_LOTW_BBL_diffusivity(h, u, v, tv, fluxes, visc, j, N2_int, Rho_bo
     TKE_column = CS%BBL_effic * TKE_column ! Only use a fraction of the mechanical dissipation for mixing.
 
     TKE_remaining = TKE_column
-    total_depth = ( sum(dz(i,:)) + GV%dz_subroundoff ) ! Total column thickness [Z ~> m].
+    if (CS%LOTW_BBL_answer_date > 20240630) then
+      dz_above(1) = GV%dz_subroundoff  ! This could perhaps be 0 instead.
+      do K=2,GV%ke+1
+        dz_above(K) = dz_above(K-1) + dz(i,k-1)
+      enddo
+      total_depth = dz_above(GV%ke+1)
+    else
+      total_depth = ( sum(dz(i,:)) + GV%dz_subroundoff ) ! Total column thickness [Z ~> m].
+    endif
     ustar_D = ustar * total_depth
     h_bot = 0.
     z_bot = 0.
@@ -1525,7 +1539,11 @@ subroutine add_LOTW_BBL_diffusivity(h, u, v, tv, fluxes, visc, j, N2_int, Rho_bo
 
       z_bot = z_bot + dz(i,k)  ! Distance between upper interface of layer and the bottom [Z ~> m].
       h_bot = h_bot + h(i,j,k) ! Thickness between upper interface of layer and the bottom [H ~> m or kg m-2].
-      D_minus_z = max(total_depth - z_bot, 0.) ! Thickness above layer [H ~> m or kg m-2].
+      if (CS%LOTW_BBL_answer_date > 20240630) then
+        D_minus_z = dz_above(K)
+      else
+        D_minus_z = max(total_depth - z_bot, 0.) ! Distance from the interface to the surface [Z ~> m].
+      endif
 
       ! Diffusivity using law of the wall, limited by rotation, at height z [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
       ! This calculation is at the upper interface of the layer
@@ -2191,7 +2209,7 @@ subroutine set_diffusivity_init(Time, G, GV, US, param_file, diag, CS, int_tide_
                  "law of the form c_drag*|u|*u. The velocity magnitude "//&
                  "may be an assumed value or it may be based on the actual "//&
                  "velocity in the bottommost HBBL, depending on LINEAR_DRAG.", default=.true.)
-  if  (CS%bottomdraglaw) then
+  if (CS%bottomdraglaw) then
     call get_param(param_file, mdl, "CDRAG", CS%cdrag, &
                  "The drag coefficient relating the magnitude of the "//&
                  "velocity field to the bottom stress. CDRAG is only used "//&
@@ -2231,6 +2249,14 @@ subroutine set_diffusivity_init(Time, G, GV, US, param_file, diag, CS, int_tide_
   else
     CS%use_LOTW_BBL_diffusivity = .false. ! This parameterization depends on a u* from viscous BBL
   endif
+  call get_param(param_file, mdl, "LOTW_BBL_ANSWER_DATE", CS%LOTW_BBL_answer_date, &
+               "The vintage of the order of arithmetic and expressions in the LOTW_BBL "//&
+               "calculations.  Values below 20240630 recover the original answers, while "//&
+               "higher values use more accurate expressions.  This only applies when "//&
+               "USE_LOTW_BBL_DIFFUSIVITY is true.", &
+               default=20190101, do_not_log=.not.CS%use_LOTW_BBL_diffusivity)
+               !### Set default as default=default_answer_date, or use SET_DIFF_ANSWER_DATE.
+
   CS%id_Kd_BBL = register_diag_field('ocean_model', 'Kd_BBL', diag%axesTi, Time, &
                  'Bottom Boundary Layer Diffusivity', 'm2 s-1', conversion=GV%HZ_T_to_m2_s)
 

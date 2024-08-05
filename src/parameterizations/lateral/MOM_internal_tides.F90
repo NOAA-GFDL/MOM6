@@ -906,7 +906,7 @@ subroutine sum_En(G, US, CS, En, label)
 
   En_sum = 0.0
   do a=1,CS%nAngle
-    En_sum = En_sum + global_area_integral(En(:,:,a), G, scale=US%RZ3_T3_to_W_m2*US%T_to_s)
+    En_sum = En_sum + global_area_integral(En(:,:,a), G, unscale=US%RZ3_T3_to_W_m2*US%T_to_s)
   enddo
   CS%En_sum = En_sum
   !En_sum_diff = En_sum - CS%En_sum
@@ -1096,7 +1096,7 @@ subroutine refract(En, cn, freq, dt, G, US, NAngle, use_PPMang)
 
   cnmask(:,:) = merge(0., 1., cn(:,:) == 0.)
 
-  do j=js,je ; do i=is-1,ie
+  do j=js,je ; do I=is-1,ie
     ! wgt = 0 if local cn == 0, wgt = 0.5 if both contiguous values != 0
     ! and wgt = 1 if neighbour cn == 0
     wgt1 = cnmask(i,j) - 0.5 * cnmask(i,j) * cnmask(i+1,j)
@@ -1104,7 +1104,7 @@ subroutine refract(En, cn, freq, dt, G, US, NAngle, use_PPMang)
     cn_u(I,j) = wgt1*cn(i,j) + wgt2*cn(i+1,j)
   enddo ; enddo
 
-  do j=js-1,je ; do i=is,ie
+  do J=js-1,je ; do i=is,ie
     wgt1 = cnmask(i,j) - 0.5 * cnmask(i,j) * cnmask(i,j+1)
     wgt2 = cnmask(i,j+1) - 0.5 * cnmask(i,j) * cnmask(i,j+1)
     cn_v(i,J) = wgt1*cn(i,j) + wgt2*cn(i,j+1)
