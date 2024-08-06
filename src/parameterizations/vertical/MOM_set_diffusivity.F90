@@ -1197,7 +1197,7 @@ subroutine find_N2(h, tv, T_f, S_f, fluxes, j, G, GV, US, CS, dRho_int, &
 
   ! Average over the larger of the envelope of the topography or a minimal distance.
   do i=is,ie ; dz_BBL_avg(i) = max(h_amp(i), CS%dz_BBL_avg_min) ; enddo
-  call find_rho_bottom(h, dz, pres, dz_BBL_avg, tv, j, G, GV, US, Rho_bot, h_bot, k_bot)
+  call find_rho_bottom(G, GV, US, tv, h, dz, pres, dz_BBL_avg, j, Rho_bot, h_bot, k_bot)
 
 end subroutine find_N2
 

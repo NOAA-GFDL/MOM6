@@ -394,10 +394,12 @@ end subroutine find_col_avg_SpV
 
 !> Determine the in situ density averaged over a specified distance from the bottom,
 !! calculating it as the inverse of the mass-weighted average specific volume.
-subroutine find_rho_bottom(h, dz, pres_int, dz_avg, tv, j, G, GV, US, Rho_bot, h_bot, k_bot)
+subroutine find_rho_bottom(G, GV, US, tv, h, dz, pres_int, dz_avg, j, Rho_bot, h_bot, k_bot)
   type(ocean_grid_type),    intent(in)  :: G    !< The ocean's grid structure
   type(verticalGrid_type),  intent(in)  :: GV   !< The ocean's vertical grid structure
   type(unit_scale_type),    intent(in)  :: US   !< A dimensional unit scaling type
+  type(thermo_var_ptrs),    intent(in)  :: tv   !< Structure containing pointers to any available
+                                                !! thermodynamic fields.
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                             intent(in)  :: h    !< Layer thicknesses [H ~> m or kg m-2]
   real, dimension(SZI_(G),SZK_(GV)), &
@@ -405,12 +407,10 @@ subroutine find_rho_bottom(h, dz, pres_int, dz_avg, tv, j, G, GV, US, Rho_bot, h
   real, dimension(SZI_(G),SZK_(GV)+1), &
                             intent(in)  :: pres_int !< Pressure at each interface [R L2 T-2 ~> Pa]
   real, dimension(SZI_(G)), intent(in)  :: dz_avg !< The vertical distance over which to average [Z ~> m]
-  type(thermo_var_ptrs),    intent(in)  :: tv   !< Structure containing pointers to any available
-                                                !! thermodynamic fields.
   integer,                  intent(in)  :: j    !< j-index of row to work on
   real, dimension(SZI_(G)), intent(out) :: Rho_bot  !< Near-bottom density [R ~> kg m-3].
-  real, dimension(SZI_(G)), optional, intent(out) :: h_bot !< Bottom boundary layer thickness [H ~> m or kg m-2]
-  integer, dimension(SZI_(G)), optional, intent(out) :: k_bot !< Bottom boundary layer top layer index
+  real, dimension(SZI_(G)), intent(out) :: h_bot !< Bottom boundary layer thickness [H ~> m or kg m-2]
+  integer, dimension(SZI_(G)), intent(out) :: k_bot !< Bottom boundary layer top layer index
 
   ! Local variables
   real :: hb(SZI_(G))         ! Running sum of the thickness in the bottom boundary layer [H ~> m or kg m-2]

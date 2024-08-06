@@ -146,7 +146,8 @@ type, public :: int_tide_CS ; private
   real, allocatable, dimension(:,:,:) :: int_N2w2 !< Depth-integrated Brunt Vaissalla freqency times
                         !! vertical profile squared, for each mode [H T-2 ~> m s-2 or kg m-2 s-2]
   real :: q_itides      !< fraction of local dissipation [nondim]
-  real :: En_sum        !< global sum of energy for use in debugging, in MKS units [J]
+  real :: En_sum        !< global sum of energy for use in debugging, in MKS units [H Z2 T-2 L2 ~> m5 s-2 or J]
+  real :: En_underflow  !< A minuscule amount of energy [H Z2 T-2 ~> m3 s-2 or J m-2]
   type(time_type), pointer :: Time => NULL() !< A pointer to the model's clock.
   character(len=200) :: inputdir !< directory to look for coastline angle file
   real :: decay_rate    !< A constant rate at which internal tide energy is
@@ -1047,6 +1048,11 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       call post_data(CS%id_En_mode(fr,m), tot_En, CS%diag)
     endif ; enddo ; enddo
 
+    ! fix underflows
+    do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
+      if (abs(CS%En(i,j,a,fr,m)) < CS%En_underflow) CS%En(i,j,a,fr,m) = 0.0
+    enddo ; enddo ; enddo ; enddo ; enddo
+
     ! split energy array into multiple restarts
     do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
       CS%En_restart_mode1(i,j,a,fr) = CS%En(i,j,a,fr,1)
@@ -1367,8 +1373,8 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
                                        intent(in)  :: h       !< Layer thicknesses [H ~> m or kg m-2]
   type(thermo_var_ptrs),               intent(in)  :: tv      !< Structure containing pointers to any available
   type(unit_scale_type),               intent(in)  :: US      !< A dimensional unit scaling type
-  real, dimension(SZI_(G)),            intent(in)  :: h_bot   !< Bottom boundary layer thickness [H ~> m]
-  integer, dimension(SZI_(G)),         intent(in)  :: k_bot   !< Bottom boundary layer top layer index [nondim]
+  real, dimension(SZI_(G)),            intent(in)  :: h_bot   !< Bottom boundary layer thickness [H ~> m or kg m-2]
+  integer, dimension(SZI_(G)),         intent(in)  :: k_bot   !< Bottom boundary layer top layer index
   integer,                             intent(in)  :: j       !< The j-index to work on
   real, dimension(SZI_(G),SZK_(GV)),   intent(in)  :: N2_lay  !< The squared buoyancy frequency of the
                                                               !! layers [T-2 ~> s-2].
@@ -2162,6 +2168,11 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
     LB%jsh = jsh ; LB%jeh = jeh ; LB%ish = ish ; LB%ieh = ieh
     call propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, CS%nAngle, CS, LB, residual_loss)
 
+    ! fix underflows
+    do a=1,na ; do j=jsh,jeh ; do i=ish,ieh
+      if (abs(En(i,j,a)) < CS%En_underflow) En(i,j,a) = 0.0
+    enddo ; enddo ; enddo
+
     if (CS%debug) then
       do m=1,CS%nMode ; do fr=1,CS%Nfreq
         call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'propagate: after propagate_x')
@@ -2184,6 +2195,11 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
     LB%jsh = jsh ; LB%jeh = jeh ; LB%ish = ish ; LB%ieh = ieh
     call propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, CS%nAngle, CS, LB, residual_loss)
 
+    ! fix underflows
+    do a=1,na ; do j=jsh,jeh ; do i=ish,ieh
+      if (abs(En(i,j,a)) < CS%En_underflow) En(i,j,a) = 0.0
+    enddo ; enddo ; enddo
+
     call pass_var(En, G%domain)
     call pass_var(residual_loss, G%domain)
 
@@ -2202,6 +2218,7 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
       if (is_root_pe()) print *, 'propagate: bottom of routine', CS%En_sum
     enddo ; enddo
   endif
+
 end subroutine propagate
 
 !> This subroutine does first-order corner advection. It was written with the hopes
@@ -3360,6 +3377,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   real    :: HZ2_T2_to_J_m2     ! unit conversion factor for Energy from internal to mks
   real    :: HZ2_T3_to_W_m2     ! unit conversion factor for TKE from internal to mks
   real    :: W_m2_to_HZ2_T3     ! unit conversion factor for TKE from mks to internal
+  real    :: J_m2_to_HZ2_T2     ! unit conversion factor for Energy from mks to internal
   integer :: num_angle, num_freq, num_mode, m, fr
   integer :: isd, ied, jsd, jed, a, id_ang, i, j, nz
   type(axes_grp) :: axes_ang
@@ -3384,6 +3402,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   HZ2_T2_to_J_m2 = GV%H_to_kg_m2*(US%Z_to_m**2)*(US%s_to_T**2)
   HZ2_T3_to_W_m2 = GV%H_to_kg_m2*(US%Z_to_m**2)*(US%s_to_T**3)
   W_m2_to_HZ2_T3 = GV%kg_m2_to_H*(US%m_to_Z**2)*(US%T_to_s**3)
+  J_m2_to_HZ2_T2 = GV%kg_m2_to_H*(US%m_to_Z**2)*(US%T_to_s**2)
 
   CS%initialized = .true.
 
@@ -3550,7 +3569,11 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "EN_CHECK_TOLERANCE", CS%En_check_tol, &
                  "An energy density tolerance for flagging points with small negative "//&
                  "internal tide energy.", &
-                 units="J m-2", default=1.0, scale=W_m2_to_HZ2_T3, &
+                 units="J m-2", default=1.0, scale=J_m2_to_HZ2_T2, &
+                 do_not_log=.not.CS%apply_Froude_drag)
+  call get_param(param_file, mdl, "EN_UNDERFLOW", CS%En_underflow, &
+                 "A small energy density below which Energy is set to zero.", &
+                 units="J m-2", default=1.0e-100, scale=J_m2_to_HZ2_T2, &
                  do_not_log=.not.CS%apply_Froude_drag)
   call get_param(param_file, mdl, "CDRAG", CS%cdrag, &
                  "CDRAG is the drag coefficient relating the magnitude of "//&
