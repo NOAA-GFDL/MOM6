@@ -909,8 +909,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
     ! The surface forcing is contained in the fluxes type.
     ! We aggregate the thermodynamic forcing for a time step into the following:
     ! netMassInOut = surface water fluxes [H ~> m or kg m-2] over time step
-    !              = lprec + fprec + vprec + evap + lrunoff + frunoff
-    !                note that lprec generally has sea ice melt/form included.
+    !              = lprec + fprec + seaice_melt + vprec + evap + lrunoff + frunoff
     ! netMassOut   = net mass leaving ocean surface [H ~> m or kg m-2] over a time step.
     !                netMassOut < 0 means mass leaves ocean.
     ! netHeat      = heat via surface fluxes [C H ~> degC m or degC kg m-2], excluding the part

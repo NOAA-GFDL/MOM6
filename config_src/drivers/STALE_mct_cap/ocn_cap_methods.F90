@@ -62,6 +62,9 @@ subroutine ocn_import(x2o, ind, grid, ice_ocean_boundary, ocean_public, logunit,
       ! frozen precipitation (snow)
       ice_ocean_boundary%fprec(i,j) = x2o(ind%x2o_Faxa_snow,k)
 
+      ! water flux from snow&ice melt (kg/m2/s)
+      ice_ocean_boundary%seaice_melt(i,j) = x2o(ind%x2o_Fioi_meltw,k)
+
       ! longwave radiation, sum up and down (W/m2)
       ice_ocean_boundary%lw_flux(i,j) = (x2o(ind%x2o_Faxa_lwdn,k) + x2o(ind%x2o_Foxx_lwup,k))
 
@@ -73,9 +76,6 @@ subroutine ocn_import(x2o, ind, grid, ice_ocean_boundary, ocean_public, logunit,
 
       ! snow&ice melt heat flux  (W/m^2)
       ice_ocean_boundary%seaice_melt_heat(i,j) = x2o(ind%x2o_Fioi_melth,k)
-
-      ! water flux from snow&ice melt (kg/m2/s)
-      ice_ocean_boundary%seaice_melt(i,j) = x2o(ind%x2o_Fioi_meltw,k)
 
       ! liquid runoff
       ice_ocean_boundary%rofl_flux(i,j) = x2o(ind%x2o_Foxx_rofl,k) * GRID%mask2dT(i,j)

@@ -156,7 +156,6 @@ type, public :: ice_ocean_boundary_type
   real, pointer, dimension(:,:) :: q_flux            =>NULL() !< specific humidity flux [kg/m2/s]
   real, pointer, dimension(:,:) :: salt_flux         =>NULL() !< salt flux [kg/m2/s]
   real, pointer, dimension(:,:) :: seaice_melt_heat  =>NULL() !< sea ice and snow melt heat flux [W/m2]
-  real, pointer, dimension(:,:) :: seaice_melt       =>NULL() !< water flux due to sea ice and snow melting [kg/m2/s]
   real, pointer, dimension(:,:) :: lw_flux           =>NULL() !< long wave radiation [W/m2]
   real, pointer, dimension(:,:) :: sw_flux_vis_dir   =>NULL() !< direct visible sw radiation [W/m2]
   real, pointer, dimension(:,:) :: sw_flux_vis_dif   =>NULL() !< diffuse visible sw radiation [W/m2]
@@ -164,6 +163,7 @@ type, public :: ice_ocean_boundary_type
   real, pointer, dimension(:,:) :: sw_flux_nir_dif   =>NULL() !< diffuse Near InfraRed sw radiation [W/m2]
   real, pointer, dimension(:,:) :: lprec             =>NULL() !< mass flux of liquid precip [kg/m2/s]
   real, pointer, dimension(:,:) :: fprec             =>NULL() !< mass flux of frozen precip [kg/m2/s]
+  real, pointer, dimension(:,:) :: seaice_melt       =>NULL() !< water flux due to sea ice and snow melting [kg/m2/s]
   real, pointer, dimension(:,:) :: runoff            =>NULL() !< mass flux of liquid runoff [kg/m2/s]
   real, pointer, dimension(:,:) :: calving           =>NULL() !< mass flux of frozen runoff [kg/m2/s]
   real, pointer, dimension(:,:) :: ustar_berg        =>NULL() !< frictional velocity beneath icebergs [m/s]
@@ -428,6 +428,10 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     if (associated(IOB%fprec)) &
       fluxes%fprec(i,j) = kg_m2_s_conversion * IOB%fprec(i-i0,j-j0) * G%mask2dT(i,j)
 
+    ! water flux due to sea ice and snow melt
+    if (associated(IOB%seaice_melt)) &
+      fluxes%seaice_melt(i,j) = kg_m2_s_conversion * IOB%seaice_melt(i-i0,j-j0) * G%mask2dT(i,j)
+
     ! evaporation
     if (associated(IOB%q_flux)) &
       fluxes%evap(i,j) = kg_m2_s_conversion * IOB%q_flux(i-i0,j-j0) * G%mask2dT(i,j)
@@ -476,10 +480,6 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     ! sea ice and snow melt heat flux [W/m2]
     if (associated(IOB%seaice_melt_heat)) &
       fluxes%seaice_melt_heat(i,j) = G%mask2dT(i,j) * US%W_m2_to_QRZ_T * IOB%seaice_melt_heat(i-i0,j-j0)
-
-    ! water flux due to sea ice and snow melt [kg/m2/s]
-    if (associated(IOB%seaice_melt)) &
-      fluxes%seaice_melt(i,j) = G%mask2dT(i,j) * kg_m2_s_conversion * IOB%seaice_melt(i-i0,j-j0)
 
     ! latent heat flux (W/m^2)
     fluxes%latent(i,j) = 0.0

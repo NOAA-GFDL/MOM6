@@ -858,7 +858,6 @@ subroutine IOB_allocate(IOB, isc, iec, jsc, jec)
              IOB% v_flux (isc:iec,jsc:jec),          &
              IOB% t_flux (isc:iec,jsc:jec),          &
              IOB% seaice_melt_heat (isc:iec,jsc:jec),&
-             IOB% seaice_melt (isc:iec,jsc:jec),     &
              IOB% q_flux (isc:iec,jsc:jec),          &
              IOB% salt_flux (isc:iec,jsc:jec),       &
              IOB% lw_flux (isc:iec,jsc:jec),         &
@@ -868,6 +867,7 @@ subroutine IOB_allocate(IOB, isc, iec, jsc, jec)
              IOB% sw_flux_nir_dif (isc:iec,jsc:jec), &
              IOB% lprec (isc:iec,jsc:jec),           &
              IOB% fprec (isc:iec,jsc:jec),           &
+             IOB% seaice_melt (isc:iec,jsc:jec),     &
              IOB% ustar_berg (isc:iec,jsc:jec),      &
              IOB% area_berg (isc:iec,jsc:jec),       &
              IOB% mass_berg (isc:iec,jsc:jec),       &

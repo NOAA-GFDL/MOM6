@@ -69,6 +69,7 @@ subroutine dumbbell_buoyancy_forcing(sfc_state, fluxes, day, dt, G, US, CS)
     call safe_alloc_ptr(fluxes%evap, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%lprec, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%fprec, isd, ied, jsd, jed)
+    call safe_alloc_ptr(fluxes%seaice_melt, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%lrunoff, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%frunoff, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%vprec, isd, ied, jsd, jed)
@@ -92,6 +93,7 @@ subroutine dumbbell_buoyancy_forcing(sfc_state, fluxes, day, dt, G, US, CS)
       ! and are positive downward - i.e. evaporation should be negative.
       fluxes%evap(i,j) = -0.0 * G%mask2dT(i,j)
       fluxes%lprec(i,j) = 0.0 * G%mask2dT(i,j)
+      fluxes%seaice_melt(i,j) = 0.0 * G%mask2dT(i,j)
 
       ! vprec will be set later, if it is needed for salinity restoring.
       fluxes%vprec(i,j) = 0.0

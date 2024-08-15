@@ -459,9 +459,8 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     if (associated(IOB%fprec)) &
       fluxes%fprec(i,j) = kg_m2_s_conversion * IOB%fprec(i-i0,j-j0) * G%mask2dT(i,j)
 
-    ! water flux due to sea ice and snow melt [kg/m2/s]
-      if (associated(IOB%seaice_melt)) &
-      fluxes%seaice_melt(i,j) = kg_m2_s_conversion * G%mask2dT(i,j) * IOB%seaice_melt(i-i0,j-j0)
+    if (associated(IOB%seaice_melt)) &
+      fluxes%seaice_melt(i,j) = kg_m2_s_conversion * IOB%seaice_melt(i-i0,j-j0) * G%mask2dT(i,j)
 
     if (associated(IOB%q_flux)) &
       fluxes%evap(i,j) = kg_m2_s_conversion * IOB%q_flux(i-i0,j-j0) * G%mask2dT(i,j)
