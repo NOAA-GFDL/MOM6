@@ -83,8 +83,8 @@ subroutine Filt_accum(u, u1, Time, US, CS)
   c1 = CS%om * dt
   c2 = 1.0 - CS%a * c1
   do j=js,je ; do i=is,ie
-     CS%s1(i,j)  =  c1 * (CS%u1(i,j) + (CS%a**2) * u(i,j)) + c2 * CS%s1(i,j)
-     CS%u1(i,j)  = -c1 * (CS%s1(i,j) + (-2*CS%a) * u(i,j)) + c2 * CS%u1(i,j)
+     CS%s1(i,j)  =  c1 * CS%u1(i,j) + CS%s1(i,j)
+     CS%u1(i,j)  = -c1 * (CS%s1(i,j) - CS%a * u(i,j)) + c2 * CS%u1(i,j)
   enddo; enddo
 
   u1 => CS%u1
