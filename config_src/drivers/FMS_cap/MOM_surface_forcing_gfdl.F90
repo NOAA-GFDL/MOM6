@@ -1796,8 +1796,9 @@ subroutine ice_ocn_bnd_type_chksum(id, timestep, iobt)
   chks = field_chksum( iobt%sw_flux_nir_dif) ; if (root) write(outunit,100) 'iobt%sw_flux_nir_dif', chks
   chks = field_chksum( iobt%lprec          ) ; if (root) write(outunit,100) 'iobt%lprec          ', chks
   chks = field_chksum( iobt%fprec          ) ; if (root) write(outunit,100) 'iobt%fprec          ', chks
-! hfd/Gives error: "Program received signal SIGSEGV: Segmentation fault - invalid memory reference."
-  chks = field_chksum( iobt%seaice_melt    ) ; if (root) write(outunit,100) 'iobt%seaice_melt    ', chks
+  if (associated(iobt%seaice_melt)) then
+    chks = field_chksum( iobt%seaice_melt ) ; if (root) write(outunit,100) 'iobt%seaice_melt     ', chks
+  endif
   chks = field_chksum( iobt%runoff         ) ; if (root) write(outunit,100) 'iobt%runoff         ', chks
   chks = field_chksum( iobt%calving        ) ; if (root) write(outunit,100) 'iobt%calving        ', chks
   chks = field_chksum( iobt%p              ) ; if (root) write(outunit,100) 'iobt%p              ', chks
