@@ -20,7 +20,7 @@ use MOM_forcing_type,only   : forcing
 use MOM_grid, only          : ocean_grid_type
 use MOM_int_tide_input, only: int_tide_input_CS, get_input_TKE, get_barotropic_tidal_vel
 use MOM_io, only            : slasher, MOM_read_data, file_exists, axis_info
-use MOM_io, only            : set_axis_info, get_axis_info
+use MOM_io, only            : set_axis_info, get_axis_info, stdout
 use MOM_restart, only       : register_restart_field, MOM_restart_CS, restart_init, save_restart
 use MOM_restart, only       : lock_check, restart_registry_lock
 use MOM_spatial_means, only : global_area_integral
@@ -148,6 +148,7 @@ type, public :: int_tide_CS ; private
   real :: q_itides      !< fraction of local dissipation [nondim]
   real :: En_sum        !< global sum of energy for use in debugging, in MKS units [H Z2 T-2 L2 ~> m5 s-2 or J]
   real :: En_underflow  !< A minuscule amount of energy [H Z2 T-2 ~> m3 s-2 or J m-2]
+  integer :: En_restart_power !< A power factor of 2 by which to multiply the energy in restart [nondim]
   type(time_type), pointer :: Time => NULL() !< A pointer to the model's clock.
   character(len=200) :: inputdir !< directory to look for coastline angle file
   real :: decay_rate    !< A constant rate at which internal tide energy is
@@ -308,6 +309,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   real :: I_D_here ! The inverse of the local water column thickness [H-1 ~> m-1 or m2 kg-1]
   real :: I_mass   ! The inverse of the local water mass [R-1 Z-1 ~> m2 kg-1]
   real :: I_dt     ! The inverse of the timestep [T-1 ~> s-1]
+  real :: En_restart_factor ! A multiplicative factor of the form 2**En_restart_power [nondim]
+  real :: I_En_restart_factor ! The inverse of the restart mult factor [nondim]
   real :: freq2    ! The frequency squared [T-2 ~> s-2]
   real :: PE_term  ! total potential energy of profile [R Z ~> kg m-2]
   real :: KE_term  ! total kinetic energy of profile [R Z ~> kg m-2]
@@ -347,6 +350,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   en_subRO = 1e-30*J_m2_to_HZ2_T2
 
   I_dt = 1.0 / dt
+  En_restart_factor = 2**CS%En_restart_power
+  I_En_restart_factor = 1.0 / En_restart_factor
 
   ! initialize local arrays
   TKE_itidal_input(:,:,:) = 0.
@@ -360,30 +365,30 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
 
   ! Rebuild energy density array from multiple restarts
   do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
-    CS%En(i,j,a,fr,1) = CS%En_restart_mode1(i,j,a,fr)
+    CS%En(i,j,a,fr,1) = CS%En_restart_mode1(i,j,a,fr) * I_En_restart_factor
   enddo ; enddo ; enddo ; enddo
 
   if (CS%nMode >= 2) then
     do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
-      CS%En(i,j,a,fr,2) = CS%En_restart_mode2(i,j,a,fr)
+      CS%En(i,j,a,fr,2) = CS%En_restart_mode2(i,j,a,fr) * I_En_restart_factor
     enddo ; enddo ; enddo ; enddo
   endif
 
   if (CS%nMode >= 3) then
     do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
-      CS%En(i,j,a,fr,3) = CS%En_restart_mode3(i,j,a,fr)
+      CS%En(i,j,a,fr,3) = CS%En_restart_mode3(i,j,a,fr) * I_En_restart_factor
     enddo ; enddo ; enddo ; enddo
   endif
 
   if (CS%nMode >= 4) then
     do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
-      CS%En(i,j,a,fr,4) = CS%En_restart_mode4(i,j,a,fr)
+      CS%En(i,j,a,fr,4) = CS%En_restart_mode4(i,j,a,fr) * I_En_restart_factor
     enddo ; enddo ; enddo ; enddo
   endif
 
   if (CS%nMode >= 5) then
     do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
-      CS%En(i,j,a,fr,5) = CS%En_restart_mode5(i,j,a,fr)
+      CS%En(i,j,a,fr,5) = CS%En_restart_mode5(i,j,a,fr) * I_En_restart_factor
     enddo ; enddo ; enddo ; enddo
   endif
 
@@ -501,7 +506,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af halo", G%HI, haloshift=0, scale=HZ2_T2_to_J_m2)
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
       call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after forcing')
-      if (is_root_pe()) print *, 'prop_int_tide: after forcing', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'prop_int_tide: after forcing', CS%En_sum
     enddo ; enddo
   endif
 
@@ -528,7 +533,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af refr", G%HI, haloshift=0, scale=HZ2_T2_to_J_m2)
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
       call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after 1/2 refraction')
-      if (is_root_pe()) print *, 'prop_int_tide: after 1/2 refraction', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'prop_int_tide: after 1/2 refraction', CS%En_sum
     enddo ; enddo
     ! Check for En<0 - for debugging, delete later
     do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
@@ -558,7 +563,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af halo R", G%HI, haloshift=0, scale=HZ2_T2_to_J_m2)
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
       call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after correct halo rotation')
-      if (is_root_pe()) print *, 'prop_int_tide: after correct halo rotation', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'prop_int_tide: after correct halo rotation', CS%En_sum
     enddo ; enddo
   endif
 
@@ -589,7 +594,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af prop", G%HI, haloshift=0, scale=HZ2_T2_to_J_m2)
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
       call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after propagate')
-      if (is_root_pe()) print *, 'prop_int_tide: after propagate', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'prop_int_tide: after propagate', CS%En_sum
     enddo ; enddo
     ! Check for En<0 - for debugging, delete later
     do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
@@ -631,7 +636,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af refr2", G%HI, haloshift=0, scale=HZ2_T2_to_J_m2)
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
       call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after 2/2 refraction')
-      if (is_root_pe()) print *, 'prop_int_tide: after 2/2 refraction', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'prop_int_tide: after 2/2 refraction', CS%En_sum
     enddo ; enddo
     ! Check for En<0 - for debugging, delete later
     do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
@@ -687,9 +692,9 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides after leak", G%HI, haloshift=0, scale=HZ2_T2_to_J_m2)
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
       call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after background drag')
-      if (is_root_pe()) print *, 'prop_int_tide: after background drag', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'prop_int_tide: after background drag', CS%En_sum
       call sum_En(G, GV, US, CS, CS%TKE_leak_loss(:,:,:,fr,m) * dt, 'prop_int_tide: loss after background drag')
-      if (is_root_pe()) print *, 'prop_int_tide: loss after background drag', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'prop_int_tide: loss after background drag', CS%En_sum
     enddo ; enddo
     ! Check for En<0 - for debugging, delete later
     do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
@@ -858,7 +863,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides after wave", G%HI, haloshift=0, scale=HZ2_T2_to_J_m2)
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
       call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: before Froude drag')
-      if (is_root_pe()) print *, 'prop_int_tide: before Froude drag', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'prop_int_tide: before Froude drag', CS%En_sum
     enddo ; enddo
     ! save loss term for online budget, may want to add a debug flag later
     do m=1,CS%nMode ; do fr=1,CS%nFreq
@@ -932,9 +937,9 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides after froude", G%HI, haloshift=0, scale=HZ2_T2_to_J_m2)
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
       call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after Froude drag')
-      if (is_root_pe()) print *, 'prop_int_tide: after Froude drag', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'prop_int_tide: after Froude drag', CS%En_sum
       call sum_En(G, GV, US, CS, CS%TKE_Froude_loss(:,:,:,fr,m) * dt, 'prop_int_tide: loss after Froude drag')
-      if (is_root_pe()) print *, 'prop_int_tide: loss after Froude drag', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'prop_int_tide: loss after Froude drag', CS%En_sum
     enddo ; enddo
     ! save loss term for online budget, may want to add a debug flag later
     do m=1,CS%nMode ; do fr=1,CS%nFreq
@@ -1015,7 +1020,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
                             CS%TKE_quad_loss_glo_dt(fr,m) - CS%TKE_itidal_loss_glo_dt(fr,m) - &
                             CS%TKE_Froude_loss_glo_dt(fr,m) - CS%TKE_residual_loss_glo_dt(fr,m) - &
                             CS%En_end_glo(fr,m)
-    if (is_root_pe()) print *, "error in Energy budget", CS%error_mode(fr,m)
+    if (is_root_pe()) write(stdout,'(A,F18.10)'), "error in Energy budget", CS%error_mode(fr,m)
     enddo ; enddo
   endif
 
@@ -1048,37 +1053,32 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       call post_data(CS%id_En_mode(fr,m), tot_En, CS%diag)
     endif ; enddo ; enddo
 
-    ! fix underflows
-    do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
-      if (abs(CS%En(i,j,a,fr,m)) < CS%En_underflow) CS%En(i,j,a,fr,m) = 0.0
-    enddo ; enddo ; enddo ; enddo ; enddo
-
     ! split energy array into multiple restarts
     do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
-      CS%En_restart_mode1(i,j,a,fr) = CS%En(i,j,a,fr,1)
+      CS%En_restart_mode1(i,j,a,fr) = CS%En(i,j,a,fr,1) * En_restart_factor
     enddo ; enddo ; enddo ; enddo
 
     if (CS%nMode >= 2) then
       do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
-        CS%En_restart_mode2(i,j,a,fr) = CS%En(i,j,a,fr,2)
+        CS%En_restart_mode2(i,j,a,fr) = CS%En(i,j,a,fr,2) * En_restart_factor
       enddo ; enddo ; enddo ; enddo
     endif
 
     if (CS%nMode >= 3) then
       do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
-        CS%En_restart_mode3(i,j,a,fr) = CS%En(i,j,a,fr,3)
+        CS%En_restart_mode3(i,j,a,fr) = CS%En(i,j,a,fr,3) * En_restart_factor
       enddo ; enddo ; enddo ; enddo
     endif
 
     if (CS%nMode >= 4) then
       do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
-        CS%En_restart_mode4(i,j,a,fr) = CS%En(i,j,a,fr,4)
+        CS%En_restart_mode4(i,j,a,fr) = CS%En(i,j,a,fr,4) * En_restart_factor
       enddo ; enddo ; enddo ; enddo
     endif
 
     if (CS%nMode >= 5) then
       do fr=1,CS%Nfreq ; do a=1,CS%nAngle ; do j=jsd,jed ; do i=isd,ied
-        CS%En_restart_mode5(i,j,a,fr) = CS%En(i,j,a,fr,5)
+        CS%En_restart_mode5(i,j,a,fr) = CS%En(i,j,a,fr,5) * En_restart_factor
       enddo ; enddo ; enddo ; enddo
     endif
 
@@ -1608,23 +1608,23 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
          enddo
 
          if (abs(verif_N -1.0) > threshold_verif) then
-           print *, i, j, verif_N
+           write(stdout,'(I5,I5,F18.10)'), i, j, verif_N
            call MOM_error(FATAL, "mismatch integral for N profile")
          endif
          if (abs(verif_N2 -1.0) > threshold_verif) then
-           print *, i, j, verif_N2
+           write(stdout,'(I5,I5,F18.10)'), i, j, verif_N2
            call MOM_error(FATAL, "mismatch integral for N2 profile")
          endif
          if (abs(verif_bbl -1.0) > threshold_verif) then
-           print *, i, j, verif_bbl
+           write(stdout,'(I5,I5,F18.10)'), i, j, verif_bbl
            call MOM_error(FATAL, "mismatch integral for bbl profile")
          endif
          if (abs(verif_stl1 -1.0) > threshold_verif) then
-           print *, i, j, verif_stl1
+           write(stdout,'(I5,I5,F18.10)'), i, j, verif_stl1
            call MOM_error(FATAL, "mismatch integral for stl1 profile")
          endif
          if (abs(verif_stl2 -1.0) > threshold_verif) then
-           print *, i, j, verif_stl2
+           write(stdout,'(I5,I5,F18.10)'), i, j, verif_stl2
            call MOM_error(FATAL, "mismatch integral for stl2 profile")
          endif
 
@@ -2104,7 +2104,7 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
   if (CS%debug) then
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
       call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'propagate: top of routine')
-      if (is_root_pe()) print *, 'propagate: top of routine', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'propagate: top of routine', CS%En_sum
     enddo ; enddo
   endif
 
@@ -2176,7 +2176,7 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
     if (CS%debug) then
       do m=1,CS%nMode ; do fr=1,CS%Nfreq
         call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'propagate: after propagate_x')
-        if (is_root_pe()) print *, 'propagate: after propagate_x', CS%En_sum
+        if (is_root_pe()) write(stdout,'(A,E18.10)'), 'propagate: after propagate_x', CS%En_sum
       enddo ; enddo
     endif
 
@@ -2187,7 +2187,7 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
     if (CS%debug) then
       do m=1,CS%nMode ; do fr=1,CS%Nfreq
         call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'propagate: after halo update')
-        if (is_root_pe()) print *, 'propagate: after halo update', CS%En_sum
+        if (is_root_pe()) write(stdout,'(A,E18.10)'), 'propagate: after halo update', CS%En_sum
       enddo ; enddo
     endif
     ! Apply propagation in y-direction (reflection included)
@@ -2206,7 +2206,7 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
     if (CS%debug) then
       do m=1,CS%nMode ; do fr=1,CS%Nfreq
         call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'propagate: after propagate_y')
-        if (is_root_pe()) print *, 'propagate: after propagate_y', CS%En_sum
+        if (is_root_pe()) write(stdout,'(A,E18.10)'), 'propagate: after propagate_y', CS%En_sum
       enddo ; enddo
     endif
 
@@ -2215,7 +2215,7 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
   if (CS%debug) then
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
       call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'propagate: bottom of routine')
-      if (is_root_pe()) print *, 'propagate: bottom of routine', CS%En_sum
+      if (is_root_pe()) write(stdout,'(A,E18.10)'), 'propagate: bottom of routine', CS%En_sum
     enddo ; enddo
   endif
 
@@ -3573,8 +3573,10 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
                  do_not_log=.not.CS%apply_Froude_drag)
   call get_param(param_file, mdl, "EN_UNDERFLOW", CS%En_underflow, &
                  "A small energy density below which Energy is set to zero.", &
-                 units="J m-2", default=1.0e-100, scale=J_m2_to_HZ2_T2, &
-                 do_not_log=.not.CS%apply_Froude_drag)
+                 units="J m-2", default=1.0e-100, scale=J_m2_to_HZ2_T2)
+  call get_param(param_file, mdl, "EN_RESTART_POWER", CS%En_restart_power, &
+                 "A power factor to save larger values x 2**(power) in restart files.", &
+                 units="nondim", default=0)
   call get_param(param_file, mdl, "CDRAG", CS%cdrag, &
                  "CDRAG is the drag coefficient relating the magnitude of "//&
                  "the velocity field to the bottom stress.", &
