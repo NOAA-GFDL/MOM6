@@ -327,9 +327,13 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   real :: En_initial, Delta_E_check                  ! Energies for debugging [H Z2 T-2 ~> m3 s-2 or J m-2]
   real :: TKE_Froude_loss_check, TKE_Froude_loss_tot ! Energy losses for debugging [H Z2 T-3 ~> m3 s-3 or W m-2]
   real :: HZ2_T3_to_W_m2                             ! unit conversion factor for TKE from internal to mks
+                                                     ! [H Z2 T-3 ~> m3 s-3 or W m-2]
   real :: HZ2_T2_to_J_m2                             ! unit conversion factor for Energy from internal to mks
+                                                     ! [H Z2 T-2 ~> m3 s-2 or J m-2]
   real :: W_m2_to_HZ2_T3                             ! unit conversion factor for TKE from mks to internal
+                                                     ! [m3 s-3 or W m-2 ~> H Z2 T-3]
   real :: J_m2_to_HZ2_T2                             ! unit conversion factor for Energy from mks to internal
+                                                     ! [m3 s-2 or J m-2 ~> H Z2 T-2]
   character(len=160) :: mesg  ! The text of an error message
   integer :: En_halo_ij_stencil ! The halo size needed for energy advection
   integer :: a, m, fr, i, j, k, is, ie, js, je, isd, ied, jsd, jed, nAngle
@@ -425,8 +429,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     call hchksum(CS%u_struct_bot(:,:,1), "Ustruct_bot mode 1", G%HI, haloshift=0, scale=US%m_to_Z)
     call hchksum(CS%u_struct_max(:,:,1), "Ustruct_max mode 1", G%HI, haloshift=0, scale=US%m_to_Z)
     call hchksum(CS%int_w2(:,:,1),   "int_w2", G%HI, haloshift=0, scale=GV%H_to_MKS)
-    call hchksum(CS%int_U2(:,:,1),   "int_U2", G%HI, haloshift=0, scale=GV%H_to_m*US%m_to_Z**2)
-    call hchksum(CS%int_N2w2(:,:,1), "int_N2w2", G%HI, haloshift=0, scale=GV%H_to_m*US%s_to_T**2)
+    call hchksum(CS%int_U2(:,:,1),   "int_U2", G%HI, haloshift=0, scale=GV%H_to_mks*US%m_to_Z**2)
+    call hchksum(CS%int_N2w2(:,:,1), "int_N2w2", G%HI, haloshift=0, scale=GV%H_to_mks*US%s_to_T**2)
   endif
 
   ! Set the wave speeds for the modes, using cg(n) ~ cg(1)/n.**********************
@@ -1277,8 +1281,8 @@ subroutine itidal_lowmode_loss(G, GV, US, CS, Nb, Rho_bot, Ub, En, TKE_loss_fixe
   real    :: En_negl         ! negligibly small number to prevent division by zero [H Z2 T-2 ~> m3 s-2 or J m-2]
   real    :: En_a, En_b      ! energy before and after timestep [H Z2 T-2 ~> m3 s-2 or J m-2]
   real    :: I_dt            ! The inverse of the timestep [T-1 ~> s-1]
-  real    :: J_m2_to_HZ2_T2  ! unit conversion factor for Energy from mks to internal
-  real    :: HZ2_T3_to_W_m2  ! unit conversion factor for Energy from internal to mks
+  real    :: J_m2_to_HZ2_T2  ! unit conversion factor for Energy from mks to internal [m3 s-2 or J m-2 ~> H Z2 T-2]
+  real    :: HZ2_T3_to_W_m2  ! unit conversion factor for Energy from internal to mks [H Z2 T-3 ~> m3 s-3 or W m-2]
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
 
@@ -3244,7 +3248,7 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
 
   type(axis_info) :: axes_inttides(2)
   real, dimension(:), allocatable :: angles, freqs ! Lables for angles and frequencies [nondim]
-  real :: HZ2_T2_to_J_m2                           ! unit conversion factor for Energy from internal to mks
+  real :: HZ2_T2_to_J_m2  ! unit conversion factor for Energy from internal to mks [H Z2 T-2 ~> m3 s-2 or J m-2]
 
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
 
@@ -3374,10 +3378,10 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
                                 ! nominal ocean depth, or a negative value for no limit [nondim]
   real    :: period_1           ! The period of the gravest modeled mode [T ~> s]
   real    :: period             ! A tidal period read from namelist [T ~> s]
-  real    :: HZ2_T2_to_J_m2     ! unit conversion factor for Energy from internal to mks
-  real    :: HZ2_T3_to_W_m2     ! unit conversion factor for TKE from internal to mks
-  real    :: W_m2_to_HZ2_T3     ! unit conversion factor for TKE from mks to internal
-  real    :: J_m2_to_HZ2_T2     ! unit conversion factor for Energy from mks to internal
+  real    :: HZ2_T2_to_J_m2     ! unit conversion factor for Energy from internal to mks [H Z2 T-2 ~> m3 s-2 or J m-2]
+  real    :: HZ2_T3_to_W_m2     ! unit conversion factor for TKE from internal to mks [H Z2 T-3 ~> m3 s-3 or W m-2]
+  real    :: W_m2_to_HZ2_T3     ! unit conversion factor for TKE from mks to internal [m3 s-3 or W m-2 ~> H Z2 T-3]
+  real    :: J_m2_to_HZ2_T2     ! unit conversion factor for Energy from mks to internal [m3 s-2 or J m-2 ~> H Z2 T-2]
   integer :: num_angle, num_freq, num_mode, m, fr
   integer :: isd, ied, jsd, jed, a, id_ang, i, j, nz
   type(axes_grp) :: axes_ang

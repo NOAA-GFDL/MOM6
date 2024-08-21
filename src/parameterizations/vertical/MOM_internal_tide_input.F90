@@ -116,8 +116,8 @@ subroutine set_int_tide_input(u, v, h, tv, fluxes, itide, dt, G, GV, US, CS)
                         ! equation of state.
   logical :: avg_enabled  ! for testing internal tides (BDM)
   type(time_type) :: time_end        !< For use in testing internal tides (BDM)
-  real :: HZ2_T3_to_W_m2  ! unit conversion factor for TKE from internal to mks
-  real :: W_m2_to_HZ2_T3  ! unit conversion factor for TKE from mks to internal
+  real :: HZ2_T3_to_W_m2  ! unit conversion factor for TKE from internal to mks [H Z2 T-3 ~> m3 s-3 or W m-2]
+  real :: W_m2_to_HZ2_T3  ! unit conversion factor for TKE from mks to internal [m3 s-3 or W m-2 ~> H Z2 T-3]
 
   integer :: i, j, is, ie, js, je, nz, isd, ied, jsd, jed
   integer :: i_global, j_global
@@ -404,8 +404,8 @@ subroutine int_tide_input_init(Time, G, GV, US, param_file, diag, CS, itide)
   real :: kappa_h2_factor    ! factor for the product of wavenumber * rms sgs height [nondim].
   real :: kappa_itides       ! topographic wavenumber and non-dimensional scaling [L-1 ~> m-1]
   real :: min_zbot_itides    ! Minimum ocean depth for internal tide conversion [Z ~> m].
-  real :: HZ2_T3_to_W_m2     ! unit conversion factor for TKE from internal to mks
-  real :: W_m2_to_HZ2_T3     ! unit conversion factor for TKE from mks to internal
+  real :: HZ2_T3_to_W_m2     ! unit conversion factor for TKE from internal to mks [H Z2 T-3 ~> m3 s-3 or W m-2]
+  real :: W_m2_to_HZ2_T3     ! unit conversion factor for TKE from mks to internal [m3 s-3 or W m-2 ~> H Z2 T-3]
   integer :: tlen_days       !< Time interval from start for adding wave source
                              !! for testing internal tides (BDM)
   integer :: i, j, is, ie, js, je, isd, ied, jsd, jed
