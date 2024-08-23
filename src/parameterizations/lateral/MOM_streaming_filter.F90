@@ -125,7 +125,7 @@ subroutine Filt_accum(u, u1, grid, Time, US, CS)
         CS%s1_v(i,j) =  c1 *  CS%u1_v(i,j) + CS%s1_v(i,j)
         CS%u1_v(i,j) = -c1 * (CS%s1_v(i,j) - CS%a * u(i,j)) + c2 * CS%u1_v(i,j)
       enddo; enddo
-      u1 => CS%u1_h
+      u1 => CS%u1_v
     case default
       call MOM_error(FATAL, "MOM_streaming_filter: horizontal grid not supported")
   end select
