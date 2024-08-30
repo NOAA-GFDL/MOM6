@@ -27,6 +27,7 @@ use MOM_restart, only : query_initialized, MOM_restart_CS
 use MOM_self_attr_load, only : scalar_SAL_sensitivity
 use MOM_self_attr_load, only : SAL_CS
 use MOM_streaming_filter, only : Filt_register, Filt_accum, Filter_CS
+use MOM_tidal_forcing, only : tidal_frequency
 use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : BT_cont_type, alloc_bt_cont_type
@@ -5301,13 +5302,13 @@ subroutine register_barotropic_restarts(HI, GV, US, param_file, CS, restart_CS)
                  "Frequency of the M2 tidal constituent. "//&
                  "This is only used if TIDES and TIDE_M2"// &
                  " are true, or if OBC_TIDE_N_CONSTITUENTS > 0 and M2"// &
-                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=1.4051890e-4, &
+                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=tidal_frequency("M2"), &
                  scale=US%T_to_s, do_not_log=.true.)
   call get_param(param_file, mdl, "TIDE_K1_FREQ", ok1, &
                  "Frequency of the K1 tidal constituent. "//&
                  "This is only used if TIDES and TIDE_K1"// &
                  " are true, or if OBC_TIDE_N_CONSTITUENTS > 0 and K1"// &
-                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=0.7292117e-4, &
+                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=tidal_frequency("K1"), &
                  scale=US%T_to_s, do_not_log=.true.)
 
   ALLOC_(CS%ubtav(IsdB:IedB,jsd:jed))      ; CS%ubtav(:,:) = 0.0
