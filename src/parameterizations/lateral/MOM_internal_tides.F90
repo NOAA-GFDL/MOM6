@@ -3241,10 +3241,13 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
 
   ! This subroutine is used to allocate and register any fields in this module
   ! that should be written to or read from the restart file.
+  logical :: non_Bous          ! If true, this run is fully non-Boussinesq
+  logical :: Boussinesq        ! If true, this run is fully Boussinesq
+  logical :: semi_Boussinesq   ! If true, this run is partially non-Boussinesq
   logical :: use_int_tides
   integer :: num_freq, num_angle , num_mode, period_1
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB, i, j, a, fr
-  character(64) :: var_name, cfr
+  character(64) :: var_name, cfr, units
 
   type(axis_info) :: axes_inttides(2)
   real, dimension(:), allocatable :: angles, freqs ! Lables for angles and frequencies [nondim]
@@ -3252,7 +3255,7 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
 
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
 
-  HZ2_T2_to_J_m2 = GV%H_to_kg_m2*(US%Z_to_m**2)*(US%s_to_T**2)
+  HZ2_T2_to_J_m2 = GV%H_to_MKS*(US%Z_to_m**2)*(US%s_to_T**2)
 
   if (associated(CS)) then
     call MOM_error(WARNING, "register_int_tide_restarts called "//&
@@ -3266,6 +3269,19 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
   call get_param(param_file, "MOM", "INTERNAL_TIDE_ANGLES", num_angle, default=24)
   call get_param(param_file, "MOM", "INTERNAL_TIDE_FREQS", num_freq, default=1)
   call get_param(param_file, "MOM", "INTERNAL_TIDE_MODES", num_mode, default=1)
+
+  ! define restart units depemding on Boussinesq
+  call get_param(param_file, "MOM", "BOUSSINESQ", Boussinesq, &
+                 "If true, make the Boussinesq approximation.", default=.true., do_not_log=.true.)
+  call get_param(param_file, "MOM", "SEMI_BOUSSINESQ", semi_Boussinesq, &
+                 "If true, do non-Boussinesq pressure force calculations and use mass-based "//&
+                 "thicknesses, but use RHO_0 to convert layer thicknesses into certain "//&
+                 "height changes.  This only applies if BOUSSINESQ is false.", &
+                 default=.true., do_not_log=.true.)
+  non_Bous = .not.(Boussinesq .or. semi_Boussinesq)
+
+  units="J m-2"
+  if (non_Bous) units="m3 s-2"
 
   allocate (angles(num_angle))
   allocate (freqs(num_freq))
@@ -3293,7 +3309,7 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
   ! register all 4d restarts and copy into full Energy array when restarting from previous state
   call register_restart_field(CS%En_restart_mode1(:,:,:,:), "IW_energy_mode1", .false., restart_CS, &
                               longname="The internal wave energy density f(i,j,angle,freq) for mode 1", &
-                              units="J m-2", conversion=HZ2_T2_to_J_m2, z_grid='1', t_grid="s", &
+                              units=units, conversion=HZ2_T2_to_J_m2, z_grid='1', t_grid="s", &
                               extra_axes=axes_inttides)
 
   do fr=1,num_freq ; do a=1,num_angle ; do j=jsd,jed ; do i=isd,ied
@@ -3303,7 +3319,7 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
   if (num_mode >= 2) then
     call register_restart_field(CS%En_restart_mode2(:,:,:,:), "IW_energy_mode2", .false., restart_CS, &
                                 longname="The internal wave energy density f(i,j,angle,freq) for mode 2", &
-                                units="J m-2", conversion=HZ2_T2_to_J_m2, z_grid='1', t_grid="s", &
+                                units=units, conversion=HZ2_T2_to_J_m2, z_grid='1', t_grid="s", &
                                 extra_axes=axes_inttides)
 
     do fr=1,num_freq ; do a=1,num_angle ; do j=jsd,jed ; do i=isd,ied
@@ -3315,7 +3331,7 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
   if (num_mode >= 3) then
     call register_restart_field(CS%En_restart_mode3(:,:,:,:), "IW_energy_mode3", .false., restart_CS, &
                                 longname="The internal wave energy density f(i,j,angle,freq) for mode 3", &
-                                units="J m-2", conversion=HZ2_T2_to_J_m2, z_grid='1', t_grid="s", &
+                                units=units, conversion=HZ2_T2_to_J_m2, z_grid='1', t_grid="s", &
                                 extra_axes=axes_inttides)
 
     do fr=1,num_freq ; do a=1,num_angle ; do j=jsd,jed ; do i=isd,ied
@@ -3327,7 +3343,7 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
   if (num_mode >= 4) then
     call register_restart_field(CS%En_restart_mode4(:,:,:,:), "IW_energy_mode4", .false., restart_CS, &
                                 longname="The internal wave energy density f(i,j,angle,freq) for mode 4", &
-                                units="J m-2", conversion=HZ2_T2_to_J_m2, z_grid='1', t_grid="s", &
+                                units=units, conversion=HZ2_T2_to_J_m2, z_grid='1', t_grid="s", &
                                 extra_axes=axes_inttides)
 
     do fr=1,num_freq ; do a=1,num_angle ; do j=jsd,jed ; do i=isd,ied
@@ -3339,7 +3355,7 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
   if (num_mode >= 5) then
     call register_restart_field(CS%En_restart_mode5(:,:,:,:), "IW_energy_mode5", .false., restart_CS, &
                                 longname="The internal wave energy density f(i,j,angle,freq) for mode 5", &
-                                units="J m-2", conversion=HZ2_T2_to_J_m2, z_grid='1', t_grid="s", &
+                                units=units, conversion=HZ2_T2_to_J_m2, z_grid='1', t_grid="s", &
                                 extra_axes=axes_inttides)
 
     do fr=1,num_freq ; do a=1,num_angle ; do j=jsd,jed ; do i=isd,ied
