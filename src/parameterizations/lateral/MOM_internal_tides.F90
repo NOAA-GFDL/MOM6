@@ -458,8 +458,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         f2 = 0.25*((G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J-1)) + &
                    (G%Coriolis2Bu(I-1,J) + G%Coriolis2Bu(I,J-1)))
         if (CS%frequency(fr)**2 > f2) then
-          CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + dt*frac_per_sector*(1.0-CS%q_itides) * &
-                              CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr)
+          CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + (dt*frac_per_sector*(1.0-CS%q_itides) * &
+                              CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr))
         else
           ! zero out input TKE value to get correct diagnostics
           TKE_itidal_input(i,j,fr) = 0.
@@ -472,8 +472,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         f2 = 0.25*((G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J-1)) + &
                    (G%Coriolis2Bu(I-1,J) + G%Coriolis2Bu(I,J-1)))
         if (CS%frequency(fr)**2 > f2) then
-          CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + dt*frac_per_sector*(1.0-CS%q_itides) * &
-                              CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr)
+          CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + (dt*frac_per_sector*(1.0-CS%q_itides) * &
+                              CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr))
         else
           ! zero out input TKE value to get correct diagnostics
           TKE_itidal_input(i,j,fr) = 0.
@@ -676,7 +676,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       ! Calculate loss rate and apply loss over the time step ; apply the same drag timescale
       ! to each En component (technically not correct; fix later)
       En_b = CS%En(i,j,a,fr,m) ! save previous value
-      En_a = CS%En(i,j,a,fr,m) / (1.0 + dt * CS%decay_rate) ! implicit update
+      En_a = CS%En(i,j,a,fr,m) / (1.0 + (dt * CS%decay_rate)) ! implicit update
       CS%TKE_leak_loss(i,j,a,fr,m) = (En_b - En_a) * I_dt ! compute exact loss rate [H Z2 T-3 ~> m3 s-3 or W m-2]
       CS%En(i,j,a,fr,m) = En_a ! update value
     enddo ; enddo ; enddo ; enddo ; enddo
@@ -730,7 +730,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     call get_barotropic_tidal_vel(G, vel_btTide, CS%nFreq, inttide_input_CSp)
 
     do fr=1,CS%Nfreq ; do j=jsd,jed ; do i=isd,ied
-      tot_vel_btTide2(i,j) =  tot_vel_btTide2(i,j) + vel_btTide(i,j,fr)**2
+      tot_vel_btTide2(i,j) =  tot_vel_btTide2(i,j) + (vel_btTide(i,j,fr)**2)
     enddo ; enddo ; enddo
 
     do k=1,GV%ke ; do j=jsd,jed ; do i=isd,ied
@@ -741,7 +741,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       do m=1,CS%NMode ; do fr=1,CS%Nfreq ; do j=jsd,jed ; do i=isd,ied
         I_D_here = 1.0 / (max(htot(i,j), CS%drag_min_depth))
         drag_scale(i,j,fr,m) = CS%cdrag * sqrt(max(0.0, US%L_to_Z**2*tot_vel_btTide2(i,j) + &
-                             tot_En_mode(i,j,fr,m) * I_D_here)) * GV%Z_to_H*I_D_here
+                             (tot_En_mode(i,j,fr,m) * I_D_here))) * GV%Z_to_H*I_D_here
       enddo ; enddo ; enddo ; enddo
     else
       do m=1,CS%NMode ; do fr=1,CS%Nfreq ; do j=jsd,jed ; do i=isd,ied
@@ -749,7 +749,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         I_mass = GV%RZ_to_H * I_D_here
         drag_scale(i,j,fr,m) = (CS%cdrag * (Rho_bot(i,j)*I_mass)) * &
                               sqrt(max(0.0, US%L_to_Z**2*tot_vel_btTide2(i,j) + &
-                                            tot_En_mode(i,j,fr,m) * I_D_here))
+                                            (tot_En_mode(i,j,fr,m) * I_D_here)))
       enddo ; enddo ; enddo ; enddo
     endif
 
@@ -760,7 +760,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       ! Calculate loss rate and apply loss over the time step ; apply the same drag timescale
       ! to each En component (technically not correct; fix later)
       En_b = CS%En(i,j,a,fr,m)
-      En_a = CS%En(i,j,a,fr,m) / (1.0 + dt * drag_scale(i,j,fr,m)) ! implicit update
+      En_a = CS%En(i,j,a,fr,m) / (1.0 + (dt * drag_scale(i,j,fr,m))) ! implicit update
       CS%TKE_quad_loss(i,j,a,fr,m)  = (En_b - En_a) * I_dt
       CS%En(i,j,a,fr,m) = En_a
     enddo ; enddo ; enddo ; enddo ; enddo
@@ -816,13 +816,13 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
 
         f2 = (0.25*(G%CoriolisBu(I,J) + G%CoriolisBu(max(I-1,1),max(J-1,1)) + &
                     G%CoriolisBu(I,max(J-1,1)) + G%CoriolisBu(max(I-1,1),J)))**2
-        Kmag2 = (freq2 - f2) / (cn(i,j,m)**2 + cn_subRO**2)
+        Kmag2 = (freq2 - f2) / ((cn(i,j,m)**2) + (cn_subRO**2))
 
 
         ! Back-calculate amplitude from energy equation
         if ( (G%mask2dT(i,j) > 0.5) .and. (freq2*Kmag2 > 0.0)) then
           ! Units here are [R Z ~> kg m-2]
-          KE_term = 0.25*GV%H_to_RZ*( ((freq2 + f2) / (freq2*Kmag2))*US%L_to_Z**2*CS%int_U2(i,j,m) + &
+          KE_term = 0.25*GV%H_to_RZ*( (((freq2 + f2) / (freq2*Kmag2))*US%L_to_Z**2*CS%int_U2(i,j,m)) + &
                                    CS%int_w2(i,j,m) )
           PE_term = 0.25*GV%H_to_RZ*( CS%int_N2w2(i,j,m) / freq2 )
 
@@ -902,7 +902,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         ! Calculate horizontal phase velocity magnitudes
         f2 = 0.25*((G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J-1)) + &
                    (G%Coriolis2Bu(I-1,J) + G%Coriolis2Bu(I,J-1)))
-        Kmag2 = (freq2 - f2) / (cn(i,j,m)**2 + cn_subRO**2)
+        Kmag2 = (freq2 - f2) / ((cn(i,j,m)**2) + (cn_subRO**2))
         c_phase = 0.0
         CS%TKE_Froude_loss(i,j,:,fr,m) = 0. ! init for all angles
         if (Kmag2 > 0.0) then
@@ -979,7 +979,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       if (CS%refl_pref_logical(i,j)) then
         En_b = CS%En(i,j,a,fr,m)
         En_a = (CS%En(i,j,a,fr,m) * (CS%En(i,j,a,fr,m) + en_subRO)) / &
-               ((CS%En(i,j,a,fr,m) + en_subRO) + dt * CS%TKE_slope_loss(i,j,a,fr,m))
+               ((CS%En(i,j,a,fr,m) + en_subRO) + (dt * CS%TKE_slope_loss(i,j,a,fr,m)))
         CS%TKE_residual_loss(i,j,a,fr,m) = (En_b - En_a) * I_dt
         CS%En(i,j,a,fr,m) = En_a
       endif
@@ -1328,7 +1328,7 @@ subroutine itidal_lowmode_loss(G, GV, US, CS, Nb, Rho_bot, Ub, En, TKE_loss_fixe
         TKE_loss(i,j,a,fr,m) = frac_per_sector*TKE_loss_tot           ! [H Z2 T-3  ~> m3 s-3 or W m-2]
         loss_rate = TKE_loss(i,j,a,fr,m) / (En(i,j,a,fr,m) + En_negl) ! [T-1 ~> s-1]
         En_b = En(i,j,a,fr,m)
-        En_a = En(i,j,a,fr,m) / (1.0 + dt*loss_rate)
+        En_a = En(i,j,a,fr,m) / (1.0 + (dt*loss_rate))
         TKE_loss(i,j,a,fr,m) = (En_b - En_a) * I_dt ! overwrite with exact value
         En(i,j,a,fr,m) = En_a
       enddo
@@ -1855,15 +1855,15 @@ subroutine refract(En, cn, freq, dt, G, US, NAngle, use_PPMang)
   do j=js,je ; do I=is-1,ie
     ! wgt = 0 if local cn == 0, wgt = 0.5 if both contiguous values != 0
     ! and wgt = 1 if neighbour cn == 0
-    wgt1 = cnmask(i,j) - 0.5 * cnmask(i,j) * cnmask(i+1,j)
-    wgt2 = cnmask(i+1,j) - 0.5 * cnmask(i,j) * cnmask(i+1,j)
-    cn_u(I,j) = wgt1*cn(i,j) + wgt2*cn(i+1,j)
+    wgt1 = cnmask(i,j) - (0.5 * cnmask(i,j) * cnmask(i+1,j))
+    wgt2 = cnmask(i+1,j) - (0.5 * cnmask(i,j) * cnmask(i+1,j))
+    cn_u(I,j) = (wgt1*cn(i,j)) + (wgt2*cn(i+1,j))
   enddo ; enddo
 
   do J=js-1,je ; do i=is,ie
-    wgt1 = cnmask(i,j) - 0.5 * cnmask(i,j) * cnmask(i,j+1)
-    wgt2 = cnmask(i,j+1) - 0.5 * cnmask(i,j) * cnmask(i,j+1)
-    cn_v(i,J) = wgt1*cn(i,j) + wgt2*cn(i,j+1)
+    wgt1 = cnmask(i,j) - (0.5 * cnmask(i,j) * cnmask(i,j+1))
+    wgt2 = cnmask(i,j+1) - (0.5 * cnmask(i,j) * cnmask(i,j+1))
+    cn_v(i,J) = (wgt1*cn(i,j)) + (wgt2*cn(i,j+1))
   enddo ; enddo
 
   Ifreq = 1.0 / freq
@@ -1915,7 +1915,7 @@ subroutine refract(En, cn, freq, dt, G, US, NAngle, use_PPMang)
 
     ! Determine the energy fluxes in angular orientation space.
     do A=asd,aed ; do i=is,ie
-      CFL_ang(i,j,A) = (cos_angle(A) * Dl_Dt_Kmag(i) - sin_angle(A) * Dk_Dt_Kmag(i)) * dt_Angle_size
+      CFL_ang(i,j,A) = ((cos_angle(A) * Dl_Dt_Kmag(i)) - (sin_angle(A) * Dk_Dt_Kmag(i))) * dt_Angle_size
       if (abs(CFL_ang(i,j,A)) > 1.0) then
         call MOM_error(WARNING, "refract: CFL exceeds 1.", .true.)
         if (CFL_ang(i,j,A) > 1.0) then ; CFL_ang(i,j,A) = 1.0 ; else ; CFL_ang(i,j,A) = -1.0 ; endif
@@ -2593,7 +2593,7 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, res
 
   ! Update reflected energy [H Z2 T-2 ~> m3 s-2 or J m-2]
   do a=1,Nangle ; do j=jsh,jeh ; do i=ish,ieh
-    En(i,j,a) = En(i,j,a) + G%IareaT(i,j)*(Fdt_m(i,j,a) + Fdt_p(i,j,a))
+    En(i,j,a) = En(i,j,a) + (G%IareaT(i,j)*(Fdt_m(i,j,a) + Fdt_p(i,j,a)))
   enddo ; enddo ; enddo
 
 end subroutine propagate_x
