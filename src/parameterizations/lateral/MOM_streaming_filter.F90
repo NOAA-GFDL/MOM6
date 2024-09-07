@@ -17,12 +17,8 @@ type, public :: Filter_CS ; private
   real       :: a, &                   !< Parameter that determines the bandwidth [nondim]
                 om, &                  !< Target frequency of the filter [T-1 ~> s-1]
                 old_time = -1.0        !< The time of the previous accumulating step [T ~> s]
-  real ALLOCABLE_, dimension(NIMEM_,NJMEM_)      :: s1_h, & !< Dummy variable on h grid [A]
-                                                    u1_h    !< Filtered data on h grid [A]
-  real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_) :: s1_u, & !< Dummy variable on u grid [A]
-                                                    u1_u    !< Filtered data on u grid [A]
-  real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_) :: s1_v, & !< Dummy variable on v grid [A]
-                                                    u1_v    !< Filtered data on v grid [A]
+  real, allocatable, dimension(:,:) :: s1, & !< Dummy variable [A]
+                                       u1    !< Filtered data [A]
   !>@{ Lower and upper bounds of input data
   integer :: is, ie, js, je
   !>@}
@@ -52,16 +48,16 @@ subroutine Filt_register(a, om, grid, HI, CS)
 
   select case (trim(grid))
     case ('h')
-      ALLOC_(CS%s1_h(isd:ied,jsd:jed))   ; CS%s1_h(:,:) = 0.0
-      ALLOC_(CS%u1_h(isd:ied,jsd:jed))   ; CS%u1_h(:,:) = 0.0
+      allocate(CS%s1(isd:ied,jsd:jed))   ; CS%s1(:,:) = 0.0
+      allocate(CS%u1(isd:ied,jsd:jed))   ; CS%u1(:,:) = 0.0
       CS%is = isd  ; CS%ie = ied  ; CS%js = jsd  ; CS%je = jed
     case ('u')
-      ALLOC_(CS%s1_u(IsdB:IedB,jsd:jed)) ; CS%s1_u(:,:) = 0.0
-      ALLOC_(CS%u1_u(IsdB:IedB,jsd:jed)) ; CS%u1_u(:,:) = 0.0
+      allocate(CS%s1(IsdB:IedB,jsd:jed)) ; CS%s1(:,:) = 0.0
+      allocate(CS%u1(IsdB:IedB,jsd:jed)) ; CS%u1(:,:) = 0.0
       CS%is = IsdB ; CS%ie = IedB ; CS%js = jsd  ; CS%je = jed
     case ('v')
-      ALLOC_(CS%s1_v(isd:ied,JsdB:JedB)) ; CS%s1_v(:,:) = 0.0
-      ALLOC_(CS%u1_v(isd:ied,JsdB:JedB)) ; CS%u1_v(:,:) = 0.0
+      allocate(CS%s1(isd:ied,JsdB:JedB)) ; CS%s1(:,:) = 0.0
+      allocate(CS%u1(isd:ied,JsdB:JedB)) ; CS%u1(:,:) = 0.0
       CS%is = isd  ; CS%ie = ied  ; CS%js = JsdB ; CS%je = JedB
     case default
       call MOM_error(FATAL, "MOM_streaming_filter: horizontal grid not supported")
@@ -71,9 +67,8 @@ end subroutine Filt_register
 
 !> This subroutine timesteps the filter equations. It takes model output u at the current time step as the input,
 !! and returns tidal signal u1 as the output, which is the solution of a set of two ODEs (the filter equations).
-subroutine Filt_accum(u, u1, grid, Time, US, CS)
+subroutine Filt_accum(u, u1, Time, US, CS)
   real, dimension(:,:), pointer, intent(out)   :: u1   !< Output of the filter [A]
-  character(len=*),              intent(in)    :: grid !< Horizontal grid location: h, u, or v
   type(time_type),               intent(in)    :: Time !< The current model time
   type(unit_scale_type),         intent(in)    :: US   !< A dimensional unit scaling type
   type(Filter_CS),      target,  intent(inout) :: CS   !< Control structure of the MOM_streaming_filter module
@@ -91,13 +86,7 @@ subroutine Filt_accum(u, u1, grid, Time, US, CS)
   ! Initialize u1
   if (CS%old_time < 0.0) then
     CS%old_time = now
-
-    select case (trim(grid))
-      case ('h') ; CS%u1_h(:,:) = u(:,:)
-      case ('u') ; CS%u1_u(:,:) = u(:,:)
-      case ('v') ; CS%u1_v(:,:) = u(:,:)
-      case default ; call MOM_error(FATAL, "MOM_streaming_filter: horizontal grid not supported")
-    end select
+    CS%u1(:,:)  = u(:,:)
   endif
 
   dt = now - CS%old_time
@@ -107,28 +96,11 @@ subroutine Filt_accum(u, u1, grid, Time, US, CS)
   c1 = CS%om * dt
   c2 = 1.0 - CS%a * c1
 
-  select case (trim(grid))
-    case ('h')
-      do j=js,je ; do i=is,ie
-        CS%s1_h(i,j) =  c1 *  CS%u1_h(i,j) + CS%s1_h(i,j)
-        CS%u1_h(i,j) = -c1 * (CS%s1_h(i,j) - CS%a * u(i,j)) + c2 * CS%u1_h(i,j)
-      enddo; enddo
-      u1 => CS%u1_h
-    case ('u')
-      do j=js,je ; do i=is,ie
-        CS%s1_u(i,j) =  c1 *  CS%u1_u(i,j) + CS%s1_u(i,j)
-        CS%u1_u(i,j) = -c1 * (CS%s1_u(i,j) - CS%a * u(i,j)) + c2 * CS%u1_u(i,j)
-      enddo; enddo
-      u1 => CS%u1_u
-    case ('v')
-      do j=js,je ; do i=is,ie
-        CS%s1_v(i,j) =  c1 *  CS%u1_v(i,j) + CS%s1_v(i,j)
-        CS%u1_v(i,j) = -c1 * (CS%s1_v(i,j) - CS%a * u(i,j)) + c2 * CS%u1_v(i,j)
-      enddo; enddo
-      u1 => CS%u1_v
-    case default
-      call MOM_error(FATAL, "MOM_streaming_filter: horizontal grid not supported")
-  end select
+  do j=js,je ; do i=is,ie
+    CS%s1(i,j) =  c1 *  CS%u1(i,j) + CS%s1(i,j)
+    CS%u1(i,j) = -c1 * (CS%s1(i,j) - CS%a * u(i,j)) + c2 * CS%u1(i,j)
+  enddo; enddo
+  u1 => CS%u1
 
 end subroutine Filt_accum
 

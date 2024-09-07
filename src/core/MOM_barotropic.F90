@@ -1601,12 +1601,12 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   ! Here is an example of how the filter equations are time stepped to determine the M2 and K1 velocities.
   ! The filters are initialized and registered in subroutine barotropic_init.
   if (CS%use_filter_m2) then
-    call Filt_accum(ubt, um2, 'u', CS%Time, US, CS%Filt_CS_um2)
-    call Filt_accum(vbt, vm2, 'v', CS%Time, US, CS%Filt_CS_vm2)
+    call Filt_accum(ubt, um2, CS%Time, US, CS%Filt_CS_um2)
+    call Filt_accum(vbt, vm2, CS%Time, US, CS%Filt_CS_vm2)
   endif
   if (CS%use_filter_k1) then
-    call Filt_accum(ubt, uk1, 'u', CS%Time, US, CS%Filt_CS_uk1)
-    call Filt_accum(vbt, vk1, 'v', CS%Time, US, CS%Filt_CS_vk1)
+    call Filt_accum(ubt, uk1, CS%Time, US, CS%Filt_CS_uk1)
+    call Filt_accum(vbt, vk1, CS%Time, US, CS%Filt_CS_vk1)
   endif
 
   ! Zero out the arrays for various time-averaged quantities.
