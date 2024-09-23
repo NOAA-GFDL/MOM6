@@ -2606,21 +2606,23 @@ subroutine solo_step_ice_shelf(CS, time_interval, nsteps, Time, min_time_step_in
   call IS_dynamics_post_data(full_time_step, Time, CS%dCS, G)
 end subroutine solo_step_ice_shelf
 
+!> Post_data calls for ice-sheet scalars
 subroutine process_and_post_scalar_data(CS, vaf0, vaf0_A, vaf0_G, Itime_step, dh_adott, dh_bdott)
   type(ice_shelf_CS), pointer    :: CS      !< A pointer to the ice shelf control structure
-  real :: vaf    !< The current ice-sheet volume above floatation [m3]
   real :: vaf0   !< The previous volumes above floatation for all ice sheets [m3]
   real :: vaf0_A !< The previous volumes above floatation for the Antarctic ice sheet [m3]
   real :: vaf0_G !< The previous volumes above floatation for the Greenland ice sheet [m3]
   real :: Itime_step !< Inverse of the time step [T-1 ~> s-1]
-  real, dimension(SZI_(CS%grid),SZJ_(CS%grid)) :: &
-    dh_adott, & !< Surface (plus basal if solo shelf mode) melt/accumulation over a time step  [Z ~> m]
-    dh_bdott, & !< Surface (plus basal if solo shelf mode) melt/accumulation over a time step  [Z ~> m]
-    tmp         ! Temporary field used when calculating diagnostics [various]
-  real :: val ! Temporary value when calculating scalar diagnostics [various]
+  real, dimension(SZI_(CS%grid),SZJ_(CS%grid)) :: dh_adott !< Surface (plus basal if solo shelf mode)
+                               !! melt/accumulation over a time step  [Z ~> m]
+  real, dimension(SZI_(CS%grid),SZJ_(CS%grid)) :: dh_bdott !< Surface (plus basal if solo shelf mode)
+                               !! melt/accumulation over a time step  [Z ~> m]
+  real, dimension(SZI_(CS%grid),SZJ_(CS%grid)) :: tmp ! Temporary field used when calculating diagnostics [various]
+  real :: vaf   ! The current ice-sheet volume above floatation [m3]
+  real :: val   ! Temporary value when calculating scalar diagnostics [various]
   type(ocean_grid_type), pointer :: G => NULL()  ! A pointer to the ocean's grid structure
   type(unit_scale_type), pointer :: US => NULL() ! Pointer to a structure containing various unit conversion factors
-  type(ice_shelf_state), pointer :: ISS => NULL() !< A structure with elements that describe the ice-shelf state
+  type(ice_shelf_state), pointer :: ISS => NULL() ! A structure with elements that describe the ice-shelf state
   integer :: is, ie, js, je, i, j
 
   G => CS%grid

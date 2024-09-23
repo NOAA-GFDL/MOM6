@@ -50,10 +50,14 @@ type, public :: ice_shelf_dyn_CS ; private
                                        !! on q-points (B grid) [L T-1 ~> m s-1]
   real, pointer, dimension(:,:) :: v_shelf => NULL() !< the meridional velocity of the ice shelf/sheet
                                        !! on q-points (B grid) [L T-1 ~> m s-1]
-  real, pointer, dimension(:,:) :: taudx_shelf => NULL() !< the driving stress of the ice shelf/sheet
+  real, pointer, dimension(:,:) :: taudx_shelf => NULL() !< the zonal driving stress of the ice shelf/sheet
                                        !! on q-points (C grid) [R L2 T-2 ~> Pa]
-  real, pointer, dimension(:,:) :: taudy_shelf => NULL() !< the meridional stress of the ice shelf/sheet
+  real, pointer, dimension(:,:) :: taudy_shelf => NULL() !< the meridional driving stress of the ice shelf/sheet
                                        !! on q-points (C grid) [R L2 T-2 ~> Pa]
+  real, pointer, dimension(:,:) :: sx_shelf => NULL() !< the zonal surface slope of the ice shelf/sheet
+                                       !! on q-points (B grid) [nondim]
+  real, pointer, dimension(:,:) :: sy_shelf => NULL() !< the meridional surface slope of the ice shelf/sheet
+                                       !! on q-points (B grid) [nondim]
   real, pointer, dimension(:,:) :: u_face_mask => NULL() !< mask for velocity boundary conditions on the C-grid
                                        !! u-face - this is because the FEM cares about FACES THAT GET INTEGRATED OVER,
                                        !! not vertices. Will represent boundary conditions on computational boundary
@@ -226,7 +230,8 @@ type, public :: ice_shelf_dyn_CS ; private
   integer :: id_u_shelf = -1, id_v_shelf = -1, id_t_shelf = -1, &
              id_taudx_shelf = -1, id_taudy_shelf = -1, id_bed_elev = -1, &
              id_ground_frac = -1, id_col_thick = -1, id_OD_av = -1, id_float_cond = -1, &
-             id_u_mask = -1, id_v_mask = -1, id_ufb_mask =-1, id_vfb_mask = -1, id_t_mask = -1
+             id_u_mask = -1, id_v_mask = -1, id_ufb_mask =-1, id_vfb_mask = -1, id_t_mask = -1, &
+             id_sx_shelf = -1, id_sy_shelf = -1
   !>@}
   ! ids for outputting intermediate thickness in advection subroutine (debugging)
   !>@{ Diagnostic handles for debugging
@@ -353,6 +358,8 @@ subroutine register_ice_shelf_dyn_restarts(G, US, param_file, CS, restart_CS)
     allocate(CS%ground_frac(isd:ied,jsd:jed), source=0.0)
     allocate(CS%taudx_shelf(IsdB:IedB,JsdB:JedB), source=0.0)
     allocate(CS%taudy_shelf(IsdB:IedB,JsdB:JedB), source=0.0)
+    allocate(CS%sx_shelf(isd:ied,jsd:jed), source=0.0)
+    allocate(CS%sy_shelf(isd:ied,jsd:jed), source=0.0)
     allocate(CS%bed_elev(isd:ied,jsd:jed), source=0.0)
     allocate(CS%u_bdry_val(IsdB:IedB,JsdB:JedB), source=0.0)
     allocate(CS%v_bdry_val(IsdB:IedB,JsdB:JedB), source=0.0)
@@ -802,6 +809,10 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
        'x-driving stress of ice', 'kPa', conversion=1.e-3*US%RLZ_T2_to_Pa)
     CS%id_taudy_shelf = register_diag_field('ice_shelf_model','taudy_shelf',CS%diag%axesB1, Time, &
        'y-driving stress of ice', 'kPa', conversion=1.e-3*US%RLZ_T2_to_Pa)
+    CS%id_sx_shelf = register_diag_field('ice_shelf_model','sx_shelf',CS%diag%axesB1, Time, &
+       'x-surface slope of ice', 'none')
+    CS%id_sy_shelf = register_diag_field('ice_shelf_model','sy_shelf',CS%diag%axesB1, Time, &
+       'y-surface slope of ice', 'none')
     CS%id_u_mask = register_diag_field('ice_shelf_model','u_mask',CS%diag%axesB1, Time, &
        'mask for u-nodes', 'none')
     CS%id_v_mask = register_diag_field('ice_shelf_model','v_mask',CS%diag%axesB1, Time, &
@@ -1047,6 +1058,8 @@ subroutine IS_dynamics_post_data(time_step, Time, CS, G)
       taud_y(:,:) = CS%taudy_shelf(:,:)*G%IareaBu(:,:)
       call post_data(CS%id_taudy_shelf, taud_y, CS%diag)
     endif
+    if (CS%id_sx_shelf > 0) call post_data(CS%id_sx_shelf, CS%sx_shelf, CS%diag)
+    if (CS%id_sy_shelf > 0) call post_data(CS%id_sy_shelf, CS%sy_shelf, CS%diag)
     if (CS%id_ground_frac > 0) call post_data(CS%id_ground_frac, CS%ground_frac, CS%diag)
     if (CS%id_float_cond > 0) call post_data(CS%id_float_cond, CS%float_cond, CS%diag)
     if (CS%id_OD_av >0) call post_data(CS%id_OD_av, CS%OD_av,CS%diag)
@@ -2434,12 +2447,14 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
         endif
 
         if (CS%max_surface_slope>0) then
-          scale = min(CS%max_surface_slope/sqrt(sx**2+sy**2),1.0)
+          scale = min(CS%max_surface_slope/sqrt((sx**2)+(sy**2)),1.0)
           sx = scale*sx; sy = scale*sy
         endif
 
         sx_e(i,j) = (-.25 * G%areaT(i,j)) * ((rho * grav) * (max(ISS%h_shelf(i,j),CS%min_h_shelf) * sx))
         sy_e(i,j) = (-.25 * G%areaT(i,j)) * ((rho * grav) * (max(ISS%h_shelf(i,j),CS%min_h_shelf) * sy))
+
+        CS%sx_shelf(i,j) = sx ; CS%sy_shelf(i,j) = sy
 
         !Stress (Neumann) boundary conditions
         if (CS%ground_frac(i,j) == 1) then
