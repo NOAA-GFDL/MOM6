@@ -5,6 +5,7 @@ module MOM_energetic_PBL
 
 use MOM_cpu_clock,      only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_ROUTINE
 use MOM_coms,           only : EFP_type, real_to_EFP, EFP_to_real, operator(+), assignment(=), EFP_sum_across_PEs
+use MOM_debugging,      only : hchksum
 use MOM_diag_mediator,  only : post_data, register_diag_field, safe_alloc_alloc
 use MOM_diag_mediator,  only : time_type, diag_ctrl
 use MOM_domains,        only : create_group_pass, do_group_pass, group_pass_type
@@ -16,7 +17,7 @@ use MOM_interface_heights, only : thickness_to_dz
 use MOM_intrinsic_functions, only : cuberoot
 use MOM_string_functions, only : uppercase
 use MOM_unit_scaling,   only : unit_scale_type
-use MOM_variables,      only : thermo_var_ptrs
+use MOM_variables,      only : thermo_var_ptrs, vertvisc_type
 use MOM_verticalGrid,   only : verticalGrid_type
 use MOM_wave_interface, only : wave_parameters_CS, Get_Langmuir_Number
 use MOM_stochastics,    only : stochastic_CS
@@ -92,9 +93,8 @@ type, public :: energetic_PBL_CS ; private
                              !! Making this larger increases the diffusivity.
   real    :: vstar_surf_fac  !< If (wT_scheme == wT_from_RH18) this is the proportionality coefficient between
                              !! ustar and the surface mechanical contribution to vstar [nondim]
-  real    :: vstar_scale_fac !< An overall nondimensional scaling factor for vstar times a unit
-                             !! conversion factor [Z s T-1 m-1 ~> nondim].  Making this larger increases
-                             !! the diffusivity.
+  real    :: vstar_scale_fac !< An overall nondimensional scaling factor for vstar [nondim].  Making
+                             !! this larger increases the diffusivity.
 
   !mstar related options
   integer :: mstar_scheme    !< An encoded integer to determine which formula is used to set mstar
@@ -155,6 +155,11 @@ type, public :: energetic_PBL_CS ; private
                              !! the Ekman depth over the Obukhov depth with destabilizing forcing [nondim].
   real :: Max_Enhance_M = 5. !< The maximum allowed LT enhancement to the mixing [nondim].
 
+  !/ Bottom boundary layer mixing related options
+  real :: ePBL_BBL_effic     !< The efficiency of bottom boundary layer mixing via ePBL [nondim]
+  logical :: Use_BBLD_iteration !< If true, use the proximity to the top of the actively turbulent
+                             !! bottom boundary layer to constrain the mixing lengths.
+
   !/ Others
   type(time_type), pointer :: Time=>NULL() !< A pointer to the ocean model's clock.
 
@@ -170,11 +175,15 @@ type, public :: energetic_PBL_CS ; private
                              !! potential energy change code.  Otherwise, it uses a newer version
                              !! that can work with successive increments to the diffusivity in
                              !! upward or downward passes.
+  logical :: debug           !< If true, write verbose checksums for debugging purposes.
   type(diag_ctrl), pointer :: diag=>NULL() !< A structure that is used to regulate the
                              !! timing of diagnostic output.
 
   real, allocatable, dimension(:,:) :: &
     ML_depth            !< The mixed layer depth determined by active mixing in ePBL [H ~> m or kg m-2]
+  real, allocatable, dimension(:,:) :: &
+    BBL_depth           !< The bottom boundary layer depth determined by active mixing in ePBL [H ~> m or kg m-2]
+
   ! These are terms in the mixed layer TKE budget, all in [R Z3 T-3 ~> W m-2 = kg s-3].
   real, allocatable, dimension(:,:) :: &
     diag_TKE_wind, &   !< The wind source of TKE [R Z3 T-3 ~> W m-2].
@@ -185,6 +194,10 @@ type, public :: energetic_PBL_CS ; private
     diag_TKE_mech_decay, & !< The decay of mechanical TKE [R Z3 T-3 ~> W m-2].
     diag_TKE_conv_decay, & !< The decay of convective TKE [R Z3 T-3 ~> W m-2].
     diag_TKE_mixing, & !< The work done by TKE to deepen the mixed layer [R Z3 T-3 ~> W m-2].
+    diag_TKE_BBL, &    !< The source of TKE to the bottom boundary layer [R Z3 T-3 ~> W m-2].
+    diag_TKE_BBL_mixing, & !< The work done by TKE to thicken the bottom boundary layer [R Z3 T-3 ~> W m-2].
+    diag_TKE_BBL_decay, & !< The work lost to decy of mechanical TKE in the bottom boundary
+                       !! layer [R Z3 T-3 ~> W m-2].
     ! These additional diagnostics are also 2d.
     MSTAR_MIX, &       !< Mstar used in EPBL [nondim]
     MSTAR_LT, &        !< Mstar due to Langmuir turbulence [nondim]
@@ -192,15 +205,15 @@ type, public :: energetic_PBL_CS ; private
     LA_MOD             !< Modified Langmuir number [nondim]
 
   type(EFP_type), dimension(2) :: sum_its !< The total number of iterations and columns worked on
+  type(EFP_type), dimension(2) :: sum_its_BBL !< The total number of iterations and columns worked on
 
-  real, allocatable, dimension(:,:,:) :: &
-    Velocity_Scale, & !< The velocity scale used in getting Kd [Z T-1 ~> m s-1]
-    Mixing_Length     !< The length scale used in getting Kd [Z ~> m]
   !>@{ Diagnostic IDs
   integer :: id_ML_depth = -1, id_hML_depth = -1, id_TKE_wind = -1, id_TKE_mixing = -1
   integer :: id_TKE_MKE = -1, id_TKE_conv = -1, id_TKE_forcing = -1
   integer :: id_TKE_mech_decay = -1, id_TKE_conv_decay = -1
   integer :: id_Mixing_Length = -1, id_Velocity_Scale = -1
+  integer :: id_Kd_BBL = -1, id_BBL_Mix_Length = -1, id_BBL_Vel_Scale = -1
+  integer :: id_TKE_BBL = -1, id_TKE_BBL_mixing = -1, id_TKE_BBL_decay = -1, id_BBL_depth = -1
   integer :: id_MSTAR_mix = -1, id_LA_mod = -1, id_LA = -1, id_MSTAR_LT = -1
   !>@}
 end type energetic_PBL_CS
@@ -236,6 +249,8 @@ type, public :: ePBL_column_diags ; private
   !>@{ Local column copies of energy change diagnostics, all in [R Z3 T-3 ~> W m-2].
   real :: dTKE_conv, dTKE_forcing, dTKE_wind, dTKE_mixing ! Local column diagnostics [R Z3 T-3 ~> W m-2]
   real :: dTKE_MKE, dTKE_mech_decay, dTKE_conv_decay      ! Local column diagnostics [R Z3 T-3 ~> W m-2]
+  real :: dTKE_BBL, dTKE_BBL_decay, dTKE_BBL_mixing  ! Local column diagnostics [R Z3 T-3 ~> W m-2]
+  ! real :: dTKE_BBL_MKE  ! Local column diagnostics [R Z3 T-3 ~> W m-2]
   !>@}
   real :: LA        !< The value of the Langmuir number [nondim]
   real :: LAmod     !< The modified Langmuir number by convection [nondim]
@@ -249,7 +264,7 @@ contains
 !!  mixed layer model.  It assumes that heating, cooling and freshwater fluxes
 !!  have already been applied.  All calculations are done implicitly, and there
 !!  is no stability limit on the time step.
-subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS, &
+subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, visc, dt, Kd_int, G, GV, US, CS, &
                          stoch_CS, dSV_dT, dSV_dS, TKE_forced, buoy_flux, Waves )
   type(ocean_grid_type),   intent(inout) :: G      !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)    :: GV     !< The ocean's vertical grid structure.
@@ -279,6 +294,8 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
   type(forcing),           intent(inout) :: fluxes !< A structure containing pointers to any
                                                    !! possible forcing fields. Unused fields have
                                                    !! NULL ptrs.
+  type(vertvisc_type),     intent(in)    :: visc   !< Structure with vertical viscosities,
+                                                   !! BBL properties and related fields
   real,                    intent(in)    :: dt     !< Time increment [T ~> s].
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
                            intent(out)   :: Kd_int !< The diagnosed diffusivities at interfaces
@@ -287,7 +304,7 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
   real, dimension(SZI_(G),SZJ_(G)), &
                            intent(in)    :: buoy_flux !< The surface buoyancy flux [Z2 T-3 ~> m2 s-3].
   type(wave_parameters_CS), pointer      :: Waves  !< Waves control structure for Langmuir turbulence
-  type(stochastic_CS),  pointer       :: stoch_CS  !< The control structure returned by a previous
+  type(stochastic_CS),     pointer       :: stoch_CS !< The control structure returned by a previous
 
 !    This subroutine determines the diffusivities from the integrated energetics
 !  mixed layer model.  It assumes that heating, cooling and freshwater fluxes
@@ -335,14 +352,26 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
     u, &            ! The zonal velocity [L T-1 ~> m s-1].
     v               ! The meridional velocity [L T-1 ~> m s-1].
   real, dimension(SZK_(GV)+1) :: &
-    Kd, &           ! The diapycnal diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
+    Kd, &           ! The diapycnal diffusivity due to ePBL [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
     mixvel, &       ! A turbulent mixing velocity [Z T-1 ~> m s-1].
     mixlen, &       ! A turbulent mixing length [Z ~> m].
-    SpV_dt          ! Specific volume interpolated to interfaces divided by dt or 1.0 / (dt * Rho0)
+    mixvel_BBL, &   ! A bottom boundary layer turbulent mixing velocity [Z T-1 ~> m s-1].
+    mixlen_BBL, &   ! A bottom boundary layer turbulent mixing length [Z ~> m].
+    Kd_BBL, &       ! The bottom boundary layer diapycnal diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
+    SpV_dt, &       ! Specific volume interpolated to interfaces divided by dt or 1.0 / (dt * Rho0),
+                    ! in [R-1 T-1 ~> m3 kg-1 s-1], used to convert local TKE into a turbulence velocity cubed.
+    SpV_dt_cf       ! Specific volume interpolated to interfaces divided by dt or 1.0 / (dt * Rho0)
                     ! times conversion factors for answer dates before 20240101 in
-                    ! [m3 Z-3 R-1 T2 s-3 ~> m3 kg-1 s-1] or without the convsersion factors for
+                    ! [m3 Z-3 R-1 T2 s-3 ~> m3 kg-1 s-1] or without the conversion factors for
                     ! answer dates of 20240101 and later in [R-1 T-1 ~> m3 kg-1 s-1], used to
                     ! convert local TKE into a turbulence velocity cubed.
+  ! These are diagnostics that may or may not be used.
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: &
+    Velocity_Scale, & ! The velocity scale used in getting Kd [Z T-1 ~> m s-1]
+    Mixing_Length, &  ! The length scale used in getting Kd [Z ~> m]
+    Kd_BBL_3d, &    ! The bottom boundary layer diffusivities [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    BBL_Vel_Scale, &  ! The velocity scale used in getting the BBL part of Kd [Z T-1 ~> m s-1]
+    BBL_Mix_Length  ! The length scale used in getting the BBL part of Kd [Z ~> m]
   real :: h_neglect ! A thickness that is so small it is usually lost
                     ! in roundoff and can be neglected [H ~> m or kg m-2].
 
@@ -351,6 +380,9 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
   real :: U_Star_Mean ! The surface friction without gustiness [Z T-1 ~> m s-1].
   real :: mech_TKE  ! The mechanically generated turbulent kinetic energy available for mixing over a
                     ! timestep before the application of the efficiency in mstar [R Z3 T-2 ~> J m-2]
+  real :: u_star_BBL ! The bottom boundary layer friction velocity [H T-1 ~> m s-1 or kg m-2 s-1].
+  real :: BBL_TKE   ! The mechanically generated turbulent kinetic energy available for bottom
+                    ! boundary layer mixing within a timestep [R Z3 T-2 ~> J m-2]
   real :: I_rho     ! The inverse of the Boussinesq reference density times a ratio of scaling
                     ! factors [Z L-1 R-1 ~> m3 kg-1]
   real :: I_dt      ! The Adcroft reciprocal of the timestep [T-1 ~> s-1]
@@ -358,6 +390,7 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
                     ! step [R-1 T-1 ~> m3 kg-1 s-1]
   real :: B_Flux    ! The surface buoyancy flux [Z2 T-3 ~> m2 s-3]
   real :: MLD_io    ! The mixed layer depth found by ePBL_column [Z ~> m]
+  real :: BBLD_io   ! The bottom boundary layer thickness found by ePBL_BBL_column [Z ~> m]
 
   type(ePBL_column_diags) :: eCD ! A container for passing around diagnostics.
 
@@ -393,9 +426,20 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
       CS%diag_TKE_mixing(i,j) = 0.0 ; CS%diag_TKE_mech_decay(i,j) = 0.0
       CS%diag_TKE_conv_decay(i,j) = 0.0 !; CS%diag_TKE_unbalanced(i,j) = 0.0
     enddo ; enddo
+    if (CS%ePBL_BBL_effic > 0.0) then
+    !!OMP parallel do default(none) shared(is,ie,js,je,CS)
+      do j=js,je ; do i=is,ie
+        CS%diag_TKE_BBL(i,j) = 0.0 ; CS%diag_TKE_BBL_mixing(i,j) = 0.0
+        CS%diag_TKE_BBL_decay(i,j) = 0.0
+      enddo ; enddo
+    endif
   endif
-  ! if (CS%id_Mixing_Length>0) CS%Mixing_Length(:,:,:) = 0.0
-  ! if (CS%id_Velocity_Scale>0) CS%Velocity_Scale(:,:,:) = 0.0
+  if (CS%debug .or. (CS%id_Mixing_Length>0)) Mixing_Length(:,:,:) = 0.0
+  if (CS%debug .or. (CS%id_Velocity_Scale>0)) Velocity_Scale(:,:,:) = 0.0
+  if (CS%ePBL_BBL_effic > 0.0) then
+    if (CS%debug .or. (CS%id_BBL_Mix_Length>0)) BBL_Mix_Length(:,:,:) = 0.0
+    if (CS%debug .or. (CS%id_BBL_Vel_Scale>0)) BBL_Vel_Scale(:,:,:) = 0.0
+  endif
 
   !!OMP parallel do default(private) shared(js,je,nz,is,ie,h_3d,u_3d,v_3d,tv,dt,I_dt, &
   !!OMP                                  CS,G,GV,US,fluxes,TKE_forced,dSV_dT,dSV_dS,Kd_int)
@@ -414,7 +458,7 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
     if ((dt > 0.0) .and. GV%Boussinesq .or. .not.allocated(tv%SpV_avg)) then
       if (CS%answer_date < 20240101) then
         do K=1,nz+1
-          SpV_dt(K) = (US%Z_to_m**3*US%s_to_T**3) / (dt*GV%Rho0)
+          SpV_dt(K) = 1.0 / (dt*GV%Rho0)
         enddo
       else
         do K=1,nz+1
@@ -457,19 +501,11 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
       endif
 
       if (allocated(tv%SpV_avg) .and. .not.GV%Boussinesq) then
-        if (CS%answer_date < 20240101) then
-          SpV_dt(1) = (US%Z_to_m**3*US%s_to_T**3) * tv%SpV_avg(i,j,1) * I_dt
-          do K=2,nz
-            SpV_dt(K) = (US%Z_to_m**3*US%s_to_T**3) * 0.5*(tv%SpV_avg(i,j,k-1) + tv%SpV_avg(i,j,k)) * I_dt
-          enddo
-          SpV_dt(nz+1) = (US%Z_to_m**3*US%s_to_T**3) * tv%SpV_avg(i,j,nz) * I_dt
-        else
-          SpV_dt(1) = tv%SpV_avg(i,j,1) * I_dt
-          do K=2,nz
-            SpV_dt(K) = 0.5*(tv%SpV_avg(i,j,k-1) + tv%SpV_avg(i,j,k)) * I_dt
-          enddo
-          SpV_dt(nz+1) = tv%SpV_avg(i,j,nz) * I_dt
-        endif
+        SpV_dt(1) = tv%SpV_avg(i,j,1) * I_dt
+        do K=2,nz
+          SpV_dt(K) = 0.5*(tv%SpV_avg(i,j,k-1) + tv%SpV_avg(i,j,k)) * I_dt
+        enddo
+        SpV_dt(nz+1) = tv%SpV_avg(i,j,nz) * I_dt
       endif
 
       B_flux = buoy_flux(i,j)
@@ -491,16 +527,36 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
       ! Perhaps provide a first guess for MLD based on a stored previous value.
       MLD_io = -1.0
       if (CS%MLD_iteration_guess .and. (CS%ML_depth(i,j) > 0.0))  MLD_io = CS%ML_depth(i,j)
+      BBLD_io = 0.0
 
+      if (CS%answer_date < 20240101) then
+        do K=1,nz+1 ; SpV_dt_cf(K) = (US%Z_to_m**3*US%s_to_T**3) * SpV_dt(K) ; enddo
+      else
+        do K=1,nz+1 ; SpV_dt_cf(K) = SpV_dt(K) ; enddo
+      endif
       if (stoch_CS%pert_epbl) then ! stochastics are active
-        call ePBL_column(h, dz, u, v, T0, S0, dSV_dT_1d, dSV_dS_1d, SpV_dt, TKE_forcing, B_flux, absf, &
+        call ePBL_column(h, dz, u, v, T0, S0, dSV_dT_1d, dSV_dS_1d, SpV_dt_cf, TKE_forcing, B_flux, absf, &
                          u_star, u_star_mean, mech_TKE, dt, MLD_io, Kd, mixvel, mixlen, GV, &
                          US, CS, eCD, Waves, G, i, j, &
                          TKE_gen_stoch=stoch_CS%epbl1_wts(i,j), TKE_diss_stoch=stoch_CS%epbl2_wts(i,j))
       else
-        call ePBL_column(h, dz, u, v, T0, S0, dSV_dT_1d, dSV_dS_1d, SpV_dt, TKE_forcing, B_flux, absf, &
+        call ePBL_column(h, dz, u, v, T0, S0, dSV_dT_1d, dSV_dS_1d, SpV_dt_cf, TKE_forcing, B_flux, absf, &
                          u_star, u_star_mean, mech_TKE, dt, MLD_io, Kd, mixvel, mixlen, GV, &
                          US, CS, eCD, Waves, G, i, j)
+      endif
+
+      ! Add the diffusivity due to bottom boundary layer mixing, if there is energy to drive this mixing.
+      if (CS%ePBL_BBL_effic > 0.0) then
+        if (CS%MLD_iteration_guess .and. (CS%BBL_depth(i,j) > 0.0)) BBLD_io = CS%BBL_depth(i,j)
+        BBL_TKE = CS%ePBL_BBL_effic * GV%H_to_RZ * dt * visc%TKE_BBL(i,j)
+        u_star_BBL = max(visc%ustar_BBL(i,j), CS%ustar_min*GV%Z_to_H)
+        call ePBL_BBL_column(h, dz, u, v, T0, S0, dSV_dT_1d, dSV_dS_1d, SpV_dt, absf, dt, Kd, Kd_BBL, GV, US, CS, &
+                             eCD, BBL_TKE, u_star_BBL, BBLD_io, mixvel_BBL, mixlen_BBL)
+
+        do K=1,nz+1 ; Kd(K) = Kd(K) + Kd_BBL(K) ; enddo
+        if (CS%id_Kd_BBL > 0) then ; do K=1,nz+1
+          Kd_BBL_3d(i,j,K) = Kd_BBL(K)
+        enddo ; endif
       endif
 
       ! Copy the diffusivities to a 2-d array.
@@ -508,6 +564,7 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
         Kd_2d(i,K) = Kd(K)
       enddo
       CS%ML_depth(i,j) = MLD_io
+      CS%BBL_depth(i,j) = BBLD_io
 
       if (CS%TKE_diagnostics) then
         CS%diag_TKE_MKE(i,j) = CS%diag_TKE_MKE(i,j) + eCD%dTKE_MKE
@@ -517,15 +574,28 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
         CS%diag_TKE_mixing(i,j) = CS%diag_TKE_mixing(i,j) + eCD%dTKE_mixing
         CS%diag_TKE_mech_decay(i,j) = CS%diag_TKE_mech_decay(i,j) + eCD%dTKE_mech_decay
         CS%diag_TKE_conv_decay(i,j) = CS%diag_TKE_conv_decay(i,j) + eCD%dTKE_conv_decay
+        if (CS%ePBL_BBL_effic > 0.0) then
+          CS%diag_TKE_BBL(i,j) = CS%diag_TKE_BBL(i,j) + eCD%dTKE_BBL
+          CS%diag_TKE_BBL_mixing(i,j) = CS%diag_TKE_BBL_mixing(i,j) + eCD%dTKE_BBL_mixing
+          CS%diag_TKE_BBL_decay(i,j) = CS%diag_TKE_BBL_decay(i,j) + eCD%dTKE_BBL_decay
+        endif
        ! CS%diag_TKE_unbalanced(i,j) = CS%diag_TKE_unbalanced(i,j) + eCD%dTKE_unbalanced
       endif
       ! Write to 3-D for outputting Mixing length and velocity scale.
-      if (CS%id_Mixing_Length>0) then ; do k=1,nz
-        CS%Mixing_Length(i,j,k) = mixlen(k)
+      if (CS%debug .or. (CS%id_Mixing_Length>0)) then ; do k=1,nz
+        Mixing_Length(i,j,k) = mixlen(k)
       enddo ; endif
-      if (CS%id_Velocity_Scale>0) then ; do k=1,nz
-        CS%Velocity_Scale(i,j,k) = mixvel(k)
+      if (CS%debug .or. (CS%id_Velocity_Scale>0)) then ; do k=1,nz
+        Velocity_Scale(i,j,k) = mixvel(k)
       enddo ; endif
+      if (CS%ePBL_BBL_effic > 0.0) then
+        if (CS%debug .or. (CS%id_BBL_Mix_Length>0)) then ; do k=1,nz
+          BBL_Mix_Length(i,j,k) = mixlen_BBL(k)
+        enddo ; endif
+        if (CS%debug .or. (CS%id_BBL_Vel_Scale>0)) then ; do k=1,nz
+          BBL_Vel_Scale(i,j,k) = mixvel_BBL(k)
+        enddo ; endif
+      endif
       if (allocated(CS%mstar_mix)) CS%mstar_mix(i,j) = eCD%mstar
       if (allocated(CS%mstar_lt)) CS%mstar_lt(i,j) = eCD%mstar_LT
       if (allocated(CS%La)) CS%La(i,j) = eCD%LA
@@ -534,11 +604,22 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
       ! For masked points, Kd_int must still be set (to 0) because it has intent out.
       do K=1,nz+1 ; Kd_2d(i,K) = 0. ; enddo
       CS%ML_depth(i,j) = 0.0
-    endif ; enddo ! Close of i-loop - Note unusual loop order!
+      CS%BBL_depth(i,j) = 0.0
+    endif ; enddo ! Close of i-loop - Note the unusual loop order, with k-loops inside i-loops.
 
     do K=1,nz+1 ; do i=is,ie ; Kd_int(i,j,K) = Kd_2d(i,K) ; enddo ; enddo
 
   enddo ! j-loop
+
+  if (CS%debug .and. (CS%ePBL_BBL_effic > 0.0)) then
+    call hchksum(visc%TKE_BBL, "ePBL visc%TKE_BBL", G%HI, unscale=GV%H_to_MKS*US%Z_to_m**2*US%s_to_T**3)
+    call hchksum(visc%ustar_BBL, "ePBL visc%ustar_BBL", G%HI, unscale=GV%H_to_MKS*US%s_to_T)
+    call hchksum(Kd_int, "End of ePBL Kd_int", G%HI, unscale=GV%H_to_MKS*US%Z_to_m*US%s_to_T)
+    call hchksum(Velocity_Scale, "ePBL Velocity_Scale", G%HI, unscale=US%Z_to_m*US%s_to_T)
+    call hchksum(Mixing_Length, "ePBL Mixing_Length", G%HI, unscale=US%Z_to_m)
+    call hchksum(BBL_Vel_Scale, "ePBL BBL_Vel_Scale", G%HI, unscale=US%Z_to_m*US%s_to_T)
+    call hchksum(BBL_Mix_Length, "ePBL BBL_Mix_Length", G%HI, unscale=US%Z_to_m)
+  endif
 
   if (CS%id_ML_depth > 0) call post_data(CS%id_ML_depth, CS%ML_depth, CS%diag)
   if (CS%id_hML_depth > 0) call post_data(CS%id_hML_depth, CS%ML_depth, CS%diag)
@@ -551,9 +632,18 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
     call post_data(CS%id_TKE_mech_decay, CS%diag_TKE_mech_decay, CS%diag)
   if (CS%id_TKE_conv_decay > 0) &
     call post_data(CS%id_TKE_conv_decay, CS%diag_TKE_conv_decay, CS%diag)
-  if (CS%id_Mixing_Length > 0) call post_data(CS%id_Mixing_Length, CS%Mixing_Length, CS%diag)
-  if (CS%id_Velocity_Scale >0) call post_data(CS%id_Velocity_Scale, CS%Velocity_Scale, CS%diag)
-  if (CS%id_MSTAR_MIX > 0)     call post_data(CS%id_MSTAR_MIX, CS%MSTAR_MIX, CS%diag)
+  if (CS%id_Mixing_Length > 0) call post_data(CS%id_Mixing_Length, Mixing_Length, CS%diag)
+  if (CS%id_Velocity_Scale > 0) call post_data(CS%id_Velocity_Scale, Velocity_Scale, CS%diag)
+  if (CS%ePBL_BBL_effic > 0.0) then
+    if (CS%id_Kd_BBL > 0) call post_data(CS%id_BBL_Mix_Length, Kd_BBL_3d, CS%diag)
+    if (CS%id_BBL_Mix_Length > 0) call post_data(CS%id_BBL_Mix_Length, BBL_Mix_Length, CS%diag)
+    if (CS%id_BBL_Vel_Scale > 0) call post_data(CS%id_BBL_Vel_Scale, BBL_Vel_Scale, CS%diag)
+    if (CS%id_TKE_BBL > 0) call post_data(CS%id_TKE_BBL, CS%diag_TKE_BBL, CS%diag)
+    if (CS%id_TKE_BBL_mixing > 0) call post_data(CS%id_TKE_BBL_mixing, CS%diag_TKE_BBL_mixing, CS%diag)
+    if (CS%id_TKE_BBL_decay > 0) call post_data(CS%id_TKE_BBL_decay, CS%diag_TKE_BBL_decay, CS%diag)
+    if (CS%id_BBL_depth > 0) call post_data(CS%id_BBL_depth, CS%BBL_depth, CS%diag)
+  endif
+  if (CS%id_MSTAR_MIX > 0) call post_data(CS%id_MSTAR_MIX, CS%MSTAR_MIX, CS%diag)
   if (CS%id_LA > 0)       call post_data(CS%id_LA, CS%LA, CS%diag)
   if (CS%id_LA_MOD > 0)   call post_data(CS%id_LA_MOD, CS%LA_MOD, CS%diag)
   if (CS%id_MSTAR_LT > 0) call post_data(CS%id_MSTAR_LT, CS%MSTAR_LT, CS%diag)
@@ -563,7 +653,6 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, dt, Kd_int, G, GV, US, CS
   endif
 
 end subroutine energetic_PBL
-
 
 
 !> This subroutine determines the diffusivities from the integrated energetics
@@ -591,7 +680,7 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
                                                    !! divided by dt or 1.0 / (dt * Rho0), times conversion
                                                    !! factors for answer dates before 20240101 in
                                                    !! [m3 Z-3 R-1 T2 s-3 ~> m3 kg-1 s-1] or without
-                                                   !! the convsersion factors for answer dates of
+                                                   !! the conversion factors for answer dates of
                                                    !! 20240101 and later in [R-1 T-1 ~> m3 kg-1 s-1],
                                                    !! used to convert local TKE into a turbulence
                                                    !! velocity cubed.
@@ -622,10 +711,10 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
   type(ePBL_column_diags), intent(inout) :: eCD    !< A container for passing around diagnostics.
   type(wave_parameters_CS), pointer      :: Waves  !< Waves control structure for Langmuir turbulence
   type(ocean_grid_type),   intent(inout) :: G      !< The ocean's grid structure.
-  real,          optional, intent(in)    :: TKE_gen_stoch  !< random factor used to perturb TKE generation [nondim]
-  real,          optional, intent(in)    :: TKE_diss_stoch !< random factor used to perturb TKE dissipation [nondim]
   integer,                 intent(in)    :: i      !< The i-index to work on (used for Waves)
   integer,                 intent(in)    :: j      !< The i-index to work on (used for Waves)
+  real,          optional, intent(in)    :: TKE_gen_stoch  !< random factor used to perturb TKE generation [nondim]
+  real,          optional, intent(in)    :: TKE_diss_stoch !< random factor used to perturb TKE dissipation [nondim]
 
 !    This subroutine determines the diffusivities in a single column from the integrated energetics
 !  planetary boundary layer (ePBL) model.  It assumes that heating, cooling and freshwater fluxes
@@ -684,6 +773,9 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
     Se, &           ! Estimated final values of S in the column [S ~> ppt].
     dTe, &          ! Running (1-way) estimates of temperature change [C ~> degC].
     dSe, &          ! Running (1-way) estimates of salinity change [S ~> ppt].
+    hp_a, &         ! An effective pivot thickness of the layer including the effects
+                    ! of coupling with layers above [H ~> m or kg m-2].  This is the first term
+                    ! in the denominator of b1 in a downward-oriented tridiagonal solver.
     Th_a, &         ! An effective temperature times a thickness in the layer above, including implicit
                     ! mixing effects with other yet higher layers [C H ~> degC m or degC kg m-2].
     Sh_a, &         ! An effective salinity times a thickness in the layer above, including implicit
@@ -698,12 +790,9 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
                     ! the boundary layer [nondim].
     h_dz_int, &     ! The ratio of the layer thicknesses over the vertical distances
                     ! across the layers surrounding an interface [H Z-1 ~> nondim or kg m-3]
-    Kddt_h          ! The diapycnal diffusivity times a timestep divided by the
-                    ! average thicknesses around a layer [H ~> m or kg m-2].
+    Kddt_h          ! The total diapycnal diffusivity at an interface times a timestep divided by the
+                    ! average thicknesses around an interface [H ~> m or kg m-2].
   real :: b1        ! b1 is inverse of the pivot used by the tridiagonal solver [H-1 ~> m-1 or m2 kg-1].
-  real :: hp_a      ! An effective pivot thickness of the layer including the effects
-                    ! of coupling with layers above [H ~> m or kg m-2].  This is the first term
-                    ! in the denominator of b1 in a downward-oriented tridiagonal solver.
   real :: h_neglect ! A thickness that is so small it is usually lost
                     ! in roundoff and can be neglected [H ~> m or kg m-2].
   real :: dz_neglect ! A vertical distance that is so small it is usually lost
@@ -757,8 +846,8 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
   real :: dMKE_src_dK  ! The partial derivative of MKE_src with Kddt_h(K) [R Z3 T-2 H-1 ~> J m-3 or J kg-1].
   real :: Kd_guess0    ! A first guess of the diapycnal diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
   real :: PE_chg_g0    ! The potential energy change when Kd is Kd_guess0 [R Z3 T-2 ~> J m-2]
-  real :: Kddt_h_g0    ! The first guess diapycnal diffusivity times a timestep divided
-                       ! by the average thicknesses around a layer [H ~> m or kg m-2].
+  real :: Kddt_h_g0    ! The first guess of the change in diapycnal diffusivity times a timestep
+                       ! divided by the average thicknesses around an interface [H ~> m or kg m-2].
   real :: PE_chg_max   ! The maximum PE change for very large values of Kddt_h(K) [R Z3 T-2 ~> J m-2].
   real :: dPEc_dKd_Kd0 ! The partial derivative of PE change with Kddt_h(K)
                        ! for very small values of Kddt_h(K) [R Z3 T-2 H-1 ~> J m-3 or J kg-1].
@@ -996,7 +1085,7 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
       endif
 
       Kd(1) = 0.0 ; Kddt_h(1) = 0.0
-      hp_a = h(1)
+      hp_a(1) = h(1)
       dT_to_dPE_a(1) = dT_to_dPE(1) ; dT_to_dColHt_a(1) = dT_to_dColHt(1)
       dS_to_dPE_a(1) = dS_to_dPE(1) ; dS_to_dColHt_a(1) = dS_to_dColHt(1)
 
@@ -1121,14 +1210,14 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
          ! tridiagonal solver for the whole column to be completed for debugging
          ! purposes, and also allows for something akin to convective adjustment
          ! in unstable interior regions?
-          b1 = 1.0 / hp_a
+          b1 = 1.0 / hp_a(k-1)
           c1(K) = 0.0
           if (CS%orig_PE_calc) then
             dTe(k-1) = b1 * ( dTe_t2 )
             dSe(k-1) = b1 * ( dSe_t2 )
           endif
 
-          hp_a = h(k)
+          hp_a(k) = h(k)
           dT_to_dPE_a(k) = dT_to_dPE(k)
           dS_to_dPE_a(k) = dS_to_dPE(k)
           dT_to_dColHt_a(k) = dT_to_dColHt(k)
@@ -1145,12 +1234,12 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
               dS_km1_t2 = (S0(k)-S0(k-1))
             else
               dT_km1_t2 = (T0(k)-T0(k-1)) - &
-                    (Kddt_h(K-1) / hp_a) * ((T0(k-2) - T0(k-1)) + dTe(k-2))
+                    (Kddt_h(K-1) / hp_a(k-1)) * ((T0(k-2) - T0(k-1)) + dTe(k-2))
               dS_km1_t2 = (S0(k)-S0(k-1)) - &
-                    (Kddt_h(K-1) / hp_a) * ((S0(k-2) - S0(k-1)) + dSe(k-2))
+                    (Kddt_h(K-1) / hp_a(k-1)) * ((S0(k-2) - S0(k-1)) + dSe(k-2))
             endif
-            dTe_term = dTe_t2 + hp_a * (T0(k-1)-T0(k))
-            dSe_term = dSe_t2 + hp_a * (S0(k-1)-S0(k))
+            dTe_term = dTe_t2 + hp_a(k-1) * (T0(k-1)-T0(k))
+            dSe_term = dSe_t2 + hp_a(k-1) * (S0(k-1)-S0(k))
           else
             if (K<=2) then
               Th_a(k-1) = h(k-1) * T0(k-1) ; Sh_a(k-1) = h(k-1) * S0(k-1)
@@ -1222,14 +1311,14 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
           Kddt_h_g0 = Kd_guess0 * dt_h
 
           if (CS%orig_PE_calc) then
-            call find_PE_chg_orig(Kddt_h_g0, h(k), hp_a, dTe_term, dSe_term, &
+            call find_PE_chg_orig(Kddt_h_g0, h(k), hp_a(k-1), dTe_term, dSe_term, &
                      dT_km1_t2, dS_km1_t2, dT_to_dPE(k), dS_to_dPE(k), &
                      dT_to_dPE_a(k-1), dS_to_dPE_a(k-1), &
                      pres_Z(K), dT_to_dColHt(k), dS_to_dColHt(k), &
                      dT_to_dColHt_a(k-1), dS_to_dColHt_a(k-1), &
                      PE_chg=PE_chg_g0, dPE_max=PE_chg_max, dPEc_dKd_0=dPEc_dKd_Kd0 )
           else
-            call find_PE_chg(0.0, Kddt_h_g0, hp_a, h(k), &
+            call find_PE_chg(0.0, Kddt_h_g0, hp_a(k-1), h(k), &
                      Th_a(k-1), Sh_a(k-1), Th_b(k), Sh_b(k), &
                      dT_to_dPE_a(k-1), dS_to_dPE_a(k-1), dT_to_dPE(k), dS_to_dPE(k), &
                      pres_Z(K), dT_to_dColHt_a(k-1), dS_to_dColHt_a(k-1), &
@@ -1280,14 +1369,14 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
               mixvel(K) = vstar
 
               if (CS%orig_PE_calc) then
-                call find_PE_chg_orig(Kd(K)*dt_h, h(k), hp_a, dTe_term, dSe_term, &
+                call find_PE_chg_orig(Kd(K)*dt_h, h(k), hp_a(k-1), dTe_term, dSe_term, &
                          dT_km1_t2, dS_km1_t2, dT_to_dPE(k), dS_to_dPE(k), &
                          dT_to_dPE_a(k-1), dS_to_dPE_a(k-1), &
                          pres_Z(K), dT_to_dColHt(k), dS_to_dColHt(k), &
                          dT_to_dColHt_a(k-1), dS_to_dColHt_a(k-1), &
                          PE_chg=dPE_conv)
               else
-                call find_PE_chg(0.0, Kd(K)*dt_h, hp_a, h(k), &
+                call find_PE_chg(0.0, Kd(K)*dt_h, hp_a(k-1), h(k), &
                          Th_a(k-1), Sh_a(k-1), Th_b(k), Sh_b(k), &
                          dT_to_dPE_a(k-1), dS_to_dPE_a(k-1), dT_to_dPE(k), dS_to_dPE(k), &
                          pres_Z(K), dT_to_dColHt_a(k-1), dS_to_dColHt_a(k-1), &
@@ -1366,19 +1455,19 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
             endif
             do itt=1,max_itt
               if (CS%orig_PE_calc) then
-                call find_PE_chg_orig(Kddt_h_guess, h(k), hp_a, dTe_term, dSe_term, &
+                call find_PE_chg_orig(Kddt_h_guess, h(k), hp_a(k-1), dTe_term, dSe_term, &
                          dT_km1_t2, dS_km1_t2, dT_to_dPE(k), dS_to_dPE(k), &
                          dT_to_dPE_a(k-1), dS_to_dPE_a(k-1), &
                          pres_Z(K), dT_to_dColHt(k), dS_to_dColHt(k), &
                          dT_to_dColHt_a(k-1), dS_to_dColHt_a(k-1), &
                          PE_chg=PE_chg, dPEc_dKd=dPEc_dKd )
               else
-                call find_PE_chg(0.0, Kddt_h_guess, hp_a, h(k), &
+                call find_PE_chg(0.0, Kddt_h_guess, hp_a(k-1), h(k), &
                          Th_a(k-1), Sh_a(k-1), Th_b(k), Sh_b(k), &
                          dT_to_dPE_a(k-1), dS_to_dPE_a(k-1), dT_to_dPE(k), dS_to_dPE(k), &
                          pres_Z(K), dT_to_dColHt_a(k-1), dS_to_dColHt_a(k-1), &
                          dT_to_dColHt(k), dS_to_dColHt(k), &
-                         PE_chg=dPE_conv, dPEc_dKd=dPEc_dKd)
+                         PE_chg=PE_chg, dPEc_dKd=dPEc_dKd)
               endif
               MKE_src = dMKE_max * (1.0 - exp(-MKE2_Hharm * Kddt_h_guess))
               dMKE_src_dK = dMKE_max * MKE2_Hharm * exp(-MKE2_Hharm * Kddt_h_guess)
@@ -1445,14 +1534,14 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
           Kddt_h(K) = Kd(K) * dt_h
           !   At this point, the final value of Kddt_h(K) is known, so the
           ! estimated properties for layer k-1 can be calculated.
-          b1 = 1.0 / (hp_a + Kddt_h(K))
+          b1 = 1.0 / (hp_a(k-1) + Kddt_h(K))
           c1(K) = Kddt_h(K) * b1
           if (CS%orig_PE_calc) then
             dTe(k-1) = b1 * ( Kddt_h(K)*(T0(k)-T0(k-1)) + dTe_t2 )
             dSe(k-1) = b1 * ( Kddt_h(K)*(S0(k)-S0(k-1)) + dSe_t2 )
           endif
 
-          hp_a = h(k) + (hp_a * b1) * Kddt_h(K)
+          hp_a(k) = h(k) + (hp_a(k-1) * b1) * Kddt_h(K)
           dT_to_dPE_a(k) = dT_to_dPE(k) + c1(K)*dT_to_dPE_a(k-1)
           dS_to_dPE_a(k) = dS_to_dPE(k) + c1(K)*dS_to_dPE_a(k-1)
           dT_to_dColHt_a(k) = dT_to_dColHt(k) + c1(K)*dT_to_dColHt_a(k-1)
@@ -1476,7 +1565,7 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
         endif
 
         if (calc_Te) then
-          if (k==2) then
+          if (K==2) then
             Te(1) = b1*(h(1)*T0(1))
             Se(1) = b1*(h(1)*S0(1))
           else
@@ -1489,7 +1578,7 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
 
       if (debug) then
         ! Complete the tridiagonal solve for Te.
-        b1 = 1.0 / hp_a
+        b1 = 1.0 / hp_a(nz)
         Te(nz) = b1 * (h(nz) * T0(nz) + Kddt_h(nz) * Te(nz-1))
         Se(nz) = b1 * (h(nz) * S0(nz) + Kddt_h(nz) * Se(nz-1))
         dT_expect(nz) = Te(nz) - T0(nz) ; dS_expect(nz) = Se(nz) - S0(nz)
@@ -1535,7 +1624,7 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
           ! Both bounds have valid change estimates and are probably in the range of possible outputs.
           MLD_guess = (dMLD_min*max_MLD - dMLD_max*min_MLD) / (dMLD_min - dMLD_max)
         elseif ((MLD_found > min_MLD) .and. (MLD_found < max_MLD)) then
-          ! The output MLD_found is an interesting guess, as it likely to bracket the true solution
+          ! The output MLD_found is an interesting guess, as it is likely to bracket the true solution
           ! along with the previous value of MLD_guess and to be close to the solution.
           MLD_guess = MLD_found
         else ! Bisect if the other guesses would be out-of-bounds.  This does not happen much.
@@ -1561,6 +1650,748 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
 
 end subroutine ePBL_column
 
+
+!> This subroutine determines the diffusivities from a bottom boundary layer version of
+!! the integrated energetics mixed layer model for a single column of water.
+subroutine ePBL_BBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, absf, &
+                           dt, Kd, Kd_BBL, GV, US, CS, eCD, &
+                           BBL_TKE_in, u_star_BBL, BBLD_io, mixvel_BBL, mixlen_BBL)
+  type(verticalGrid_type), intent(in)    :: GV     !< The ocean's vertical grid structure.
+  type(unit_scale_type),   intent(in)    :: US     !< A dimensional unit scaling type
+  real, dimension(SZK_(GV)), intent(in)  :: h      !< Layer thicknesses [H ~> m or kg m-2].
+  real, dimension(SZK_(GV)), intent(in)  :: dz     !< The vertical distance across layers [Z ~> m].
+  real, dimension(SZK_(GV)), intent(in)  :: u      !< Zonal velocities interpolated to h points
+                                                   !! [L T-1 ~> m s-1].
+  real, dimension(SZK_(GV)), intent(in)  :: v      !< Zonal velocities interpolated to h points
+                                                   !! [L T-1 ~> m s-1].
+  real, dimension(SZK_(GV)), intent(in)  :: T0     !< The initial layer temperatures [C ~> degC].
+  real, dimension(SZK_(GV)), intent(in)  :: S0     !< The initial layer salinities [S ~> ppt].
+
+  real, dimension(SZK_(GV)), intent(in)  :: dSV_dT !< The partial derivative of in-situ specific
+                                                   !! volume with potential temperature
+                                                   !! [R-1 C-1 ~> m3 kg-1 degC-1].
+  real, dimension(SZK_(GV)), intent(in)  :: dSV_dS !< The partial derivative of in-situ specific
+                                                   !! volume with salinity [R-1 S-1 ~> m3 kg-1 ppt-1].
+  real, dimension(SZK_(GV)+1), intent(in) :: SpV_dt !< Specific volume interpolated to interfaces
+                                                   !! divided by dt (if non-Boussinesq) or
+                                                   !! 1.0 / (dt * Rho0), in [R-1 T-1 ~> m3 kg-1 s-1],
+                                                   !! used to convert local TKE into a turbulence
+                                                   !! velocity cubed.
+  real,                    intent(in)    :: absf   !< The absolute value of the Coriolis parameter [T-1 ~> s-1].
+  real,                    intent(in)    :: dt     !< Time increment [T ~> s].
+  real, dimension(SZK_(GV)+1), &
+                           intent(in)    :: Kd     !< The diffusivities at interfaces due to previously
+                                                   !! applied mixing processes [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
+  real, dimension(SZK_(GV)+1), &
+                           intent(out)   :: Kd_BBL !< The bottom boundary layer contribution to diffusivities
+                                                   !! at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
+  type(energetic_PBL_CS),  intent(inout) :: CS     !< Energetic PBL control structure
+  type(ePBL_column_diags), intent(inout) :: eCD    !< A container for passing around diagnostics.
+  real,                    intent(in)    :: BBL_TKE_in !< The mechanically generated turbulent
+                                                   !! kinetic energy available for bottom boundary
+                                                   !! layer mixing within a time step [R Z3 T-2 ~> J m-2].
+  real,                    intent(in)    :: u_star_BBL !< The bottom boundary layer friction velocity
+                                                   !! in thickuness flux units [H T-1 ~> m s-1 or kg m-2 s-1]
+  real,                    intent(inout) :: BBLD_io !< A first guess at the bottom boundary layer depth on input, and
+                                                   !! the calculated bottom boundary layer depth on output [Z ~> m]
+  real, dimension(SZK_(GV)+1), &
+                           intent(out)   :: mixvel_BBL !< The profile of boundary layer turbulent mixing
+                                                   !! velocities [Z T-1 ~> m s-1]
+  real, dimension(SZK_(GV)+1), &
+                           intent(out)   :: mixlen_BBL !< The profile of bottom boundary layer turbulent
+                                                   !! mixing lengths [Z ~> m]
+
+!    This subroutine determines the contributions from diffusivities in a single column from a
+!  bottom-boundary layer adaptation of the integrated energetics planetary boundary layer (ePBL)
+!  model.  It accounts for the possibility that the surface boundary diffusivities have already
+!  been determined.  All calculations are done implicitly, and there is no stability limit on the
+!  time step.  Only mechanical mixing in the bottom boundary layer is considered.  (Geothermal heat
+!  fluxes are addressed elsewhere in the MOM6 code, and convection throughout the water column is
+!  handled by the surface version of ePBL.)  There is no conversion of released mean kinetic energy
+!  into bottom boundary layer turbulent kinetic energy (at least for now), apart from the explicit
+!  energy that is supplied as an argument to this routine.
+
+  ! Local variables
+  real, dimension(SZK_(GV)+1) :: &
+    pres_Z, &       ! Interface pressures with a rescaling factor to convert interface height
+                    ! movements into changes in column potential energy [R Z2 T-2 ~> kg m-1 s-2].
+    dztop_dztot     ! The distance from the surface divided by the thickness of the
+                    ! water column [nondim].
+  real :: mech_BBL_TKE ! The mechanically generated turbulent kinetic energy available for
+                    ! bottom boundary layer mixing within a time step [R Z3 T-2 ~> J m-2].
+  real :: htot      ! The total thickness of the layers above an interface [H ~> m or kg m-2].
+  real :: dztot     ! The total depth of the layers above an interface [Z ~> m].
+  real :: uhtot     ! The depth integrated zonal velocities in the layers above [H L T-1 ~> m2 s-1 or kg m-1 s-1]
+  real :: vhtot     ! The depth integrated meridional velocities in the layers above [H L T-1 ~> m2 s-1 or kg m-1 s-1]
+  real :: Idecay_len_TKE  ! The inverse of a turbulence decay length scale [H-1 ~> m-1 or m2 kg-1].
+  real :: dz_sum    ! The total thickness of the water column [Z ~> m].
+
+  real, dimension(SZK_(GV)) :: &
+    dT_to_dColHt, & ! Partial derivative of the total column height with the temperature changes
+                    ! within a layer [Z C-1 ~> m degC-1].
+    dS_to_dColHt, & ! Partial derivative of the total column height with the salinity changes
+                    ! within a layer  [Z S-1 ~> m ppt-1].
+    dT_to_dPE, &    ! Partial derivatives of column potential energy with the temperature
+                    ! changes within a layer, in [R Z3 T-2 C-1 ~> J m-2 degC-1].
+    dS_to_dPE, &    ! Partial derivatives of column potential energy with the salinity changes
+                    ! within a layer, in [R Z3 T-2 S-1 ~> J m-2 ppt-1].
+    dT_to_dColHt_a, & ! Partial derivative of the total column height with the temperature changes
+                    ! within a layer, including the implicit effects  of mixing with layers higher
+                    ! in the water column [Z C-1 ~> m degC-1].
+    dS_to_dColHt_a, & ! Partial derivative of the total column height with the salinity changes
+                    ! within a layer, including the implicit effects  of mixing with layers higher
+                    ! in the water column [Z S-1 ~> m ppt-1].
+    dT_to_dPE_a, &  ! Partial derivatives of column potential energy with the temperature changes
+                    ! within a layer, including the implicit effects of mixing with layers higher
+                    ! in the water column [R Z3 T-2 C-1 ~> J m-2 degC-1].
+    dS_to_dPE_a, &  ! Partial derivative of column potential energy with the salinity changes
+                    ! within a layer, including the implicit effects of mixing with layers higher
+                    ! in the water column [R Z3 T-2 S-1 ~> J m-2 ppt-1].
+    dT_to_dColHt_b, & ! Partial derivative of the total column height with the temperature changes
+                    ! within a layer, including the implicit effects of mixing with layers deeper
+                    ! in the water column [Z C-1 ~> m degC-1].
+    dS_to_dColHt_b, & ! Partial derivative of the total column height with the salinity changes
+                    ! within a layer, including the implicit effects of mixing with layers deeper
+                    ! in the water column [Z S-1 ~> m ppt-1].
+    dT_to_dPE_b, &  ! Partial derivatives of column potential energy with the temperature changes
+                    ! within a layer, including the implicit effects of mixing with layers deeper
+                    ! in the water column [R Z3 T-2 C-1 ~> J m-2 degC-1].
+    dS_to_dPE_b, &  ! Partial derivative of column potential energy with the salinity changes
+                    ! within a layer, including the implicit effects of mixing with layers deeper
+                    ! in the water column [R Z3 T-2 S-1 ~> J m-2 ppt-1].
+    c1, &           ! c1 is used by the tridiagonal solver [nondim].
+    Te, &           ! Estimated final values of T in the column [C ~> degC].
+    Se, &           ! Estimated final values of S in the column [S ~> ppt].
+    dTe, &          ! Running (1-way) estimates of temperature change [C ~> degC].
+    dSe, &          ! Running (1-way) estimates of salinity change [S ~> ppt].
+    hp_a, &         ! An effective pivot thickness of the layer including the effects
+                    ! of coupling with layers above [H ~> m or kg m-2].  This is the first term
+                    ! in the denominator of b1 in a downward-oriented tridiagonal solver.
+    hp_b, &         ! An effective pivot thickness of the layer including the effects
+                    ! of coupling with layers below [H ~> m or kg m-2].  This is the first term
+                    ! in the denominator of b1 in an upward-oriented tridiagonal solver.
+    Th_a, &         ! An effective temperature times a thickness in the layer above, including implicit
+                    ! mixing effects with other yet higher layers [C H ~> degC m or degC kg m-2].
+    Sh_a, &         ! An effective salinity times a thickness in the layer above, including implicit
+                    ! mixing effects with other yet higher layers [S H ~> ppt m or ppt kg m-2].
+    Th_b, &         ! An effective temperature times a thickness in the layer below, including implicit
+                    ! mixing effects with other yet lower layers [C H ~> degC m or degC kg m-2].
+    Sh_b            ! An effective salinity times a thickness in the layer below, including implicit
+                    ! mixing effects with other yet lower layers [S H ~> ppt m or ppt kg m-2].
+  real, dimension(SZK_(GV)+1) :: &
+    MixLen_shape, & ! A nondimensional shape factor for the mixing length that
+                    ! gives it an appropriate asymptotic value at the bottom of
+                    ! the boundary layer [nondim].
+    h_dz_int, &     ! The ratio of the layer thicknesses over the vertical distances
+                    ! across the layers surrounding an interface [H Z-1 ~> nondim or kg m-3]
+    Kddt_h          ! The total diapycnal diffusivity at an interface times a timestep divided by the
+                    ! average thicknesses around an interface [H ~> m or kg m-2].
+  real :: b1        ! b1 is inverse of the pivot used by the tridiagonal solver [H-1 ~> m-1 or m2 kg-1].
+  real :: h_neglect ! A thickness that is so small it is usually lost
+                    ! in roundoff and can be neglected [H ~> m or kg m-2].
+  real :: dz_neglect ! A vertical distance that is so small it is usually lost
+                    ! in roundoff and can be neglected [Z ~> m].
+  real :: dMass     ! The mass per unit area within a layer [Z R ~> kg m-2].
+  real :: dPres     ! The hydrostatic pressure change across a layer [R Z2 T-2 ~> Pa = J m-3].
+
+  real :: dt_h      ! The timestep divided by the averages of the vertical distances around
+                    ! a layer [T Z-1 ~> s m-1].
+  real :: dz_top    ! The distance from the surface [Z ~> m].
+  real :: dz_rsum   ! The distance from the seafloor [Z ~> m].
+  real :: I_dzsum   ! The inverse of dz_sum [Z-1 ~> m-1].
+  real :: I_BBLD    ! The inverse of the current value of BBLD [Z-1 ~> m-1].
+  real :: dz_tt     ! The distance from the surface or up to the next interface
+                    ! that did not exhibit turbulent mixing from this scheme plus
+                    ! a surface mixing roughness length given by dz_tt_min [Z ~> m].
+  real :: dz_tt_min ! A surface roughness length [Z ~> m].
+  real :: C1_3      ! = 1/3  [nondim]
+  real :: vstar     ! An in-situ turbulent velocity [Z T-1 ~> m s-1].
+  real :: mstar_total ! The value of mstar used in ePBL [nondim]
+  real :: BBLD_output ! The bottom boundary layer depth output from this routine [Z ~> m]
+  real :: hbs_here  ! The local minimum of dztop_dztot and MixLen_shape [nondim]
+  real :: TKE_reduc ! The fraction by which TKE and other energy fields are
+                    ! reduced to support mixing [nondim]. between 0 and 1.
+  real :: tot_TKE   ! The total TKE available to support mixing at interface K [R Z3 T-2 ~> J m-2].
+  real :: TKE_here  ! The total TKE at this point in the algorithm [R Z3 T-2 ~> J m-2].
+  real :: Kd_guess0    ! A first guess of the diapycnal diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
+  real :: PE_chg_g0    ! The potential energy change when Kd is Kd_guess0 [R Z3 T-2 ~> J m-2]
+  real :: Kddt_h_g0    ! The first guess of the change in diapycnal diffusivity times a timestep
+                       ! divided by the average thicknesses around an interface [H ~> m or kg m-2].
+  real :: Kddt_h_prev  ! The diapycnal diffusivity before modification times a timestep divided
+                       ! by the average thicknesses around an interface [H ~> m or kg m-2].
+  real :: PE_chg_max   ! The maximum PE change for very large values of Kddt_h(K) [R Z3 T-2 ~> J m-2].
+  real :: dPEc_dKd_Kd0 ! The partial derivative of PE change with Kddt_h(K)
+                       ! for very small values of Kddt_h(K) [R Z3 T-2 H-1 ~> J m-3 or J kg-1].
+  real :: PE_chg    ! The change in potential energy due to mixing at an
+                    ! interface [R Z3 T-2 ~> J m-2], positive for the column increasing
+                    ! in potential energy (i.e., consuming TKE).
+  real :: TKE_left  ! The amount of turbulent kinetic energy left for the most
+                    ! recent guess at Kddt_h(K) [R Z3 T-2 ~> J m-2].
+  real :: dPEc_dKd  ! The partial derivative of PE_chg with Kddt_h(K) [R Z3 T-2 H-1 ~> J m-3 or J kg-1].
+  real :: TKE_left_min, TKE_left_max ! Maximum and minimum values of TKE_left [R Z3 T-2 ~> J m-2].
+  real :: Kddt_h_max, Kddt_h_min ! Maximum and minimum values of Kddt_h(K) [H ~> m or kg m-2].
+  real :: Kddt_h_guess ! A guess at the value of Kddt_h(K) [H ~> m or kg m-2].
+  real :: Kddt_h_next  ! The next guess at the value of Kddt_h(K) [H ~> m or kg m-2].
+  real :: dKddt_h      ! The change between guesses at Kddt_h(K) [H ~> m or kg m-2].
+  real :: dKddt_h_Newt ! The change between guesses at Kddt_h(K) with Newton's method [H ~> m or kg m-2].
+  real :: Kddt_h_newt  ! The Newton's method next guess for Kddt_h(K) [H ~> m or kg m-2].
+  real :: exp_kh    ! The nondimensional decay of TKE across a layer [nondim].
+  real :: vstar_unit_scale ! A unit conversion factor for turbulent velocities [Z T-1 s m-1 ~> 1]
+  logical :: use_Newt  ! Use Newton's method for the next guess at Kddt_h(K).
+  logical :: convectively_stable ! If true the water column is convectively stable at this interface.
+  logical :: bot_connected   ! If true the ocean is actively turbulent from the present
+                    ! interface all the way down to the seafloor.
+  logical :: bot_disconnect ! If true, any turbulence has become disconnected
+                    ! from the bottom.
+
+  ! The following is only used for diagnostics.
+  real :: I_dtdiag  !  = 1.0 / dt [T-1 ~> s-1].
+
+  real :: BBLD_guess, BBLD_found ! Bottom boundary layer depth guessed/found for iteration [Z ~> m]
+  real :: min_BBLD, max_BBLD ! Iteration bounds on BBLD [Z ~> m], which are adjusted at each step
+  real :: dBBLD_min  ! The change in diagnosed mixed layer depth when the guess is min_BLD [Z ~> m]
+  real :: dBBLD_max  ! The change in diagnosed mixed layer depth when the guess is max_BLD [Z ~> m]
+  logical :: BBL_converged ! Flag for convergence of BBLD
+  integer :: BBL_it        ! Iteration counter
+
+  real :: Surface_Scale ! Surface decay scale for vstar [nondim]
+  logical :: debug      ! This is used as a hard-coded value for debugging.
+
+  !  The following arrays are used only for debugging purposes.
+  real :: dPE_debug     ! An estimate of the potential energy change [R Z3 T-2 ~> J m-2]
+  real :: mixing_debug  ! An estimate of the rate of change of potential energy due to mixing [R Z3 T-3 ~> W m-2]
+  real, dimension(20) :: TKE_left_itt   ! The value of TKE_left after each iteration [R Z3 T-2 ~> J m-2]
+  real, dimension(20) :: PE_chg_itt     ! The value of PE_chg after each iteration [R Z3 T-2 ~> J m-2]
+  real, dimension(20) :: Kddt_h_itt     ! The value of Kddt_h_guess after each iteration [H ~> m or kg m-2]
+  real, dimension(20) :: dPEa_dKd_itt   ! The value of dPEc_dKd after each iteration [R Z3 T-2 H-1 ~> J m-3 or J kg-1]
+!  real, dimension(20) :: MKE_src_itt    ! The value of MKE_src after each iteration [R Z3 T-2 ~> J m-2]
+  real, dimension(SZK_(GV)) :: dT_expect !< Expected temperature changes [C ~> degC]
+  real, dimension(SZK_(GV)) :: dS_expect !< Expected salinity changes [S ~> ppt]
+  real, dimension(SZK_(GV)) :: mech_BBL_TKE_k  ! The mechanically generated turbulent kinetic energy
+                    ! available for bottom boundary mixing over a time step for each layer [R Z3 T-2 ~> J m-2].
+  integer, dimension(SZK_(GV)) :: num_itts
+
+  integer :: k, nz, itt, max_itt
+
+  nz = GV%ke
+
+  debug = .false.  ! Change this hard-coded value for debugging.
+
+  ! Add bottom boundary layer mixing if there is energy to support it.
+  if ((CS%ePBL_BBL_effic <= 0.0) .or. (BBL_TKE_in <= 0.0)) then
+    ! There is no added bottom boundary layer mixing.
+    BBLD_io = 0.0
+    Kd_BBL(:) = 0.0
+    mixvel_BBL(:) = 0.0 ; mixlen_BBL(:) = 0.0
+    if (CS%TKE_diagnostics) then
+      eCD%dTKE_BBL_mixing = 0.0 ; eCD%dTKE_BBL_decay = 0.0 ; eCD%dTKE_BBL = 0.0
+      ! eCD%dTKE_BBL_MKE = 0.0
+    endif
+    return
+  else
+    ! There will be added bottom boundary layer mixing.
+
+    h_neglect = GV%H_subroundoff
+    dz_neglect = GV%dZ_subroundoff
+
+    C1_3 = 1.0 / 3.0
+    I_dtdiag = 1.0 / dt
+    max_itt = 20
+    dz_tt_min = 0.0
+
+    ! The next two blocks of code could be shared with ePBL_column.
+
+    ! Set up fields relating a layer's temperature and salinity changes to potential energy changes.
+    pres_Z(1) = 0.0
+    do k=1,nz
+      dMass = GV%H_to_RZ * h(k)
+      dPres = US%L_to_Z**2 * GV%g_Earth * dMass
+      dT_to_dPE(k) = (dMass * (pres_Z(K) + 0.5*dPres)) * dSV_dT(k)
+      dS_to_dPE(k) = (dMass * (pres_Z(K) + 0.5*dPres)) * dSV_dS(k)
+      dT_to_dColHt(k) = dMass * dSV_dT(k)
+      dS_to_dColHt(k) = dMass * dSV_dS(k)
+
+      pres_Z(K+1) = pres_Z(K) + dPres
+    enddo
+
+    if (GV%Boussinesq) then
+      do K=1,nz+1 ; h_dz_int(K) = GV%Z_to_H ; enddo
+    else
+      h_dz_int(1) = (h(1) + h_neglect) / (dz(1) + dz_neglect)
+      do K=2,nz
+        h_dz_int(K) = (h(k-1) + h(k) + h_neglect) / (dz(k-1) + dz(k) + dz_neglect)
+      enddo
+      h_dz_int(nz+1) = (h(nz) + h_neglect) / (dz(nz) + dz_neglect)
+    endif
+    ! The two previous blocks of code could be shared with ePBL_column.
+
+    ! Determine the total thickness (dz_sum) and the fractional distance from the top (dztop_dztot).
+    dz_sum = 0.0 ; do k=1,nz ; dz_sum = dz_sum + dz(k) ; enddo
+    I_dzsum = 0.0 ; if (dz_sum > 0.0) I_dzsum = 1.0 / dz_sum
+    dz_top = 0.0
+    dztop_dztot(nz+1) = 0.0
+    do k=1,nz
+      dz_top = dz_top + dz(k)
+      dztop_dztot(K) = dz_top * I_dzsum
+    enddo
+
+    ! Set terms from a tridiagonal solver based on the previously determined diffusivities.
+    Kddt_h(1) = 0.0
+    hp_a(1) = h(1)
+    dT_to_dPE_a(1) = dT_to_dPE(1) ; dT_to_dColHt_a(1) = dT_to_dColHt(1)
+    dS_to_dPE_a(1) = dS_to_dPE(1) ; dS_to_dColHt_a(1) = dS_to_dColHt(1)
+    do K=2,nz
+      dt_h = dt / max(0.5*(dz(k-1)+dz(k)), 1e-15*dz_sum)
+      Kddt_h(K) = Kd(K) * dt_h
+      b1 = 1.0 / (hp_a(k-1) + Kddt_h(K))
+      c1(K) = Kddt_h(K) * b1
+      hp_a(k) = h(k) + (hp_a(k-1) * b1) * Kddt_h(K)
+      dT_to_dPE_a(k) = dT_to_dPE(k) + c1(K)*dT_to_dPE_a(k-1)
+      dS_to_dPE_a(k) = dS_to_dPE(k) + c1(K)*dS_to_dPE_a(k-1)
+      dT_to_dColHt_a(k) = dT_to_dColHt(k) + c1(K)*dT_to_dColHt_a(k-1)
+      dS_to_dColHt_a(k) = dS_to_dColHt(k) + c1(K)*dS_to_dColHt_a(k-1)
+      if (K<=2) then
+        Te(k-1) = b1*(h(k-1)*T0(k-1)) ; Se(k-1) = b1*(h(k-1)*S0(k-1))
+        Th_a(k-1) = h(k-1) * T0(k-1) ; Sh_a(k-1) = h(k-1) * S0(k-1)
+      else
+        Te(k-1) = b1 * (h(k-1) * T0(k-1) + Kddt_h(K-1) * Te(k-2))
+        Se(k-1) = b1 * (h(k-1) * S0(k-1) + Kddt_h(K-1) * Se(k-2))
+        Th_a(k-1) = h(k-1) * T0(k-1) + Kddt_h(K-1) * Te(k-2)
+        Sh_a(k-1) = h(k-1) * S0(k-1) + Kddt_h(K-1) * Se(k-2)
+      endif
+    enddo
+    Kddt_h(nz+1) = 0.0
+    if (debug) then
+      ! Complete the tridiagonal solve for Te and Se, which may be useful for debugging.
+      b1 = 1.0 / hp_a(nz)
+      Te(nz) = b1 * (h(nz) * T0(nz) + Kddt_h(nz) * Te(nz-1))
+      Se(nz) = b1 * (h(nz) * S0(nz) + Kddt_h(nz) * Se(nz-1))
+      do k=nz-1,1,-1
+        Te(k) = Te(k) + c1(K+1)*Te(k+1)
+        Se(k) = Se(k) + c1(K+1)*Se(k+1)
+      enddo
+    endif
+
+    BBLD_guess = BBLD_io
+
+    !/The following lines are for the iteration over BBLD
+    ! max_BBLD will initialized as ocean bottom depth
+    max_BBLD = 0.0 ; do k=1,nz ; max_BBLD = max_BBLD + dz(k) ; enddo
+    ! min_BBLD will be initialized to 0.
+    min_BBLD = 0.0
+    ! Set values of the wrong signs to indicate that these changes are not based on valid estimates
+    dBBLD_min = -1.0*US%m_to_Z ; dBBLD_max = 1.0*US%m_to_Z
+
+    ! If no first guess is provided for BBLD, try the middle of the water column
+    if (BBLD_guess <= min_BBLD) BBLD_guess = 0.5 * (min_BBLD + max_BBLD)
+
+    ! Iterate to determine a converged EPBL bottom boundary layer depth.
+    BBL_converged = .false.
+    do BBL_it=1,CS%Max_MLD_Its
+
+      if (.not. BBL_converged) then
+        ! If not using BBLD_Iteration flag loop to only execute once.
+        if (.not.CS%Use_BBLD_iteration) BBL_converged = .true.
+
+        if (debug) then ; mech_BBL_TKE_k(:) = 0.0 ; endif
+
+        ! Reset BBL_depth
+        BBLD_output = dz(nz)
+        bot_connected = .true.
+
+        mech_BBL_TKE = BBL_TKE_in
+
+        if (CS%TKE_diagnostics) then
+          ! eCD%dTKE_BBL_MKE = 0.0
+          eCD%dTKE_BBL_mixing = 0.0
+          eCD%dTKE_BBL_decay = 0.0
+          eCD%dTKE_BBL = mech_BBL_TKE * I_dtdiag
+        endif
+
+        ! Store in 1D arrays for output.
+        do K=1,nz+1 ; mixvel_BBL(K) = 0.0 ; mixlen_BBL(K) = 0.0 ; enddo
+
+        ! Determine the mixing shape function MixLen_shape.
+        if ((.not.CS%Use_BBLD_iteration) .or. &
+            (CS%transLay_scale >= 1.0) .or. (CS%transLay_scale < 0.0) ) then
+          do K=1,nz+1
+            MixLen_shape(K) = 1.0
+          enddo
+        elseif (BBLD_guess <= 0.0) then
+          if (CS%transLay_scale > 0.0) then ; do K=1,nz+1
+            MixLen_shape(K) = CS%transLay_scale
+          enddo ; else ; do K=1,nz+1
+            MixLen_shape(K) = 1.0
+          enddo ; endif
+        else
+          ! Reduce the mixing length based on BBLD, with a quadratic
+          ! expression that follows KPP.
+          I_BBLD = 1.0 / BBLD_guess
+          dz_rsum = 0.0
+          MixLen_shape(nz+1) = 1.0
+          if (CS%MixLenExponent==2.0) then
+            do K=nz,1,-1
+              dz_rsum = dz_rsum + dz(k)
+              MixLen_shape(K) = CS%transLay_scale + (1.0 - CS%transLay_scale) * &
+                   (max(0.0, (BBLD_guess - dz_rsum)*I_BBLD) )**2 ! CS%MixLenExponent
+            enddo
+          else ! (CS%MixLenExponent/=2.0) then
+            do K=nz,1,-1
+              dz_rsum = dz_rsum + dz(k)
+              MixLen_shape(K) = CS%transLay_scale + (1.0 - CS%transLay_scale) * &
+                   (max(0.0, (BBLD_guess - dz_rsum)*I_BBLD) )**CS%MixLenExponent
+            enddo
+          endif
+        endif
+
+        Kd_BBL(nz+1) = 0.0 ; Kddt_h(nz+1) = 0.0
+        hp_b(nz) = h(nz)
+        dT_to_dPE_b(nz) = dT_to_dPE(nz) ; dT_to_dColHt_b(nz) = dT_to_dColHt(nz)
+        dS_to_dPE_b(nz) = dS_to_dPE(nz) ; dS_to_dColHt_b(nz) = dS_to_dColHt(nz)
+
+        htot = h(nz) ; dztot = dz(nz) ; uhtot = u(nz)*h(nz) ; vhtot = v(nz)*h(nz)
+
+        if (debug) then
+          mech_BBL_TKE_k(nz) = mech_BBL_TKE
+          num_itts(:) = -1
+        endif
+
+        do K=nz,2,-1
+          !   Apply dissipation to the TKE, here applied as an exponential decay
+          ! due to 3-d turbulent energy being lost to inefficient rotational modes.
+          ! The following form is often used for mechanical stirring from the surface.
+          ! There could be several different "flavors" of TKE that decay at different rates.
+          Idecay_len_TKE = (CS%TKE_decay * absf) / u_star_BBL
+          exp_kh = 1.0
+          if (Idecay_len_TKE > 0.0) exp_kh = exp(-h(k)*Idecay_len_TKE)
+          if (CS%TKE_diagnostics) &
+            eCD%dTKE_BBL_decay = eCD%dTKE_BBL_decay + (exp_kh-1.0) * mech_BBL_TKE * I_dtdiag
+          mech_BBL_TKE = mech_BBL_TKE * exp_kh
+
+          if (debug) then
+            mech_BBL_TKE_k(K) = mech_BBL_TKE
+          endif
+
+          tot_TKE = mech_BBL_TKE
+
+          ! Precalculate some temporary expressions that are independent of Kddt_h(K).
+          dt_h = dt / max(0.5*(dz(k-1)+dz(k)), 1e-15*dz_sum)
+
+          !   This tests whether the layers above and below this interface are in
+          ! a convectively stable configuration, without considering any effects of
+          ! mixing at higher interfaces.  It is an approximation to the more
+          ! complete test dPEc_dKd_Kd0 >= 0.0, that would include the effects of
+          ! mixing across interface K+1.  The dT_to_dColHt here are effectively
+          ! mass-weighted estimates of dSV_dT.
+          Convectively_stable = ( 0.0 <= &
+               ( (dT_to_dColHt(k) + dT_to_dColHt(k-1) ) * (T0(k-1)-T0(k)) + &
+                 (dS_to_dColHt(k) + dS_to_dColHt(k-1) ) * (S0(k-1)-S0(k)) ) )
+
+          if ((mech_BBL_TKE <= 0.0) .and. Convectively_stable) then
+            ! Energy is already exhausted, so set Kd_BBL = 0 and cycle or exit?
+            tot_TKE = 0.0 ; mech_BBL_TKE = 0.0
+            Kd_BBL(K) = 0.0 ; Kddt_h(K) = Kd(K) * dt_h
+            bot_disconnect = .true.
+            ! if (.not.debug) exit
+          else ! tot_TKE > 0.0 or this is a potentially convectively unstable profile.
+            bot_disconnect = .false.
+
+            ! Precalculate some more temporary expressions that are independent of Kddt_h(K).
+            if (K>=nz) then
+              Th_b(k) = h(k) * T0(k) ; Sh_b(k) = h(k) * S0(k)
+            else
+              Th_b(k) = h(k) * T0(k) + Kddt_h(K+1) * Te(k+1)
+              Sh_b(k) = h(k) * S0(k) + Kddt_h(K+1) * Se(k+1)
+            endif
+            ! Set from top ePBL: Th_a(k-1) = h(k-1) * T0(k-1) ; Sh_a(k-1) = h(k-1) * S0(k-1)
+
+            !   Using Pr=1 and the diffusivity at the upper interface (once it is
+            ! known), determine how much resolved mean kinetic energy (MKE) will be
+            ! extracted within a timestep and add a fraction CS%MKE_to_TKE_effic of
+            ! this to the mTKE budget available for mixing in the next layer.
+            ! This is not enabled yet for BBL mixing.
+         !  if ((CS%MKE_to_TKE_effic > 0.0) .and. (htot*h(k-1) > 0.0)) then
+         !    ! This is the energy that would be available from homogenizing the
+         !    ! velocities between layer k-1 and the layers below.
+         !    dMKE_max = (US%L_to_Z**2*GV%H_to_RZ * CS%MKE_to_TKE_effic) * 0.5 * &
+         !        (h(k-1) / ((htot + h(k-1))*htot)) * &
+         !        ((uhtot-u(k-1)*htot)**2 + (vhtot-v(k-1)*htot)**2)
+         !    ! A fraction (1-exp(Kddt_h*MKE2_Hharm)) of this energy would be
+         !    ! extracted by mixing with a finite viscosity.
+         !    MKE2_Hharm = (htot + h(k-1) + 2.0*h_neglect) / &
+         !                 ((htot+h_neglect) * (h(k-1)+h_neglect))
+         !  else
+         !    dMKE_max = 0.0
+         !    MKE2_Hharm = 0.0
+         !  endif
+
+            ! At this point, Kddt_h(K) will be unknown because its value may depend
+            ! on how much energy is available.
+            dz_tt = dztot + dz_tt_min
+            TKE_here = mech_BBL_TKE
+            if (TKE_here > 0.0) then
+              if (CS%wT_scheme==wT_from_cRoot_TKE) then
+                vstar = CS%vstar_scale_fac * cuberoot(SpV_dt(K)*TKE_here)
+              elseif (CS%wT_scheme==wT_from_RH18) then
+                Surface_Scale = max(0.05, 1.0 - dztot / BBLD_guess)
+                vstar = (CS%vstar_scale_fac * Surface_Scale) * ( CS%vstar_surf_fac*u_star_BBL/h_dz_int(K) )
+              endif
+              hbs_here = min(dztop_dztot(K), MixLen_shape(K))
+              mixlen_BBL(K) = MAX(CS%min_mix_len, ((dz_tt*hbs_here)*vstar) / &
+                  ((CS%Ekman_scale_coef * absf) * (dz_tt*hbs_here) + vstar))
+              Kd_guess0 = (h_dz_int(K)*vstar) * CS%vonKar * mixlen_BBL(K)
+            else
+              vstar = 0.0 ; Kd_guess0 = 0.0
+            endif
+            mixvel_BBL(K) = vstar ! Track vstar
+            Kddt_h_prev = Kd(K) * dt_h
+            Kddt_h_g0 = Kd_guess0 * dt_h
+
+            ! Find the change in PE with the guess at the added bottom boundary layer mixing.
+            call find_PE_chg(Kddt_h_prev, Kddt_h_g0, hp_a(k-1), hp_b(k), &
+                       Th_a(k-1), Sh_a(k-1), Th_b(k), Sh_b(k), &
+                       dT_to_dPE_a(k-1), dS_to_dPE_a(k-1), dT_to_dPE_b(k), dS_to_dPE_b(k), &
+                       pres_Z(K), dT_to_dColHt_a(k-1), dS_to_dColHt_a(k-1), &
+                       dT_to_dColHt_b(k), dS_to_dColHt_b(k), &
+                       PE_chg=PE_chg_g0, dPE_max=PE_chg_max, dPEc_dKd_0=dPEc_dKd_Kd0 )
+
+            ! MKE_src = 0.0 ! Enable later?: = dMKE_max*(1.0 - exp(-Kddt_h_g0 * MKE2_Hharm))
+
+            ! Do not add energy if the column is convectively unstable.  This was handled previously
+            ! for mixing from the surface.
+            if (PE_chg_g0 < 0.0) PE_chg_g0 = 0.0
+
+            ! This block checks out different cases to determine Kd at the present interface.
+            ! if (tot_TKE + (MKE_src - PE_chg_g0) >= 0.0) then
+            if (tot_TKE  - PE_chg_g0 >= 0.0) then
+              ! This column is convectively stable and there is energy to support the suggested
+              ! mixing, or it is convectively unstable.  Keep this first estimate of Kd.
+              Kd_BBL(K) = Kd_guess0
+              Kddt_h(K) = Kddt_h_prev + Kddt_h_g0
+
+              ! Reduce the mechanical and convective TKE proportionately.
+              ! tot_TKE = tot_TKE + MKE_src
+              TKE_reduc = 0.0   ! tot_TKE could be 0 if Convectively_stable is false.
+              if (tot_TKE > 0.0) TKE_reduc = (tot_TKE - PE_chg_g0) / tot_TKE
+              if (CS%TKE_diagnostics) then
+                eCD%dTKE_BBL_mixing = eCD%dTKE_BBL_mixing - PE_chg_g0 * I_dtdiag
+!                eCD%dTKE_MKE = eCD%dTKE_MKE + MKE_src * I_dtdiag
+              endif
+              tot_TKE = TKE_reduc*tot_TKE
+              ! mech_BBL_TKE = TKE_reduc*(mech_BBL_TKE + MKE_src)
+              mech_BBL_TKE = TKE_reduc*mech_BBL_TKE
+              if (bot_connected) then
+                BBLD_output = BBLD_output + dz(k-1)
+              endif
+
+            elseif (tot_TKE == 0.0) then
+              ! This can arise if there is no energy input to drive mixing.
+              Kd_BBL(K) = 0.0 ; Kddt_h(K) = Kddt_h_prev
+              tot_TKE = 0.0 ; mech_BBL_TKE = 0.0
+              bot_disconnect = .true.
+            else
+              ! There is not enough energy to support the mixing, so reduce the
+              ! diffusivity to what can be supported.
+              Kddt_h_max = Kddt_h_g0 ; Kddt_h_min = 0.0
+              ! TKE_left_max = tot_TKE + (MKE_src - PE_chg_g0)
+              TKE_left_max = tot_TKE - PE_chg_g0
+              TKE_left_min = tot_TKE
+
+              ! As a starting guess, take the minimum of a false position estimate
+              ! and a Newton's method estimate starting from dKddt_h = 0.0
+              ! Enable conversion from MKE to TKE in the bottom boundary layer later?
+              ! Kddt_h_guess = tot_TKE * Kddt_h_max / max( PE_chg_g0  - MKE_src, &
+              !                  Kddt_h_max * (dPEc_dKd_Kd0 - dMKE_max * MKE2_Hharm) )
+              Kddt_h_guess = tot_TKE * Kddt_h_max / max( PE_chg_g0, Kddt_h_max * dPEc_dKd_Kd0 )
+              ! The above expression is mathematically the same as the following
+              ! except it is not susceptible to division by zero when
+              !   dPEc_dKd_Kd0 = dMKE_max = 0 .
+              !  Kddt_h_guess = tot_TKE * min( Kddt_h_max / (PE_chg_g0 - MKE_src), &
+              !                      1.0 / (dPEc_dKd_Kd0 - dMKE_max * MKE2_Hharm) )
+              if (debug) then
+                TKE_left_itt(:) = 0.0 ; dPEa_dKd_itt(:) = 0.0 ; PE_chg_itt(:) = 0.0
+                Kddt_h_itt(:) = 0.0 ! ; MKE_src_itt(:) = 0.0
+              endif
+              do itt=1,max_itt
+                call find_PE_chg(Kddt_h_prev, Kddt_h_guess, hp_a(k-1), hp_b(k), &
+                           Th_a(k-1), Sh_a(k-1), Th_b(k), Sh_b(k), &
+                           dT_to_dPE_a(k-1), dS_to_dPE_a(k-1), dT_to_dPE_b(k), dS_to_dPE_b(k), &
+                           pres_Z(K), dT_to_dColHt_a(k-1), dS_to_dColHt_a(k-1), &
+                           dT_to_dColHt_b(k), dS_to_dColHt_b(k), &
+                           PE_chg=PE_chg, dPEc_dKd=dPEc_dKd)
+                ! Enable conversion from MKE to TKE in the bottom boundary layer later?
+                ! MKE_src = dMKE_max * (1.0 - exp(-MKE2_Hharm * Kddt_h_guess))
+                ! dMKE_src_dK = dMKE_max * MKE2_Hharm * exp(-MKE2_Hharm * Kddt_h_guess)
+
+                ! TKE_left = tot_TKE + (MKE_src - PE_chg)
+                TKE_left = tot_TKE - PE_chg
+                if (debug .and. itt<=20) then
+                  Kddt_h_itt(itt) = Kddt_h_guess ! ; MKE_src_itt(itt) = MKE_src
+                  PE_chg_itt(itt) = PE_chg ; dPEa_dKd_itt(itt) = dPEc_dKd
+                  TKE_left_itt(itt) = TKE_left
+                endif
+                ! Store the new bounding values, bearing in mind that min and max
+                ! here refer to Kddt_h and dTKE_left/dKddt_h < 0:
+                if (TKE_left >= 0.0) then
+                  Kddt_h_min = Kddt_h_guess ; TKE_left_min = TKE_left
+                else
+                  Kddt_h_max = Kddt_h_guess ; TKE_left_max = TKE_left
+                endif
+
+                ! Try to use Newton's method, but if it would go outside the bracketed
+                ! values use the false-position method instead.
+                use_Newt = .true.
+                ! if (dPEc_dKd - dMKE_src_dK <= 0.0) then
+                if (dPEc_dKd <= 0.0) then
+                  use_Newt = .false.
+                else
+                  ! dKddt_h_Newt = TKE_left / (dPEc_dKd - dMKE_src_dK)
+                  dKddt_h_Newt = TKE_left / dPEc_dKd
+                  Kddt_h_Newt = Kddt_h_guess + dKddt_h_Newt
+                  if ((Kddt_h_Newt > Kddt_h_max) .or. (Kddt_h_Newt < Kddt_h_min)) &
+                    use_Newt = .false.
+                endif
+
+                if (use_Newt) then
+                  Kddt_h_next = Kddt_h_guess + dKddt_h_Newt
+                  dKddt_h = dKddt_h_Newt
+                else
+                  Kddt_h_next = (TKE_left_max * Kddt_h_min - Kddt_h_max * TKE_left_min) / &
+                                (TKE_left_max - TKE_left_min)
+                  dKddt_h = Kddt_h_next - Kddt_h_guess
+                endif
+
+                if ((abs(dKddt_h) < 1e-9*Kddt_h_guess) .or. (itt==max_itt)) then
+                  ! Use the old value so that the energy calculation does not need to be repeated.
+                  if (debug) num_itts(K) = itt
+                  exit
+                else
+                  Kddt_h_guess = Kddt_h_next
+                endif
+              enddo ! Inner iteration loop on itt.
+              Kd_BBL(K) = Kddt_h_guess / dt_h
+              Kddt_h(K) = (Kd(K) + Kd_BBL(K)) * dt_h
+
+              ! All TKE should have been consumed.
+              if (CS%TKE_diagnostics) then
+                ! eCD%dTKE_BBL_mixing = eCD%dTKE_BBL_mixing - (tot_TKE + MKE_src) * I_dtdiag
+                ! eCD%dTKE_BBL_MKE = eCD%dTKE_BBL_MKE + MKE_src * I_dtdiag
+                eCD%dTKE_BBL_mixing = eCD%dTKE_BBL_mixing - tot_TKE * I_dtdiag
+              endif
+
+              if (bot_connected) BBLD_output = BBLD_output + (PE_chg / PE_chg_g0) * dz(k-1)
+
+              tot_TKE = 0.0 ; mech_BBL_TKE = 0.0
+              bot_disconnect = .true.
+            endif ! End of convective or forced mixing cases to determine Kd.
+
+            Kddt_h(K) = (Kd(K) + Kd_BBL(K)) * dt_h
+            !   At this point, the final value of Kddt_h(K) is known, so the
+            ! estimated properties for layer k can be calculated.
+          endif  ! tot_TKT > 0.0 branch.  Kddt_h(K) has been set.
+
+          b1 = 1.0 / (hp_b(k) + Kddt_h(K))
+          c1(K) = Kddt_h(K) * b1
+
+          hp_b(k-1) = h(k-1) + (hp_b(k) * b1) * Kddt_h(K)
+          dT_to_dPE_b(k-1) = dT_to_dPE(k-1) + c1(K)*dT_to_dPE_b(k)
+          dS_to_dPE_b(k-1) = dS_to_dPE(k-1) + c1(K)*dS_to_dPE_b(k)
+          dT_to_dColHt_b(k-1) = dT_to_dColHt(k-1) + c1(K)*dT_to_dColHt_b(k)
+          dS_to_dColHt_b(k-1) = dS_to_dColHt(k-1) + c1(K)*dS_to_dColHt_b(k)
+
+          ! Store integrated velocities and thicknesses for MKE conversion calculations.
+          if (bot_disconnect) then
+            ! There is no turbulence at this interface, so restart the running sums.
+            uhtot = u(k-1)*h(k-1)
+            vhtot = v(k-1)*h(k-1)
+            htot  = h(k-1)
+            dztot = dz(k-1)
+            bot_connected = .false.
+          else
+            uhtot = uhtot + u(k-1)*h(k-1)
+            vhtot = vhtot + v(k-1)*h(k-1)
+            htot  = htot + h(k-1)
+            dztot = dztot + dz(k-1)
+          endif
+
+          if (K==nz) then
+            Te(k) = b1*(h(k)*T0(k))
+            Se(k) = b1*(h(k)*S0(k))
+          else
+            Te(k) = b1 * (h(k) * T0(k) + Kddt_h(K+1) * Te(k+1))
+            Se(k) = b1 * (h(k) * S0(k) + Kddt_h(K+1) * Se(k+1))
+          endif
+        enddo
+        Kd_BBL(1) = 0.0
+
+        if (debug) then
+          ! Complete the tridiagonal solve for Te with a downward pass.
+          b1 = 1.0 / hp_b(1)
+          Te(1) = b1 * (h(1) * T0(1) + Kddt_h(2) * Te(2))
+          Se(1) = b1 * (h(1) * S0(1) + Kddt_h(2) * Se(2))
+          dT_expect(1) = Te(1) - T0(1) ; dS_expect(1) = Se(1) - S0(1)
+          do k=2,nz
+            Te(k) = Te(k) + c1(K)*Te(k-1)
+            Se(k) = Se(k) + c1(K)*Se(k-1)
+            dT_expect(k) = Te(k) - T0(k) ; dS_expect(k) = Se(k) - S0(k)
+          enddo
+
+          dPE_debug = 0.0
+          do k=1,nz
+            dPE_debug = dPE_debug + (dT_to_dPE(k) * (Te(k) - T0(k)) + &
+                                     dS_to_dPE(k) * (Se(k) - S0(k)))
+          enddo
+          mixing_debug = dPE_debug * I_dtdiag
+        endif
+        k = nz ! This is here to allow a breakpoint to be set.
+        ! The following lines are used for the iteration
+        ! note the iteration has been altered to use the value predicted by
+        ! the TKE threshold (ML_DEPTH).  This is because the MSTAR
+        ! is now dependent on the ML, and therefore the ML needs to be estimated
+        ! more precisely than the grid spacing.
+
+        ! New method uses BBL_DEPTH as computed in ePBL routine
+        BBLD_found = BBLD_output
+        if (BBLD_found - BBLD_guess > CS%MLD_tol) then
+          min_BBLD = BBLD_guess ; dBBLD_min = BBLD_found - BBLD_guess
+        elseif (abs(BBLD_found - BBLD_guess) < CS%MLD_tol) then
+          BBL_converged = .true. ! Break convergence loop
+        else ! We know this guess was too deep
+          max_BBLD = BBLD_guess ; dBBLD_max = BBLD_found - BBLD_guess ! < -CS%MLD_tol
+        endif
+
+        if (.not.BBL_converged) then ; if (CS%MLD_bisection) then
+          ! For the next pass, guess the average of the minimum and maximum values.
+          BBLD_guess = 0.5*(min_BBLD + max_BBLD)
+        else ! Try using the false position method or the returned value instead of simple bisection.
+          ! Taking the occasional step with BBLD_output empirically helps to converge faster.
+          if ((dBBLD_min > 0.0) .and. (dBBLD_max < 0.0) .and. (BBL_it > 2) .and. (mod(BBL_it-1,4) > 0)) then
+            ! Both bounds have valid change estimates and are probably in the range of possible outputs.
+            BBLD_guess = (dBBLD_min*max_BBLD - dBBLD_max*min_BBLD) / (dBBLD_min - dBBLD_max)
+          elseif ((BBLD_found > min_BBLD) .and. (BBLD_found < max_BBLD)) then
+            ! The output BBLD_found is an interesting guess, as it is likely to bracket the true solution
+            ! along with the previous value of BBLD_guess and to be close to the solution.
+            BBLD_guess = BBLD_found
+          else ! Bisect if the other guesses would be out-of-bounds.  This does not happen much.
+            BBLD_guess = 0.5*(min_BBLD + max_BBLD)
+          endif
+        endif ; endif
+      endif
+      if ((BBL_converged) .or. (BBL_it==CS%Max_MLD_Its)) then
+        if (report_avg_its) then
+          CS%sum_its_BBL(1) = CS%sum_its_BBL(1) + real_to_EFP(real(BBL_it))
+          CS%sum_its_BBL(2) = CS%sum_its_BBL(2) + real_to_EFP(1.0)
+        endif
+        exit
+      endif
+    enddo ! Iteration loop for converged boundary layer thickness.
+
+    ! if (present(BBLD_io)) &
+    BBLD_io = BBLD_output
+  endif
+
+end subroutine ePBL_BBL_column
+
 !> This subroutine calculates the change in potential energy and or derivatives
 !! for several changes in an interface's diapycnal diffusivity times a timestep.
 subroutine find_PE_chg(Kddt_h0, dKddt_h, hp_a, hp_b, Th_a, Sh_a, Th_b, Sh_b, &
@@ -1568,10 +2399,10 @@ subroutine find_PE_chg(Kddt_h0, dKddt_h, hp_a, hp_b, Th_a, Sh_a, Th_b, Sh_b, &
                        pres_Z, dT_to_dColHt_a, dS_to_dColHt_a, dT_to_dColHt_b, dS_to_dColHt_b, &
                        PE_chg, dPEc_dKd, dPE_max, dPEc_dKd_0, PE_ColHt_cor)
   real, intent(in)  :: Kddt_h0  !< The previously used diffusivity at an interface times
-                                !! the time step and  divided by the average of the
+                                !! the time step and divided by the average of the
                                 !! thicknesses around the interface [H ~> m or kg m-2].
   real, intent(in)  :: dKddt_h  !< The trial change in the diffusivity at an interface times
-                                !! the time step and  divided by the average of the
+                                !! the time step and divided by the average of the
                                 !! thicknesses around the interface [H ~> m or kg m-2].
   real, intent(in)  :: hp_a     !< The effective pivot thickness of the layer above the
                                 !! interface, given by h_k plus a term that
@@ -1580,7 +2411,7 @@ subroutine find_PE_chg(Kddt_h0, dKddt_h, hp_a, hp_b, Th_a, Sh_a, Th_b, Sh_b, &
   real, intent(in)  :: hp_b     !< The effective pivot thickness of the layer below the
                                 !! interface, given by h_k plus a term that
                                 !! is a fraction (determined from the tridiagonal solver) of
-                                !! Kddt_h for the interface above [H ~> m or kg m-2].
+                                !! Kddt_h for the interface below [H ~> m or kg m-2].
   real, intent(in)  :: Th_a     !< An effective temperature times a thickness in the layer
                                 !! above, including implicit mixing effects with other
                                 !! yet higher layers [C H ~> degC m or degC kg m-2].
@@ -1630,14 +2461,14 @@ subroutine find_PE_chg(Kddt_h0, dKddt_h, hp_a, hp_b, Th_a, Sh_a, Th_b, Sh_b, &
                                 !! in the salinities of all the layers below [Z S-1 ~> m ppt-1].
 
   real, intent(out) :: PE_chg   !< The change in column potential energy from applying
-                                !! Kddt_h at the present interface [R Z3 T-2 ~> J m-2].
-  real, optional, intent(out) :: dPEc_dKd !< The partial derivative of PE_chg with Kddt_h
+                                !! dKddt_h at the present interface [R Z3 T-2 ~> J m-2].
+  real, optional, intent(out) :: dPEc_dKd !< The partial derivative of PE_chg with dKddt_h
                                           !! [R Z3 T-2 H-1 ~> J m-3 or J kg-1].
   real, optional, intent(out) :: dPE_max  !< The maximum change in column potential energy that could
-                                          !! be realized by applying a huge value of Kddt_h at the
+                                          !! be realized by applying a huge value of dKddt_h at the
                                           !! present interface [R Z3 T-2 ~> J m-2].
-  real, optional, intent(out) :: dPEc_dKd_0 !< The partial derivative of PE_chg with Kddt_h in the
-                                            !! limit where Kddt_h = 0 [R Z3 T-2 H-1 ~> J m-3 or J kg-1].
+  real, optional, intent(out) :: dPEc_dKd_0 !< The partial derivative of PE_chg with dKddt_h in the
+                                            !! limit where dKddt_h = 0 [R Z3 T-2 H-1 ~> J m-3 or J kg-1].
   real, optional, intent(out) :: PE_ColHt_cor !< The correction to PE_chg that is made due to a net
                                             !! change in the column height [R Z3 T-2 ~> J m-2].
 
@@ -1674,6 +2505,7 @@ subroutine find_PE_chg(Kddt_h0, dKddt_h, hp_a, hp_b, Th_a, Sh_a, Th_b, Sh_b, &
   ! Find the change in column potential energy due to the change in the
   ! diffusivity at this interface by dKddt_h.
   y1_3 = dKddt_h / (bdt1 * (bdt1 + dKddt_h * hps))
+
   PE_chg = PEc_core * y1_3
   ColHt_chg = ColHt_core * y1_3
   if (ColHt_chg < 0.0) PE_chg = PE_chg - pres_Z * ColHt_chg
@@ -2092,6 +2924,9 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
 
 
 !/1. General ePBL settings
+  call get_param(param_file, mdl, "DEBUG", CS%debug, &
+                 "If true, write out verbose debugging data.", &
+                 default=.false., debuggingParam=.true.)
   call get_param(param_file, mdl, "OMEGA", CS%omega, &
                  "The rotation rate of the earth.", &
                  units="s-1", default=7.2921e-5, scale=US%T_to_S)
@@ -2101,7 +2936,7 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                  "scale for turbulence.", default=.false., do_not_log=.true.)
   omega_frac_dflt = 0.0
   if (use_omega) then
-    call MOM_error(WARNING, "ML_USE_OMEGA is depricated; use ML_OMEGA_FRAC=1.0 instead.")
+    call MOM_error(WARNING, "ML_USE_OMEGA is deprecated; use ML_OMEGA_FRAC=1.0 instead.")
     omega_frac_dflt = 1.0
   endif
   call get_param(param_file, mdl, "ML_OMEGA_FRAC", CS%omega_frac, &
@@ -2130,10 +2965,10 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
   if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
   call get_param(param_file, mdl, "EPBL_ORIGINAL_PE_CALC", CS%orig_PE_calc, &
-                 "If true, the ePBL code uses the original form of the "//&
-                 "potential energy change code.  Otherwise, the newer "//&
-                 "version that can work with successive increments to the "//&
-                 "diffusivity in upward or downward passes is used.", default=.true.)
+                 "If true, the ePBL code uses the original form of the potential energy change "//&
+                 "code.  Otherwise, the newer version that can work with successive increments "//&
+                 "to the diffusivity in upward or downward passes is used.", &
+                 default=.true.) ! Change the default to .false.?
 
   call get_param(param_file, mdl, "MKE_TO_TKE_EFFIC", CS%MKE_to_TKE_effic, &
                  "The efficiency with which mean kinetic energy released "//&
@@ -2141,16 +2976,16 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                  "is converted to turbulent kinetic energy.", &
                  units="nondim", default=0.0)
   call get_param(param_file, mdl, "TKE_DECAY", CS%TKE_decay, &
-                 "TKE_DECAY relates the vertical rate of decay of the "//&
-                 "TKE available for mechanical entrainment to the natural "//&
-                 "Ekman depth.", units="nondim", default=2.5)
+                 "TKE_DECAY relates the vertical rate of decay of the TKE available "//&
+                 "for mechanical entrainment to the natural Ekman depth.", &
+                 units="nondim", default=2.5)
 
 
 !/2. Options related to setting MSTAR
   call get_param(param_file, mdl, "EPBL_MSTAR_SCHEME", tmpstr, &
                  "EPBL_MSTAR_SCHEME selects the method for setting mstar.  Valid values are: \n"//&
                  "\t CONSTANT   - Use a fixed mstar given by MSTAR \n"//&
-                 "\t OM4        - Use L_Ekman/L_Obukhov in the sabilizing limit, as in OM4 \n"//&
+                 "\t OM4        - Use L_Ekman/L_Obukhov in the stabilizing limit, as in OM4 \n"//&
                  "\t REICHL_H18 - Use the scheme documented in Reichl & Hallberg, 2018.", &
                  default=CONSTANT_STRING, do_not_log=.true.)
   call get_param(param_file, mdl, "MSTAR_MODE", mstar_mode, default=-1)
@@ -2279,7 +3114,7 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "EPBL_MLD_MAX_ITS", CS%max_MLD_its, &
                  "The maximum number of iterations that can be used to find a self-consistent "//&
                  "mixed layer depth.  If EPBL_MLD_BISECTION is true, the maximum number "//&
-                 "iteractions needed is set by Depth/2^MAX_ITS < EPBL_MLD_TOLERANCE.", &
+                 "iterations needed is set by Depth/2^MAX_ITS < EPBL_MLD_TOLERANCE.", &
                  default=20, do_not_log=.not.CS%Use_MLD_iteration)
   if (.not.CS%Use_MLD_iteration) CS%Max_MLD_Its = 1
   call get_param(param_file, mdl, "EPBL_MIN_MIX_LEN", CS%min_mix_len, &
@@ -2343,6 +3178,16 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                  "The proportionality times ustar to set vstar at the surface.", &
                  units="nondim", default=1.2)
 
+  !/ Bottom boundary layer mixing related options
+  call get_param(param_file, mdl, "EPBL_BBL_EFFIC", CS%ePBL_BBL_effic, &
+                 "The efficiency of bottom boundary layer mixing via ePBL.  Setting this to a "//&
+                 "value that is greater than 0 to enable bottom boundary layer mixing from EPBL.", &
+                 units="nondim", default=0.0)
+  call get_param(param_file, mdl, "USE_BBLD_ITERATION", CS%Use_BBLD_iteration, &
+                 "A logical that specifies whether or not to use the distance to the top of the "//&
+                 "actively turbulent bottom boundary layer to help set the EPBL length scale.", &
+                 default=.true., do_not_log=(CS%ePBL_BBL_effic<=0.0))
+
   !/ Options related to Langmuir turbulence
   call get_param(param_file, mdl, "USE_LA_LI2016", use_LA_Windsea, &
        "A logical to use the Li et al. 2016 (submitted) formula to "//&
@@ -2360,7 +3205,7 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                  "Valid values are: \n"//&
                  "\t NONE     - Do not do any extra mixing due to Langmuir turbulence \n"//&
                  "\t RESCALE  - Use a multiplicative rescaling of mstar to account for Langmuir turbulence \n"//&
-                 "\t ADDITIVE - Add a Langmuir turblence contribution to mstar to other contributions", &
+                 "\t ADDITIVE - Add a Langmuir turbulence contribution to mstar to other contributions", &
                  default=NONE_STRING, do_not_log=.true.)
     call get_param(param_file, mdl, "LT_ENHANCE", LT_enhance, default=-1)
     if (LT_ENHANCE == 0) then
@@ -2384,7 +3229,7 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                  "Valid values are: \n"//&
                  "\t NONE     - Do not do any extra mixing due to Langmuir turbulence \n"//&
                  "\t RESCALE  - Use a multiplicative rescaling of mstar to account for Langmuir turbulence \n"//&
-                 "\t ADDITIVE - Add a Langmuir turblence contribution to mstar to other contributions", &
+                 "\t ADDITIVE - Add a Langmuir turbulence contribution to mstar to other contributions", &
                  default=NONE_STRING)
     tmpstr = uppercase(tmpstr)
     select case (tmpstr)
@@ -2404,7 +3249,7 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                  "Coefficient for Langmuir enhancement of mstar", &
                  units="nondim", default=0.447, do_not_log=(CS%LT_enhance_form==No_Langmuir))
     call get_param(param_file, mdl, "LT_ENHANCE_EXP", CS%LT_ENHANCE_EXP, &
-                 "Exponent for Langmuir enhancementt of mstar", &
+                 "Exponent for Langmuir enhancement of mstar", &
                  units="nondim", default=-1.33,  do_not_log=(CS%LT_enhance_form==No_Langmuir))
     call get_param(param_file, mdl, "LT_MOD_LAC1", CS%LaC_MLDoEK, &
                  "Coefficient for modification of Langmuir number due to "//&
@@ -2465,6 +3310,23 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
       Time, 'Mixing Length that is used', 'm', conversion=US%Z_to_m)
   CS%id_Velocity_Scale = register_diag_field('ocean_model', 'Velocity_Scale', diag%axesTi, &
       Time, 'Velocity Scale that is used.', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
+  if (CS%ePBL_BBL_effic > 0.0) then
+    CS%id_Kd_BBL = register_diag_field('ocean_model', 'Kd_ePBL_BBL', diag%axesTi, &
+        Time, 'ePBL bottom boundary layer diffusivity', 'm2 s-1', conversion=GV%HZ_T_to_m2_s)
+    CS%id_BBL_Mix_Length = register_diag_field('ocean_model', 'BBL_Mixing_Length', diag%axesTi, &
+        Time, 'ePBL bottom boundary layer mixing length', 'm', conversion=US%Z_to_m)
+    CS%id_BBL_Vel_Scale = register_diag_field('ocean_model', 'BBL_Velocity_Scale', diag%axesTi, &
+        Time, 'ePBL bottom boundary layer velocity scale', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
+    CS%id_BBL_depth = register_diag_field('ocean_model', 'h_BBL', diag%axesT1, &
+        Time, 'Bottom boundary layer depth based on active turbulence', 'm', conversion=US%Z_to_m)
+    CS%id_TKE_BBL = register_diag_field('ocean_model', 'ePBL_BBL_TKE', diag%axesT1, &
+        Time, 'The source of TKE for the bottom boundary layer', 'W m-2', conversion=US%RZ3_T3_to_W_m2)
+    CS%id_TKE_BBL_mixing = register_diag_field('ocean_model', 'ePBL_BBL_TKE_mixing', diag%axesT1, &
+        Time, 'TKE consumed by mixing that thickens the bottom boundary layer', 'W m-2', conversion=US%RZ3_T3_to_W_m2)
+    CS%id_TKE_BBL_decay = register_diag_field('ocean_model', 'ePBL_BBL_TKE_decay', diag%axesT1, &
+        Time, 'Energy decay sink of mixed layer TKE in the bottom boundary layer', &
+        'W m-2', conversion=US%RZ3_T3_to_W_m2)
+  endif
   CS%id_MSTAR_mix = register_diag_field('ocean_model', 'MSTAR', diag%axesT1, &
       Time, 'Total mstar that is used.', 'nondim')
   if (CS%use_LT) then
@@ -2484,9 +3346,14 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
     CS%sum_its(1) = real_to_EFP(0.0) ; CS%sum_its(2) = real_to_EFP(0.0)
   endif
 
-  if (max(CS%id_TKE_wind, CS%id_TKE_MKE, CS%id_TKE_conv, &
-          CS%id_TKE_mixing, CS%id_TKE_mech_decay, CS%id_TKE_forcing, &
-          CS%id_TKE_conv_decay) > 0) then
+  CS%TKE_diagnostics = (max(CS%id_TKE_wind, CS%id_TKE_MKE, CS%id_TKE_conv, &
+                            CS%id_TKE_mixing, CS%id_TKE_mech_decay, CS%id_TKE_forcing, &
+                            CS%id_TKE_conv_decay) > 0)
+  if (CS%ePBL_BBL_effic > 0.0) then
+    CS%TKE_diagnostics = CS%TKE_diagnostics .or. &
+        (max(CS%id_TKE_BBL, CS%id_TKE_BBL_mixing, CS%id_TKE_BBL_decay) > 0)
+  endif
+  if (CS%TKE_diagnostics) then
     call safe_alloc_alloc(CS%diag_TKE_wind, isd, ied, jsd, jed)
     call safe_alloc_alloc(CS%diag_TKE_MKE, isd, ied, jsd, jed)
     call safe_alloc_alloc(CS%diag_TKE_conv, isd, ied, jsd, jed)
@@ -2494,13 +3361,15 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
     call safe_alloc_alloc(CS%diag_TKE_mixing, isd, ied, jsd, jed)
     call safe_alloc_alloc(CS%diag_TKE_mech_decay, isd, ied, jsd, jed)
     call safe_alloc_alloc(CS%diag_TKE_conv_decay, isd, ied, jsd, jed)
-
-    CS%TKE_diagnostics = .true.
+    if (CS%ePBL_BBL_effic > 0.0) then
+      call safe_alloc_alloc(CS%diag_TKE_BBL, isd, ied, jsd, jed)
+      call safe_alloc_alloc(CS%diag_TKE_BBL_mixing, isd, ied, jsd, jed)
+      call safe_alloc_alloc(CS%diag_TKE_BBL_decay, isd, ied, jsd, jed)
+    endif
   endif
-  if (CS%id_Velocity_Scale>0) call safe_alloc_alloc(CS%Velocity_Scale, isd, ied, jsd, jed, GV%ke+1)
-  if (CS%id_Mixing_Length>0) call safe_alloc_alloc(CS%Mixing_Length, isd, ied, jsd, jed, GV%ke+1)
 
   call safe_alloc_alloc(CS%ML_depth, isd, ied, jsd, jed)
+  call safe_alloc_alloc(CS%BBL_depth, isd, ied, jsd, jed)
   if (max(CS%id_mstar_mix, CS%id_LA, CS%id_LA_mod, CS%id_MSTAR_LT ) >0) then
     call safe_alloc_alloc(CS%Mstar_mix, isd, ied, jsd, jed)
     call safe_alloc_alloc(CS%LA, isd, ied, jsd, jed)
@@ -2518,6 +3387,7 @@ subroutine energetic_PBL_end(CS)
   real :: avg_its ! The averaged number of iterations used by ePBL [nondim]
 
   if (allocated(CS%ML_depth))            deallocate(CS%ML_depth)
+  if (allocated(CS%BBL_depth))           deallocate(CS%BBL_depth)
   if (allocated(CS%LA))                  deallocate(CS%LA)
   if (allocated(CS%LA_MOD))              deallocate(CS%LA_MOD)
   if (allocated(CS%MSTAR_MIX))           deallocate(CS%MSTAR_MIX)
@@ -2529,8 +3399,9 @@ subroutine energetic_PBL_end(CS)
   if (allocated(CS%diag_TKE_mixing))     deallocate(CS%diag_TKE_mixing)
   if (allocated(CS%diag_TKE_mech_decay)) deallocate(CS%diag_TKE_mech_decay)
   if (allocated(CS%diag_TKE_conv_decay)) deallocate(CS%diag_TKE_conv_decay)
-  if (allocated(CS%Mixing_Length))       deallocate(CS%Mixing_Length)
-  if (allocated(CS%Velocity_Scale))      deallocate(CS%Velocity_Scale)
+  if (allocated(CS%diag_TKE_BBL))        deallocate(CS%diag_TKE_BBL)
+  if (allocated(CS%diag_TKE_BBL_mixing)) deallocate(CS%diag_TKE_BBL_mixing)
+  if (allocated(CS%diag_TKE_BBL_decay))  deallocate(CS%diag_TKE_BBL_decay)
 
   if (report_avg_its) then
     call EFP_sum_across_PEs(CS%sum_its, 2)
