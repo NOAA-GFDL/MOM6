@@ -254,6 +254,9 @@ type, public :: MOM_dyn_split_RK2_CS ; private
      !! nullified.  Flather OBCs use open boundary_CS as well.
   !> A pointer to the update_OBC control structure
   type(update_OBC_CS),    pointer :: update_OBC_CSp => NULL()
+  logical :: use_obc_uinst_bug !< If true, use a bug in the radiation OBC's (ex 
+     !! Orlanski) where the instantaneous velocity is used rather than the 
+     !! time-averaged velocity. 
 
   type(group_pass_type) :: pass_eta  !< Structure for group halo pass
   type(group_pass_type) :: pass_visc_rem  !< Structure for group halo pass
@@ -1028,7 +1031,7 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
     call do_group_pass(CS%pass_av_uvh, G%domain, clock=id_clock_pass)
   endif
 
-  if (associated(CS%OBC)) then
+  if (associated(CS%OBC) .and. CS%use_obc_uinst_bug) then
     !### I suspect that there is a bug here when u_inst is compared with a previous value of u_av
     ! to estimate the dominant outward group velocity, but a fix is not available yet.
     call radiation_open_bdry_conds(CS%OBC, u_inst, u_old_rad_OBC, v_inst, v_old_rad_OBC, G, GV, US, dt)
@@ -1042,6 +1045,10 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
 
   if (G%nonblocking_updates) &
     call complete_group_pass(CS%pass_av_uvh, G%Domain, clock=id_clock_pass)
+
+  if (associated(CS%OBC) .and. .not.CS%use_obc_uinst_bug) then
+    call radiation_open_bdry_conds(CS%OBC, u_av, u_old_rad_OBC, v_av, v_old_rad_OBC, G, GV, US, dt)
+  endif
 
   !$OMP parallel do default(shared)
   do k=1,nz
@@ -1429,6 +1436,10 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
                  "variables that are needed to reproduce across restarts, similarly to "//&
                  "what is already being done with the primary state variables.  "//&
                  "The default should be changed to true.", default=.false., do_not_log=.true.)
+  call get_param(param_file, mdl, "USE_OBC_U_INST_BUG", CS%use_obc_uinst_bug, &
+                 "If true, use a bug in the update of the radiation open boundary conditions "//&
+                 "that uses the instantaneous velocity rather than the time-averaged velocity.",&
+                  default=.true.)
   if (CS%remap_aux .and. .not.CS%store_CAu) call MOM_error(FATAL, &
       "REMAP_AUXILIARY_VARS requires that STORE_CORIOLIS_ACCEL = True.")
   call get_param(param_file, mdl, "DEBUG", CS%debug, &
