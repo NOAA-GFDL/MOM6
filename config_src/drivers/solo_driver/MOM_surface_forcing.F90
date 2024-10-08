@@ -1180,15 +1180,16 @@ subroutine buoyancy_forcing_from_files(sfc_state, fluxes, day, dt, G, US, CS)
     ! assume solid runoff (calving) enters ocean at 0degC
     ! mass leaving the ocean has heat_content determined in MOM_diabatic_driver.F90
     do j=js,je ; do i=is,ie
-      fluxes%evap(i,j)    = fluxes%evap(i,j)    * G%mask2dT(i,j)
-      fluxes%lprec(i,j)   = fluxes%lprec(i,j)   * G%mask2dT(i,j)
-      fluxes%fprec(i,j)   = fluxes%fprec(i,j)   * G%mask2dT(i,j)
-      fluxes%lrunoff(i,j) = fluxes%lrunoff(i,j) * G%mask2dT(i,j)
-      fluxes%frunoff(i,j) = fluxes%frunoff(i,j) * G%mask2dT(i,j)
-      fluxes%lw(i,j)      = fluxes%lw(i,j)      * G%mask2dT(i,j)
-      fluxes%sens(i,j)    = fluxes%sens(i,j)    * G%mask2dT(i,j)
-      fluxes%sw(i,j)      = fluxes%sw(i,j)      * G%mask2dT(i,j)
-      fluxes%latent(i,j)  = fluxes%latent(i,j)  * G%mask2dT(i,j)
+      fluxes%evap(i,j)        = fluxes%evap(i,j)        * G%mask2dT(i,j)
+      fluxes%lprec(i,j)       = fluxes%lprec(i,j)       * G%mask2dT(i,j)
+      fluxes%fprec(i,j)       = fluxes%fprec(i,j)       * G%mask2dT(i,j)
+      fluxes%seaice_melt(i,j) = fluxes%seaice_melt(i,j) * G%mask2dT(i,j)
+      fluxes%lrunoff(i,j)     = fluxes%lrunoff(i,j)     * G%mask2dT(i,j)
+      fluxes%frunoff(i,j)     = fluxes%frunoff(i,j)     * G%mask2dT(i,j)
+      fluxes%lw(i,j)          = fluxes%lw(i,j)          * G%mask2dT(i,j)
+      fluxes%sens(i,j)        = fluxes%sens(i,j)        * G%mask2dT(i,j)
+      fluxes%sw(i,j)          = fluxes%sw(i,j)          * G%mask2dT(i,j)
+      fluxes%latent(i,j)      = fluxes%latent(i,j)      * G%mask2dT(i,j)
 
       fluxes%latent_evap_diag(i,j)     = fluxes%latent_evap_diag(i,j) * G%mask2dT(i,j)
       fluxes%latent_fprec_diag(i,j)    = -fluxes%fprec(i,j)*CS%latent_heat_fusion
@@ -1294,10 +1295,11 @@ subroutine buoyancy_forcing_from_data_override(sfc_state, fluxes, day, dt, G, US
     fluxes%latent_evap_diag(i,j) = fluxes%latent(i,j)
   enddo ; enddo
 
-  call data_override(G%Domain, 'snow', fluxes%fprec, day, scale=US%kg_m2s_to_RZ_T)
-  call data_override(G%Domain, 'rain', fluxes%lprec, day, scale=US%kg_m2s_to_RZ_T)
-  call data_override(G%Domain, 'runoff', fluxes%lrunoff, day, scale=US%kg_m2s_to_RZ_T)
-  call data_override(G%Domain, 'calving', fluxes%frunoff, day, scale=US%kg_m2s_to_RZ_T)
+  call data_override(G%Domain, 'snow',        fluxes%fprec,       day, scale=US%kg_m2s_to_RZ_T)
+  call data_override(G%Domain, 'rain',        fluxes%lprec,       day, scale=US%kg_m2s_to_RZ_T)
+  call data_override(G%Domain, 'seaice_melt', fluxes%seaice_melt, day, scale=US%kg_m2s_to_RZ_T)
+  call data_override(G%Domain, 'runoff',      fluxes%lrunoff,     day, scale=US%kg_m2s_to_RZ_T)
+  call data_override(G%Domain, 'calving',     fluxes%frunoff,     day, scale=US%kg_m2s_to_RZ_T)
 
 !     Read the SST and SSS fields for damping.
   if (CS%restorebuoy) then !#CTRL# .or. associated(CS%ctrl_forcing_CSp)) then
@@ -1345,15 +1347,16 @@ subroutine buoyancy_forcing_from_data_override(sfc_state, fluxes, day, dt, G, US
   ! assume solid runoff (calving) enters ocean at 0degC
   ! mass leaving ocean has heat_content determined in MOM_diabatic_driver.F90
   do j=js,je ; do i=is,ie
-    fluxes%evap(i,j)    = fluxes%evap(i,j)    * G%mask2dT(i,j)
-    fluxes%lprec(i,j)   = fluxes%lprec(i,j)   * G%mask2dT(i,j)
-    fluxes%fprec(i,j)   = fluxes%fprec(i,j)   * G%mask2dT(i,j)
-    fluxes%lrunoff(i,j) = fluxes%lrunoff(i,j) * G%mask2dT(i,j)
-    fluxes%frunoff(i,j) = fluxes%frunoff(i,j) * G%mask2dT(i,j)
-    fluxes%lw(i,j)      = fluxes%lw(i,j)      * G%mask2dT(i,j)
-    fluxes%latent(i,j)  = fluxes%latent(i,j)  * G%mask2dT(i,j)
-    fluxes%sens(i,j)    = fluxes%sens(i,j)    * G%mask2dT(i,j)
-    fluxes%sw(i,j)      = fluxes%sw(i,j)      * G%mask2dT(i,j)
+    fluxes%evap(i,j)        = fluxes%evap(i,j)        * G%mask2dT(i,j)
+    fluxes%lprec(i,j)       = fluxes%lprec(i,j)       * G%mask2dT(i,j)
+    fluxes%fprec(i,j)       = fluxes%fprec(i,j)       * G%mask2dT(i,j)
+    fluxes%seaice_melt(i,j) = fluxes%seaice_melt(i,j) * G%mask2dT(i,j)
+    fluxes%lrunoff(i,j)     = fluxes%lrunoff(i,j)     * G%mask2dT(i,j)
+    fluxes%frunoff(i,j)     = fluxes%frunoff(i,j)     * G%mask2dT(i,j)
+    fluxes%lw(i,j)          = fluxes%lw(i,j)          * G%mask2dT(i,j)
+    fluxes%latent(i,j)      = fluxes%latent(i,j)      * G%mask2dT(i,j)
+    fluxes%sens(i,j)        = fluxes%sens(i,j)        * G%mask2dT(i,j)
+    fluxes%sw(i,j)          = fluxes%sw(i,j)          * G%mask2dT(i,j)
 
     fluxes%latent_evap_diag(i,j)     = fluxes%latent_evap_diag(i,j) * G%mask2dT(i,j)
     fluxes%latent_fprec_diag(i,j)    = -fluxes%fprec(i,j)*CS%latent_heat_fusion
@@ -1395,6 +1398,7 @@ subroutine buoyancy_forcing_zero(sfc_state, fluxes, day, dt, G, CS)
       fluxes%evap(i,j)                 = 0.0
       fluxes%lprec(i,j)                = 0.0
       fluxes%fprec(i,j)                = 0.0
+      fluxes%seaice_melt(i,j)          = 0.0
       fluxes%vprec(i,j)                = 0.0
       fluxes%lrunoff(i,j)              = 0.0
       fluxes%frunoff(i,j)              = 0.0
@@ -1438,6 +1442,7 @@ subroutine buoyancy_forcing_const(sfc_state, fluxes, day, dt, G, US, CS)
       fluxes%evap(i,j)                 = 0.0
       fluxes%lprec(i,j)                = 0.0
       fluxes%fprec(i,j)                = 0.0
+      fluxes%seaice_melt(i,j)          = 0.0
       fluxes%vprec(i,j)                = 0.0
       fluxes%lrunoff(i,j)              = 0.0
       fluxes%frunoff(i,j)              = 0.0
@@ -1486,6 +1491,7 @@ subroutine buoyancy_forcing_linear(sfc_state, fluxes, day, dt, G, US, CS)
       fluxes%evap(i,j)                 = 0.0
       fluxes%lprec(i,j)                = 0.0
       fluxes%fprec(i,j)                = 0.0
+      fluxes%seaice_melt(i,j)          = 0.0
       fluxes%vprec(i,j)                = 0.0
       fluxes%lrunoff(i,j)              = 0.0
       fluxes%frunoff(i,j)              = 0.0

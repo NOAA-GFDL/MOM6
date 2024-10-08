@@ -543,14 +543,17 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
     "MOM_forcing_type extractFluxes1d: fluxes%sens is not associated.")
 
   if (.not.associated(fluxes%evap)) call MOM_error(FATAL, &
-    "MOM_forcing_type extractFluxes1d: No evaporation defined.")
+    "MOM_forcing_type extractFluxes1d: fluxes%evap is not associated.")
 
   if (.not.associated(fluxes%vprec)) call MOM_error(FATAL, &
-    "MOM_forcing_type extractFluxes1d: fluxes%vprec not defined.")
+    "MOM_forcing_type extractFluxes1d: fluxes%vprec is not associated.")
 
   if ((.not.associated(fluxes%lprec)) .or. &
       (.not.associated(fluxes%fprec))) call MOM_error(FATAL, &
-    "MOM_forcing_type extractFluxes1d: No precipitation defined.")
+    "MOM_forcing_type extractFluxes1d: fluxes%lprec or fluxes%fprec not associated.")
+
+    if (.not.associated(fluxes%seaice_melt)) call MOM_error(FATAL, &
+    "MOM_forcing_type extractFluxes1d: fluxes%seaice_melt is not associated.")
 
   do i=is,ie ; htot(i) = h(i,1) ; enddo
   do k=2,nz ; do i=is,ie ; htot(i) = htot(i) + h(i,k) ; enddo ; enddo
@@ -630,8 +633,6 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
     if (fluxes%evap(i,j) < 0.0) netMassOut(i) = netMassOut(i) + fluxes%evap(i,j)
   !   if (associated(fluxes%heat_content_cond)) fluxes%heat_content_cond(i,j) = 0.0 !??? --AJA
 
-    ! lprec < 0 means sea ice formation taking water from the ocean.
-    ! smg: we should split the ice melt/formation from the lprec
     if (fluxes%lprec(i,j) < 0.0) netMassOut(i) = netMassOut(i) + fluxes%lprec(i,j)
 
     ! seaice_melt < 0 means sea ice formation taking water from the ocean.
@@ -801,13 +802,8 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
         endif
       endif
 
-      ! smg: we should remove sea ice melt from lprec!!!
-      ! fluxes%lprec > 0 means ocean gains mass via liquid precipitation and/or sea ice melt.
       ! When atmosphere does not provide heat of this precipitation, the ocean assumes
       ! it enters the ocean at the SST.
-      ! fluxes%lprec < 0 means ocean loses mass via sea ice formation. As we do not yet know
-      ! the layer at which this mass is removed, we cannot compute it heat content. We must
-      ! wait until MOM_diabatic_driver.F90.
       if (associated(fluxes%heat_content_lprec)) then
         if (fluxes%lprec(i,j) > 0.0) then
           fluxes%heat_content_lprec(i,j) = tv%C_p*fluxes%lprec(i,j)*T(i,1)
@@ -1571,15 +1567,6 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
         cmor_standard_name='water_evaporation_flux', &
         cmor_long_name='Water Evaporation Flux Where Ice Free Ocean over Sea')
 
-  ! smg: seaice_melt field requires updates to the sea ice model
-  handles%id_seaice_melt = register_diag_field('ocean_model', 'seaice_melt',       &
-        diag%axesT1, Time, 'water flux to ocean from snow/sea ice melting(> 0) or formation(< 0)', &
-        'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s, &
-        standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics',     &
-        cmor_field_name='fsitherm',                                                  &
-        cmor_standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics',&
-        cmor_long_name='water flux to ocean from sea ice melt(> 0) or form(< 0)')
-
   handles%id_precip = register_diag_field('ocean_model', 'precip', diag%axesT1, Time, &
         'Liquid + frozen precipitation into ocean', 'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
 
@@ -1595,6 +1582,14 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
         standard_name='rainfall_flux',                                                    &
         cmor_field_name='prlq', cmor_standard_name='rainfall_flux',                       &
         cmor_long_name='Rainfall Flux where Ice Free Ocean over Sea')
+
+  handles%id_seaice_melt = register_diag_field('ocean_model', 'seaice_melt',       &
+        diag%axesT1, Time, 'water flux to ocean from snow/sea ice melting(> 0) or formation(< 0)', &
+        'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s, &
+        standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics',     &
+        cmor_field_name='fsitherm',                                                  &
+        cmor_standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics',&
+        cmor_long_name='water flux to ocean from sea ice melt(> 0) or form(< 0)')
 
   handles%id_vprec = register_diag_field('ocean_model', 'vprec', diag%axesT1, Time, &
         'Virtual liquid precip into ocean due to SSS restoring', &
@@ -1648,14 +1643,6 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
       cmor_standard_name='water_evaporation_flux_area_integrated',                      &
       cmor_long_name='Evaporation Where Ice Free Ocean over Sea Area Integrated')
 
-  ! seaice_melt field requires updates to the sea ice model
-  handles%id_total_seaice_melt = register_scalar_field('ocean_model', 'total_icemelt', Time, diag, &
-      long_name='Area integrated sea ice melt (>0) or form (<0)', units='kg s-1',                      &
-      standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics_area_integrated',         &
-      cmor_field_name='total_fsitherm',                                                                &
-      cmor_standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics_area_integrated',    &
-      cmor_long_name='Water Melt/Form from Sea Ice Area Integrated')
-
   handles%id_total_precip = register_scalar_field('ocean_model', 'total_precip', Time, diag, &
       long_name='Area integrated liquid+frozen precip into ocean', units='kg s-1')
 
@@ -1672,6 +1659,13 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
       cmor_field_name='total_pr',                                                         &
       cmor_standard_name='rainfall_flux_area_integrated',                                 &
       cmor_long_name='Rainfall Flux where Ice Free Ocean over Sea Area Integrated')
+
+  handles%id_total_seaice_melt = register_scalar_field('ocean_model', 'total_icemelt', Time, diag, &
+      long_name='Area integrated sea ice melt (>0) or form (<0)', units='kg s-1',                      &
+      standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics_area_integrated',         &
+      cmor_field_name='total_fsitherm',                                                                &
+      cmor_standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics_area_integrated',    &
+      cmor_long_name='Water Melt/Form from Sea Ice Area Integrated')
 
   handles%id_total_vprec = register_scalar_field('ocean_model', 'total_vprec', Time, diag, &
       long_name='Area integrated virtual liquid precip due to SSS restoring', units='kg s-1')

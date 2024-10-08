@@ -154,6 +154,7 @@ subroutine USER_buoyancy_forcing(sfc_state, fluxes, day, dt, G, US, CS)
     call safe_alloc_ptr(fluxes%evap, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%lprec, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%fprec, isd, ied, jsd, jed)
+    call safe_alloc_ptr(fluxes%seaice_melt, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%lrunoff, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%frunoff, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%vprec, isd, ied, jsd, jed)
@@ -177,6 +178,7 @@ subroutine USER_buoyancy_forcing(sfc_state, fluxes, day, dt, G, US, CS)
       ! and are positive downward - i.e. evaporation should be negative.
       fluxes%evap(i,j) = -0.0 * G%mask2dT(i,j)
       fluxes%lprec(i,j) = 0.0 * G%mask2dT(i,j)
+      fluxes%seaice_melt(i,j) = 0.0 * G%mask2dT(i,j)
 
       ! vprec will be set later, if it is needed for salinity restoring.
       fluxes%vprec(i,j) = 0.0
@@ -313,7 +315,7 @@ end subroutine USER_surface_forcing_init
 !!
 !! USER_buoyancy() forcing is used to set the surface buoyancy
 !! forcing, which may include a number of fresh water flux fields
-!! (evap, lprec, fprec, lrunoff, frunoff, and
+!! (evap, lprec, fprec, seaice_melt, lrunoff, frunoff, and
 !! vprec) and the surface heat fluxes (sw, lw, latent and sens)
 !! if temperature and salinity are state variables, or it may simply
 !! be the buoyancy flux if it is not.  This routine also has coded a
