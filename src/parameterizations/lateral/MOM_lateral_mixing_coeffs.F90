@@ -129,8 +129,8 @@ type, public :: VarMix_CS
   real, allocatable :: khtr_struct(:,:,:) !< Vertical structure function used in tracer diffusivity [nondim]
   real, allocatable :: kdgl90_struct(:,:,:) !< Vertical structure function used in GL90 diffusivity [nondim]
   real :: BS_EBT_power                !< Power to raise EBT vertical structure to. Default 0.0.
-  real :: sqg_expo     !< Exponent for SQG vertical structure [nondim]. Default 0.0
-  logical :: BS_use_sqg   !< If true, use sqg_stuct for backscatter vertical structure.
+  real :: sqg_expo     !< Exponent for SQG vertical structure [nondim]. Default 1.0
+  logical :: BS_use_sqg_struct   !< If true, use sqg_stuct for backscatter vertical structure.
 
 
   real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_) :: &
@@ -282,31 +282,23 @@ subroutine calc_resoln_function(h, tv, G, GV, US, CS, MEKE, dt)
     call create_group_pass(CS%pass_cg1, CS%cg1, G%Domain)
     call do_group_pass(CS%pass_cg1, G%Domain)
   endif
-  if (CS%BS_use_sqg .or. CS%khth_use_sqg_struct .or. CS%khtr_use_sqg_struct &
+  if (CS%BS_use_sqg_struct .or. CS%khth_use_sqg_struct .or. CS%khtr_use_sqg_struct &
       .or. CS%kdgl90_use_sqg_struct .or. CS%id_sqg_struct>0) then
     call calc_sqg_struct(h, tv, G, GV, US, CS, dt, MEKE)
     call pass_var(CS%sqg_struct, G%Domain)
   endif
 
-  if (CS%BS_EBT_power>0. .and. CS%BS_use_sqg) then
-    call MOM_error(FATAL, &
-      "calc_resoln_function: BS_EBT_POWER>0. &
-      and BS_USE_SQG=True cannot be set together")
-  elseif (CS%BS_EBT_power>0.) then
+  if (CS%BS_EBT_power>0.) then
     do k=1,nz ; do j=G%jsd,G%jed ; do i=G%isd,G%ied
       CS%BS_struct(i,j,k) = CS%ebt_struct(i,j,k)**CS%BS_EBT_power
     enddo ; enddo ; enddo
-  elseif (CS%BS_use_sqg) then
+  elseif (CS%BS_use_sqg_struct) then
     do k=1,nz ; do j=G%jsd,G%jed ; do i=G%isd,G%ied
       CS%BS_struct(i,j,k) = CS%sqg_struct(i,j,k)
     enddo ; enddo ; enddo
   endif
 
-  if (CS%khth_use_ebt_struct .and. CS%khth_use_sqg_struct) then
-    call MOM_error(FATAL, &
-      "calc_resoln_function: Only one of KHTH_USE_EBT_STRUCT &
-      and KHTH_USE_SQG_STRUCT can be true")
-  elseif (CS%khth_use_ebt_struct) then
+  if (CS%khth_use_ebt_struct) then
     do k=1,nz ; do j=G%jsd,G%jed ; do i=G%isd,G%ied
       CS%khth_struct(i,j,k) = CS%ebt_struct(i,j,k)
     enddo ; enddo ; enddo
@@ -316,11 +308,7 @@ subroutine calc_resoln_function(h, tv, G, GV, US, CS, MEKE, dt)
     enddo ; enddo ; enddo
   endif
 
-  if (CS%khtr_use_ebt_struct .and. CS%khtr_use_sqg_struct) then
-    call MOM_error(FATAL, &
-      "calc_resoln_function: Only one of KHTR_USE_EBT_STRUCT &
-      and KHTR_USE_SQG_STRUCT can be true")
-  elseif (CS%khtr_use_ebt_struct) then
+  if (CS%khtr_use_ebt_struct) then
     do k=1,nz ; do j=G%jsd,G%jed ; do i=G%isd,G%ied
       CS%khtr_struct(i,j,k) = CS%ebt_struct(i,j,k)
     enddo ; enddo ; enddo
@@ -330,11 +318,7 @@ subroutine calc_resoln_function(h, tv, G, GV, US, CS, MEKE, dt)
     enddo ; enddo ; enddo
   endif
 
-  if (CS%kdgl90_use_ebt_struct .and. CS%kdgl90_use_sqg_struct) then
-    call MOM_error(FATAL, &
-      "calc_resoln_function: Only one of KD_GL90_USE_EBT_STRUCT &
-      and KD_GL90_USE_SQG_STRUCT can be true")
-  elseif (CS%kdgl90_use_ebt_struct) then
+  if (CS%kdgl90_use_ebt_struct) then
     do k=1,nz ; do j=G%jsd,G%jed ; do i=G%isd,G%ied
       CS%kdgl90_struct(i,j,k) = CS%ebt_struct(i,j,k)
     enddo ; enddo ; enddo
@@ -561,8 +545,6 @@ subroutine calc_sqg_struct(h, tv, G, GV, US, CS, dt, MEKE)
    real,                                      intent(in)    :: dt !< Time increment [T ~> s]
   type(VarMix_CS),                           intent(inout) :: CS !< Variable mixing control struct
   type(MEKE_type),                           intent(in)     :: MEKE !< MEKE struct
-  !  type(ocean_OBC_type),                      pointer       :: OBC !< Open
-!  boundaries control structure.
 
   ! Local variables
   real, dimension(SZI_(G), SZJ_(G),SZK_(GV)+1) :: &
@@ -574,13 +556,14 @@ subroutine calc_sqg_struct(h, tv, G, GV, US, CS, dt, MEKE)
   real, dimension(SZIB_(G), SZJ_(G),SZK_(GV)+1) :: dzSxN ! |Sx| N times dz at u-points [Z T-1 ~> m s-1]
   real, dimension(SZI_(G), SZJB_(G),SZK_(GV)+1) :: dzSyN ! |Sy| N times dz at v-points [Z T-1 ~> m s-1]
   real, dimension(SZI_(G), SZJ_(G)) :: f  ! Absolute value of the Coriolis parameter at h point [T-1 ~> s-1]
-  real :: N2  ! Positive buoyancy frequency square or zero [L2 Z-2 T-2 ~> s-2]
-  real :: dzc  ! Spacing between two adjacent layers in stretched vertical coordinate [m]
-!  real, dimension(SZK_(GV)) :: zs  ! Stretched vertical coordinate [m]
+  real :: N2             ! Positive buoyancy frequency square or zero [L2 Z-2 T-2 ~> s-2]
+  real :: dzc            ! Spacing between two adjacent layers in stretched vertical coordinate [m]
+  real :: f_subround     ! The minimal resolved value of Coriolis parameter to prevent division by zero [T-1 ~> s-1]
   real, dimension(SZI_(G), SZJ_(G)) :: Le  ! Eddy length scale [m]
   integer :: i, j, k, is, ie, js, je, nz
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+  f_subround = 1.0e-40 * US%s_to_T
 
   if (.not. CS%initialized) call MOM_error(FATAL, "MOM_lateral_mixing_coeffs.F90, calc_slope_functions: "//&
          "Module must be initialized before it is used.")
@@ -590,34 +573,32 @@ subroutine calc_sqg_struct(h, tv, G, GV, US, CS, dt, MEKE)
                                   CS%slope_x, CS%slope_y, N2_u=N2_u, N2_v=N2_v,dzu=dzu, dzv=dzv, &
                                   dzSxN=dzSxN, dzSyN=dzSyN, halo=1)
 
-  do j=js,je ; do i=is,ie
-    CS%sqg_struct(i,j,1) = 1.0
-  enddo ; enddo
-  if (allocated(MEKE%Le)) then
-    do j=js,je ; do i=is,ie
-      Le(i,j) = MEKE%Le(i,j)
-      f(i,j) = max(0.25*abs(G%CoriolisBu(I,J) + G%CoriolisBu(I-1,J-1) + &
-                       G%CoriolisBu(I-1,J) + G%CoriolisBu(I,J-1)), 1.0e-8/US%T_to_s)
-    enddo ; enddo
+  if (CS%sqg_expo<=0.) then
+    CS%sqg_struct(:,:,:) = 1.
   else
     do j=js,je ; do i=is,ie
-      Le(i,j) = sqrt(G%areaT(i,j))
-      f(i,j) = max(0.25*abs(G%CoriolisBu(I,J) + G%CoriolisBu(I-1,J-1) + &
-                       G%CoriolisBu(I-1,J) + G%CoriolisBu(I,J-1)), 1.0e-8*US%T_to_s)
+      CS%sqg_struct(i,j,1) = 1.0
     enddo ; enddo
+    if (allocated(MEKE%Le)) then
+      do j=js,je ; do i=is,ie
+        Le(i,j) = MEKE%Le(i,j)
+        f(i,j) = max(0.25 * abs((G%CoriolisBu(I,J) + G%CoriolisBu(I-1,J-1)) + &
+                         (G%CoriolisBu(I-1,J) + G%CoriolisBu(I,J-1))), f_subround)
+      enddo ; enddo
+    else
+      do j=js,je ; do i=is,ie
+        Le(i,j) = sqrt(G%areaT(i,j))
+        f(i,j) = max(0.25 * abs((G%CoriolisBu(I,J) + G%CoriolisBu(I-1,J-1)) + &
+                         (G%CoriolisBu(I-1,J) + G%CoriolisBu(I,J-1))), f_subround)
+      enddo ; enddo
+    endif
+    do k=2,nz ; do j=js,je ; do i=is,ie
+      N2 = max(0.25 * ((N2_u(I-1,j,k) + N2_u(I,j,k)) + (N2_v(i,J-1,k) + N2_v(i,J,k))), 0.0)
+      dzc = 0.25 * ((dzu(I-1,j,k) + dzu(I,j,k)) + (dzv(i,J-1,k) + dzv(i,J,k)))
+      CS%sqg_struct(i,j,k) = CS%sqg_struct(i,j,k-1) * &
+              exp(-CS%sqg_expo * (dzc * sqrt(N2)/(f(i,j) * Le(i,j))))
+    enddo ; enddo ; enddo
   endif
-  if (CS%debug) then
-    call hchksum(Le, 'SQG length scale', G%HI, unscale=US%L_to_m)
-    call hchksum(f, 'Coriolis at h point', G%HI, unscale=US%s_to_T)
-    call uvchksum( 'MEKE LmixScale', dzu, dzv, G%HI, unscale=US%Z_to_m, scalar_pair=.true.)
-  endif
-  do k=2,nz ; do j=js,je ; do i=is,ie
-    N2 = max(0.25*(N2_u(I-1,j,k) + N2_u(I,j,k) + N2_v(i,J-1,k) + N2_v(i,J,k)),0.0)
-    dzc = 0.25*(dzu(I-1,j,k) + dzu(I,j,k) + dzv(i,J-1,k) + dzv(i,J,k)) * &
-            N2**0.5/f(i,j)*US%Z_to_L
-!    dzs = -N2**0.5/f(i,j)*dzc
-    CS%sqg_struct(i,j,k) = CS%sqg_struct(i,j,k-1)*exp(-CS%sqg_expo*dzc/Le(i,j))
-  enddo ; enddo ; enddo
 
 
   if (query_averaging_enabled(CS%diag)) then
@@ -1418,7 +1399,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "BACKSCAT_EBT_POWER", CS%BS_EBT_power, &
                  "Power to raise EBT vertical structure to when backscatter "// &
                  "has vertical structure.", units="nondim", default=0.0)
-  call get_param(param_file, mdl, "BS_USE_SQG", CS%BS_use_sqg, &
+  call get_param(param_file, mdl, "BS_USE_SQG_STRUCT", CS%BS_use_sqg_struct, &
                  "If true, the SQG vertical structure is used for backscatter "//&
                  "on the condition that BS_EBT_power=0", &
                  default=.false.)
@@ -1503,8 +1484,33 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   endif
 
 
-  allocate(CS%BS_struct(isd:ied,jsd:jed,GV%ke), source=0.0)
-  CS%BS_struct(:,:,:) = 1.0
+  if (CS%BS_EBT_power>0. .and. CS%BS_use_sqg_struct) then
+    call MOM_error(FATAL, &
+                   "calc_resoln_function: BS_EBT_POWER>0. &
+                   & and BS_USE_SQG=True cannot be set together")
+  endif
+
+  if (CS%khth_use_ebt_struct .and. CS%khth_use_sqg_struct) then
+    call MOM_error(FATAL, &
+                   "calc_resoln_function: Only one of KHTH_USE_EBT_STRUCT &
+                   & and KHTH_USE_SQG_STRUCT can be true")
+  endif
+
+  if (CS%khtr_use_ebt_struct .and. CS%khtr_use_sqg_struct) then
+    call MOM_error(FATAL, &
+                   "calc_resoln_function: Only one of KHTR_USE_EBT_STRUCT &
+                   & and KHTR_USE_SQG_STRUCT can be true")
+  endif
+
+  if (CS%kdgl90_use_ebt_struct .and. CS%kdgl90_use_sqg_struct) then
+    call MOM_error(FATAL, &
+                   "calc_resoln_function: Only one of KD_GL90_USE_EBT_STRUCT &
+                   & and KD_GL90_USE_SQG_STRUCT can be true")
+  endif
+
+  if (CS%BS_EBT_power>0. .or. CS%BS_use_sqg_struct) then
+    allocate(CS%BS_struct(isd:ied,jsd:jed,GV%ke), source=0.0)
+  endif
 
   if (CS%khth_use_ebt_struct .or. CS%khth_use_sqg_struct) then
     allocate(CS%khth_struct(isd:ied, jsd:jed, gv%ke), source=0.0)
@@ -1615,13 +1621,15 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
 
   CS%id_sqg_struct = register_diag_field('ocean_model', 'sqg_struct', diag%axesTl, Time, &
             'Vertical structure of SQG mode', 'nondim')
-  if (CS%BS_use_sqg .or. CS%khth_use_sqg_struct .or. CS%khtr_use_sqg_struct &
-    .or. CS%kdgl90_use_sqg_struct .or. CS%id_sqg_struct>0) then
+  if (CS%BS_use_sqg_struct .or. CS%khth_use_sqg_struct .or. CS%khtr_use_sqg_struct &
+      .or. CS%kdgl90_use_sqg_struct .or. CS%id_sqg_struct>0) then
     allocate(CS%sqg_struct(isd:ied,jsd:jed,GV%ke), source=0.0)
   endif
 
-  CS%id_BS_struct = register_diag_field('ocean_model', 'BS_struct', diag%axesTl, Time, &
-            'Vertical structure of backscatter', 'nondim')
+  if (CS%BS_EBT_power>0. .or. CS%BS_use_sqg_struct) then
+    CS%id_BS_struct = register_diag_field('ocean_model', 'BS_struct', diag%axesTl, Time, &
+              'Vertical structure of backscatter', 'nondim')
+  endif
   if (CS%khth_use_ebt_struct .or. CS%khth_use_sqg_struct) then
     CS%id_khth_struct = register_diag_field('ocean_model', 'khth_struct', diag%axesTl, Time, &
             'Vertical structure of thickness diffusivity', 'nondim')
@@ -1888,7 +1896,7 @@ subroutine VarMix_end(CS)
   type(VarMix_CS), intent(inout) :: CS
 
   if (CS%Resoln_use_ebt .or. CS%khth_use_ebt_struct .or. CS%kdgl90_use_ebt_struct &
-     .or. CS%BS_EBT_power>0. .or. CS%khtr_use_ebt_struct) deallocate(CS%ebt_struct)
+      .or. CS%BS_EBT_power>0. .or. CS%khtr_use_ebt_struct) deallocate(CS%ebt_struct)
   if (allocated(CS%sqg_struct)) deallocate(CS%sqg_struct)
   if (allocated(CS%BS_struct)) deallocate(CS%BS_struct)
   if (CS%khth_use_ebt_struct .or. CS%khth_use_sqg_struct) deallocate(CS%khth_struct)

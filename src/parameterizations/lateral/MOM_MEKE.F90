@@ -766,7 +766,7 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
   endif
 
   if (allocated(MEKE%Kh) .or. allocated(MEKE%Ku) .or. allocated(MEKE%Au) &
-     .or. allocated(MEKE%Le)) then
+      .or. allocated(MEKE%Le)) then
     call cpu_clock_begin(CS%id_clock_pass)
     call do_group_pass(CS%pass_Kh, G%Domain)
     call cpu_clock_end(CS%id_clock_pass)
@@ -1570,7 +1570,7 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
   if (allocated(MEKE%Le)) call create_group_pass(CS%pass_Kh, MEKE%Le, G%Domain)
 
   if (allocated(MEKE%Kh) .or. allocated(MEKE%Ku) .or. allocated(MEKE%Au) &
-     .or. allocated(MEKE%Le)) &
+      .or. allocated(MEKE%Le)) &
     call do_group_pass(CS%pass_Kh, G%Domain)
 
 end function MEKE_init
