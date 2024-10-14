@@ -155,6 +155,11 @@ subroutine find_obsolete_params(param_file)
   call obsolete_logical(param_file, "USE_GRID_SPACE_DIAGNOSTIC_AXES", &
                         hint="Instead use USE_INDEX_DIAGNOSTIC_AXIS.")
 
+  call obsolete_logical(param_file, "OBC_TIDE_ADD_EQ_PHASE", hint="Instead use TIDE_USE_EQ_PHASE.")
+  call obsolete_logical(param_file, "OBC_TIDE_ADD_NODAL", hint="Instead use TIDE_ADD_NODAL.")
+  call obsolete_int(param_file, "OBC_TIDE_REF_DATE", hint="Instead use TIDE_REF_DATE.")
+  call obsolete_int(param_file, "OBC_TIDE_NODAL_REF_DATE", hint="Instead use TIDE_NODAL_REF_DATE.")
+
   ! Write the file version number to the model log.
   call log_version(param_file, mdl, version)
 
