@@ -248,14 +248,14 @@ subroutine ALE_init( param_file, GV, US, max_depth, CS)
                  default=default_answer_date, do_not_log=.not.GV%Boussinesq)
   if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
-  call initialize_remapping( CS%remapCS, string, &
+  call initialize_remapping( CS%remapCS, string, nk=GV%ke, &
                              boundary_extrapolation=init_boundary_extrap, &
                              check_reconstruction=check_reconstruction, &
                              check_remapping=check_remapping, &
                              force_bounds_in_subcell=force_bounds_in_subcell, &
                              om4_remap_via_sub_cells=om4_remap_via_sub_cells, &
                              answer_date=CS%answer_date)
-  call initialize_remapping( CS%vel_remapCS, vel_string, &
+  call initialize_remapping( CS%vel_remapCS, vel_string, nk=GV%ke, &
                              boundary_extrapolation=init_boundary_extrap, &
                              check_reconstruction=check_reconstruction, &
                              check_remapping=check_remapping, &
