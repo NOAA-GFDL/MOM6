@@ -668,10 +668,12 @@ subroutine open_boundary_config(G, US, param_file, OBC)
     enddo
 
     call get_param(param_file, mdl, "REMAPPING_SCHEME", remappingScheme, &
+          default=remappingDefaultScheme,do_not_log=.true.)
+    call get_param(param_file, mdl, "OBC_REMAPPING_SCHEME", remappingScheme, &
           "This sets the reconstruction scheme used "//&
-          "for vertical remapping for all variables. "//&
+          "for OBC vertical remapping for all variables. "//&
           "It can be one of the following schemes: \n"//&
-          trim(remappingSchemesDoc), default=remappingDefaultScheme,do_not_log=.true.)
+          trim(remappingSchemesDoc), default=remappingScheme)
     call get_param(param_file, mdl, "FATAL_CHECK_RECONSTRUCTIONS", check_reconstruction, &
           "If true, cell-by-cell reconstructions are checked for "//&
           "consistency and if non-monotonicity or an inconsistency is "//&
