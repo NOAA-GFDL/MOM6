@@ -10,13 +10,14 @@ jobs:
     env:
       CC: gcc
       FC: gfortran
+      FMS_COMMIT: 2019.01.03
 
     defaults:
       run:
         working-directory: .testing
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
 

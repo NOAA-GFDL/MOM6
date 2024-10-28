@@ -62,8 +62,8 @@ subroutine RGC_initialize_sponges(G, GV, US, tv, u, v, depth_tot, PF, use_ALE, C
   real :: S(SZI_(G),SZJ_(G),SZK_(GV)) ! A temporary array for salinity [S ~> ppt]
   real :: U1(SZIB_(G),SZJ_(G),SZK_(GV)) ! A temporary array for u [L T-1 ~> m s-1]
   real :: V1(SZI_(G),SZJB_(G),SZK_(GV)) ! A temporary array for v [L T-1 ~> m s-1]
-  real :: tmp(SZI_(G),SZJ_(G))        ! A temporary array for tracers.
-  real :: h(SZI_(G),SZJ_(G),SZK_(GV)) ! A temporary array for thickness at h points [H ~> m or kg m-2]
+  real :: rho(SZI_(G),SZJ_(G))      ! A temporary array for mixed layer density [R ~> kg m-3].
+  real :: dz(SZI_(G),SZJ_(G),SZK_(GV)) ! Sponge layer thicknesses in height units [Z ~> m]
   real :: Idamp(SZI_(G),SZJ_(G))    ! The sponge damping rate at h points [T-1 ~> s-1]
   real :: TNUDG                     ! Nudging time scale [T ~> s]
   real :: pres(SZI_(G))             ! An array of the reference pressure [R L2 T-2 ~> Pa]
@@ -153,10 +153,10 @@ subroutine RGC_initialize_sponges(G, GV, US, tv, u, v, depth_tot, PF, use_ALE, C
   call MOM_read_data(filename, salt_var, S(:,:,:), G%Domain, scale=US%ppt_to_S)
   if (use_ALE) then
 
-    call MOM_read_data(filename, h_var, h(:,:,:), G%Domain, scale=GV%m_to_H)
-    call pass_var(h, G%domain)
+    call MOM_read_data(filename, h_var, dz(:,:,:), G%Domain, scale=US%m_to_Z)
+    call pass_var(dz, G%domain)
 
-    call initialize_ALE_sponge(Idamp, G, GV, PF, ACSp, h, nz)
+    call initialize_ALE_sponge(Idamp, G, GV, PF, ACSp, dz, nz, data_h_is_Z=.true.)
 
     !  The remaining calls to set_up_sponge_field can be in any order.
     if ( associated(tv%T) ) call set_up_ALE_sponge_field(T, G, GV, tv%T, ACSp, 'temp', &
@@ -183,13 +183,13 @@ subroutine RGC_initialize_sponges(G, GV, US, tv, u, v, depth_tot, PF, use_ALE, C
     !   This call to set_up_sponge_ML_density registers the target values of the
     ! mixed layer density, which is used in determining which layers can be
     ! inflated without causing static instabilities.
-      do i=is-1,ie ; pres(i) = tv%P_Ref ; enddo
+      do i=is,ie ; pres(i) = tv%P_Ref ; enddo
       EOSdom(:) = EOS_domain(G%HI)
       do j=js,je
-        call calculate_density(T(:,j,1), S(:,j,1), pres, tmp(:,j), tv%eqn_of_state, EOSdom)
+        call calculate_density(T(:,j,1), S(:,j,1), pres, rho(:,j), tv%eqn_of_state, EOSdom)
       enddo
 
-      call set_up_sponge_ML_density(tmp, G, CSp)
+      call set_up_sponge_ML_density(rho, G, CSp)
     endif
 
     ! Apply sponge in tracer fields

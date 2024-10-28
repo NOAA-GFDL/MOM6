@@ -123,11 +123,11 @@ subroutine interface_filter(h, uhtr, vhtr, tv, dt, G, GV, US, CDp, CS)
   if (CS%isotropic_filter) then
     !$OMP parallel do default(shared)
     do j=js-hs,je+hs ; do I=is-(hs+1),ie+hs
-      Lsm2_u(I,j) = (0.25*filter_strength) / (G%IdxCu(I,j)**2 + G%IdyCu(I,j)**2)
+      Lsm2_u(I,j) = (0.25*filter_strength) / ((G%IdxCu(I,j)**2) + (G%IdyCu(I,j)**2))
     enddo ; enddo
     !$OMP parallel do default(shared)
     do J=js-(hs+1),je+hs ; do i=is-hs,ie+hs
-      Lsm2_v(i,J) = (0.25*filter_strength) / (G%IdxCv(i,J)**2 + G%IdyCv(i,J)**2)
+      Lsm2_v(i,J) = (0.25*filter_strength) / ((G%IdxCv(i,J)**2) + (G%IdyCv(i,J)**2))
     enddo ; enddo
   else
     !$OMP parallel do default(shared)
@@ -142,9 +142,9 @@ subroutine interface_filter(h, uhtr, vhtr, tv, dt, G, GV, US, CDp, CS)
 
   if (CS%debug) then
     call uvchksum("Kh_[uv]", Lsm2_u, Lsm2_v, G%HI, haloshift=hs, &
-                  scale=US%L_to_m**2, scalar_pair=.true.)
-    call hchksum(h, "interface_filter_1 h", G%HI, haloshift=hs+1, scale=GV%H_to_m)
-    call hchksum(e, "interface_filter_1 e", G%HI, haloshift=hs+1, scale=US%Z_to_m)
+                  unscale=US%L_to_m**2, scalar_pair=.true.)
+    call hchksum(h, "interface_filter_1 h", G%HI, haloshift=hs+1, unscale=GV%H_to_m)
+    call hchksum(e, "interface_filter_1 e", G%HI, haloshift=hs+1, unscale=US%Z_to_m)
   endif
 
   ! Calculate uhD, vhD from h, e, Lsm2_u, Lsm2_v
@@ -225,10 +225,10 @@ subroutine interface_filter(h, uhtr, vhtr, tv, dt, G, GV, US, CDp, CS)
 
   if (CS%debug) then
     call uvchksum("interface_filter [uv]hD", uhD, vhD, &
-                  G%HI, haloshift=0, scale=GV%H_to_m*US%L_to_m**2)
+                  G%HI, haloshift=0, unscale=GV%H_to_m*US%L_to_m**2)
     call uvchksum("interface_filter [uv]htr", uhtr, vhtr, &
-                  G%HI, haloshift=0, scale=US%L_to_m**2*GV%H_to_m)
-    call hchksum(h, "interface_filter h", G%HI, haloshift=0, scale=GV%H_to_m)
+                  G%HI, haloshift=0, unscale=US%L_to_m**2*GV%H_to_m)
+    call hchksum(h, "interface_filter h", G%HI, haloshift=0, unscale=GV%H_to_m)
   endif
 
 end subroutine interface_filter
@@ -480,7 +480,7 @@ end subroutine interface_filter_end
 !! filter, depending on the order of the filter, or to the slope for a Laplacian
 !! filter
 !! \f[
-!! \vec{\psi} = - \kappa_h {\nabla \eta - \eta_smooth}
+!! \vec{\psi} = - \kappa_h {\nabla \eta - \eta_{smooth}}
 !! \f]
 !!
 !! The result of the above expression is subsequently bounded by minimum and maximum values, including a

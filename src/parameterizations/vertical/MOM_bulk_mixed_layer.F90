@@ -164,7 +164,7 @@ contains
 !> This subroutine partially steps the bulk mixed layer model.
 !! See \ref BML for more details.
 subroutine bulkmixedlayer(h_3d, u_3d, v_3d, tv, fluxes, dt, ea, eb, G, GV, US, CS, &
-                          optics, Hml, aggregate_FW_forcing, dt_diag, last_call)
+                          optics, BLD, H_ml, aggregate_FW_forcing, dt_diag, last_call)
   type(ocean_grid_type),      intent(inout) :: G      !< The ocean's grid structure.
   type(verticalGrid_type),    intent(in)    :: GV     !< The ocean's vertical grid structure.
   type(unit_scale_type),      intent(in)    :: US     !< A dimensional unit scaling type
@@ -195,7 +195,10 @@ subroutine bulkmixedlayer(h_3d, u_3d, v_3d, tv, fluxes, dt, ea, eb, G, GV, US, C
   type(optics_type),          pointer       :: optics !< The structure that can be queried for the
                                                       !! inverse of the vertical absorption decay
                                                       !! scale for penetrating shortwave radiation.
-  real, dimension(:,:),       pointer       :: Hml    !< Active mixed layer depth [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)), &
+                              intent(inout) :: BLD    !< Active mixed layer depth [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)), &
+                              intent(inout) :: H_ml   !< Active mixed layer thickness [H ~> m or kg m-2].
   logical,                    intent(in)    :: aggregate_FW_forcing !< If true, the net incoming and
                                                      !! outgoing surface freshwater fluxes are
                                                      !! combined before being applied, instead of
@@ -605,25 +608,27 @@ subroutine bulkmixedlayer(h_3d, u_3d, v_3d, tv, fluxes, dt, ea, eb, G, GV, US, C
       CS%ML_depth(i,j) = h(i,0)  ! Store the diagnostic.
     enddo ; endif
 
-    if (associated(Hml)) then
-      ! Return the mixed layerd depth in [Z ~> m].
-      if (GV%Boussinesq .or. GV%semi_Boussinesq) then
-        do i=is,ie
-          Hml(i,j) = G%mask2dT(i,j) * GV%H_to_Z*h(i,0)
-        enddo
+    ! Return the mixed layer depth in [Z ~> m].
+    if (GV%Boussinesq .or. GV%semi_Boussinesq) then
+      do i=is,ie
+        BLD(i,j) = G%mask2dT(i,j) * GV%H_to_Z*h(i,0)
+      enddo
+    else
+      do i=is,ie ; dp_ml(i) = GV%g_Earth * GV%H_to_RZ * h(i,0) ; enddo
+      if (associated(tv%p_surf)) then
+        do i=is,ie ; p_sfc(i) = tv%p_surf(i,j) ; enddo
       else
-        do i=is,ie ; dp_ml(i) = GV%g_Earth * GV%H_to_RZ * h(i,0) ; enddo
-        if (associated(tv%p_surf)) then
-          do i=is,ie ; p_sfc(i) = tv%p_surf(i,j) ; enddo
-        else
-          do i=is,ie ; p_sfc(i) = 0.0 ; enddo
-        endif
-        call average_specific_vol(T(:,0), S(:,0), p_sfc, dp_ml, SpV_ml, tv%eqn_of_state)
-        do i=is,ie
-          Hml(i,j) = G%mask2dT(i,j) * GV%H_to_RZ * SpV_ml(i) *  h(i,0)
-        enddo
+        do i=is,ie ; p_sfc(i) = 0.0 ; enddo
       endif
+      call average_specific_vol(T(:,0), S(:,0), p_sfc, dp_ml, SpV_ml, tv%eqn_of_state)
+      do i=is,ie
+        BLD(i,j) = G%mask2dT(i,j) * GV%H_to_RZ * SpV_ml(i) *  h(i,0)
+      enddo
     endif
+    ! Return the mixed layer thickness in [H ~> m or kg m-2].
+    do i=is,ie
+      H_ml(i,j) = G%mask2dT(i,j) * h(i,0)
+    enddo
 
 ! At this point, return water to the original layers, but constrained to
 ! still be sorted.  After this point, all the water that is in massive
@@ -907,7 +912,7 @@ subroutine convective_adjustment(h, u, v, R0, SpV0, Rcv, T, S, eps, d_eb, &
   do k1=min(nzc-1,nkmb),1,-1
     do i=is,ie
       h_orig_k1(i) = h(i,k1)
-      KE_orig(i) = 0.5*h(i,k1)*(u(i,k1)**2 + v(i,k1)**2)
+      KE_orig(i) = 0.5*h(i,k1)*((u(i,k1)**2) + (v(i,k1)**2))
       uhtot(i) = h(i,k1)*u(i,k1) ; vhtot(i) = h(i,k1)*v(i,k1)
       if (CS%nonBous_energetics) then
         SpV0_tot(i) = SpV0(i,k1) * h(i,k1)
@@ -944,7 +949,7 @@ subroutine convective_adjustment(h, u, v, R0, SpV0, Rcv, T, S, eps, d_eb, &
             dKE_CA(i,k1) = dKE_CA(i,k1) + dKE_CA(i,k)
           endif
           KE_orig(i) = KE_orig(i) + 0.5*h_ent* &
-              (u(i,k)*u(i,k) + v(i,k)*v(i,k))
+              ((u(i,k)*u(i,k)) + (v(i,k)*v(i,k)))
           uhtot(i) = uhtot(i) + h_ent*u(i,k)
           vhtot(i) = vhtot(i) + h_ent*v(i,k)
 
@@ -969,7 +974,7 @@ subroutine convective_adjustment(h, u, v, R0, SpV0, Rcv, T, S, eps, d_eb, &
       endif
       u(i,k1) = uhtot(i) * Ih ; v(i,k1) = vhtot(i) * Ih
       dKE_CA(i,k1) = dKE_CA(i,k1) + CS%bulk_Ri_convective * &
-           (KE_orig(i) - 0.5*h(i,k1)*(u(i,k1)**2 + v(i,k1)**2))
+           (KE_orig(i) - 0.5*h(i,k1)*((u(i,k1)**2) + (v(i,k1)**2)))
       Rcv(i,k1) = Rcv_tot(i) * Ih
       T(i,k1) = Ttot(i) * Ih ; S(i,k1) = Stot(i) * Ih
     endif ; enddo
@@ -1402,7 +1407,7 @@ subroutine mixedlayer_convection(h, d_eb, htot, Ttot, Stot, uhtot, vhtot,      &
         if ((h_ent > 0.0) .and. (htot(i) > 0.0)) &
             dKE_FC(i) = dKE_FC(i) + CS%bulk_Ri_convective * 0.5 * &
               ((h_ent) / (htot(i)*(h_ent+htot(i)))) * &
-              ((uhtot(i)-u(i,k)*htot(i))**2 + (vhtot(i)-v(i,k)*htot(i))**2)
+              (((uhtot(i)-u(i,k)*htot(i))**2) + ((vhtot(i)-v(i,k)*htot(i))**2))
 
         if (h_ent > 0.0) then
           htot(i)  = htot(i)  + h_ent
@@ -1780,7 +1785,7 @@ subroutine mechanical_entrainment(h, d_eb, htot, Ttot, Stot, uhtot, vhtot, &
           dRL = g_H_2Rho0 * (R0(i,k)*htot(i) - R0_tot(i) )
         endif
         dMKE = CS%bulk_Ri_ML * 0.5 * &
-            ((uhtot(i)-u(i,k)*htot(i))**2 + (vhtot(i)-v(i,k)*htot(i))**2)
+            (((uhtot(i)-u(i,k)*htot(i))**2) + ((vhtot(i)-v(i,k)*htot(i))**2))
 
 ! Find the TKE that would remain if the entire layer were entrained.
         kh = Idecay_len_TKE(i)*h_avail ; exp_kh = exp(-kh)
@@ -4251,8 +4256,8 @@ end function EF4
 !!
 !!   This file contains the subroutine (bulkmixedlayer) that
 !! implements a Kraus-Turner-like bulk mixed layer, based on the work
-!! of various people, as described in the review paper by \cite Niiler1977,
-!! with particular attention to the form proposed by \cite Oberhuber1993,
+!! of various people, as described in the review paper by \cite niiler1977,
+!! with particular attention to the form proposed by \cite Oberhuber1993a,
 !! with an extension to a refined bulk mixed layer as described in
 !! Hallberg (\cite muller2003). The physical processes portrayed in
 !! this subroutine include convective adjustment and mixed layer entrainment

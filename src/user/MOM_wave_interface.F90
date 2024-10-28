@@ -59,6 +59,9 @@ type, public :: wave_parameters_CS ; private
   logical, public :: Stokes_VF = .false.    !< True if Stokes vortex force is used
   logical, public :: Passive_Stokes_VF = .false. !< Computes Stokes VF, but doesn't affect dynamics
   logical, public :: Stokes_PGF = .false.   !< True if Stokes shear pressure Gradient force is used
+  logical, public :: robust_Stokes_PGF = .false.  !< If true, use expressions to calculate the
+                                            !! Stokes-induced pressure gradient anomalies that are
+                                            !! more accurate in the limit of thin layers.
   logical, public :: Passive_Stokes_PGF = .false. !< Keeps Stokes_PGF on, but doesn't affect dynamics
   logical, public :: Stokes_DDT = .false.   !< Developmental:
                                             !! True if Stokes d/dt is used
@@ -164,6 +167,8 @@ type, public :: wave_parameters_CS ; private
   real :: LA_FracHBL         !< Fraction of OSBL for averaging Langmuir number [nondim]
   real :: LA_HBL_min         !< Minimum boundary layer depth for averaging Langmuir number [Z ~> m]
   logical :: LA_Misalignment = .false. !< Flag to use misalignment in Langmuir number
+  logical :: LA_misalign_bug = .false. !< Flag to use code with a sign error when calculating the
+                       !! misalignment between the shear and waves in the Langmuir number calculation.
   real :: g_Earth      !< The gravitational acceleration, equivalent to GV%g_Earth but with
                        !! different dimensional rescaling appropriate for deep-water gravity
                        !! waves [Z T-2 ~> m s-2]
@@ -377,22 +382,27 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
 
   call get_param(param_file, mdl, "STOKES_VF", CS%Stokes_VF, &
        "Flag to use Stokes vortex force", &
-       Default=.false.)
+       default=.false.)
   call get_param(param_file, mdl, "PASSIVE_STOKES_VF", CS%Passive_Stokes_VF, &
        "Flag to make Stokes vortex force diagnostic only.", &
-       Default=.false.)
+       default=.false.)
   call get_param(param_file, mdl, "STOKES_PGF", CS%Stokes_PGF, &
        "Flag to use Stokes-induced pressure gradient anomaly", &
-       Default=.false.)
+       default=.false.)
+  call get_param(param_file, mdl, "ROBUST_STOKES_PGF", CS%robust_Stokes_PGF, &
+       "If true, use expressions to calculate the Stokes-induced pressure gradient "//&
+       "anomalies that are more accurate in the limit of thin layers.", &
+       default=.false., do_not_log=.not.CS%Stokes_PGF)
+       !### Change the default for ROBUST_STOKES_PGF to True.
   call get_param(param_file, mdl, "PASSIVE_STOKES_PGF", CS%Passive_Stokes_PGF, &
        "Flag to make Stokes-induced pressure gradient anomaly diagnostic only.", &
-       Default=.false.)
+       default=.false.)
   call get_param(param_file, mdl, "STOKES_DDT", CS%Stokes_DDT, &
        "Flag to use Stokes d/dt", &
-       Default=.false.)
+       default=.false.)
   call get_param(param_file, mdl, "PASSIVE_STOKES_DDT", CS%Passive_Stokes_DDT, &
        "Flag to make Stokes d/dt diagnostic only", &
-       Default=.false.)
+       default=.false.)
 
   ! Get Wave Method and write to integer WaveMethod
   call get_param(param_file,mdl,"WAVE_METHOD",TMPSTRING1,             &
@@ -526,6 +536,11 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
   call get_param(param_file, mdl, "LA_MISALIGNMENT", CS%LA_Misalignment, &
          "Flag (logical) if using misalignment between shear and waves in LA", &
          default=.false.)
+  call get_param(param_file, mdl, "LA_MISALIGNMENT_BUG", CS%LA_misalign_bug, &
+         "If true, use a code with a sign error when calculating the misalignment between "//&
+         "the shear and waves when LA_MISALIGNMENT is true.", &
+         default=CS%LA_Misalignment, do_not_log=.not.CS%LA_Misalignment)
+         !### Change the default for LA_MISALIGNMENT_BUG to .false.
   call get_param(param_file, mdl, "MIN_LANGMUIR", CS%La_min,    &
          "A minimum value for all Langmuir numbers that is not physical, "//&
          "but is likely only encountered when the wind is very small and "//&
@@ -673,7 +688,7 @@ subroutine Update_Surface_Waves(G, GV, US, Time_present, dt, CS, forces)
   type(mech_forcing),      intent(in), optional  :: forces !< MOM_forcing_type
   ! Local variables
   type(time_type) :: Stokes_Time
-  integer :: ii, jj, b
+  integer :: i, j, b
 
   if (CS%WaveMethod == TESTPROF) then
     ! Do nothing
@@ -701,37 +716,37 @@ subroutine Update_Surface_Waves(G, GV, US, Time_present, dt, CS, forces)
       do b=1,CS%NumBands
         CS%WaveNum_Cen(b) = forces%stk_wavenumbers(b)
         !Interpolate from a grid to c grid
-        do jj=G%jsc,G%jec
-          do II=G%iscB,G%iecB
-            CS%STKx0(II,jj,b) = 0.5*(forces%UStkb(ii,jj,b)+forces%UStkb(ii+1,jj,b))
+        do j=G%jsc,G%jec
+          do I=G%iscB,G%iecB
+            CS%STKx0(I,j,b) = 0.5*(forces%UStkb(i,j,b)+forces%UStkb(i+1,j,b))
           enddo
         enddo
-        do JJ=G%jscB, G%jecB
-          do ii=G%isc,G%iec
-            CS%STKY0(ii,JJ,b) = 0.5*(forces%VStkb(ii,jj,b)+forces%VStkb(ii,jj+1,b))
+        do J=G%jscB,G%jecB
+          do i=G%isc,G%iec
+            CS%STKY0(i,J,b) = 0.5*(forces%VStkb(i,j,b)+forces%VStkb(i,j+1,b))
           enddo
         enddo
         call pass_vector(CS%STKx0(:,:,b),CS%STKy0(:,:,b), G%Domain)
       enddo
-      do jj=G%jsc,G%jec
-        do ii=G%isc,G%iec
-          !CS%Omega_w2x(ii,jj)   = forces%omega_w2x(ii,jj)
+      do j=G%jsc,G%jec
+        do i=G%isc,G%iec
+          !CS%Omega_w2x(i,j)   = forces%omega_w2x(i,j)
           do b=1,CS%NumBands
-            CS%UStk_Hb(ii,jj,b) = US%m_s_to_L_T*forces%UStkb(ii,jj,b)
-            CS%VStk_Hb(ii,jj,b) = US%m_s_to_L_T*forces%VStkb(ii,jj,b)
+            CS%UStk_Hb(i,j,b) = forces%UStkb(i,j,b)
+            CS%VStk_Hb(i,j,b) = forces%VStkb(i,j,b)
           enddo
         enddo
       enddo
     elseif (CS%DataSource == INPUT) then
       do b=1,CS%NumBands
-        do jj=G%jsd,G%jed
-          do II=G%isdB,G%iedB
-            CS%STKx0(II,jj,b) = CS%PrescribedSurfStkX(b)
+        do j=G%jsd,G%jed
+          do I=G%isdB,G%iedB
+            CS%STKx0(I,j,b) = CS%PrescribedSurfStkX(b)
           enddo
         enddo
-        do JJ=G%jsdB, G%jedB
-          do ii=G%isd,G%ied
-            CS%STKY0(ii,JJ,b) = CS%PrescribedSurfStkY(b)
+        do J=G%jsdB, G%jedB
+          do i=G%isd,G%ied
+            CS%STKY0(i,J,b) = CS%PrescribedSurfStkY(b)
           enddo
         enddo
       enddo
@@ -763,7 +778,7 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
   real    :: UStokes  ! A Stokes drift velocity [L T-1 ~> m s-1]
   real    :: PI       ! 3.1415926535... [nondim]
   real    :: La       ! The local Langmuir number [nondim]
-  integer :: ii, jj, kk, b, iim1, jjm1
+  integer :: i, j, k, b
   real    :: I_dt     ! The inverse of the time step [T-1 ~> s-1]
 
   if (CS%WaveMethod==EFACTOR) return
@@ -777,29 +792,27 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
   if (CS%WaveMethod==TESTPROF) then
     PI = 4.0*atan(1.0)
     DecayScale = 4.*PI / CS%TP_WVL !4pi
-    do jj = G%jsc,G%jec
-      do II = G%iscB,G%iecB
-        IIm1 = max(1,II-1)
+    do j=G%jsc,G%jec
+      do I=G%iscB,G%iecB
         Bottom = 0.0
         MidPoint = 0.0
-        do kk = 1,GV%ke
+        do k = 1,GV%ke
           Top = Bottom
-          MidPoint = Bottom - 0.25*(dz(II,jj,kk)+dz(IIm1,jj,kk))
-          Bottom = Bottom - 0.5*(dz(II,jj,kk)+dz(IIm1,jj,kk))
-          CS%Us_x(II,jj,kk) = CS%TP_STKX0*exp(MidPoint*DecayScale)
+          MidPoint = Bottom - 0.25*(dz(I,j,k)+dz(I-1,j,k))
+          Bottom = Bottom - 0.5*(dz(I,j,k)+dz(I-1,j,k))
+          CS%Us_x(I,j,k) = CS%TP_STKX0*exp(MidPoint*DecayScale)
         enddo
       enddo
     enddo
-    do JJ = G%jscB,G%jecB
-      do ii = G%isc,G%iec
-        JJm1 = max(1,JJ-1)
+    do J=G%jscB,G%jecB
+      do i=G%isc,G%iec
         Bottom = 0.0
         MidPoint = 0.0
-        do kk = 1,GV%ke
+        do k = 1,GV%ke
           Top = Bottom
-          MidPoint = Bottom - 0.25*(dz(ii,JJ,kk)+dz(ii,JJm1,kk))
-          Bottom = Bottom - 0.5*(dz(ii,JJ,kk)+dz(ii,JJm1,kk))
-          CS%Us_y(ii,JJ,kk) = CS%TP_STKY0*exp(MidPoint*DecayScale)
+          MidPoint = Bottom - 0.25*(dz(i,J,k)+dz(i,J-1,k))
+          Bottom = Bottom - 0.5*(dz(i,J,k)+dz(i,J-1,k))
+          CS%Us_y(i,J,k) = CS%TP_STKY0*exp(MidPoint*DecayScale)
         enddo
       enddo
     enddo
@@ -813,19 +826,18 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
     CS%Us0_x(:,:) = 0.0
     CS%Us0_y(:,:) = 0.0
     ! Computing X direction Stokes drift
-    do jj = G%jsc,G%jec
-      do II = G%iscB,G%iecB
+    do j=G%jsc,G%jec
+      do I=G%iscB,G%iecB
         ! 1. First compute the surface Stokes drift
         !    by summing over the partitions.
         do b = 1,CS%NumBands
-          CS%US0_x(II,jj) = CS%US0_x(II,jj) + CS%STKx0(II,jj,b)
+          CS%US0_x(I,j) = CS%US0_x(I,j) + CS%STKx0(I,j,b)
         enddo
         ! 2. Second compute the level averaged Stokes drift
         bottom = 0.0
-        do kk = 1,GV%ke
+        do k = 1,GV%ke
           Top = Bottom
-          IIm1 = max(II-1,1)
-          level_thick = 0.5*(dz(II,jj,kk)+dz(IIm1,jj,kk))
+          level_thick = 0.5*(dz(I,j,k)+dz(I-1,j,k))
           MidPoint = Top - 0.5*level_thick
           Bottom = Top - level_thick
 
@@ -840,7 +852,7 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
                 WN = CS%Freq_Cen(b)**2 * CS%I_g_Earth
                 CMN_FAC = exp(2.*WN*Top) * one_minus_exp_x(2.*WN*level_thick)
               endif
-              CS%US_x(II,jj,kk) = CS%US_x(II,jj,kk) + CS%STKx0(II,jj,b)*CMN_FAC
+              CS%US_x(I,j,k) = CS%US_x(I,j,k) + CS%STKx0(I,j,b)*CMN_FAC
             enddo
 
           elseif (level_thick > CS%Stokes_min_thick_avg) then
@@ -855,7 +867,7 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
                 WN = CS%Freq_Cen(b)**2 / CS%g_Earth !bgr bug-fix missing g
                 CMN_FAC = (exp(2.*WN*Top)-exp(2.*WN*Bottom)) / (2.*WN*(Top-Bottom))
               endif
-              CS%US_x(II,jj,kk) = CS%US_x(II,jj,kk) + CS%STKx0(II,jj,b)*CMN_FAC
+              CS%US_x(I,j,k) = CS%US_x(I,j,k) + CS%STKx0(I,j,b)*CMN_FAC
             enddo
           else ! Take the value at the midpoint
             do b = 1,CS%NumBands
@@ -864,7 +876,7 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
               else
                 CMN_FAC = exp(MidPoint * 2. * CS%Freq_Cen(b)**2 / CS%g_Earth)
               endif
-              CS%US_x(II,jj,kk) = CS%US_x(II,jj,kk) + CS%STKx0(II,jj,b)*CMN_FAC
+              CS%US_x(I,j,k) = CS%US_x(I,j,k) + CS%STKx0(I,j,b)*CMN_FAC
             enddo
           endif
         enddo
@@ -872,18 +884,17 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
     enddo
 
     ! Computing Y direction Stokes drift
-    do JJ = G%jscB,G%jecB
-      do ii = G%isc,G%iec
+    do J=G%jscB,G%jecB
+      do i=G%isc,G%iec
         ! Set the surface value to that at z=0
         do b = 1,CS%NumBands
-          CS%US0_y(ii,JJ) = CS%US0_y(ii,JJ) + CS%STKy0(ii,JJ,b)
+          CS%US0_y(i,J) = CS%US0_y(i,J) + CS%STKy0(i,J,b)
         enddo
         ! Compute the level averages.
         bottom = 0.0
-        do kk = 1,GV%ke
+        do k = 1,GV%ke
           Top = Bottom
-          JJm1 = max(JJ-1,1)
-          level_thick = 0.5*(dz(ii,JJ,kk)+dz(ii,JJm1,kk))
+          level_thick = 0.5*(dz(i,J,k)+dz(i,J-1,k))
           MidPoint = Top - 0.5*level_thick
           Bottom = Top - level_thick
 
@@ -898,7 +909,7 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
                 WN = CS%Freq_Cen(b)**2 * CS%I_g_Earth
                 CMN_FAC = exp(2.*WN*Top) * one_minus_exp_x(2.*WN*level_thick)
               endif
-              CS%US_y(ii,JJ,kk) = CS%US_y(ii,JJ,kk) + CS%STKy0(ii,JJ,b)*CMN_FAC
+              CS%US_y(i,J,k) = CS%US_y(i,J,k) + CS%STKy0(i,J,b)*CMN_FAC
             enddo
           elseif (level_thick > CS%Stokes_min_thick_avg) then
             ! -> Stokes drift in thin layers not averaged.
@@ -912,7 +923,7 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
                 WN = CS%Freq_Cen(b)**2 / CS%g_Earth !bgr bug-fix missing g
                 CMN_FAC = (exp(2.*WN*Top)-exp(2.*WN*Bottom)) / (2.*WN*(Top-Bottom))
               endif
-              CS%US_y(ii,JJ,kk) = CS%US_y(ii,JJ,kk) + CS%STKy0(ii,JJ,b)*CMN_FAC
+              CS%US_y(i,J,k) = CS%US_y(i,J,k) + CS%STKy0(i,J,b)*CMN_FAC
             enddo
           else ! Take the value at the midpoint
             do b = 1,CS%NumBands
@@ -921,7 +932,7 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
               else
                 CMN_FAC = exp(MidPoint * 2. * CS%Freq_Cen(b)**2 / CS%g_Earth)
               endif
-              CS%US_y(ii,JJ,kk) = CS%US_y(ii,JJ,kk) + CS%STKy0(ii,JJ,b)*CMN_FAC
+              CS%US_y(i,J,k) = CS%US_y(i,J,k) + CS%STKy0(i,J,b)*CMN_FAC
             enddo
           endif
         enddo
@@ -931,39 +942,37 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
     call pass_vector(CS%Us0_x(:,:),CS%Us0_y(:,:), G%Domain)
   elseif (CS%WaveMethod == DHH85) then
     if (.not.(CS%StaticWaves .and. CS%DHH85_is_set)) then
-      do jj = G%jsc,G%jec
-        do II = G%iscB,G%iecB
+      do j=G%jsc,G%jec
+        do I=G%iscB,G%iecB
           bottom = 0.0
-          do kk = 1,GV%ke
+          do k = 1,GV%ke
             Top = Bottom
-            IIm1 = max(II-1,1)
-            MidPoint = Top - 0.25*(dz(II,jj,kk)+dz(IIm1,jj,kk))
-            Bottom = Top - 0.5*(dz(II,jj,kk)+dz(IIm1,jj,kk))
-            !bgr note that this is using a u-point ii on h-point ustar
+            MidPoint = Top - 0.25*(dz(I,j,k)+dz(I-1,j,k))
+            Bottom = Top - 0.5*(dz(I,j,k)+dz(I-1,j,k))
+            !bgr note that this is using a u-point I on h-point ustar
             !    this code has only been previous used for uniform
             !    grid cases.  This needs fixed if DHH85 is used for non
             !    uniform cases.
             call DHH85_mid(GV, US, CS, MidPoint, UStokes)
             ! Putting into x-direction (no option for direction
-            CS%US_x(II,jj,kk) = UStokes
+            CS%US_x(I,j,k) = UStokes
           enddo
         enddo
       enddo
-      do JJ = G%jscB,G%jecB
-        do ii = G%isc,G%iec
+      do J=G%jscB,G%jecB
+        do i=G%isc,G%iec
           Bottom = 0.0
-          do kk=1, GV%ke
+          do k = 1,GV%ke
             Top = Bottom
-            JJm1 = max(JJ-1,1)
-            MidPoint = Bottom - 0.25*(dz(ii,JJ,kk)+dz(ii,JJm1,kk))
-            Bottom = Bottom - 0.5*(dz(ii,JJ,kk)+dz(ii,JJm1,kk))
-            !bgr note that this is using a v-point jj on h-point ustar
+            MidPoint = Bottom - 0.25*(dz(i,J,k)+dz(i,J-1,k))
+            Bottom = Bottom - 0.5*(dz(i,J,k)+dz(i,J-1,k))
+            !bgr note that this is using a v-point J on h-point ustar
             !    this code has only been previous used for uniform
             !    grid cases.  This needs fixed if DHH85 is used for non
             !    uniform cases.
             ! call DHH85_mid(GV, US, CS, Midpoint, UStokes)
             ! Putting into x-direction, so setting y direction to 0
-            CS%US_y(ii,JJ,kk) = 0.0
+            CS%US_y(i,J,k) = 0.0
             ! For rotational symmetry there should be the option for this to become = UStokes
             !    bgr - see note above, but this is true
             !          if this is used for anything
@@ -975,28 +984,18 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
     endif
     call pass_vector(CS%Us_x(:,:,:),CS%Us_y(:,:,:), G%Domain)
   else! Keep this else, fallback to 0 Stokes drift
-    do kk= 1,GV%ke
-      do jj = G%jsd,G%jed
-        do II = G%isdB,G%iedB
-          CS%Us_x(II,jj,kk) = 0.
-        enddo
-      enddo
-      do JJ = G%jsdB,G%jedB
-        do ii = G%isd,G%ied
-          CS%Us_y(ii,JJ,kk) = 0.
-        enddo
-      enddo
-    enddo
+    CS%Us_x(:,:,:) = 0.
+    CS%Us_y(:,:,:) = 0.
   endif
 
   ! Turbulent Langmuir number is computed here and available to use anywhere.
   ! SL Langmuir number requires mixing layer depth, and therefore is computed
   ! in the routine it is needed by (e.g. KPP or ePBL).
-  do jj = G%jsc, G%jec
-    do ii = G%isc,G%iec
-      call get_Langmuir_Number( La, G, GV, US, dz(ii,jj,1), ustar(ii,jj), ii, jj, &
-             dz(ii,jj,:), CS, Override_MA=.false.)
-      CS%La_turb(ii,jj) = La
+  do j=G%jsc, G%jec
+    do i=G%isc,G%iec
+      call get_Langmuir_Number( La, G, GV, US, dz(i,j,1), ustar(i,j), i, j, &
+             dz(i,j,:), CS, Override_MA=.false.)
+      CS%La_turb(i,j) = La
     enddo
   enddo
 
@@ -1045,6 +1044,18 @@ real function one_minus_exp_x(x)
     one_minus_exp_x = (1.0 - exp(-x)) / x
   endif
 end function one_minus_exp_x
+
+!> Return the value of (1 - exp(-x)), using an accurate expression for small values of x.
+real function one_minus_exp(x)
+  real, intent(in) :: x !< The argument of the function ((1 - exp(-x))/x) [nondim]
+  real, parameter :: C1_6 = 1.0/6.0  ! A rational fraction [nondim]
+  if (abs(x) <= 2.0e-5) then
+    ! The Taylor series expression for exp(-x) gives a more accurate expression for 64-bit reals.
+    one_minus_exp = x * (1.0 - x * (0.5 - C1_6*x))
+  else
+    one_minus_exp = 1.0 - exp(-x)
+  endif
+end function one_minus_exp
 
 !> A subroutine to fill the Stokes drift from a NetCDF file
 !! using the data_override procedures.
@@ -1197,7 +1208,7 @@ subroutine get_Langmuir_Number( LA, G, GV, US, HBL, ustar, i, j, dz, Waves, &
   logical :: ContinueLoop, USE_MA
   real, dimension(SZK_(GV)) :: US_H, VS_H ! Profiles of Stokes velocities [L T-1 ~> m s-1]
   real, allocatable :: StkBand_X(:), StkBand_Y(:) ! Stokes drifts by band [L T-1 ~> m s-1]
-  integer :: KK, BB
+  integer :: k, BB
 
   ! Compute averaging depth for Stokes drift (negative)
   Dpt_LASL = -1.0*max(Waves%LA_FracHBL*HBL, Waves%LA_HBL_min)
@@ -1211,28 +1222,34 @@ subroutine get_Langmuir_Number( LA, G, GV, US, HBL, ustar, i, j, dz, Waves, &
         "Get_LA_waves requested to consider misalignment, but velocities were not provided.")
     ContinueLoop = .true.
     bottom = 0.0
-    do kk = 1,GV%ke
+    do k = 1,GV%ke
       Top = Bottom
-      MidPoint = Bottom + 0.5*dz(kk)
-      Bottom = Bottom + dz(kk)
-      !### Given the sign convention that Dpt_LASL is negative, the next line seems to have a bug.
-      !    To correct this bug, this line should be changed to:
-      ! if (MidPoint > abs(Dpt_LASL) .and. (kk > 1) .and. ContinueLoop) then
-      if (MidPoint > Dpt_LASL .and. kk > 1 .and. ContinueLoop) then
-        ShearDirection = atan2(V_H(1)-V_H(kk),U_H(1)-U_H(kk))
-        ContinueLoop = .false.
+      MidPoint = Bottom + 0.5*dz(k)
+      Bottom = Bottom + dz(k)
+
+      if (Waves%LA_Misalign_bug) then
+        ! Given the sign convention that Dpt_LASL is negative, the next line has a bug.
+        if (MidPoint > Dpt_LASL .and. k > 1 .and. ContinueLoop) then
+          ShearDirection = atan2(V_H(1)-V_H(k), U_H(1)-U_H(k))
+          ContinueLoop = .false.
+        endif
+      else ! This version avoids the bug in the version above.
+        if (MidPoint > abs(Dpt_LASL) .and. (k > 1) .and. ContinueLoop) then
+          ShearDirection = atan2(V_H(1)-V_H(k), U_H(1)-U_H(k))
+          ContinueLoop = .false.
+        endif
       endif
     enddo
   endif
 
   if (Waves%WaveMethod==TESTPROF) then
-    do kk = 1,GV%ke
-      US_H(kk) = 0.5*(Waves%US_X(I,j,kk)+Waves%US_X(I-1,j,kk))
-      VS_H(kk) = 0.5*(Waves%US_Y(i,J,kk)+Waves%US_Y(i,J-1,kk))
+    do k = 1,GV%ke
+      US_H(k) = 0.5*(Waves%US_X(I,j,k)+Waves%US_X(I-1,j,k))
+      VS_H(k) = 0.5*(Waves%US_Y(i,J,k)+Waves%US_Y(i,J-1,k))
     enddo
     call Get_SL_Average_Prof( GV, Dpt_LASL, dz, US_H, LA_STKx)
     call Get_SL_Average_Prof( GV, Dpt_LASL, dz, VS_H, LA_STKy)
-    LA_STK = sqrt(LA_STKX*LA_STKX+LA_STKY*LA_STKY)
+    LA_STK = sqrt((LA_STKX*LA_STKX) + (LA_STKY*LA_STKY))
   elseif (Waves%WaveMethod==SURFBANDS) then
     allocate(StkBand_X(Waves%NumBands), StkBand_Y(Waves%NumBands))
     do bb = 1,Waves%NumBands
@@ -1241,17 +1258,17 @@ subroutine get_Langmuir_Number( LA, G, GV, US, HBL, ustar, i, j, dz, Waves, &
     enddo
     call Get_SL_Average_Band(GV, Dpt_LASL, Waves%NumBands, Waves%WaveNum_Cen, StkBand_X, LA_STKx )
     call Get_SL_Average_Band(GV, Dpt_LASL, Waves%NumBands, Waves%WaveNum_Cen, StkBand_Y, LA_STKy )
-    LA_STK = sqrt(LA_STKX**2 + LA_STKY**2)
+    LA_STK = sqrt((LA_STKX**2) + (LA_STKY**2))
     deallocate(StkBand_X, StkBand_Y)
   elseif (Waves%WaveMethod==DHH85) then
     ! Temporarily integrating profile rather than spectrum for simplicity
-    do kk = 1,GV%ke
-      US_H(kk) = 0.5*(Waves%US_X(I,j,kk)+Waves%US_X(I-1,j,kk))
-      VS_H(kk) = 0.5*(Waves%US_Y(i,J,kk)+Waves%US_Y(i,J-1,kk))
+    do k = 1,GV%ke
+      US_H(k) = 0.5*(Waves%US_X(I,j,k)+Waves%US_X(I-1,j,k))
+      VS_H(k) = 0.5*(Waves%US_Y(i,J,k)+Waves%US_Y(i,J-1,k))
     enddo
     call Get_SL_Average_Prof( GV, Dpt_LASL, dz, US_H, LA_STKx)
     call Get_SL_Average_Prof( GV, Dpt_LASL, dz, VS_H, LA_STKy)
-    LA_STK = sqrt(LA_STKX**2 + LA_STKY**2)
+    LA_STK = sqrt((LA_STKX**2) + (LA_STKY**2))
   elseif (Waves%WaveMethod==LF17) then
     call get_StokesSL_LiFoxKemper(ustar, HBL*Waves%LA_FracHBL, GV, US, Waves, LA_STK, LA)
   elseif (Waves%WaveMethod==Null_WaveMethod) then
@@ -1451,20 +1468,20 @@ subroutine Get_SL_Average_Prof( GV, AvgDepth, dz, Profile, Average )
   !Local variables
   real :: Top, Bottom ! Depths, negative downward [Z ~> m]
   real :: Sum  ! The depth weighted vertical sum of a quantity [A Z ~> A m]
-  integer :: kk
+  integer :: k
 
   ! Initializing sum
   Sum = 0.0
 
   ! Integrate
   bottom = 0.0
-  do kk = 1, GV%ke
+  do k = 1, GV%ke
     Top = Bottom
-    Bottom = Bottom - dz(kk)
+    Bottom = Bottom - dz(k)
     if (AvgDepth < Bottom) then ! The whole cell is within H_LA
-      Sum = Sum + Profile(kk) * dz(kk)
+      Sum = Sum + Profile(k) * dz(k)
     elseif (AvgDepth < Top) then ! A partial cell is within H_LA
-      Sum = Sum + Profile(kk) * (Top-AvgDepth)
+      Sum = Sum + Profile(k) * (Top-AvgDepth)
       exit
     else
       exit
@@ -1671,8 +1688,8 @@ subroutine CoriolisStokes(G, GV, dt, h, u, v, Waves)
   do k = 1, GV%ke
     do j = G%jsc, G%jec
       do I = G%iscB, G%iecB
-        DVel = 0.25*(Waves%us_y(i,j+1,k)+Waves%us_y(i-1,j+1,k))*G%CoriolisBu(i,j+1) + &
-               0.25*(Waves%us_y(i,j,k)+Waves%us_y(i-1,j,k))*G%CoriolisBu(i,j)
+        DVel = 0.25*((Waves%us_y(i,J+1,k)+Waves%us_y(i-1,J+1,k)) * G%CoriolisBu(I,J+1)) + &
+               0.25*((Waves%us_y(i,J,k)+Waves%us_y(i-1,J,k)) * G%CoriolisBu(I,J))
         u(I,j,k) = u(I,j,k) + DVEL*dt
       enddo
     enddo
@@ -1681,8 +1698,8 @@ subroutine CoriolisStokes(G, GV, dt, h, u, v, Waves)
   do k = 1, GV%ke
     do J = G%jscB, G%jecB
       do i = G%isc, G%iec
-        DVel = 0.25*(Waves%us_x(i+1,j,k)+Waves%us_x(i+1,j-1,k))*G%CoriolisBu(i+1,j) + &
-               0.25*(Waves%us_x(i,j,k)+Waves%us_x(i,j-1,k))*G%CoriolisBu(i,j)
+        DVel = 0.25*((Waves%us_x(I+1,j,k)+Waves%us_x(I+1,j-1,k)) * G%CoriolisBu(I+1,J)) + &
+               0.25*((Waves%us_x(I,j,k)+Waves%us_x(I,j-1,k)) * G%CoriolisBu(I,J))
         v(i,J,k) = v(i,j,k) - DVEL*dt
       enddo
     enddo
@@ -1722,7 +1739,9 @@ subroutine Stokes_PGF(G, GV, US, dz, u, v, PFu_Stokes, PFv_Stokes, CS )
   real :: P_Stokes_l0, P_Stokes_r0 ! Stokes-induced pressure anomaly at interface
                                    ! (left/right of point) [L2 T-2 ~> m2 s-2]
   real :: dP_Stokes_l_dz, dP_Stokes_r_dz ! Contribution of layer to integrated Stokes pressure anomaly for summation
-                                         ! (left/right of point) [L3 T-2 ~> m3 s-2]
+                                         ! (left/right of point) [Z L2 T-2 ~> m3 s-2]
+  real :: dP_lay_Stokes_l, dP_lay_Stokes_r ! Contribution of layer to integrated Stokes pressure anomaly for summation
+                                         ! (left/right of point) [L2 T-2 ~> m2 s-2]
   real :: dP_Stokes_l, dP_Stokes_r ! Net increment of Stokes pressure anomaly across layer for summation
                                    ! (left/right of point) [L2 T-2 ~> m2 s-2]
   real :: uE_l, uE_r, vE_l, vE_r ! Eulerian velocity components (left/right of point) [L T-1 ~> m s-1]
@@ -1730,6 +1749,7 @@ subroutine Stokes_PGF(G, GV, US, dz, u, v, PFu_Stokes, PFv_Stokes, CS )
   real :: zi_l(SZK_(G)+1), zi_r(SZK_(G)+1)   ! The height of the edges of the cells (left/right of point) [Z ~> m].
   real :: idz_l(SZK_(G)), idz_r(SZK_(G)) ! The inverse thickness of the cells (left/right of point) [Z-1 ~> m-1]
   real :: h_l, h_r   ! The thickness of the cell (left/right of point) [Z ~> m].
+  real :: exp_top    ! The decay of the surface stokes drift to the interface atop a layer [nondim]
   real :: dexp2kzL, dexp4kzL, dexp2kzR, dexp4kzR ! Analytical evaluation of multi-exponential decay
                                               ! contribution to Stokes pressure anomalies [nondim].
   real :: TwoK, FourK   ! Wavenumbers multiplied by a factor [Z-1 ~> m-1]
@@ -1778,9 +1798,11 @@ subroutine Stokes_PGF(G, GV, US, dz, u, v, PFu_Stokes, PFv_Stokes, CS )
         h_r = dz(i+1,j,k)
         zi_l(k+1) = zi_l(k) - h_l
         zi_r(k+1) = zi_r(k) - h_r
-        !### If the code were properly refactored, the following hard-coded constants would be unnecessary.
-        Idz_l(k) = 1./max(0.1*US%m_to_Z, h_l)
-        Idz_r(k) = 1./max(0.1*US%m_to_Z, h_r)
+        if (.not.CS%robust_Stokes_PGF) then
+          ! When the code is properly refactored, the following hard-coded constants are unnecessary.
+          Idz_l(k) = 1./max(0.1*US%m_to_Z, h_l)
+          Idz_r(k) = 1./max(0.1*US%m_to_Z, h_r)
+        endif
       enddo
       do k = 1,G%ke
         ! Computing (left/right) Eulerian velocities assuming the velocity passed to this routine is the
@@ -1814,31 +1836,59 @@ subroutine Stokes_PGF(G, GV, US, dz, u, v, PFu_Stokes, PFv_Stokes, CS )
           ! Wavenumber terms that are useful to simplify the pressure calculations
           TwoK = 2.*CS%WaveNum_Cen(l)
           FourK = 2.*TwoK
-          iTwoK = 1./TwoK
-          iFourK = 1./(FourK)
-          dexp2kzL = exp(TwoK*zi_l(k))-exp(TwoK*zi_l(k+1))
-          dexp2kzR = exp(TwoK*zi_r(k))-exp(TwoK*zi_r(k+1))
-          dexp4kzL = exp(FourK*zi_l(k))-exp(FourK*zi_l(k+1))
-          dexp4kzR = exp(FourK*zi_r(k))-exp(FourK*zi_r(k+1))
+          if (.not.CS%robust_Stokes_PGF) then
+            iTwoK = 1. / TwoK
+            iFourK = 1. / FourK
+          endif
 
           ! Compute Pressure at interface and integrated over layer on left/right bounding points.
           ! These are summed over wavenumber bands.
           if (G%mask2dT(i,j)>0.5) then
-            dP_Stokes_l_dz = dP_Stokes_l_dz + &
-                             ((uE_l*uS0_l+vE_l*vS0_l)*iTwoK*dexp2kzL + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*iFourK*dexp4kzL)
-            dP_Stokes_l = dP_Stokes_l + (uE_l*uS0_l+vE_l*vS0_l)*dexp2kzL + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*dexp4kzL
+            if (.not.CS%robust_Stokes_PGF) then
+              dexp2kzL = exp(TwoK*zi_l(k))-exp(TwoK*zi_l(k+1))
+              dexp4kzL = exp(FourK*zi_l(k))-exp(FourK*zi_l(k+1))
+              dP_Stokes_l_dz = dP_Stokes_l_dz + &
+                               ((uE_l*uS0_l+vE_l*vS0_l)*iTwoK*dexp2kzL + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*iFourK*dexp4kzL)
+              dP_Stokes_l = dP_Stokes_l + (uE_l*uS0_l+vE_l*vS0_l)*dexp2kzL + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*dexp4kzL
+            else  ! These expressions are equivalent to those above for thick layers, but more accurate for thin layers.
+              exp_top = exp(TwoK*zi_l(k))
+              dP_lay_Stokes_l = dP_lay_Stokes_l + &
+                  ((((uE_l*uS0_l)+(vE_l*vS0_l)) * exp_top) * one_minus_exp_x(TwoK*dz(i,j,k)) + &
+                   (0.5*((uS0_l**2)+(vS0_l**2)) * exp_top**2) * one_minus_exp_x(FourK*dz(i,j,k)) )
+              dP_Stokes_l = dP_Stokes_l + &
+                  ((((uE_l*uS0_l)+(vE_l*vS0_l)) * exp_top) * one_minus_exp(TwoK*dz(i,j,k)) + &
+                   (0.5*((uS0_l**2)+(vS0_l**2)) * exp_top**2) * one_minus_exp(FourK*dz(i,j,k)) )
+            endif
           endif
           if (G%mask2dT(i+1,j)>0.5) then
-            dP_Stokes_r_dz = dP_Stokes_r_dz + &
-                             ((uE_r*uS0_r+vE_r*vS0_r)*iTwoK*dexp2kzR + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*iFourK*dexp4kzR)
-            dP_Stokes_r = dP_Stokes_r + (uE_r*uS0_r+vE_r*vS0_r)*dexp2kzR + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*dexp4kzR
+            if (.not.CS%robust_Stokes_PGF) then
+              dexp2kzR = exp(TwoK*zi_r(k))-exp(TwoK*zi_r(k+1))
+              dexp4kzR = exp(FourK*zi_r(k))-exp(FourK*zi_r(k+1))
+              dP_Stokes_r_dz = dP_Stokes_r_dz + &
+                               ((uE_r*uS0_r+vE_r*vS0_r)*iTwoK*dexp2kzR + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*iFourK*dexp4kzR)
+              dP_Stokes_r = dP_Stokes_r + (uE_r*uS0_r+vE_r*vS0_r)*dexp2kzR + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*dexp4kzR
+            else  ! These expressions are equivalent to those above for thick layers, but more accurate for thin layers.
+              exp_top = exp(TwoK*zi_r(k))
+              dP_lay_Stokes_r = dP_lay_Stokes_r + &
+                  ((((uE_r*uS0_r)+(vE_r*vS0_r)) * exp_top) * one_minus_exp_x(TwoK*dz(i+1,j,k)) + &
+                   (0.5*((uS0_r**2)+(vS0_r**2)) * exp_top**2) * one_minus_exp_x(FourK*dz(i+1,j,k)) )
+              dP_Stokes_r = dP_Stokes_r + &
+                  ((((uE_r*uS0_r)+(vE_r*vS0_r)) * exp_top) * one_minus_exp(TwoK*dz(i+1,j,k)) + &
+                   (0.5*((uS0_r**2)+(vS0_r**2)) * exp_top**2) * one_minus_exp(FourK*dz(i+1,j,k)) )
+            endif
           endif
         enddo
 
         ! Summing PF over bands
         ! > Increment the Layer averaged pressure
-        P_Stokes_l = P_Stokes_l0 + dP_Stokes_l_dz*Idz_l(k)
-        P_Stokes_r = P_Stokes_r0 + dP_Stokes_r_dz*Idz_r(k)
+        if (.not.CS%robust_Stokes_PGF) then
+          P_Stokes_l = P_Stokes_l0 + dP_Stokes_l_dz*Idz_l(k)
+          P_Stokes_r = P_Stokes_r0 + dP_Stokes_r_dz*Idz_r(k)
+        else
+          P_Stokes_l = P_Stokes_l0 + dP_lay_Stokes_l
+          P_Stokes_r = P_Stokes_r0 + dP_lay_Stokes_r
+        endif
+
         ! > Increment the Interface pressure
         P_Stokes_l0 = P_Stokes_l0 + dP_Stokes_l
         P_Stokes_r0 = P_Stokes_r0 + dP_Stokes_r
@@ -1872,9 +1922,11 @@ subroutine Stokes_PGF(G, GV, US, dz, u, v, PFu_Stokes, PFv_Stokes, CS )
         h_r = dz(i,j+1,k)
         zi_l(k+1) = zi_l(k) - h_l
         zi_r(k+1) = zi_r(k) - h_r
-        !### If the code were properly refactored, the following hard-coded constants would be unnecessary.
-        Idz_l(k) = 1. / max(0.1*US%m_to_Z, h_l)
-        Idz_r(k) = 1. / max(0.1*US%m_to_Z, h_r)
+        if (.not.CS%robust_Stokes_PGF) then
+          ! When the code is properly refactored, the following hard-coded constants are unnecessary.
+          Idz_l(k) = 1. / max(0.1*US%m_to_Z, h_l)
+          Idz_r(k) = 1. / max(0.1*US%m_to_Z, h_r)
+        endif
       enddo
       do k = 1,G%ke
         ! Computing (left/right) Eulerian velocities assuming the velocity passed to this routine is the
@@ -1908,31 +1960,59 @@ subroutine Stokes_PGF(G, GV, US, dz, u, v, PFu_Stokes, PFv_Stokes, CS )
           ! Wavenumber terms that are useful to simplify the pressure calculations
           TwoK = 2.*CS%WaveNum_Cen(l)
           FourK = 2.*TwoK
-          iTwoK = 1./TwoK
-          iFourK = 1./(FourK)
-          dexp2kzL = exp(TwoK*zi_l(k))-exp(TwoK*zi_l(k+1))
-          dexp2kzR = exp(TwoK*zi_r(k))-exp(TwoK*zi_r(k+1))
-          dexp4kzL = exp(FourK*zi_l(k))-exp(FourK*zi_l(k+1))
-          dexp4kzR = exp(FourK*zi_r(k))-exp(FourK*zi_r(k+1))
+          if (.not.CS%robust_Stokes_PGF) then
+            iTwoK = 1. / TwoK
+            iFourK = 1. / FourK
+          endif
 
           ! Compute Pressure at interface and integrated over layer on left/right bounding points.
           ! These are summed over wavenumber bands.
           if (G%mask2dT(i,j)>0.5) then
-            dP_Stokes_l_dz = dP_Stokes_l_dz + &
-                             ((uE_l*uS0_l+vE_l*vS0_l)*iTwoK*dexp2kzL + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*iFourK*dexp4kzL)
-            dP_Stokes_l = dP_Stokes_l + (uE_l*uS0_l+vE_l*vS0_l)*dexp2kzL + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*dexp4kzL
+            if (.not.CS%robust_Stokes_PGF) then
+              dexp2kzL = exp(TwoK*zi_l(k))-exp(TwoK*zi_l(k+1))
+              dexp4kzL = exp(FourK*zi_l(k))-exp(FourK*zi_l(k+1))
+              dP_Stokes_l_dz = dP_Stokes_l_dz + &
+                               ((uE_l*uS0_l+vE_l*vS0_l)*iTwoK*dexp2kzL + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*iFourK*dexp4kzL)
+              dP_Stokes_l = dP_Stokes_l + (uE_l*uS0_l+vE_l*vS0_l)*dexp2kzL + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*dexp4kzL
+            else  ! These expressions are equivalent to those above for thick layers, but more accurate for thin layers.
+              exp_top = exp(TwoK*zi_l(k))
+              dP_lay_Stokes_l = dP_lay_Stokes_l + &
+                  ((((uE_l*uS0_l)+(vE_l*vS0_l)) * exp_top) * one_minus_exp_x(TwoK*dz(i,j,k)) + &
+                   (0.5*((uS0_l**2)+(vS0_l**2)) * exp_top**2) * one_minus_exp_x(FourK*dz(i,j,k)) )
+              dP_Stokes_l = dP_Stokes_l + &
+                  ((((uE_l*uS0_l)+(vE_l*vS0_l)) * exp_top) * one_minus_exp(TwoK*dz(i,j,k)) + &
+                   (0.5*((uS0_l**2)+(vS0_l**2)) * exp_top**2) * one_minus_exp(FourK*dz(i,j,k)) )
+            endif
           endif
           if (G%mask2dT(i,j+1)>0.5) then
-            dP_Stokes_r_dz = dP_Stokes_r_dz + &
-                             ((uE_r*uS0_r+vE_r*vS0_r)*iTwoK*dexp2kzR + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*iFourK*dexp4kzR)
-            dP_Stokes_r = dP_Stokes_r + (uE_r*uS0_r+vE_r*vS0_r)*dexp2kzR + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*dexp4kzR
+            if (.not.CS%robust_Stokes_PGF) then
+              dexp2kzR = exp(TwoK*zi_r(k))-exp(TwoK*zi_r(k+1))
+              dexp4kzR = exp(FourK*zi_r(k))-exp(FourK*zi_r(k+1))
+              dP_Stokes_r_dz = dP_Stokes_r_dz + &
+                               ((uE_r*uS0_r+vE_r*vS0_r)*iTwoK*dexp2kzR + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*iFourK*dexp4kzR)
+              dP_Stokes_r = dP_Stokes_r + (uE_r*uS0_r+vE_r*vS0_r)*dexp2kzR + 0.5*(uS0_l*uS0_l+vS0_l*vS0_l)*dexp4kzR
+            else  ! These expressions are equivalent to those above for thick layers, but more accurate for thin layers.
+              exp_top = exp(TwoK*zi_r(k))
+              dP_lay_Stokes_r = dP_lay_Stokes_r + &
+                  ((((uE_r*uS0_r)+(vE_r*vS0_r)) * exp_top) * one_minus_exp_x(TwoK*dz(i,j+1,k)) + &
+                   (0.5*((uS0_r**2)+(vS0_r**2)) * exp_top**2) * one_minus_exp_x(FourK*dz(i,j+1,k)) )
+              dP_Stokes_r = dP_Stokes_r + &
+                  ((((uE_r*uS0_r)+(vE_r*vS0_r)) * exp_top) * one_minus_exp(TwoK*dz(i,j+1,k)) + &
+                   (0.5*((uS0_r**2)+(vS0_r**2)) * exp_top**2) * one_minus_exp(FourK*dz(i,j+1,k)) )
+            endif
           endif
         enddo
 
         ! Summing PF over bands
         ! > Increment the Layer averaged pressure
-        P_Stokes_l = P_Stokes_l0 + dP_Stokes_l_dz*Idz_l(k)
-        P_Stokes_r = P_Stokes_r0 + dP_Stokes_r_dz*Idz_r(k)
+        if (.not.CS%robust_Stokes_PGF) then
+          P_Stokes_l = P_Stokes_l0 + dP_Stokes_l_dz*Idz_l(k)
+          P_Stokes_r = P_Stokes_r0 + dP_Stokes_r_dz*Idz_r(k)
+        else
+          P_Stokes_l = P_Stokes_l0 + dP_lay_Stokes_l
+          P_Stokes_r = P_Stokes_r0 + dP_lay_Stokes_r
+        endif
+
         ! > Increment the Interface pressure
         P_Stokes_l0 = P_Stokes_l0 + dP_Stokes_l
         P_Stokes_r0 = P_Stokes_r0 + dP_Stokes_r
@@ -1954,7 +2034,6 @@ subroutine Stokes_PGF(G, GV, US, dz, u, v, PFu_Stokes, PFv_Stokes, CS )
     call post_data(CS%id_P_deltaStokes_i, P_deltaStokes_i, CS%diag)
 
 end subroutine Stokes_PGF
-
 
 !> Computes wind speed from ustar_air based on COARE 3.5 Cd relationship
 !! Probably doesn't belong in this module, but it is used here to estimate

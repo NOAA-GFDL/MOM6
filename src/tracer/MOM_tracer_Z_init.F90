@@ -27,49 +27,57 @@ contains
 
 !>   This function initializes a tracer by reading a Z-space file, returning
 !! .true. if this appears to have been successful, and false otherwise.
-function tracer_Z_init(tr, h, filename, tr_name, G, GV, US, missing_val, land_val)
+function tracer_Z_init(tr, h, filename, tr_name, G, GV, US, missing_val, land_val, scale)
   logical :: tracer_Z_init !< A return code indicating if the initialization has been successful
   type(ocean_grid_type), intent(in)    :: G    !< The ocean's grid structure
   type(verticalGrid_type), intent(in)  :: GV   !< The ocean's vertical grid structure.
   type(unit_scale_type), intent(in)    :: US   !< A dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                         intent(out)   :: tr   !< The tracer to initialize
+                         intent(out)   :: tr   !< The tracer to initialize [CU ~> conc]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                         intent(in)    :: h    !< Layer thicknesses [H ~> m or kg m-2]
-  character(len=*),      intent(in)    :: filename !< The name of the file to read from
-  character(len=*),      intent(in)    :: tr_name !< The name of the tracer in the file
-  real,        optional, intent(in)    :: missing_val !< The missing value for the tracer
-  real,        optional, intent(in)    :: land_val !< A value to use to fill in land points
+                         intent(in)    :: h    !< Layer thicknesses [H ~> m or kg m-2] or other
+                                               !! arbitrary units such as [Z ~> m]
+  character(len=*),      intent(in)    :: filename  !< The name of the file to read from
+  character(len=*),      intent(in)    :: tr_name   !< The name of the tracer in the file
+  real,        optional, intent(in)    :: missing_val !< The missing value for the tracer [CU ~> conc]
+  real,        optional, intent(in)    :: land_val  !< A value to use to fill in land points [CU ~> conc]
+  real,        optional, intent(in)    :: scale     !< A factor by which to scale the output tracers from the
+                                                    !! their units in the file [CU conc-1 ~> 1]
 
-! This include declares and sets the variable "version".
-# include "version_variable.h"
-
+  ! Local variables
   real, allocatable, dimension(:,:,:) :: &
-    tr_in   ! The z-space array of tracer concentrations that is read in.
+    tr_in   ! The z-space array of tracer concentrations that is read in [CU ~> conc]
   real, allocatable, dimension(:) :: &
     z_edges, &  ! The depths of the cell edges or cell centers (depending on
                 ! the value of has_edges) in the input z* data [Z ~> m].
-    tr_1d, &    ! A copy of the input tracer concentrations in a column.
+    tr_1d, &    ! A copy of the input tracer concentrations in a column [CU ~> conc]
     wt, &   ! The fractional weight for each layer in the range between
-            ! k_top and k_bot, nondim.
-    z1, &   ! z1 and z2 are the depths of the top and bottom limits of the part
-    z2      ! of a z-cell that contributes to a layer, relative to the cell
-            ! center and normalized by the cell thickness, nondim.
+            ! k_top and k_bot [nondim]
+    z1, z2  ! z1 and z2 are the depths of the top and bottom limits of the part
+            ! of a z-cell that contributes to a layer, relative to the cell
+            ! center and normalized by the cell thickness [nondim].
             ! Note that -1/2 <= z1 <= z2 <= 1/2.
   real    :: e(SZK_(GV)+1)  ! The z-star interface heights [Z ~> m].
-  real    :: landval    ! The tracer value to use in land points.
+  real    :: landval    ! The tracer value to use in land points [CU ~> conc]
   real    :: sl_tr      ! The normalized slope of the tracer
-                        ! within the cell, in tracer units.
+                        ! within the cell, in tracer units [CU ~> conc]
   real    :: htot(SZI_(G)) ! The vertical sum of h [H ~> m or kg m-2].
   real    :: dilate     ! The amount by which the thicknesses are dilated to
-                        ! create a z-star coordinate, nondim or in m3 kg-1.
-  real    :: missing    ! The missing value for the tracer.
-
+                        ! create a z-star coordinate [Z H-1 ~> nondim or m3 kg-1]
+                        ! or other units reflecting those of h
+  real    :: missing    ! The missing value for the tracer [CU ~> conc]
+  real    :: scale_fac  ! A factor by which to scale the output tracers from the units in the
+                        ! input file [CU conc-1 ~> 1]
+  ! This include declares and sets the variable "version".
+# include "version_variable.h"
   logical :: has_edges, use_missing, zero_surface
   character(len=80) :: loc_msg
   integer :: k_top, k_bot, k_bot_prev, k_start
   integer :: i, j, k, kz, is, ie, js, je, nz, nz_in
+
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+
+  scale_fac = 1.0 ; if (present(scale)) then ; scale_fac = scale ; endif
 
   landval = 0.0 ; if (present(land_val)) landval = land_val
 
@@ -83,7 +91,7 @@ function tracer_Z_init(tr, h, filename, tr_name, G, GV, US, missing_val, land_va
   ! Find out the number of input levels and read the depth of the edges,
   ! also modifying their sign convention to be monotonically decreasing.
   call read_Z_edges(filename, tr_name, z_edges, nz_in, has_edges, use_missing, &
-                    missing, scale=US%m_to_Z)
+                    missing, scale=US%m_to_Z, missing_scale=scale_fac)
   if (nz_in < 1) then
     tracer_Z_init = .false.
     return
@@ -91,7 +99,7 @@ function tracer_Z_init(tr, h, filename, tr_name, G, GV, US, missing_val, land_va
 
   allocate(tr_in(G%isd:G%ied,G%jsd:G%jed,nz_in), source=0.0)
   allocate(tr_1d(nz_in), source=0.0)
-  call MOM_read_data(filename, tr_name, tr_in(:,:,:), G%Domain)
+  call MOM_read_data(filename, tr_name, tr_in(:,:,:), G%Domain, scale=scale_fac)
 
   ! Fill missing values from above?  Use a "close" test to avoid problems
   ! from type-conversion rounoff.
@@ -297,9 +305,10 @@ subroutine tracer_z_init_array(tr_in, z_edges, nk_data, e, land_fill, G, nlay, n
   real :: e_1d(nlay+1)   ! A 1-d column of interface heights, in the same units as e [Z ~> m] or [m]
   real :: sl_tr          ! The tracer concentration slope times the layer thickness, in tracer units [B]
   real :: wt(nk_data)    ! The fractional weight for each layer in the range between z1 and z2 [nondim]
-  real :: z1(nk_data)    ! z1 and z2 are the fractional depths of the top and bottom
-  real :: z2(nk_data)    ! limits of the part of a z-cell that contributes to a layer, relative
-                         ! to the cell center and normalized by the cell thickness [nondim].
+  real :: z1(nk_data)    ! The fractional depth of the top limit of the part of a z-cell that contributes to
+                         ! a layer, relative to the cell center and normalized by the cell thickness [nondim].
+  real :: z2(nk_data)    ! The fractional depth of the bottom limit of the part of a z-cell that contributes to
+                         ! a layer, relative to the cell center and normalized by the cell thickness [nondim].
                          ! Note that -1/2 <= z1 <= z2 <= 1/2.
   real :: scale_fac      ! A factor by which to scale the output tracers from the input tracers [B A-1 ~> 1]
   integer :: k_top, k_bot, k_bot_prev, kstart
@@ -380,18 +389,21 @@ end subroutine tracer_z_init_array
 !> This subroutine reads the vertical coordinate data for a field from a NetCDF file.
 !! It also might read the missing value attribute for that same field.
 subroutine read_Z_edges(filename, tr_name, z_edges, nz_out, has_edges, &
-                        use_missing, missing, scale)
+                        use_missing, missing, scale, missing_scale)
   character(len=*), intent(in)    :: filename !< The name of the file to read from.
   character(len=*), intent(in)    :: tr_name !< The name of the tracer in the file.
   real, dimension(:), allocatable, &
-                    intent(out)   :: z_edges !< The depths of the vertical edges of the tracer array
+                    intent(out)   :: z_edges !< The depths of the vertical edges of the tracer array [Z ~> m]
   integer,          intent(out)   :: nz_out  !< The number of vertical layers in the tracer array
   logical,          intent(out)   :: has_edges !< If true the values in z_edges are the edges of the
                                              !! tracer cells, otherwise they are the cell centers
   logical,          intent(inout) :: use_missing !< If false on input, see whether the tracer has a
                                              !! missing value, and if so return true
-  real,             intent(inout) :: missing !< The missing value, if one has been found
-  real,             intent(in)    :: scale   !< A scaling factor for z_edges into new units.
+  real,             intent(inout) :: missing !< The missing value, if one has been found [CU ~> conc]
+  real,             intent(in)    :: scale   !< A scaling factor for z_edges into new units [Z m-1 ~> 1]
+  real,             intent(in)    :: missing_scale  !< A scaling factor to use to convert the
+                                             !! tracers and their missing value from the units in
+                                             !! the file into their internal units [CU conc-1 ~> 1]
 
   !   This subroutine reads the vertical coordinate data for a field from a
   ! NetCDF file.  It also might read the missing value attribute for that same field.
@@ -419,6 +431,7 @@ subroutine read_Z_edges(filename, tr_name, z_edges, nz_out, has_edges, &
 
   if (.not.use_missing) then  ! Try to find the missing value from the dataset.
     call read_attribute(filename, "missing_value", missing, varname=tr_name, found=use_missing, ncid_in=ncid)
+    if (use_missing) missing = missing * missing_scale
   endif
   ! Find out if the Z-axis has an edges attribute
   call read_attribute(filename, "edges", edge_name, varname=dim_names(3), found=has_edges, ncid_in=ncid)
@@ -451,11 +464,6 @@ subroutine read_Z_edges(filename, tr_name, z_edges, nz_out, has_edges, &
 
 end subroutine read_Z_edges
 
-!### `find_overlap` and `find_limited_slope` were previously part of
-!    MOM_diag_to_Z.F90, and are nearly identical to `find_overlap` in
-!    `midas_vertmap.F90` with some slight differences.  We keep it here for
-!    reproducibility, but the two should be merged at some point
-
 !> Determines the layers bounded by interfaces e that overlap
 !! with the depth range between Z_top and Z_bot, and the fractional weights
 !! of each layer. It also calculates the normalized relative depths of the range
@@ -475,8 +483,12 @@ subroutine find_overlap(e, Z_top, Z_bot, k_max, k_start, k_top, k_bot, wt, z1, z
   real, dimension(:), intent(out)   :: z2     !< Depths of the bottom limit of the part of
        !! a layer that contributes to a depth level, relative to the cell center and normalized
        !! by the cell thickness [nondim].  Note that -1/2 <= z1 < z2 <= 1/2.
+
   ! Local variables
-  real    :: Ih, e_c, tot_wt, I_totwt
+  real    :: Ih   ! The inverse of the vertical distance across a layer, in the inverse of the units of e [Z-1 ~> m-1]
+  real    :: e_c  ! The height of the layer center, in the units of e [Z ~> m]
+  real    :: tot_wt  ! The sum of the thicknesses contributing to a layer [Z ~> m]
+  real    :: I_totwt ! The Adcroft reciprocal of tot_wt [Z-1 ~> m-1]
   integer :: k
 
   wt(:) = 0.0 ; z1(:) = 0.0 ; z2(:) = 0.0 ; k_bot = k_max
@@ -494,6 +506,7 @@ subroutine find_overlap(e, Z_top, Z_bot, k_max, k_start, k_top, k_bot, wt, z1, z
     z1(k) = (e_c - MIN(e(K), Z_top)) * Ih
     z2(k) = (e_c - Z_bot) * Ih
   else
+    ! Note that in theis branch, wt temporarily has units of [Z ~> m]
     wt(k) = MIN(e(K),Z_top) - e(K+1) ; tot_wt = wt(k) ! These are always > 0.
     if (e(K) /= e(K+1)) then
       z1(k) = (0.5*(e(K)+e(K+1)) - MIN(e(K), Z_top)) / (e(K)-e(K+1))
@@ -515,6 +528,7 @@ subroutine find_overlap(e, Z_top, Z_bot, k_max, k_start, k_top, k_bot, wt, z1, z
     enddo
 
     I_totwt = 0.0 ; if (tot_wt > 0.0) I_totwt = 1.0 / tot_wt
+    ! This loop changes the units of wt from [Z ~> m] to [nondim].
     do k=k_top,k_bot ; wt(k) = I_totwt*wt(k) ; enddo
   endif
 
@@ -523,13 +537,13 @@ end subroutine find_overlap
 !> This subroutine determines a limited slope for val to be advected with
 !! a piecewise limited scheme.
 function find_limited_slope(val, e, k) result(slope)
-  real, dimension(:), intent(in) :: val !< An column the values that are being interpolated.
+  real, dimension(:), intent(in) :: val !< A column of the values that are being interpolated, in arbitrary units [A]
   real, dimension(:), intent(in) :: e   !< A column's interface heights [Z ~> m] or other units.
   integer,            intent(in) :: k   !< The layer whose slope is being determined.
-  real :: slope !< The normalized slope in the intracell distribution of val.
+  real :: slope !< The normalized slope in the intracell distribution of val [A]
   ! Local variables
-  real :: amn, cmn
-  real :: d1, d2
+  real :: amn, cmn ! Limited differences and curvatures in the values [A]
+  real :: d1, d2   ! Layer thicknesses, in the units of e [Z ~> m]
 
   if ((val(k)-val(k-1)) * (val(k)-val(k+1)) >= 0.0) then
     slope = 0.0 ! ; curvature = 0.0
@@ -601,14 +615,12 @@ subroutine determine_temperature(temp, salt, R_tgt, EOS, p_ref, niter, k_start, 
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "determine_temperature" ! This subroutine's name.
-  logical :: adjust_salt, fit_together
+  logical :: domore(SZK_(GV)) ! Records which layers need additional iterations
+  logical :: adjust_salt, fit_together, convergence_bug, do_any
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   integer :: i, j, k, is, ie, js, je, nz, itt
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
-
-  ! ### The algorithms of determine_temperature subroutine needs to be reexamined.
-
 
   call log_version(PF, mdl, version, "")
 
@@ -619,7 +631,13 @@ subroutine determine_temperature(temp, salt, R_tgt, EOS, p_ref, niter, k_start, 
                  "based on the ratio of the thermal and haline coefficients.  Otherwise try to "//&
                  "match the density by only adjusting temperatures within a maximum range before "//&
                  "revising estimates of the salinity.", default=.false., do_not_log=just_read)
-  ! These hard coded parameters need to be set properly.
+  call get_param(PF, mdl, "DETERMINE_TEMP_CONVERGENCE_BUG", convergence_bug, &
+                 "If true, use layout-dependent tests on the changes in temperature and salinity "//&
+                 "to determine when the iterations have converged when DETERMINE_TEMP_ADJUST_T_AND_S "//&
+                 "is false.  For realistic equations of state and the default values of the "//&
+                 "various tolerances, this bug does not impact the solutions.", &
+                 default=.true., do_not_log=just_read) !### Change the default to false.
+
   call get_param(PF, mdl, "DETERMINE_TEMP_T_MIN", T_min, &
                  "The minimum temperature that can be found by determine_temperature.", &
                  units="degC", default=-2.0, scale=US%degC_to_C, do_not_log=just_read)
@@ -634,10 +652,12 @@ subroutine determine_temperature(temp, salt, R_tgt, EOS, p_ref, niter, k_start, 
                  units="ppt", default=65.0, scale=US%ppt_to_S, do_not_log=just_read)
   call get_param(PF, mdl, "DETERMINE_TEMP_T_TOLERANCE", tol_T, &
                  "The convergence tolerance for temperature in determine_temperature.", &
-                 units="degC", default=1.0e-4, scale=US%degC_to_C, do_not_log=just_read)
+                 units="degC", default=1.0e-4, scale=US%degC_to_C, &
+                 do_not_log=just_read.or.(.not.convergence_bug))
   call get_param(PF, mdl, "DETERMINE_TEMP_S_TOLERANCE", tol_S, &
                  "The convergence tolerance for temperature in determine_temperature.", &
-                 units="ppt", default=1.0e-4, scale=US%ppt_to_S, do_not_log=just_read)
+                 units="ppt", default=1.0e-4, scale=US%ppt_to_S, &
+                 do_not_log=just_read.or.(.not.convergence_bug))
   call get_param(PF, mdl, "DETERMINE_TEMP_RHO_TOLERANCE", tol_rho, &
                  "The convergence tolerance for density in determine_temperature.", &
                  units="kg m-3", default=1.0e-4, scale=US%kg_m3_to_R, do_not_log=just_read)
@@ -670,49 +690,69 @@ subroutine determine_temperature(temp, salt, R_tgt, EOS, p_ref, niter, k_start, 
     T(:,:) = temp(:,j,:)
     S(:,:) = salt(:,j,:)
     dT(:,:) = 0.0
+    domore(:) = .true.
     adjust_salt = .true.
     iter_loop: do itt = 1,niter
-      do k=1,nz
+      do k=k_start,nz ; if (domore(k)) then
+        domore(k) = .false.
         call calculate_density(T(:,k), S(:,k), press, rho(:,k), EOS, EOSdom )
         call calculate_density_derivs(T(:,k), S(:,k), press, drho_dT(:,k), drho_dS(:,k), &
                                       EOS, EOSdom )
-      enddo
-      do k=k_start,nz ; do i=is,ie
-!       if (abs(rho(i,k)-R_tgt(k))>tol_rho .and. abs(T(i,k)-land_fill) < epsln) then
-        if (abs(rho(i,k)-R_tgt(k))>tol_rho) then
-          if (.not.fit_together) then
-            dT(i,k) = max(min((R_tgt(k)-rho(i,k)) / drho_dT(i,k), max_t_adj), -max_t_adj)
-            T(i,k) = max(min(T(i,k)+dT(i,k), T_max), T_min)
-          else
-            I_denom = 1.0 / (drho_dS(i,k)**2 + dT_dS_gauge**2*drho_dT(i,k)**2)
-            dS(i,k) = (R_tgt(k)-rho(i,k)) * drho_dS(i,k) * I_denom
-            dT(i,k) = (R_tgt(k)-rho(i,k)) * dT_dS_gauge**2*drho_dT(i,k) * I_denom
+        do i=is,ie
+!         if (abs(rho(i,k)-R_tgt(k))>tol_rho .and. abs(T(i,k)-land_fill) < epsln) then
+          if (abs(rho(i,k)-R_tgt(k))>tol_rho) then
+            domore(k) = .true.
+            if (.not.fit_together) then
+              dT(i,k) = max(min((R_tgt(k)-rho(i,k)) / drho_dT(i,k), max_t_adj), -max_t_adj)
+              T(i,k) = max(min(T(i,k)+dT(i,k), T_max), T_min)
+            else
+              I_denom = 1.0 / (drho_dS(i,k)**2 + dT_dS_gauge**2*drho_dT(i,k)**2)
+              dS(i,k) = (R_tgt(k)-rho(i,k)) * drho_dS(i,k) * I_denom
+              dT(i,k) = (R_tgt(k)-rho(i,k)) * dT_dS_gauge**2*drho_dT(i,k) * I_denom
 
-            T(i,k) = max(min(T(i,k)+dT(i,k), T_max), T_min)
-            S(i,k) = max(min(S(i,k)+dS(i,k), S_max), S_min)
+              T(i,k) = max(min(T(i,k)+dT(i,k), T_max), T_min)
+              S(i,k) = max(min(S(i,k)+dS(i,k), S_max), S_min)
+            endif
           endif
+        enddo
+      endif ; enddo
+      if (convergence_bug) then
+        ! If this test does anything, it is layout-dependent.
+        if (maxval(abs(dT)) < tol_T) then
+          adjust_salt = .false.
+          exit iter_loop
         endif
-      enddo ; enddo
-      if (maxval(abs(dT)) < tol_T) then
-        adjust_salt = .false.
-        exit iter_loop
       endif
+
+      do_any = .false.
+      do k=k_start,nz ; if (domore(k)) do_any = .true. ; enddo
+      if (.not.do_any) exit iter_loop ! Further iterations will not change anything.
     enddo iter_loop
 
     if (adjust_salt .and. .not.fit_together) then ; do itt = 1,niter
-      do k=1,nz
+      do k=k_start,nz ; if (domore(k)) then
+        domore(k) = .false.
         call calculate_density(T(:,k), S(:,k), press, rho(:,k), EOS, EOSdom )
         call calculate_density_derivs(T(:,k), S(:,k), press, drho_dT(:,k), drho_dS(:,k), &
                                       EOS, EOSdom )
-      enddo
-      do k=k_start,nz ; do i=is,ie
-!       if (abs(rho(i,k)-R_tgt(k))>tol_rho .and. abs(T(i,k)-land_fill) < epsln ) then
-        if (abs(rho(i,k)-R_tgt(k)) > tol_rho) then
-          dS(i,k) = max(min((R_tgt(k)-rho(i,k)) / drho_dS(i,k), max_s_adj), -max_s_adj)
-          S(i,k) = max(min(S(i,k)+dS(i,k), S_max), S_min)
-        endif
-      enddo ; enddo
-      if (maxval(abs(dS)) < tol_S) exit
+        do i=is,ie
+!         if (abs(rho(i,k)-R_tgt(k))>tol_rho .and. abs(T(i,k)-land_fill) < epsln ) then
+          if (abs(rho(i,k)-R_tgt(k)) > tol_rho) then
+            dS(i,k) = max(min((R_tgt(k)-rho(i,k)) / drho_dS(i,k), max_s_adj), -max_s_adj)
+            S(i,k) = max(min(S(i,k)+dS(i,k), S_max), S_min)
+            domore(k) = .true.
+          endif
+        enddo
+      endif ; enddo
+
+      if (convergence_bug) then
+        ! If this test does anything, it is layout-dependent.
+        if (maxval(abs(dS)) < tol_S) exit
+      endif
+
+      do_any = .false.
+      do k=k_start,nz ; if (domore(k)) do_any = .true. ; enddo
+      if (.not.do_any) exit ! Further iterations will not change anything
     enddo ; endif
 
     temp(:,j,:) = T(:,:)

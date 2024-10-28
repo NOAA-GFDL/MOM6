@@ -197,10 +197,10 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, halo_size, use_ebt_mode, mono_N
     enddo ; enddo ; enddo
   endif
 
-  g_Rho0 = GV%g_Earth*GV%H_to_Z / GV%Rho0
+  nonBous = .not.(GV%Boussinesq .or. GV%semi_Boussinesq)
   H_to_pres = GV%H_to_RZ * GV%g_Earth
   ! Note that g_Rho0 = H_to_pres / GV%Rho0**2
-  nonBous = .not.(GV%Boussinesq .or. GV%semi_Boussinesq)
+  if (.not.nonBous) g_Rho0 = GV%g_Earth*GV%H_to_Z / GV%Rho0
   use_EOS = associated(tv%eqn_of_state)
 
   better_est = CS%better_cg1_est
@@ -900,9 +900,9 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, w_struct, u_struct, u_s
     is = G%isc - halo ; ie = G%iec + halo ; js = G%jsc - halo ; je = G%jec + halo
   endif
 
-  g_Rho0 = GV%g_Earth * GV%H_to_Z / GV%Rho0
-  H_to_pres = GV%H_to_RZ * GV%g_Earth
   nonBous = .not.(GV%Boussinesq .or. GV%semi_Boussinesq)
+  H_to_pres = GV%H_to_RZ * GV%g_Earth
+  if (.not.nonBous) g_Rho0 = GV%g_Earth * GV%H_to_Z / GV%Rho0
   use_EOS = associated(tv%eqn_of_state)
 
   if (CS%c1_thresh < 0.0) &
@@ -1057,7 +1057,6 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, w_struct, u_struct, u_s
               enddo
             endif
           endif
-          cg1_est = g_Rho0 * drxh_sum
         else  ! Not use_EOS
           drxh_sum = 0.0 ; dSpVxh_sum = 0.0
           if (better_est) then
@@ -1612,7 +1611,8 @@ end subroutine tridiag_det
 
 !> Initialize control structure for MOM_wave_speed
 subroutine wave_speed_init(CS, use_ebt_mode, mono_N2_column_fraction, mono_N2_depth, remap_answers_2018, &
-                           remap_answer_date, better_speed_est, min_speed, wave_speed_tol, c1_thresh)
+                           remap_answer_date, better_speed_est, om4_remap_via_sub_cells, &
+                           min_speed, wave_speed_tol, c1_thresh)
   type(wave_speed_CS), intent(inout) :: CS  !< Wave speed control struct
   logical, optional, intent(in) :: use_ebt_mode  !< If true, use the equivalent
                                      !! barotropic mode instead of the first baroclinic mode.
@@ -1631,6 +1631,8 @@ subroutine wave_speed_init(CS, use_ebt_mode, mono_N2_column_fraction, mono_N2_de
                                       !! forms of the same remapping expressions.
   logical, optional, intent(in) :: better_speed_est !< If true, use a more robust estimate of the first
                                      !! mode speed as the starting point for iterations.
+  logical, optional, intent(in) :: om4_remap_via_sub_cells !< Use the OM4-era ramap_via_sub_cells
+                                     !! for calculating the EBT structure
   real,    optional, intent(in) :: min_speed !< If present, set a floor in the first mode speed
                                      !! below which 0 is returned [L T-1 ~> m s-1].
   real,    optional, intent(in) :: wave_speed_tol !< The fractional tolerance for finding the
@@ -1657,6 +1659,7 @@ subroutine wave_speed_init(CS, use_ebt_mode, mono_N2_column_fraction, mono_N2_de
 
   ! The remap_answers_2018 argument here is irrelevant, because remapping is hard-coded to use PLM.
   call initialize_remapping(CS%remapping_CS, 'PLM', boundary_extrapolation=.false., &
+                            om4_remap_via_sub_cells=om4_remap_via_sub_cells, &
                             answer_date=CS%remap_answer_date)
 
 end subroutine wave_speed_init

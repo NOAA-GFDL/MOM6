@@ -20,14 +20,17 @@ public calc_SAL, scalar_SAL_sensitivity, SAL_init, SAL_end
 
 !> The control structure for the MOM_self_attr_load module
 type, public :: SAL_CS ; private
-  logical :: use_sal_scalar     !< If true, use the scalar approximation to calculate SAL.
-  logical :: use_sal_sht        !< If true, use online spherical harmonics to calculate SAL
-  logical :: use_tidal_sal_prev !< If true, read the tidal SAL from the previous iteration of
-                                !! the tides to facilitate convergence.
+  logical :: use_sal_scalar = .false.
+    !< If true, use the scalar approximation to calculate SAL.
+  logical :: use_sal_sht = .false.
+    !< If true, use online spherical harmonics to calculate SAL
+  logical :: use_tidal_sal_prev = .false.
+    !< If true, read the tidal SAL from the previous iteration of the tides to
+    !! facilitate convergence.
   real    :: sal_scalar_value   !< The constant of proportionality between sea surface height
                                 !! (really it should be bottom pressure) anomalies and bottom
                                 !! geopotential anomalies [nondim].
-  type(sht_CS) :: sht           !< Spherical harmonic transforms (SHT) control structure
+  type(sht_CS), allocatable :: sht  !< Spherical harmonic transforms (SHT) control structure
   integer :: sal_sht_Nd         !< Maximum degree for SHT [nodim]
   real, allocatable :: Love_Scaling(:) !< Love number for each SHT mode [nodim]
   real, allocatable :: Snm_Re(:), &    !< Real SHT coefficient for SHT SAL [Z ~> m]
@@ -218,6 +221,8 @@ subroutine SAL_init(G, US, param_file, CS)
 
     allocate(CS%Love_Scaling(lmax)); CS%Love_Scaling(:) = 0.0
     call calc_love_scaling(CS%sal_sht_Nd, rhoW, rhoE, CS%Love_Scaling)
+
+    allocate(CS%sht)
     call spherical_harmonics_init(G, param_file, CS%sht)
   endif
 
@@ -234,24 +239,28 @@ subroutine SAL_end(CS)
     if (allocated(CS%Snm_Re)) deallocate(CS%Snm_Re)
     if (allocated(CS%Snm_Im)) deallocate(CS%Snm_Im)
     call spherical_harmonics_end(CS%sht)
+    deallocate(CS%sht)
   endif
 end subroutine SAL_end
 
 !> \namespace self_attr_load
 !!
+!! \section section_SAL Self attraction and loading
+!!
 !! This module contains methods to calculate self-attraction and loading (SAL) as a function of sea surface height (SSH)
 !! (rather, it should be bottom pressure anomaly). SAL is primarily used for fast evolving processes like tides or
 !! storm surges, but the effect applies to all motions.
 !!
-!!     If SAL_SCALAR_APPROX is true, a scalar approximation is applied (Accad and Pekeris 1978) and the SAL is simply
-!! a fraction (set by SAL_SCALAR_VALUE, usually around 10% for global tides) of local SSH . For tides, the scalar
-!! approximation can also be used to iterate the SAL to convergence [see USE_PREVIOUS_TIDES in MOM_tidal_forcing,
-!! Arbic et al. (2004)].
+!! If <code>SAL_SCALAR_APPROX</code> is true, a scalar approximation is applied (\cite Accad1978) and the SAL is simply
+!! a fraction (set by <code>SAL_SCALAR_VALUE</code>, usually around 10% for global tides) of local SSH.
+!! For tides, the scalar approximation can also be used to iterate the SAL to convergence [see
+!! <code>USE_PREVIOUS_TIDES</code> in MOM_tidal_forcing, \cite Arbic2004].
 !!
-!!    If SAL_HARMONICS is true, a more accurate online spherical harmonic transforms are used to calculate SAL.
-!! Subroutines in module MOM_spherical_harmonics are called and the degree of spherical harmonic transforms is set by
-!! SAL_HARMONICS_DEGREE. The algorithm is based on SAL calculation in Model for Prediction Across Scales (MPAS)-Ocean
-!! developed by Los Alamos National Laboratory and University of Michigan [Barton et al. (2022) and Brus et al. (2023)].
+!! If <code>SAL_HARMONICS</code> is true, a more accurate online spherical harmonic transforms are used to calculate
+!! SAL. Subroutines in module MOM_spherical_harmonics are called and the degree of spherical harmonic transforms is
+!! set by <code>SAL_HARMONICS_DEGREE</code>. The algorithm is based on SAL calculation in Model for Prediction Across
+!! Scales (MPAS)-Ocean
+!! developed by Los Alamos National Laboratory and University of Michigan [\cite Barton2022 and \cite Brus2023].
 !!
 !! References:
 !!

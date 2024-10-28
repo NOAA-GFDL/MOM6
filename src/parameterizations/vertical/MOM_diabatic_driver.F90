@@ -14,7 +14,6 @@ use MOM_diabatic_aux,        only : diabatic_aux_init, diabatic_aux_end, diabati
 use MOM_diabatic_aux,        only : make_frazil, adjust_salt, differential_diffuse_T_S, triDiagTS
 use MOM_diabatic_aux,        only : triDiagTS_Eulerian, find_uv_at_h
 use MOM_diabatic_aux,        only : applyBoundaryFluxesInOut, set_pen_shortwave
-use MOM_diabatic_aux,        only : diagnoseMLDbyDensityDifference, diagnoseMLDbyEnergy
 use MOM_diag_mediator,       only : post_data, register_diag_field, safe_alloc_ptr
 use MOM_diag_mediator,       only : post_product_sum_u, post_product_sum_v
 use MOM_diag_mediator,       only : diag_ctrl, time_type, diag_update_remap_grids
@@ -22,6 +21,7 @@ use MOM_diag_mediator,       only : diag_ctrl, query_averaging_enabled, enable_a
 use MOM_diag_mediator,       only : diag_grid_storage, diag_grid_storage_init, diag_grid_storage_end
 use MOM_diag_mediator,       only : diag_copy_diag_to_storage, diag_copy_storage_to_diag
 use MOM_diag_mediator,       only : diag_save_grids, diag_restore_grids
+use MOM_diagnose_mld,        only : diagnoseMLDbyDensityDifference, diagnoseMLDbyEnergy
 use MOM_diapyc_energy_req,   only : diapyc_energy_req_init, diapyc_energy_req_end
 use MOM_diapyc_energy_req,   only : diapyc_energy_req_calc, diapyc_energy_req_test, diapyc_energy_req_CS
 use MOM_CVMix_conv,          only : CVMix_conv_init, CVMix_conv_cs
@@ -45,6 +45,7 @@ use MOM_grid,                only : ocean_grid_type
 use MOM_int_tide_input,      only : set_int_tide_input, int_tide_input_init
 use MOM_int_tide_input,      only : int_tide_input_end, int_tide_input_CS, int_tide_input_type
 use MOM_interface_heights,   only : find_eta, calc_derived_thermo, thickness_to_dz
+use MOM_interface_heights,   only : convert_MLD_to_ML_thickness
 use MOM_internal_tides,      only : propagate_int_tide, register_int_tide_restarts
 use MOM_internal_tides,      only : internal_tides_init, internal_tides_end, int_tide_CS
 use MOM_kappa_shear,         only : kappa_shear_is_used
@@ -174,6 +175,8 @@ type, public :: diabatic_CS ; private
   real    :: dz_subML_N2             !< The distance over which to calculate a diagnostic of the
                                      !! average stratification at the base of the mixed layer [Z ~> m].
   real    :: MLD_En_vals(3)          !< Energy values for energy mixed layer diagnostics [R Z3 T-2 ~> J m-2]
+  real    :: ref_h_mld = 0.0         !< The depth of the "surface"  density used in a difference mixed based
+                                     !! MLD calculation [Z ~> m].
 
   !>@{ Diagnostic IDs
   integer :: id_ea       = -1, id_eb       = -1 ! used by layer diabatic
@@ -182,6 +185,7 @@ type, public :: diabatic_CS ; private
   integer :: id_Tdif     = -1, id_Sdif     = -1, id_Tadv   = -1, id_Sadv     = -1
   ! These are handles to diagnostics related to the mixed layer properties.
   integer :: id_MLD_003 = -1, id_MLD_0125 = -1, id_MLD_user = -1, id_mlotstsq = -1
+  integer :: id_MLD_003_zr = -1, id_MLD_003_rr = -1
   integer :: id_MLD_EN1 = -1, id_MLD_EN2  = -1, id_MLD_EN3  = -1, id_subMLN2  = -1
 
   ! These are handles to diagnostics that are only available in non-ALE layered mode.
@@ -242,17 +246,7 @@ type, public :: diabatic_CS ; private
   type(regularize_layers_CS) :: regularize_layers   !< Regularize layer control structure
 
   type(group_pass_type) :: pass_hold_eb_ea !< For group halo pass
-  type(group_pass_type) :: pass_Kv         !< For group halo pass
-  type(diag_grid_storage) :: diag_grids_prev!< Stores diagnostic grids at some previous point in the algorithm
-  ! Data arrays for communicating between components
-  !### Why are these arrays in this control structure, and not local variables in the various routines?
-  real, allocatable, dimension(:,:,:) :: KPP_NLTheat    !< KPP non-local transport for heat [nondim]
-  real, allocatable, dimension(:,:,:) :: KPP_NLTscalar  !< KPP non-local transport for scalars [nondim]
-  real, allocatable, dimension(:,:,:) :: KPP_buoy_flux  !< KPP forcing buoyancy flux [L2 T-3 ~> m2 s-3]
-  real, allocatable, dimension(:,:)   :: KPP_temp_flux  !< KPP effective temperature flux
-                                                        !! [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
-  real, allocatable, dimension(:,:)   :: KPP_salt_flux  !< KPP effective salt flux
-                                                        !! [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
+  type(diag_grid_storage) :: diag_grids_prev !< Stores diagnostic grids at some previous point in the algorithm
 
   type(time_type), pointer :: Time !< Pointer to model time (needed for sponges)
 end type diabatic_CS
@@ -268,7 +262,7 @@ contains
 
 !>  This subroutine imposes the diapycnal mass fluxes and the
 !!  accompanying diapycnal advection of momentum and tracers.
-subroutine diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
+subroutine diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
                     G, GV, US, CS, stoch_CS, OBC, Waves)
   type(ocean_grid_type),                      intent(inout) :: G        !< ocean grid structure
   type(verticalGrid_type),                    intent(in)    :: GV       !< ocean vertical grid structure
@@ -277,7 +271,7 @@ subroutine diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(inout) :: h        !< thickness [H ~> m or kg m-2]
   type(thermo_var_ptrs),                      intent(inout) :: tv       !< points to thermodynamic fields
                                                                         !! unused have NULL ptrs
-  real, dimension(:,:),                       pointer       :: Hml      !< Active mixed layer depth [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)),           intent(inout) :: BLD      !< Active mixed layer depth [Z ~> m]
   type(forcing),                              intent(inout) :: fluxes   !< points to forcing fields
                                                                         !! unused fields have NULL ptrs
   type(vertvisc_type),                        intent(inout) :: visc     !< Structure with vertical viscosities,
@@ -398,18 +392,23 @@ subroutine diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
   endif ! end CS%use_int_tides
 
   if (CS%useALEalgorithm .and. CS%use_legacy_diabatic) then
-    call diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
+    call diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
                       G, GV, US, CS, stoch_CS, Waves)
   elseif (CS%useALEalgorithm) then
-    call diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
+    call diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
                       G, GV, US, CS, stoch_CS, Waves)
   else
-    call layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
+    call layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
                           G, GV, US, CS, Waves)
   endif
 
-
   call cpu_clock_begin(id_clock_pass)
+  if (associated(visc%sfc_buoy_flx)) &
+    call pass_var(visc%sfc_buoy_flx, G%domain, halo=1, complete=.not.associated(visc%MLD))
+  if (associated(visc%h_ML)) &
+    call pass_var(visc%h_ML, G%Domain, halo=1, complete=.not.associated(visc%MLD))
+  if (associated(visc%MLD)) &
+    call pass_var(visc%MLD, G%Domain, halo=1, complete=.true.)
   if (associated(visc%Kv_shear)) &
     call pass_var(visc%Kv_shear, G%Domain, To_All+Omit_Corners, halo=1)
   call cpu_clock_end(id_clock_pass)
@@ -483,13 +482,16 @@ subroutine diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
   call enable_averages(dt, Time_end, CS%diag)
   if (CS%id_MLD_003 > 0 .or. CS%id_subMLN2 > 0 .or. CS%id_mlotstsq > 0) then
     call diagnoseMLDbyDensityDifference(CS%id_MLD_003, h, tv, 0.03*US%kg_m3_to_R, G, GV, US, CS%diag, &
+                                        CS%ref_h_mld, CS%id_MLD_003_zr, CS%id_MLD_003_rr, &
                                         id_N2subML=CS%id_subMLN2, id_MLDsq=CS%id_mlotstsq, dz_subML=CS%dz_subML_N2)
   endif
   if (CS%id_MLD_0125 > 0) then
-    call diagnoseMLDbyDensityDifference(CS%id_MLD_0125, h, tv, 0.125*US%kg_m3_to_R, G, GV, US, CS%diag)
+    call diagnoseMLDbyDensityDifference(CS%id_MLD_0125, h, tv, 0.125*US%kg_m3_to_R, G, GV, US, CS%diag, &
+                                        ref_H_MLD=0.0, id_ref_z=-1, id_ref_rho=-1)
   endif
   if (CS%id_MLD_user > 0) then
-    call diagnoseMLDbyDensityDifference(CS%id_MLD_user, h, tv, CS%MLDdensityDifference, G, GV, US, CS%diag)
+    call diagnoseMLDbyDensityDifference(CS%id_MLD_user, h, tv, CS%MLDdensityDifference, G, GV, US, CS%diag, &
+                                        ref_H_MLD=0.0, id_ref_z=-1, id_ref_rho=-1)
   endif
   if ((CS%id_MLD_EN1 > 0) .or. (CS%id_MLD_EN2 > 0) .or. (CS%id_MLD_EN3 > 0)) then
     call diagnoseMLDbyEnergy((/CS%id_MLD_EN1, CS%id_MLD_EN2, CS%id_MLD_EN3/),&
@@ -508,7 +510,7 @@ end subroutine diabatic
 
 !> Applies diabatic forcing and diapycnal mixing of temperature, salinity and other tracers for use
 !! with an ALE algorithm.  This version uses an older set of algorithms compared with diabatic_ALE.
-subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
+subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
                            G, GV, US, CS, stoch_CS, Waves)
   type(ocean_grid_type),                      intent(inout) :: G        !< ocean grid structure
   type(verticalGrid_type),                    intent(in)    :: GV       !< ocean vertical grid structure
@@ -518,7 +520,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(inout) :: h        !< thickness [H ~> m or kg m-2]
   type(thermo_var_ptrs),                      intent(inout) :: tv       !< points to thermodynamic fields
                                                                         !! unused have NULL ptrs
-  real, dimension(:,:),                       pointer       :: Hml      !< Active mixed layer depth [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)),           intent(inout) :: BLD      !< Active mixed layer depth [Z ~> m]
   type(forcing),                              intent(inout) :: fluxes   !< points to forcing fields
                                                                         !! unused fields have NULL ptrs
   type(vertvisc_type),                        intent(inout) :: visc     !< Structure with vertical viscosities,
@@ -558,11 +560,16 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
     Kd_extra_S , & !  The extra diffusivity of salinity due to double diffusion relative to
                 ! Kd_int [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_ePBL,  & ! test array of diapycnal diffusivities at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    KPP_NLTheat, &   ! KPP non-local transport for heat [nondim]
+    KPP_NLTscalar, & ! KPP non-local transport for scalars [nondim]
+    KPP_buoy_flux, & ! KPP forcing buoyancy flux [L2 T-3 ~> m2 s-3]
     Tdif_flx, & ! diffusive diapycnal heat flux across interfaces [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
     Sdif_flx    ! diffusive diapycnal salt flux across interfaces [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
 
   real, dimension(SZI_(G),SZJ_(G)) :: &
     U_star, &    ! The friction velocity [Z T-1 ~> m s-1].
+    KPP_temp_flux, & ! KPP effective temperature flux [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
+    KPP_salt_flux, & ! KPP effective salt flux [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
     SkinBuoyFlux ! 2d surface buoyancy flux [Z2 T-3 ~> m2 s-3], used by ePBL
 
   logical, dimension(SZI_(G)) :: &
@@ -647,7 +654,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
     call MOM_state_chksum("after set_diffusivity ", u, v, h, G, GV, US, haloshift=0)
     call MOM_forcing_chksum("after set_diffusivity ", fluxes, G, US, haloshift=0)
     call MOM_thermovar_chksum("after set_diffusivity ", tv, G, US)
-    call hchksum(Kd_Int, "after set_diffusivity Kd_Int", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_Int, "after set_diffusivity Kd_Int", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
   endif
 
   ! Set diffusivities for heat and salt separately
@@ -668,20 +675,28 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
     endif
 
     if (CS%debug) then
-      call hchksum(Kd_heat, "after set_diffusivity Kd_heat", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-      call hchksum(Kd_salt, "after set_diffusivity Kd_salt", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_heat, "after set_diffusivity Kd_heat", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_salt, "after set_diffusivity Kd_salt", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
     endif
 
     call cpu_clock_begin(id_clock_kpp)
     ! total vertical viscosity in the interior is represented via visc%Kv_shear
 
+    ! NOTE: The following do not require initialization, but their checksums do
+    !   require initialization, and past versions were initialized to zero.
+    KPP_NLTheat(:,:,:) = 0.
+    KPP_NLTscalar(:,:,:) = 0.
+    KPP_buoy_flux(:,:,:) = 0.
+    KPP_temp_flux(:,:) = 0.
+    KPP_salt_flux(:,:) = 0.
+
     ! KPP needs the surface buoyancy flux but does not update state variables.
     ! We could make this call higher up to avoid a repeat unpacking of the surface fluxes.
-    ! Sets: CS%KPP_buoy_flux, CS%KPP_temp_flux, CS%KPP_salt_flux
-    ! NOTE: CS%KPP_buoy_flux, CS%KPP_temp_flux, CS%KPP_salt_flux are returned as rates (i.e. stuff per second)
+    ! Sets: KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux
+    ! NOTE: KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux are returned as rates (i.e. stuff per second)
     ! unlike other instances where the fluxes are integrated in time over a time-step.
     call calculateBuoyancyFlux2d(G, GV, US, fluxes, CS%optics, h, tv%T, tv%S, tv, &
-                                 CS%KPP_buoy_flux, CS%KPP_temp_flux, CS%KPP_salt_flux)
+                                 KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux)
 
     ! Determine the friction velocity, perhaps using the evovling surface density.
     call find_ustar(fluxes, tv, U_star, G, GV, US)
@@ -689,28 +704,23 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
     ! The KPP scheme calculates boundary layer diffusivities and non-local transport.
     if ( associated(fluxes%lamult) ) then
       call KPP_compute_BLD(CS%KPP_CSp, G, GV, US, h, tv%T, tv%S, u, v, tv, &
-                           U_star, CS%KPP_buoy_flux, Waves=Waves, lamult=fluxes%lamult)
+                           U_star, KPP_buoy_flux, Waves=Waves, lamult=fluxes%lamult)
 
-      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, CS%KPP_buoy_flux, Kd_heat, &
-                         Kd_salt, visc%Kv_shear, CS%KPP_NLTheat, CS%KPP_NLTscalar, Waves=Waves, lamult=fluxes%lamult)
+      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, KPP_buoy_flux, Kd_heat, &
+                         Kd_salt, visc%Kv_shear, KPP_NLTheat, KPP_NLTscalar, Waves=Waves, lamult=fluxes%lamult)
     else
       call KPP_compute_BLD(CS%KPP_CSp, G, GV, US, h, tv%T, tv%S, u, v, tv, &
-                           U_star, CS%KPP_buoy_flux, Waves=Waves)
+                           U_star, KPP_buoy_flux, Waves=Waves)
 
-      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, CS%KPP_buoy_flux, Kd_heat, &
-                         Kd_salt, visc%Kv_shear, CS%KPP_NLTheat, CS%KPP_NLTscalar, Waves=Waves)
+      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, KPP_buoy_flux, Kd_heat, &
+                         Kd_salt, visc%Kv_shear, KPP_NLTheat, KPP_NLTscalar, Waves=Waves)
     endif
 
-    if (associated(Hml)) then
-      call KPP_get_BLD(CS%KPP_CSp, Hml(:,:), G, US)
-      call pass_var(Hml, G%domain, halo=1)
-      ! If visc%MLD exists, copy KPP's BLD into it
-      if (associated(visc%MLD)) visc%MLD(:,:) = Hml(:,:)
-    endif
-    if (associated(visc%sfc_buoy_flx)) then
-      visc%sfc_buoy_flx(:,:) = CS%KPP_buoy_flux(:,:,1)
-      call pass_var(visc%sfc_buoy_flx, G%domain, halo=1)
-    endif
+    call KPP_get_BLD(CS%KPP_CSp, BLD(:,:), G, US)
+    ! If visc%MLD or visc%h_ML exist, copy KPP's BLD into them with appropriate conversions.
+    if (associated(visc%h_ML)) call convert_MLD_to_ML_thickness(BLD, h, visc%h_ML, tv, G, GV)
+    if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
+    if (associated(visc%sfc_buoy_flx)) visc%sfc_buoy_flx(:,:) = KPP_buoy_flux(:,:,1)
 
     if (.not.CS%KPPisPassive) then
       !$OMP parallel do default(shared)
@@ -731,20 +741,20 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
       call MOM_state_chksum("after KPP", u, v, h, G, GV, US, haloshift=0)
       call MOM_forcing_chksum("after KPP", fluxes, G, US, haloshift=0)
       call MOM_thermovar_chksum("after KPP", tv, G, US)
-      call hchksum(Kd_heat, "after KPP Kd_heat", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-      call hchksum(Kd_salt, "after KPP Kd_salt", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-      call hchksum(CS%KPP_temp_flux, "before KPP_applyNLT netHeat", G%HI, haloshift=0, &
-                   scale=US%C_to_degC*GV%H_to_m*US%s_to_T)
-      call hchksum(CS%KPP_salt_flux, "before KPP_applyNLT netSalt", G%HI, haloshift=0, &
-                   scale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
-      call hchksum(CS%KPP_NLTheat, "before KPP_applyNLT NLTheat", G%HI, haloshift=0)
-      call hchksum(CS%KPP_NLTscalar, "before KPP_applyNLT NLTscalar", G%HI, haloshift=0)
+      call hchksum(Kd_heat, "after KPP Kd_heat", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_salt, "after KPP Kd_salt", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(KPP_temp_flux, "before KPP_applyNLT netHeat", G%HI, haloshift=0, &
+                   unscale=US%C_to_degC*GV%H_to_m*US%s_to_T)
+      call hchksum(KPP_salt_flux, "before KPP_applyNLT netSalt", G%HI, haloshift=0, &
+                   unscale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
+      call hchksum(KPP_NLTheat, "before KPP_applyNLT NLTheat", G%HI, haloshift=0)
+      call hchksum(KPP_NLTscalar, "before KPP_applyNLT NLTscalar", G%HI, haloshift=0)
     endif
     ! Apply non-local transport of heat and salt
     ! Changes: tv%T, tv%S
-    call KPP_NonLocalTransport_temp(CS%KPP_CSp, G, GV, h, CS%KPP_NLTheat,   CS%KPP_temp_flux, &
+    call KPP_NonLocalTransport_temp(CS%KPP_CSp, G, GV, h, KPP_NLTheat,   KPP_temp_flux, &
                                     dt, tv%tr_T, tv%T, tv%C_p)
-    call KPP_NonLocalTransport_saln(CS%KPP_CSp, G, GV, h, CS%KPP_NLTscalar, CS%KPP_salt_flux, &
+    call KPP_NonLocalTransport_saln(CS%KPP_CSp, G, GV, h, KPP_NLTscalar, KPP_salt_flux, &
                                     dt, tv%tr_S, tv%S)
     call cpu_clock_end(id_clock_kpp)
     if (showCallTree) call callTree_waypoint("done with KPP_applyNonLocalTransport (diabatic)")
@@ -755,7 +765,6 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
       call MOM_forcing_chksum("after KPP_applyNLT ", fluxes, G, US, haloshift=0)
       call MOM_thermovar_chksum("after KPP_applyNLT ", tv, G, US)
     endif
-    if (.not.associated(fluxes%KPP_salt_flux)) fluxes%KPP_salt_flux => CS%KPP_salt_flux
   endif ! endif for KPP
 
   ! This is the "old" method for applying differential diffusion.
@@ -784,7 +793,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
   ! Calculate vertical mixing due to convection (computed via CVMix)
   if (CS%use_CVMix_conv) then
     ! Increment vertical diffusion and viscosity due to convection
-    call calculate_CVMix_conv(h, tv, G, GV, US, CS%CVMix_conv, Hml, Kd_int, visc%Kv_shear)
+    call calculate_CVMix_conv(h, tv, G, GV, US, CS%CVMix_conv, BLD, Kd_int, visc%Kv_shear)
   endif
 
   ! Find the vertical distances across layers.
@@ -807,7 +816,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
     call MOM_forcing_chksum("after calc_entrain ", fluxes, G, US, haloshift=0)
     call MOM_thermovar_chksum("after calc_entrain ", tv, G, US)
     call MOM_state_chksum("after calc_entrain ", u, v, h, G, GV, US, haloshift=0)
-    call hchksum(ent_s, "after calc_entrain ent_s", G%HI, haloshift=0, scale=GV%H_to_m)
+    call hchksum(ent_s, "after calc_entrain ent_s", G%HI, haloshift=0, unscale=GV%H_to_MKS)
   endif
 
   ! Save fields before boundary forcing is applied for tendency diagnostics
@@ -830,41 +839,33 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
     skinbuoyflux(:,:) = 0.0
     call applyBoundaryFluxesInOut(CS%diabatic_aux_CSp, G, GV, US, dt, fluxes, CS%optics, &
             optics_nbands(CS%optics), h, tv, CS%aggregate_FW_forcing, CS%evap_CFL_limit, &
-            CS%minimum_forcing_depth, cTKE, dSV_dT, dSV_dS, SkinBuoyFlux=SkinBuoyFlux, MLD=visc%MLD)
+            CS%minimum_forcing_depth, cTKE, dSV_dT, dSV_dS, SkinBuoyFlux=SkinBuoyFlux, MLD_h=visc%h_ML)
 
     if (CS%debug) then
-      call hchksum(ent_t, "after applyBoundaryFluxes ent_t", G%HI, haloshift=0, scale=GV%H_to_mks)
-      call hchksum(ent_s, "after applyBoundaryFluxes ent_s", G%HI, haloshift=0, scale=GV%H_to_mks)
+      call hchksum(ent_t, "after applyBoundaryFluxes ent_t", G%HI, haloshift=0, unscale=GV%H_to_mks)
+      call hchksum(ent_s, "after applyBoundaryFluxes ent_s", G%HI, haloshift=0, unscale=GV%H_to_mks)
       call hchksum(cTKE, "after applyBoundaryFluxes cTKE", G%HI, haloshift=0, &
-                   scale=US%RZ3_T3_to_W_m2*US%T_to_s)
+                   unscale=US%RZ3_T3_to_W_m2*US%T_to_s)
       call hchksum(dSV_dT, "after applyBoundaryFluxes dSV_dT", G%HI, haloshift=0, &
-                   scale=US%kg_m3_to_R*US%degC_to_C)
+                   unscale=US%kg_m3_to_R*US%degC_to_C)
       call hchksum(dSV_dS, "after applyBoundaryFluxes dSV_dS", G%HI, haloshift=0, &
-                   scale=US%kg_m3_to_R*US%ppt_to_S)
-      call hchksum(h, "after applyBoundaryFluxes h", G%HI, haloshift=0, scale=GV%H_to_mks)
-      call hchksum(tv%T, "after applyBoundaryFluxes tv%T", G%HI, haloshift=0, scale=US%C_to_degC)
-      call hchksum(tv%S, "after applyBoundaryFluxes tv%S", G%HI, haloshift=0, scale=US%S_to_ppt)
+                   unscale=US%kg_m3_to_R*US%ppt_to_S)
+      call hchksum(h, "after applyBoundaryFluxes h", G%HI, haloshift=0, unscale=GV%H_to_mks)
+      call hchksum(tv%T, "after applyBoundaryFluxes tv%T", G%HI, haloshift=0, unscale=US%C_to_degC)
+      call hchksum(tv%S, "after applyBoundaryFluxes tv%S", G%HI, haloshift=0, unscale=US%S_to_ppt)
       call hchksum(SkinBuoyFlux, "after applyBdryFlux SkinBuoyFlux", G%HI, haloshift=0, &
-                   scale=US%Z_to_m**2*US%s_to_T**3)
+                   unscale=US%Z_to_m**2*US%s_to_T**3)
     endif
 
     call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
     call energetic_PBL(h, u_h, v_h, tv, fluxes, dt, Kd_ePBL, G, GV, US, &
                        CS%ePBL, stoch_CS, dSV_dT, dSV_dS, cTKE, SkinBuoyFlux, waves=waves)
 
-    if (associated(Hml)) then
-      call energetic_PBL_get_MLD(CS%ePBL, Hml(:,:), G, US)
-      call pass_var(Hml, G%domain, halo=1)
-      ! If visc%MLD exists, copy ePBL's MLD into it
-      if (associated(visc%MLD)) visc%MLD(:,:) = Hml(:,:)
-    elseif (associated(visc%MLD)) then
-      call energetic_PBL_get_MLD(CS%ePBL, visc%MLD, G, US)
-      call pass_var(visc%MLD, G%domain, halo=1)
-    endif
-    if (associated(visc%sfc_buoy_flx)) then
-      visc%sfc_buoy_flx(:,:) = SkinBuoyFlux(:,:)
-      call pass_var(visc%sfc_buoy_flx, G%domain, halo=1)
-    endif
+    call energetic_PBL_get_MLD(CS%ePBL, BLD(:,:), G, US)
+    ! If visc%MLD or visc%h_ML exist, copy ePBL's BLD into them with appropriate conversions.
+    if (associated(visc%h_ML)) call convert_MLD_to_ML_thickness(BLD, h, visc%h_ML, tv, G, GV)
+    if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
+    if (associated(visc%sfc_buoy_flx)) visc%sfc_buoy_flx(:,:) = SkinBuoyFlux(:,:)
 
     ! Find the vertical distances across layers, which may have been modified by the net surface flux
     call thickness_to_dz(h, tv, dz, G, GV, US)
@@ -890,15 +891,15 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
     enddo ; enddo ; enddo
 
     if (CS%debug) then
-      call hchksum(ent_t, "after ePBL ent_t", G%HI, haloshift=0, scale=GV%H_to_m)
-      call hchksum(ent_s, "after ePBL ent_s", G%HI, haloshift=0, scale=GV%H_to_m)
-      call hchksum(Kd_ePBL, "after ePBL Kd_ePBL", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+      call hchksum(ent_t, "after ePBL ent_t", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(ent_s, "after ePBL ent_s", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(Kd_ePBL, "after ePBL Kd_ePBL", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
     endif
 
   else
     call applyBoundaryFluxesInOut(CS%diabatic_aux_CSp, G, GV, US, dt, fluxes, CS%optics, &
                                   optics_nbands(CS%optics), h, tv, CS%aggregate_FW_forcing, &
-                                  CS%evap_CFL_limit, CS%minimum_forcing_depth, MLD=visc%MLD)
+                                  CS%evap_CFL_limit, CS%minimum_forcing_depth, MLD_h=visc%h_ML)
 
     ! Find the vertical distances across layers, which may have been modified by the net surface flux
     call thickness_to_dz(h, tv, dz, G, GV, US)
@@ -935,8 +936,8 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
   if (associated(tv%T)) then
 
     if (CS%debug) then
-      call hchksum(ent_t, "before triDiagTS ent_t ", G%HI, haloshift=0, scale=GV%H_to_m)
-      call hchksum(ent_s, "before triDiagTS ent_s ", G%HI, haloshift=0, scale=GV%H_to_m)
+      call hchksum(ent_t, "before triDiagTS ent_t ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(ent_s, "before triDiagTS ent_s ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
     endif
 
     call cpu_clock_begin(id_clock_tridiag)
@@ -1081,19 +1082,19 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Tim
   endif  ! (CS%mix_boundary_tracers)
 
   ! For passive tracers, the changes in thickness due to boundary fluxes has yet to be applied
-  call call_tracer_column_fns(h_orig, h, ent_s(:,:,1:nz), ent_s(:,:,2:nz+1), fluxes, Hml, dt, &
+  call call_tracer_column_fns(h_orig, h, ent_s(:,:,1:nz), ent_s(:,:,2:nz+1), fluxes, BLD, dt, &
                               G, GV, US, tv, CS%optics, CS%tracer_flow_CSp, CS%debug, &
                               KPP_CSp=CS%KPP_CSp, &
-                              nonLocalTrans=CS%KPP_NLTscalar, &
+                              nonLocalTrans=KPP_NLTscalar, &
                               evap_CFL_limit=CS%evap_CFL_limit, &
-                              minimum_forcing_depth=CS%minimum_forcing_depth)
+                              minimum_forcing_depth=CS%minimum_forcing_depth, h_BL=visc%h_ML)
 
   call cpu_clock_end(id_clock_tracers)
 
   ! Apply ALE sponge
   if (CS%use_sponge .and. associated(CS%ALE_sponge_CSp)) then
     call cpu_clock_begin(id_clock_sponge)
-    call apply_ALE_sponge(h, dt, G, GV, US, CS%ALE_sponge_CSp, CS%Time)
+    call apply_ALE_sponge(h, tv, dt, G, GV, US, CS%ALE_sponge_CSp, CS%Time)
     call cpu_clock_end(id_clock_sponge)
     if (CS%debug) then
       call MOM_state_chksum("apply_sponge ", u, v, h, G, GV, US, haloshift=0)
@@ -1124,7 +1125,7 @@ end subroutine diabatic_ALE_legacy
 
 !>  This subroutine imposes the diapycnal mass fluxes and the
 !!  accompanying diapycnal advection of momentum and tracers.
-subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
+subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
                         G, GV, US, CS, stoch_CS, Waves)
   type(ocean_grid_type),                      intent(inout) :: G        !< ocean grid structure
   type(verticalGrid_type),                    intent(in)    :: GV       !< ocean vertical grid structure
@@ -1134,7 +1135,7 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(inout) :: h        !< thickness [H ~> m or kg m-2]
   type(thermo_var_ptrs),                      intent(inout) :: tv       !< points to thermodynamic fields
                                                                         !! unused have NULL ptrs
-  real, dimension(:,:),                       pointer       :: Hml      !< Active mixed layer depth [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)),           intent(inout) :: BLD      !< Active mixed layer depth [Z ~> m]
   type(forcing),                              intent(inout) :: fluxes   !< points to forcing fields
                                                                         !! unused fields have NULL ptrs
   type(vertvisc_type),                        intent(inout) :: visc     !< Structure with vertical viscosities,
@@ -1174,11 +1175,16 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
     Kd_extra_S , & !  The extra diffusivity of salinity due to double diffusion relative to
                 ! Kd_int returned from set_diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_ePBL,  & ! boundary layer or convective diapycnal diffusivities at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    KPP_NLTheat, &   ! KPP non-local transport for heat [nondim]
+    KPP_NLTscalar, & ! KPP non-local transport for scalars [nondim]
+    KPP_buoy_flux, & ! KPP forcing buoyancy flux [L2 T-3 ~> m2 s-3]
     Tdif_flx, & ! diffusive diapycnal heat flux across interfaces [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
     Sdif_flx    ! diffusive diapycnal salt flux across interfaces [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
 
   real, dimension(SZI_(G),SZJ_(G)) :: &
     U_star, &    ! The friction velocity [Z T-1 ~> m s-1].
+    KPP_temp_flux, & ! KPP effective temperature flux [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
+    KPP_salt_flux, & ! KPP effective salt flux [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
     SkinBuoyFlux ! 2d surface buoyancy flux [Z2 T-3 ~> m2 s-3], used by ePBL
 
   logical, dimension(SZI_(G)) :: &
@@ -1263,11 +1269,8 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
     call MOM_state_chksum("after set_diffusivity ", u, v, h, G, GV, US, haloshift=0)
     call MOM_forcing_chksum("after set_diffusivity ", fluxes, G, US, haloshift=0)
     call MOM_thermovar_chksum("after set_diffusivity ", tv, G, US)
-    call hchksum(Kd_heat, "after set_diffusivity Kd_heat", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_heat, "after set_diffusivity Kd_heat", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
   endif
-
-  ! Store the diagnosed typical diffusivity at interfaces.
-  if (CS%id_Kd_int > 0) call post_data(CS%id_Kd_int, Kd_heat,  CS%diag)
 
   ! Set diffusivities for heat and salt separately, and possibly change the meaning of Kd_heat.
   if (CS%double_diffuse) then
@@ -1285,8 +1288,8 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
   endif
 
   if (CS%debug) then
-    call hchksum(Kd_heat, "after double diffuse Kd_heat", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-    call hchksum(Kd_salt, "after double diffuse Kd_salt", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_heat, "after double diffuse Kd_heat", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_salt, "after double diffuse Kd_salt", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
   endif
 
   if (CS%useKPP) then
@@ -1296,13 +1299,21 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
       visc%Kv_shear(i,j,k) = visc%Kv_shear(i,j,k) + visc%Kv_slow(i,j,k)
     enddo ; enddo ; enddo
 
+    ! NOTE: The following do not require initialization, but their checksums do
+    !   require initialization, and past versions were initialized to zero.
+    KPP_NLTheat(:,:,:) = 0.
+    KPP_NLTscalar(:,:,:) = 0.
+    KPP_buoy_flux(:,:,:) = 0.
+    KPP_temp_flux(:,:) = 0.
+    KPP_salt_flux(:,:) = 0.
+
     ! KPP needs the surface buoyancy flux but does not update state variables.
     ! We could make this call higher up to avoid a repeat unpacking of the surface fluxes.
-    ! Sets: CS%KPP_buoy_flux, CS%KPP_temp_flux, CS%KPP_salt_flux
-    ! NOTE: CS%KPP_buoy_flux, CS%KPP_temp_flux, CS%KPP_salt_flux are returned as rates (i.e. stuff per second)
+    ! Sets: KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux
+    ! NOTE: KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux are returned as rates (i.e. stuff per second)
     ! unlike other instances where the fluxes are integrated in time over a time-step.
     call calculateBuoyancyFlux2d(G, GV, US, fluxes, CS%optics, h, tv%T, tv%S, tv, &
-                                 CS%KPP_buoy_flux, CS%KPP_temp_flux, CS%KPP_salt_flux)
+                                 KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux)
 
     ! Determine the friction velocity, perhaps using the evovling surface density.
     call find_ustar(fluxes, tv, U_star, G, GV, US)
@@ -1310,48 +1321,43 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
     ! The KPP scheme calculates boundary layer diffusivities and non-local transport.
     if ( associated(fluxes%lamult) ) then
       call KPP_compute_BLD(CS%KPP_CSp, G, GV, US, h, tv%T, tv%S, u, v, tv, &
-                           U_star, CS%KPP_buoy_flux, Waves=Waves, lamult=fluxes%lamult)
+                           U_star, KPP_buoy_flux, Waves=Waves, lamult=fluxes%lamult)
 
-      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, CS%KPP_buoy_flux, Kd_heat, &
-                       Kd_salt, visc%Kv_shear, CS%KPP_NLTheat, CS%KPP_NLTscalar, Waves=Waves, lamult=fluxes%lamult)
+      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, KPP_buoy_flux, Kd_heat, &
+                       Kd_salt, visc%Kv_shear, KPP_NLTheat, KPP_NLTscalar, Waves=Waves, lamult=fluxes%lamult)
     else
       call KPP_compute_BLD(CS%KPP_CSp, G, GV, US, h, tv%T, tv%S, u, v, tv, &
-                           U_star, CS%KPP_buoy_flux, Waves=Waves)
+                           U_star, KPP_buoy_flux, Waves=Waves)
 
-      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, CS%KPP_buoy_flux, Kd_heat, &
-                       Kd_salt, visc%Kv_shear, CS%KPP_NLTheat, CS%KPP_NLTscalar, Waves=Waves)
+      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, KPP_buoy_flux, Kd_heat, &
+                       Kd_salt, visc%Kv_shear, KPP_NLTheat, KPP_NLTscalar, Waves=Waves)
     endif
 
-    if (associated(Hml)) then
-      call KPP_get_BLD(CS%KPP_CSp, Hml(:,:), G, US)
-      call pass_var(Hml, G%domain, halo=1)
-      ! If visc%MLD exists, copy KPP's BLD into it
-      if (associated(visc%MLD)) visc%MLD(:,:) = Hml(:,:)
-    endif
-    if (associated(visc%sfc_buoy_flx)) then
-      visc%sfc_buoy_flx(:,:) = CS%KPP_buoy_flux(:,:,1)
-      call pass_var(visc%sfc_buoy_flx, G%domain, halo=1)
-    endif
+    call KPP_get_BLD(CS%KPP_CSp, BLD(:,:), G, US)
+    ! If visc%MLD or visc%h_ML exist, copy KPP's BLD into them with appropriate conversions.
+    if (associated(visc%h_ML)) call convert_MLD_to_ML_thickness(BLD, h, visc%h_ML, tv, G, GV)
+    if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
+    if (associated(visc%sfc_buoy_flx)) visc%sfc_buoy_flx(:,:) = KPP_buoy_flux(:,:,1)
 
     if (showCallTree) call callTree_waypoint("done with KPP_calculate (diabatic)")
     if (CS%debug) then
       call MOM_state_chksum("after KPP", u, v, h, G, GV, US, haloshift=0)
       call MOM_forcing_chksum("after KPP", fluxes, G, US, haloshift=0)
       call MOM_thermovar_chksum("after KPP", tv, G, US)
-      call hchksum(Kd_heat, "after KPP Kd_heat", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-      call hchksum(Kd_salt, "after KPP Kd_salt", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-      call hchksum(CS%KPP_temp_flux, "before KPP_applyNLT netHeat", G%HI, haloshift=0, &
-                   scale=US%C_to_degC*GV%H_to_m*US%s_to_T)
-      call hchksum(CS%KPP_salt_flux, "before KPP_applyNLT netSalt", G%HI, haloshift=0, &
-                   scale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
-      call hchksum(CS%KPP_NLTheat, "before KPP_applyNLT NLTheat", G%HI, haloshift=0)
-      call hchksum(CS%KPP_NLTscalar, "before KPP_applyNLT NLTscalar", G%HI, haloshift=0)
+      call hchksum(Kd_heat, "after KPP Kd_heat", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_salt, "after KPP Kd_salt", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(KPP_temp_flux, "before KPP_applyNLT netHeat", G%HI, haloshift=0, &
+                   unscale=US%C_to_degC*GV%H_to_m*US%s_to_T)
+      call hchksum(KPP_salt_flux, "before KPP_applyNLT netSalt", G%HI, haloshift=0, &
+                   unscale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
+      call hchksum(KPP_NLTheat, "before KPP_applyNLT NLTheat", G%HI, haloshift=0)
+      call hchksum(KPP_NLTscalar, "before KPP_applyNLT NLTscalar", G%HI, haloshift=0)
     endif
     ! Apply non-local transport of heat and salt
     ! Changes: tv%T, tv%S
-    call KPP_NonLocalTransport_temp(CS%KPP_CSp, G, GV, h, CS%KPP_NLTheat,   CS%KPP_temp_flux, &
+    call KPP_NonLocalTransport_temp(CS%KPP_CSp, G, GV, h, KPP_NLTheat,   KPP_temp_flux, &
                                     dt, tv%tr_T, tv%T, tv%C_p)
-    call KPP_NonLocalTransport_saln(CS%KPP_CSp, G, GV, h, CS%KPP_NLTscalar, CS%KPP_salt_flux, &
+    call KPP_NonLocalTransport_saln(CS%KPP_CSp, G, GV, h, KPP_NLTscalar, KPP_salt_flux, &
                                     dt, tv%tr_S, tv%S)
     call cpu_clock_end(id_clock_kpp)
     if (showCallTree) call callTree_waypoint("done with KPP_applyNonLocalTransport (diabatic)")
@@ -1362,13 +1368,12 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
       call MOM_forcing_chksum("after KPP_applyNLT ", fluxes, G, US, haloshift=0)
       call MOM_thermovar_chksum("after KPP_applyNLT ", tv, G, US)
     endif
-    if (.not.associated(fluxes%KPP_salt_flux)) fluxes%KPP_salt_flux => CS%KPP_salt_flux
   endif ! endif for KPP
 
   ! Calculate vertical mixing due to convection (computed via CVMix)
   if (CS%use_CVMix_conv) then
     ! Increment vertical diffusion and viscosity due to convection
-    call calculate_CVMix_conv(h, tv, G, GV, US, CS%CVMix_conv, Hml, Kd_heat, visc%Kv_shear, Kd_aux=Kd_salt)
+    call calculate_CVMix_conv(h, tv, G, GV, US, CS%CVMix_conv, BLD, Kd_heat, visc%Kv_shear, Kd_aux=Kd_salt)
   endif
 
   ! Save fields before boundary forcing is applied for tendency diagnostics
@@ -1391,36 +1396,28 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
     skinbuoyflux(:,:) = 0.0
     call applyBoundaryFluxesInOut(CS%diabatic_aux_CSp, G, GV, US, dt, fluxes, CS%optics, &
             optics_nbands(CS%optics), h, tv, CS%aggregate_FW_forcing, CS%evap_CFL_limit, &
-            CS%minimum_forcing_depth, cTKE, dSV_dT, dSV_dS, SkinBuoyFlux=SkinBuoyFlux, MLD=visc%MLD)
+            CS%minimum_forcing_depth, cTKE, dSV_dT, dSV_dS, SkinBuoyFlux=SkinBuoyFlux, MLD_h=visc%h_ML)
 
     if (CS%debug) then
-      call hchksum(ent_t, "after applyBoundaryFluxes ent_t", G%HI, haloshift=0, scale=GV%H_to_m)
-      call hchksum(ent_s, "after applyBoundaryFluxes ent_s", G%HI, haloshift=0, scale=GV%H_to_m)
+      call hchksum(ent_t, "after applyBoundaryFluxes ent_t", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(ent_s, "after applyBoundaryFluxes ent_s", G%HI, haloshift=0, unscale=GV%H_to_MKS)
       call hchksum(cTKE, "after applyBoundaryFluxes cTKE", G%HI, haloshift=0, &
-                   scale=US%RZ3_T3_to_W_m2*US%T_to_s)
+                   unscale=US%RZ3_T3_to_W_m2*US%T_to_s)
       call hchksum(dSV_dT, "after applyBoundaryFluxes dSV_dT", G%HI, haloshift=0, &
-                   scale=US%kg_m3_to_R*US%degC_to_C)
+                   unscale=US%kg_m3_to_R*US%degC_to_C)
       call hchksum(dSV_dS, "after applyBoundaryFluxes dSV_dS", G%HI, haloshift=0, &
-                   scale=US%kg_m3_to_R*US%ppt_to_S)
+                   unscale=US%kg_m3_to_R*US%ppt_to_S)
     endif
 
     call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
     call energetic_PBL(h, u_h, v_h, tv, fluxes, dt, Kd_ePBL, G, GV, US, &
                        CS%ePBL, stoch_CS, dSV_dT, dSV_dS, cTKE, SkinBuoyFlux, waves=waves)
 
-    if (associated(Hml)) then
-      call energetic_PBL_get_MLD(CS%ePBL, Hml(:,:), G, US)
-      call pass_var(Hml, G%domain, halo=1)
-      ! If visc%MLD exists, copy ePBL's MLD into it
-      if (associated(visc%MLD)) visc%MLD(:,:) = Hml(:,:)
-    elseif (associated(visc%MLD)) then
-      call energetic_PBL_get_MLD(CS%ePBL, visc%MLD, G, US)
-      call pass_var(visc%MLD, G%domain, halo=1)
-    endif
-    if (associated(visc%sfc_buoy_flx)) then
-      visc%sfc_buoy_flx(:,:) = SkinBuoyFlux(:,:)
-      call pass_var(visc%sfc_buoy_flx, G%domain, halo=1)
-    endif
+    call energetic_PBL_get_MLD(CS%ePBL, BLD(:,:), G, US)
+    ! If visc%MLD or visc%h_ML exist, copy ePBL's BLD into them with appropriate conversions.
+    if (associated(visc%h_ML)) call convert_MLD_to_ML_thickness(BLD, h, visc%h_ML, tv, G, GV)
+    if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
+    if (associated(visc%sfc_buoy_flx)) visc%sfc_buoy_flx(:,:) = SkinBuoyFlux(:,:)
 
     ! Augment the diffusivities and viscosity due to those diagnosed in energetic_PBL.
     do K=2,nz ; do j=js,je ; do i=is,ie
@@ -1437,15 +1434,15 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
     enddo ; enddo ; enddo
 
     if (CS%debug) then
-      call hchksum(ent_t, "after ePBL ent_t", G%HI, haloshift=0, scale=GV%H_to_m)
-      call hchksum(ent_s, "after ePBL ent_s", G%HI, haloshift=0, scale=GV%H_to_m)
-      call hchksum(Kd_ePBL, "after ePBL Kd_ePBL", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+      call hchksum(ent_t, "after ePBL ent_t", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(ent_s, "after ePBL ent_s", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(Kd_ePBL, "after ePBL Kd_ePBL", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
     endif
 
   else
     call applyBoundaryFluxesInOut(CS%diabatic_aux_CSp, G, GV, US, dt, fluxes, CS%optics, &
                                   optics_nbands(CS%optics), h, tv, CS%aggregate_FW_forcing, &
-                                  CS%evap_CFL_limit, CS%minimum_forcing_depth, MLD=visc%MLD)
+                                  CS%evap_CFL_limit, CS%minimum_forcing_depth, MLD_h=visc%h_ML)
 
   endif   ! endif for CS%use_energetic_PBL
 
@@ -1474,8 +1471,8 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
   if (associated(tv%T)) then
 
     if (CS%debug) then
-      call hchksum(ent_t, "before triDiagTS ent_t ", G%HI, haloshift=0, scale=GV%H_to_m)
-      call hchksum(ent_s, "before triDiagTS ent_s ", G%HI, haloshift=0, scale=GV%H_to_m)
+      call hchksum(ent_t, "before triDiagTS ent_t ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(ent_s, "before triDiagTS ent_s ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
     endif
 
     call cpu_clock_begin(id_clock_tridiag)
@@ -1542,6 +1539,14 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
   if (CS%id_Kd_heat > 0) call post_data(CS%id_Kd_heat, Kd_heat, CS%diag)
   if (CS%id_Kd_salt > 0) call post_data(CS%id_Kd_salt, Kd_salt, CS%diag)
   if (CS%id_Kd_ePBL > 0) call post_data(CS%id_Kd_ePBL, Kd_ePBL, CS%diag)
+  if (CS%id_Kd_int > 0) then
+    if (CS%double_diffuse .or. CS%useKPP) then
+      do K=1,nz ; do j=js,je ; do i=is,ie
+        Kd_heat(i,j,k) = min(Kd_heat(i,j,k), Kd_salt(i,j,k))
+      enddo ; enddo ; enddo
+    endif
+    call post_data(CS%id_Kd_int, Kd_heat, CS%diag)
+  endif
 
   if (CS%id_ea_t > 0) call post_data(CS%id_ea_t, ent_t(:,:,1:nz), CS%diag)
   if (CS%id_eb_t > 0) call post_data(CS%id_eb_t, ent_t(:,:,2:nz+1), CS%diag)
@@ -1604,19 +1609,19 @@ subroutine diabatic_ALE(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, 
   endif  ! (CS%mix_boundary_tracer_ALE)
 
   ! For passive tracers, the changes in thickness due to boundary fluxes has yet to be applied
-  call call_tracer_column_fns(h_orig, h, ent_s(:,:,1:nz), ent_s(:,:,2:nz+1), fluxes, Hml, dt, &
+  call call_tracer_column_fns(h_orig, h, ent_s(:,:,1:nz), ent_s(:,:,2:nz+1), fluxes, BLD, dt, &
                               G, GV, US, tv, CS%optics, CS%tracer_flow_CSp, CS%debug, &
                               KPP_CSp=CS%KPP_CSp, &
-                              nonLocalTrans=CS%KPP_NLTscalar, &
+                              nonLocalTrans=KPP_NLTscalar, &
                               evap_CFL_limit=CS%evap_CFL_limit, &
-                              minimum_forcing_depth=CS%minimum_forcing_depth)
+                              minimum_forcing_depth=CS%minimum_forcing_depth, h_BL=visc%h_ML)
 
   call cpu_clock_end(id_clock_tracers)
 
   ! Apply ALE sponge
   if (CS%use_sponge .and. associated(CS%ALE_sponge_CSp)) then
     call cpu_clock_begin(id_clock_sponge)
-    call apply_ALE_sponge(h, dt, G, GV, US, CS%ALE_sponge_CSp, CS%Time)
+    call apply_ALE_sponge(h, tv, dt, G, GV, US, CS%ALE_sponge_CSp, CS%Time)
     call cpu_clock_end(id_clock_sponge)
     if (CS%debug) then
       call MOM_state_chksum("apply_sponge ", u, v, h, G, GV, US, haloshift=0)
@@ -1651,7 +1656,7 @@ end subroutine diabatic_ALE
 
 !> Imposes the diapycnal mass fluxes and the accompanying diapycnal advection of momentum and tracers
 !! using the original MOM6 algorithms.
-subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
+subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
                             G, GV, US, CS, Waves)
   type(ocean_grid_type),                      intent(inout) :: G        !< ocean grid structure
   type(verticalGrid_type),                    intent(in)    :: GV       !< ocean vertical grid structure
@@ -1661,7 +1666,7 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(inout) :: h        !< thickness [H ~> m or kg m-2]
   type(thermo_var_ptrs),                      intent(inout) :: tv       !< points to thermodynamic fields
                                                                         !! unused have NULL ptrs
-  real, dimension(:,:),                       pointer       :: Hml      !< Active mixed layer depth [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)),           intent(inout) :: BLD      !< Active mixed layer depth [Z ~> m]
   type(forcing),                              intent(inout) :: fluxes   !< points to forcing fields
                                                                         !! unused fields have NULL ptrs
   type(vertvisc_type),                        intent(inout) :: visc     !< Structure with vertical viscosities,
@@ -1692,7 +1697,10 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
     temp_diag, & ! Diagnostic array of previous temperatures [C ~> degC]
     saln_diag    ! Diagnostic array of previous salinity [S ~> ppt]
   real, dimension(SZI_(G),SZJ_(G)) :: &
+    h_MLD, &     ! Active mixed layer thickness [H ~> m or kg m-2].
     U_star, &    ! The friction velocity [Z T-1 ~> m s-1].
+    KPP_temp_flux, & ! KPP effective temperature flux [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
+    KPP_salt_flux, & ! KPP effective salt flux [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
     Rcv_ml       ! Coordinate density of mixed layer [R ~> kg m-3], used for applying sponges
 
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), target :: &
@@ -1710,6 +1718,9 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
                 ! Kd_int [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_extra_S , & !  The extra diffusivity of salinity due to double diffusion relative to
                 ! Kd_int [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    KPP_NLTheat, &   ! KPP non-local transport for heat [nondim]
+    KPP_NLTscalar, & ! KPP non-local transport for scalars [nondim]
+    KPP_buoy_flux, & ! KPP forcing buoyancy flux [L2 T-3 ~> m2 s-3]
     Tdif_flx, & ! diffusive diapycnal heat flux across interfaces [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
     Tadv_flx, & ! advective diapycnal heat flux across interfaces [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
     Sdif_flx, & ! diffusive diapycnal salt flux across interfaces [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
@@ -1768,7 +1779,6 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
   dz_neglect = GV%dZ_subroundoff ; dz_neglect2 = dz_neglect*dz_neglect
   Kd_heat(:,:,:) = 0.0 ; Kd_salt(:,:,:) = 0.0
 
-
   showCallTree = callTree_showQuery()
   if (showCallTree) call callTree_enter("layered_diabatic(), MOM_diabatic_driver.F90")
 
@@ -1822,12 +1832,14 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
         ! Changes: h, tv%T, tv%S, eaml and ebml  (G is also inout???)
         call bulkmixedlayer(h, u_h, v_h, tv, fluxes, dt*CS%ML_mix_first, &
                             eaml, ebml, G, GV, US, CS%bulkmixedlayer, CS%optics, &
-                            Hml, CS%aggregate_FW_forcing, dt, last_call=.false.)
+                            BLD, h_MLD, CS%aggregate_FW_forcing, dt, last_call=.false.)
       else
         ! Changes: h, tv%T, tv%S, eaml and ebml  (G is also inout???)
         call bulkmixedlayer(h, u_h, v_h, tv, fluxes, dt, eaml, ebml, &
                             G, GV, US, CS%bulkmixedlayer, CS%optics, &
-                            Hml, CS%aggregate_FW_forcing, dt, last_call=.true.)
+                            BLD, h_MLD, CS%aggregate_FW_forcing, dt, last_call=.true.)
+        if (associated(visc%h_ML)) visc%h_ML(:,:) = h_MLD(:,:)
+        if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
       endif
 
       !  Keep salinity from falling below a small but positive threshold.
@@ -1854,8 +1866,8 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
     if ((CS%ML_mix_first > 0.0) .or. CS%use_geothermal) then
       call find_uv_at_h(u, v, h_orig, u_h, v_h, G, GV, US, eaml, ebml)
       if (CS%debug) then
-        call hchksum(eaml, "after find_uv_at_h eaml", G%HI, scale=GV%H_to_m)
-        call hchksum(ebml, "after find_uv_at_h ebml", G%HI, scale=GV%H_to_m)
+        call hchksum(eaml, "after find_uv_at_h eaml", G%HI, unscale=GV%H_to_MKS)
+        call hchksum(ebml, "after find_uv_at_h ebml", G%HI, unscale=GV%H_to_MKS)
       endif
     else
       call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
@@ -1893,20 +1905,29 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
     call MOM_state_chksum("after set_diffusivity ", u, v, h, G, GV, US, haloshift=0)
     call MOM_forcing_chksum("after set_diffusivity ", fluxes, G, US, haloshift=0)
     call MOM_thermovar_chksum("after set_diffusivity ", tv, G, US)
-    call hchksum(Kd_lay, "after set_diffusivity Kd_lay", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-    call hchksum(Kd_Int, "after set_diffusivity Kd_Int", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_lay, "after set_diffusivity Kd_lay", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+    call hchksum(Kd_Int, "after set_diffusivity Kd_Int", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
   endif
 
 
   if (CS%useKPP) then
     call cpu_clock_begin(id_clock_kpp)
+
+    ! NOTE: The following do not require initialization, but their checksums do
+    !   require initialization, and past versions were initialized to zero.
+    KPP_NLTheat(:,:,:) = 0.
+    KPP_NLTscalar(:,:,:) = 0.
+    KPP_buoy_flux(:,:,:) = 0.
+    KPP_temp_flux(:,:) = 0.
+    KPP_salt_flux(:,:) = 0.
+
     ! KPP needs the surface buoyancy flux but does not update state variables.
     ! We could make this call higher up to avoid a repeat unpacking of the surface fluxes.
-    ! Sets: CS%KPP_buoy_flux, CS%KPP_temp_flux, CS%KPP_salt_flux
-    ! NOTE: CS%KPP_buoy_flux, CS%KPP_temp_flux, CS%KPP_salt_flux are returned as rates (i.e. stuff per second)
+    ! Sets: KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux
+    ! NOTE: KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux are returned as rates (i.e. stuff per second)
     ! unlike other instances where the fluxes are integrated in time over a time-step.
     call calculateBuoyancyFlux2d(G, GV, US, fluxes, CS%optics, h, tv%T, tv%S, tv, &
-                                 CS%KPP_buoy_flux, CS%KPP_temp_flux, CS%KPP_salt_flux)
+                                 KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux)
     ! The KPP scheme calculates boundary layer diffusivities and non-local transport.
 
     ! Set diffusivities for heat and salt separately
@@ -1931,28 +1952,23 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
 
     if ( associated(fluxes%lamult) ) then
       call KPP_compute_BLD(CS%KPP_CSp, G, GV, US, h, tv%T, tv%S, u, v, tv, &
-                           U_star, CS%KPP_buoy_flux, Waves=Waves, lamult=fluxes%lamult)
+                           U_star, KPP_buoy_flux, Waves=Waves, lamult=fluxes%lamult)
 
-      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, CS%KPP_buoy_flux, Kd_heat, &
-                         Kd_salt, visc%Kv_shear, CS%KPP_NLTheat, CS%KPP_NLTscalar, Waves=Waves, lamult=fluxes%lamult)
+      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, KPP_buoy_flux, Kd_heat, &
+                         Kd_salt, visc%Kv_shear, KPP_NLTheat, KPP_NLTscalar, Waves=Waves, lamult=fluxes%lamult)
     else
       call KPP_compute_BLD(CS%KPP_CSp, G, GV, US, h, tv%T, tv%S, u, v, tv, &
-                           U_star, CS%KPP_buoy_flux, Waves=Waves)
+                           U_star, KPP_buoy_flux, Waves=Waves)
 
-      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, CS%KPP_buoy_flux, Kd_heat, &
-                         Kd_salt, visc%Kv_shear, CS%KPP_NLTheat, CS%KPP_NLTscalar, Waves=Waves)
+      call KPP_calculate(CS%KPP_CSp, G, GV, US, h, tv, U_star, KPP_buoy_flux, Kd_heat, &
+                         Kd_salt, visc%Kv_shear, KPP_NLTheat, KPP_NLTscalar, Waves=Waves)
     endif
 
-    if (associated(Hml)) then
-      call KPP_get_BLD(CS%KPP_CSp, Hml(:,:), G, US)
-      call pass_var(Hml, G%domain, halo=1)
-      ! If visc%MLD exists, copy KPP's BLD into it
-      if (associated(visc%MLD)) visc%MLD(:,:) = Hml(:,:)
-    endif
-    if (associated(visc%sfc_buoy_flx)) then
-      visc%sfc_buoy_flx(:,:) = CS%KPP_buoy_flux(:,:,1)
-      call pass_var(visc%sfc_buoy_flx, G%domain, halo=1)
-    endif
+    call KPP_get_BLD(CS%KPP_CSp, BLD(:,:), G, US)
+    ! If visc%MLD or visc%h_ML exist, copy KPP's BLD into them with appropriate conversions.
+    if (associated(visc%h_ML)) call convert_MLD_to_ML_thickness(BLD, h, visc%h_ML, tv, G, GV)
+    if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
+    if (associated(visc%sfc_buoy_flx)) visc%sfc_buoy_flx(:,:) = KPP_buoy_flux(:,:,1)
 
     if (.not. CS%KPPisPassive) then
       !$OMP parallel do default(shared)
@@ -1974,32 +1990,31 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
       call MOM_state_chksum("after KPP", u, v, h, G, GV, US, haloshift=0)
       call MOM_forcing_chksum("after KPP", fluxes, G, US, haloshift=0)
       call MOM_thermovar_chksum("after KPP", tv, G, US)
-      call hchksum(Kd_lay, "after KPP Kd_lay", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
-      call hchksum(Kd_Int, "after KPP Kd_Int", G%HI, haloshift=0, scale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_lay, "after KPP Kd_lay", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
+      call hchksum(Kd_Int, "after KPP Kd_Int", G%HI, haloshift=0, unscale=GV%HZ_T_to_m2_s)
     endif
-    if (.not.associated(fluxes%KPP_salt_flux)) fluxes%KPP_salt_flux => CS%KPP_salt_flux
   endif  ! endif for KPP
 
   ! Add vertical diff./visc. due to convection (computed via CVMix)
   if (CS%use_CVMix_conv) then
-    call calculate_CVMix_conv(h, tv, G, GV, US, CS%CVMix_conv, Hml, Kd_int, visc%Kv_shear)
+    call calculate_CVMix_conv(h, tv, G, GV, US, CS%CVMix_conv, BLD, Kd_int, visc%Kv_shear)
   endif
 
   if (CS%useKPP) then
     call cpu_clock_begin(id_clock_kpp)
     if (CS%debug) then
-      call hchksum(CS%KPP_temp_flux, "before KPP_applyNLT netHeat", G%HI, haloshift=0, &
-                   scale=US%C_to_degC*GV%H_to_m*US%s_to_T)
-      call hchksum(CS%KPP_salt_flux, "before KPP_applyNLT netSalt", G%HI, haloshift=0, &
-                   scale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
-      call hchksum(CS%KPP_NLTheat, "before KPP_applyNLT NLTheat", G%HI, haloshift=0)
-      call hchksum(CS%KPP_NLTscalar, "before KPP_applyNLT NLTscalar", G%HI, haloshift=0)
+      call hchksum(KPP_temp_flux, "before KPP_applyNLT netHeat", G%HI, haloshift=0, &
+                   unscale=US%C_to_degC*GV%H_to_m*US%s_to_T)
+      call hchksum(KPP_salt_flux, "before KPP_applyNLT netSalt", G%HI, haloshift=0, &
+                   unscale=US%S_to_ppt*GV%H_to_m*US%s_to_T)
+      call hchksum(KPP_NLTheat, "before KPP_applyNLT NLTheat", G%HI, haloshift=0)
+      call hchksum(KPP_NLTscalar, "before KPP_applyNLT NLTscalar", G%HI, haloshift=0)
     endif
     ! Apply non-local transport of heat and salt
     ! Changes: tv%T, tv%S
-    call KPP_NonLocalTransport_temp(CS%KPP_CSp, G, GV, h, CS%KPP_NLTheat,   CS%KPP_temp_flux, &
+    call KPP_NonLocalTransport_temp(CS%KPP_CSp, G, GV, h, KPP_NLTheat,   KPP_temp_flux, &
                                     dt, tv%tr_T, tv%T, tv%C_p)
-    call KPP_NonLocalTransport_saln(CS%KPP_CSp, G, GV, h, CS%KPP_NLTscalar, CS%KPP_salt_flux, &
+    call KPP_NonLocalTransport_saln(CS%KPP_CSp, G, GV, h, KPP_NLTscalar, KPP_salt_flux, &
                                     dt, tv%tr_S, tv%S)
     call cpu_clock_end(id_clock_kpp)
     if (showCallTree) call callTree_waypoint("done with KPP_applyNonLocalTransport (diabatic)")
@@ -2048,8 +2063,8 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
     call MOM_forcing_chksum("after calc_entrain ", fluxes, G, US, haloshift=0)
     call MOM_thermovar_chksum("after calc_entrain ", tv, G, US)
     call MOM_state_chksum("after calc_entrain ", u, v, h, G, GV, US, haloshift=0)
-    call hchksum(ea, "after calc_entrain ea", G%HI, haloshift=0, scale=GV%H_to_m)
-    call hchksum(eb, "after calc_entrain eb", G%HI, haloshift=0, scale=GV%H_to_m)
+    call hchksum(ea, "after calc_entrain ea", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+    call hchksum(eb, "after calc_entrain eb", G%HI, haloshift=0, unscale=GV%H_to_MKS)
   endif
 
   ! Save fields before boundary forcing is applied for tendency diagnostics
@@ -2204,8 +2219,8 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
         eb(i,j,k) = eb(i,j,k) + ebml(i,j,k)
       enddo ; enddo ; enddo
       if (CS%debug) then
-        call hchksum(ea, "after ea = ea + eaml", G%HI, haloshift=0, scale=GV%H_to_m)
-        call hchksum(eb, "after eb = eb + ebml", G%HI, haloshift=0, scale=GV%H_to_m)
+        call hchksum(ea, "after ea = ea + eaml", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+        call hchksum(eb, "after eb = eb + ebml", G%HI, haloshift=0, unscale=GV%H_to_MKS)
       endif
     endif
 
@@ -2226,7 +2241,9 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
       ! Changes: h, tv%T, tv%S, ea and eb  (G is also inout???)
       call bulkmixedlayer(h, u_h, v_h, tv, fluxes, dt_mix, ea, eb, &
                           G, GV, US, CS%bulkmixedlayer, CS%optics, &
-                          Hml, CS%aggregate_FW_forcing, dt, last_call=.true.)
+                          BLD, h_MLD, CS%aggregate_FW_forcing, dt, last_call=.true.)
+      if (associated(visc%h_ML)) visc%h_ML(:,:) = h_MLD(:,:)
+      if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
 
       !  Keep salinity from falling below a small but positive threshold.
       !  This constraint is needed for SIS1 ice model, which can extract
@@ -2248,8 +2265,8 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
     if (associated(tv%T)) then
 
       if (CS%debug) then
-        call hchksum(ea, "before triDiagTS ea ", G%HI, haloshift=0, scale=GV%H_to_m)
-        call hchksum(eb, "before triDiagTS eb ", G%HI, haloshift=0, scale=GV%H_to_m)
+        call hchksum(ea, "before triDiagTS ea ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
+        call hchksum(eb, "before triDiagTS eb ", G%HI, haloshift=0, unscale=GV%H_to_MKS)
       endif
       call cpu_clock_begin(id_clock_tridiag)
 
@@ -2296,8 +2313,8 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
   if (CS%debug) then
     call MOM_state_chksum("after mixed layer ", u, v, h, G, GV, US, haloshift=0)
     call MOM_thermovar_chksum("after mixed layer ", tv, G, US)
-    call hchksum(ea, "after mixed layer ea", G%HI, scale=GV%H_to_m)
-    call hchksum(eb, "after mixed layer eb", G%HI, scale=GV%H_to_m)
+    call hchksum(ea, "after mixed layer ea", G%HI, unscale=GV%H_to_MKS)
+    call hchksum(eb, "after mixed layer eb", G%HI, unscale=GV%H_to_MKS)
   endif
 
   call cpu_clock_begin(id_clock_remap)
@@ -2398,10 +2415,9 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
 
     enddo
 
-    call call_tracer_column_fns(hold, h, eatr, ebtr, fluxes, Hml, dt, G, GV, US, tv, &
+    call call_tracer_column_fns(hold, h, eatr, ebtr, fluxes, BLD, dt, G, GV, US, tv, &
                               CS%optics, CS%tracer_flow_CSp, CS%debug, &
-                              KPP_CSp=CS%KPP_CSp, &
-                              nonLocalTrans=CS%KPP_NLTscalar)
+                              KPP_CSp=CS%KPP_CSp, nonLocalTrans=KPP_NLTscalar, h_BL=visc%h_ML)
 
   elseif (CS%double_diffuse) then  ! extra diffusivity for passive tracers
 
@@ -2420,16 +2436,14 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
       eatr(i,j,k) = ea(i,j,k) + add_ent
     enddo ; enddo ; enddo
 
-    call call_tracer_column_fns(hold, h, eatr, ebtr, fluxes, Hml, dt, G, GV, US, tv, &
+    call call_tracer_column_fns(hold, h, eatr, ebtr, fluxes, BLD, dt, G, GV, US, tv, &
                                 CS%optics, CS%tracer_flow_CSp, CS%debug, &
-                                KPP_CSp=CS%KPP_CSp, &
-                                nonLocalTrans=CS%KPP_NLTscalar)
+                                KPP_CSp=CS%KPP_CSp, nonLocalTrans=KPP_NLTscalar, h_BL=visc%h_ML)
 
   else
-    call call_tracer_column_fns(hold, h, ea, eb, fluxes, Hml, dt, G, GV, US, tv, &
+    call call_tracer_column_fns(hold, h, ea, eb, fluxes, BLD, dt, G, GV, US, tv, &
                                 CS%optics, CS%tracer_flow_CSp, CS%debug, &
-                                KPP_CSp=CS%KPP_CSp, &
-                                nonLocalTrans=CS%KPP_NLTscalar)
+                                KPP_CSp=CS%KPP_CSp, nonLocalTrans=KPP_NLTscalar, h_BL=visc%h_ML)
 
   endif  ! (CS%mix_boundary_tracers)
 
@@ -2490,8 +2504,8 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
 ! mixed layer turbulence is applied elsewhere.
   if (CS%use_bulkmixedlayer) then
     if (CS%debug) then
-      call hchksum(ea, "before net flux rearrangement ea", G%HI, scale=GV%H_to_m)
-      call hchksum(eb, "before net flux rearrangement eb", G%HI, scale=GV%H_to_m)
+      call hchksum(ea, "before net flux rearrangement ea", G%HI, unscale=GV%H_to_MKS)
+      call hchksum(eb, "before net flux rearrangement eb", G%HI, unscale=GV%H_to_MKS)
     endif
     !$OMP parallel do default(shared) private(net_ent)
     do j=js,je
@@ -2502,8 +2516,8 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
       enddo ; enddo
     enddo
     if (CS%debug) then
-      call hchksum(ea, "after net flux rearrangement ea", G%HI, scale=GV%H_to_m)
-      call hchksum(eb, "after net flux rearrangement eb", G%HI, scale=GV%H_to_m)
+      call hchksum(ea, "after net flux rearrangement ea", G%HI, unscale=GV%H_to_MKS)
+      call hchksum(eb, "after net flux rearrangement eb", G%HI, unscale=GV%H_to_MKS)
     endif
   endif
 
@@ -2534,9 +2548,9 @@ subroutine layered_diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_e
   !  or enters the ocean with the surface velocity.
   if (CS%debug) then
     call MOM_state_chksum("before u/v tridiag ", u, v, h, G, GV, US, haloshift=0)
-    call hchksum(ea, "before u/v tridiag ea", G%HI, scale=GV%H_to_m)
-    call hchksum(eb, "before u/v tridiag eb", G%HI, scale=GV%H_to_m)
-    call hchksum(hold, "before u/v tridiag hold", G%HI, scale=GV%H_to_m)
+    call hchksum(ea, "before u/v tridiag ea", G%HI, unscale=GV%H_to_MKS)
+    call hchksum(eb, "before u/v tridiag eb", G%HI, unscale=GV%H_to_MKS)
+    call hchksum(hold, "before u/v tridiag hold", G%HI, unscale=GV%H_to_MKS)
   endif
   call cpu_clock_begin(id_clock_tridiag)
 
@@ -3265,6 +3279,15 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
         'Squared buoyancy frequency below mixed layer', units='s-2', conversion=US%s_to_T**2)
     CS%id_MLD_user = register_diag_field('ocean_model', 'MLD_user', diag%axesT1, Time, &
         'Mixed layer depth (used defined)', units='m', conversion=US%Z_to_m)
+    if (CS%id_MLD_003 > 0) then
+      call get_param(param_file, mdl, "HREF_FOR_MLD", CS%ref_h_mld, &
+           "Reference depth used to calculate the potential density used to find the mixed layer depth "//&
+           "based on a delta rho = 0.03 kg/m3.", units='m', default=0.0, scale=US%m_to_Z)
+      CS%id_MLD_003_zr = register_diag_field('ocean_model', 'MLD_003_refZ', diag%axesT1, Time, &
+           'Depth of reference density for MLD (delta rho = 0.03)', units='m', conversion=US%Z_to_m)
+      CS%id_MLD_003_rr = register_diag_field('ocean_model', 'MLD_003_refRho', diag%axesT1, Time, &
+           'Reference density for MLD (delta rho = 0.03)', units='kg/m3', conversion=US%R_to_kg_m3)
+    endif
   endif
   call get_param(param_file, mdl, "DIAG_MLD_DENSITY_DIFF", CS%MLDdensityDifference, &
                  "The density difference used to determine a diagnostic mixed "//&
@@ -3297,8 +3320,8 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
   CS%id_Kd_int = register_diag_field('ocean_model', 'Kd_interface', diag%axesTi, Time, &
       'Total diapycnal diffusivity at interfaces', 'm2 s-1', conversion=GV%HZ_T_to_m2_s)
   if (CS%use_energetic_PBL) then
-      CS%id_Kd_ePBL = register_diag_field('ocean_model', 'Kd_ePBL', diag%axesTi, Time, &
-          'ePBL diapycnal diffusivity at interfaces', 'm2 s-1', conversion=GV%HZ_T_to_m2_s)
+    CS%id_Kd_ePBL = register_diag_field('ocean_model', 'Kd_ePBL', diag%axesTi, Time, &
+        'ePBL diapycnal diffusivity at interfaces', 'm2 s-1', conversion=GV%HZ_T_to_m2_s)
   endif
 
   CS%id_Kd_heat = register_diag_field('ocean_model', 'Kd_heat', diag%axesTi, Time, &
@@ -3315,14 +3338,6 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
   ! CS%useKPP is set to True if KPP-scheme is to be used, False otherwise.
   ! KPP_init() allocated CS%KPP_Csp and also sets CS%KPPisPassive
   CS%useKPP = KPP_init(param_file, G, GV, US, diag, Time, CS%KPP_CSp, passive=CS%KPPisPassive)
-  if (CS%useKPP) then
-    allocate(CS%KPP_NLTheat(isd:ied,jsd:jed,nz+1), source=0.0)
-    allocate(CS%KPP_NLTscalar(isd:ied,jsd:jed,nz+1), source=0.0)
-    allocate(CS%KPP_buoy_flux(isd:ied,jsd:jed,nz+1), source=0.0)
-    allocate(CS%KPP_temp_flux(isd:ied,jsd:jed), source=0.0)
-    allocate(CS%KPP_salt_flux(isd:ied,jsd:jed), source=0.0)
-  endif
-
 
   ! Diagnostics for tendencies of temperature and salinity due to diabatic processes,
   ! available only for ALE algorithm.
@@ -3573,8 +3588,9 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
 end subroutine diabatic_driver_init
 
 !> Routine to register restarts, pass-through to children modules
-subroutine register_diabatic_restarts(G, US, param_file, int_tide_CSp, restart_CSp)
+subroutine register_diabatic_restarts(G, GV, US, param_file, int_tide_CSp, restart_CSp)
   type(ocean_grid_type), intent(in)    :: G           !< The ocean's grid structure
+  type(verticalGrid_type), intent(in)  :: GV          !< The ocean's vertical grid structure
   type(unit_scale_type), intent(in)    :: US          !< A dimensional unit scaling type
   type(param_file_type), intent(in)    :: param_file  !< A structure to parse for run-time parameters
   type(int_tide_CS),     pointer       :: int_tide_CSp !< Internal tide control structure
@@ -3587,7 +3603,7 @@ subroutine register_diabatic_restarts(G, US, param_file, int_tide_CSp, restart_C
   call read_param(param_file, "INTERNAL_TIDES", use_int_tides)
 
   if (use_int_tides) then
-    call register_int_tide_restarts(G, US, param_file, int_tide_CSp, restart_CSp)
+    call register_int_tide_restarts(G, GV, US, param_file, int_tide_CSp, restart_CSp)
   endif
 
 end subroutine register_diabatic_restarts
@@ -3616,14 +3632,8 @@ subroutine diabatic_driver_end(CS)
   if (CS%use_geothermal) &
     call geothermal_end(CS%geothermal)
 
-  if (CS%useKPP) then
-    deallocate( CS%KPP_buoy_flux )
-    deallocate( CS%KPP_temp_flux )
-    deallocate( CS%KPP_salt_flux )
-    deallocate( CS%KPP_NLTheat )
-    deallocate( CS%KPP_NLTscalar )
+  if (CS%useKPP) &
     call KPP_end(CS%KPP_CSp)
-  endif
 
   ! GMM, the following is commented out because arrays in
   ! CS%diag_grids_prev are neither pointers or allocatables

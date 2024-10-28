@@ -20,6 +20,7 @@ use MOM_remapping,             only : remappingSchemesDoc, remappingDefaultSchem
 use MOM_spatial_means,         only : global_mass_integral
 use MOM_tracer_registry,       only : tracer_registry_type, tracer_type
 use MOM_unit_scaling,          only : unit_scale_type
+use MOM_variables,             only : vertvisc_type
 use MOM_verticalGrid,          only : verticalGrid_type
 use MOM_CVMix_KPP,             only : KPP_get_BLD, KPP_CS
 use MOM_energetic_PBL,         only : energetic_PBL_get_MLD, energetic_PBL_CS
@@ -88,6 +89,7 @@ logical function hor_bnd_diffusion_init(Time, G, GV, US, param_file, diag, diaba
   ! local variables
   character(len=80)  :: string ! Temporary strings
   logical :: boundary_extrap   ! controls if boundary extrapolation is used in the HBD code
+  logical :: om4_remap_via_sub_cells ! Use the OM4-era ramap_via_sub_cells for HBD
   logical :: debug             !< If true, write verbose checksums for debugging purposes
 
   if (ASSOCIATED(CS)) then
@@ -141,10 +143,15 @@ logical function hor_bnd_diffusion_init(Time, G, GV, US, param_file, diag, diaba
                  "for vertical remapping for all variables. "//&
                  "It can be one of the following schemes: "//&
                  trim(remappingSchemesDoc), default=remappingDefaultScheme)
+  call get_param(param_file, mdl, "HBD_REMAPPING_USE_OM4_SUBCELLS", om4_remap_via_sub_cells, &
+                 "If true, use the OM4 remapping-via-subcells algorithm for horizontal boundary diffusion. "//&
+                 "See REMAPPING_USE_OM4_SUBCELLS for details. "//&
+                 "We recommend setting this option to false.", default=.true.)
 
   ! GMM, TODO: add HBD params to control optional arguments in initialize_remapping.
-  call initialize_remapping( CS%remap_CS, string, boundary_extrapolation = boundary_extrap ,&
-       check_reconstruction=.false., check_remapping=.false.)
+  call initialize_remapping( CS%remap_CS, string, boundary_extrapolation=boundary_extrap, &
+                             om4_remap_via_sub_cells=om4_remap_via_sub_cells, &
+                             check_reconstruction=.false., check_remapping=.false.)
   call extract_member_remapping_CS(CS%remap_CS, degree=CS%deg)
   call get_param(param_file, mdl, "DEBUG", debug, default=.false., do_not_log=.true.)
   call get_param(param_file, mdl, "HBD_DEBUG", CS%debug, &
@@ -161,7 +168,7 @@ end function hor_bnd_diffusion_init
 !! 2) calculate diffusive tracer fluxes (F) in the HBD grid using a layer by layer approach
 !! 3) remap fluxes to the native grid
 !! 4) update tracer by adding the divergence of F
-subroutine hor_bnd_diffusion(G, GV, US, h, Coef_x, Coef_y, dt, Reg, CS)
+subroutine hor_bnd_diffusion(G, GV, US, h, Coef_x, Coef_y, dt, Reg, visc, CS)
   type(ocean_grid_type),                        intent(inout) :: G      !< Grid type
   type(verticalGrid_type),                      intent(in)    :: GV     !< ocean vertical grid structure
   type(unit_scale_type),                        intent(in)    :: US     !< A dimensional unit scaling type
@@ -171,6 +178,8 @@ subroutine hor_bnd_diffusion(G, GV, US, h, Coef_x, Coef_y, dt, Reg, CS)
   real,                                         intent(in)    :: dt     !< Tracer time step * I_numitts
                                                                         !! (I_numitts in tracer_hordiff) [T ~> s]
   type(tracer_registry_type),                   pointer       :: Reg    !< Tracer registry
+  type(vertvisc_type),                          intent(in)    :: visc   !< Structure with vertical viscosities,
+                                                                        !! boundary layer properties and related fields
   type(hbd_CS),                                 pointer       :: CS     !< Control structure for this module
 
   ! Local variables
@@ -203,10 +212,14 @@ subroutine hor_bnd_diffusion(G, GV, US, h, Coef_x, Coef_y, dt, Reg, CS)
 
   call cpu_clock_begin(id_clock_hbd)
   Idt = 1./dt
-  if (ASSOCIATED(CS%KPP_CSp)) call KPP_get_BLD(CS%KPP_CSp, hbl, G, US, m_to_BLD_units=GV%m_to_H)
-  if (ASSOCIATED(CS%energetic_PBL_CSp)) call energetic_PBL_get_MLD(CS%energetic_PBL_CSp, hbl, G, US, &
-                                                                   m_to_MLD_units=GV%m_to_H)
-  call pass_var(hbl,G%Domain)
+
+  if (associated(visc%h_ML)) then
+    hbl(:,:) = visc%h_ML(:,:)
+  else
+    call MOM_error(FATAL, "hor_bnd_diffusion requires that visc%h_ML is associated.")
+  endif
+  ! This halo update is probably not necessary because visc%h_ML has valid halo data.
+  call pass_var(hbl, G%Domain, halo=1)
 
   ! build HBD grid
   call hbd_grid(SURFACE, G, GV, hbl, h, CS)
@@ -336,10 +349,11 @@ subroutine hbd_grid(boundary, G, GV, hbl, h, CS)
   integer,                 intent(in   ) :: boundary !< Which boundary layer SURFACE or BOTTOM       [nondim]
   type(ocean_grid_type),   intent(inout) :: G    !< Grid type
   type(verticalGrid_type), intent(in)    :: GV   !< ocean vertical grid structure
-  real, dimension(SZI_(G),SZJ_(G))       :: hbl  !< Boundary layer depth                   [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G)), &
+                           intent(in)    :: hbl  !< Boundary layer depth                   [H ~> m or kg m-2]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                          intent(in)     :: h    !< Layer thickness in the native grid     [H ~> m or kg m-2]
-  type(hbd_CS),          pointer         :: CS   !< Horizontal diffusion control structure
+                           intent(in)    :: h    !< Layer thickness in the native grid     [H ~> m or kg m-2]
+  type(hbd_CS),            pointer       :: CS   !< Horizontal diffusion control structure
 
   ! Local variables
   real, allocatable :: dz_top(:) !< temporary HBD grid given by merge_interfaces           [H ~> m or kg m-2]
@@ -841,8 +855,9 @@ logical function near_boundary_unit_tests( verbose )
   allocate(CS)
   ! fill required fields in CS
   CS%linear=.false.
-  call initialize_remapping( CS%remap_CS, 'PLM', boundary_extrapolation=.true. ,&
-       check_reconstruction=.true., check_remapping=.true.)
+  call initialize_remapping( CS%remap_CS, 'PLM', boundary_extrapolation=.true., &
+                             om4_remap_via_sub_cells=.true., & ! ### see fail below when using fixed remapping alg.
+                             check_reconstruction=.true., check_remapping=.true.)
   call extract_member_remapping_CS(CS%remap_CS, degree=CS%deg)
   CS%H_subroundoff = 1.0E-20
   CS%debug=.false.
@@ -1032,6 +1047,7 @@ logical function near_boundary_unit_tests( verbose )
   call hbd_grid_test(SURFACE, hbl_L, hbl_R, h_L, h_R, CS)
   call fluxes_layer_method(SURFACE, nk, hbl_L, hbl_R, h_L, h_R, phi_L, phi_R, &
                            khtr_u, F_layer, 1., 1., CS%hbd_u_kmax(1,1), CS%hbd_grd_u(1,1,:), CS)
+ ! ### This test fails when om4_remap_via_sub_cells=.false.
   near_boundary_unit_tests = near_boundary_unit_tests .or. &
                              test_layer_fluxes( verbose, nk, test_name, F_layer, (/-1.0,-4.0/) )
 

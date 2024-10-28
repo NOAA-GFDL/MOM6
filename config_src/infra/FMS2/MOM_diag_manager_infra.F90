@@ -8,19 +8,22 @@ module MOM_diag_manager_infra
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
+use, intrinsic :: iso_fortran_env, only : real64
 use diag_axis_mod,    only : fms_axis_init=>diag_axis_init
 use diag_axis_mod,    only : fms_get_diag_axis_name => get_diag_axis_name
 use diag_axis_mod,    only : EAST, NORTH
 use diag_data_mod,    only : null_axis_id
 use diag_manager_mod, only : fms_diag_manager_init => diag_manager_init
 use diag_manager_mod, only : fms_diag_manager_end => diag_manager_end
+use diag_manager_mod, only : diag_send_complete
+use diag_manager_mod, only : diag_manager_set_time_end
 use diag_manager_mod, only : send_data_fms => send_data
 use diag_manager_mod, only : fms_diag_field_add_attribute => diag_field_add_attribute
 use diag_manager_mod, only : DIAG_FIELD_NOT_FOUND
 use diag_manager_mod, only : register_diag_field_fms => register_diag_field
 use diag_manager_mod, only : register_static_field_fms => register_static_field
 use diag_manager_mod, only : get_diag_field_id_fms => get_diag_field_id
-use MOM_time_manager, only : time_type
+use MOM_time_manager, only : time_type, set_time
 use MOM_domain_infra, only : MOM_domain_type
 use MOM_error_infra,  only : MOM_error => MOM_err, FATAL, WARNING
 
@@ -57,6 +60,8 @@ public get_MOM_diag_axis_name
 public MOM_diag_manager_init
 public MOM_diag_manager_end
 public send_data_infra
+public diag_send_complete_infra
+public diag_manager_set_time_end_infra
 public MOM_diag_field_add_attribute
 public register_diag_field_infra
 public register_static_field_infra
@@ -357,7 +362,7 @@ end function send_data_infra_3d
 logical function send_data_infra_2d_r8(diag_field_id, field, is_in, ie_in, js_in, je_in, &
                                        time, mask, rmask, weight, err_msg)
   integer,                           intent(in) :: diag_field_id !< The diagnostic manager identifier for this field
-  real(kind=8), dimension(:,:),      intent(in) :: field !< A 2-d array of values being recorded
+  real(kind=real64), dimension(:,:), intent(in) :: field !< A 2-d array of values being recorded
   integer,                 optional, intent(in) :: is_in !< The starting i-index for the data being recorded
   integer,                 optional, intent(in) :: ie_in !< The end i-index for the data being recorded
   integer,                 optional, intent(in) :: js_in !< The starting j-index for the data being recorded
@@ -380,7 +385,7 @@ end function send_data_infra_2d_r8
 logical function send_data_infra_3d_r8(diag_field_id, field, is_in, ie_in, js_in, je_in, ks_in, ke_in, &
                                     time, mask, rmask, weight, err_msg)
   integer,                             intent(in) :: diag_field_id !< The diagnostic manager identifier for this field
-  real(kind=8), dimension(:,:,:),      intent(in) :: field !< A rank 1 array of floating point values being recorded
+  real(kind=real64), dimension(:,:,:), intent(in) :: field !< A rank 1 array of floating point values being recorded
   integer,                   optional, intent(in) :: is_in !< The starting i-index for the data being recorded
   integer,                   optional, intent(in) :: ie_in !< The end i-index for the data being recorded
   integer,                   optional, intent(in) :: js_in !< The starting j-index for the data being recorded
@@ -450,5 +455,20 @@ subroutine MOM_diag_field_add_attribute_i1d(diag_field_id, att_name, att_value)
   call FMS_diag_field_add_attribute(diag_field_id, att_name, att_value)
 
 end subroutine MOM_diag_field_add_attribute_i1d
+
+!> Finishes the diag manager reduction methods as needed for the time_step
+subroutine diag_send_complete_infra ()
+  !! The time_step in the diag_send_complete call is a dummy argument, needed for backwards compatibility
+  !! It won't be used at all when diag_manager_nml::use_modern_diag=.true.
+  !! It won't have any impact when diag_manager_nml::use_modern_diag=.false.
+  call diag_send_complete (set_time(0))
+end subroutine diag_send_complete_infra
+
+!> Sets the time that the simulation ends in the diag manager
+subroutine diag_manager_set_time_end_infra(time)
+  type(time_type),           optional, intent(in) :: time  !< The time the simulation ends
+
+  call diag_manager_set_time_end(time)
+end subroutine diag_manager_set_time_end_infra
 
 end module MOM_diag_manager_infra

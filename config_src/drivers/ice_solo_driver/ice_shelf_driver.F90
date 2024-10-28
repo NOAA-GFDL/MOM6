@@ -26,6 +26,7 @@ program Shelf_main
   use MOM_debugging,       only : MOM_debugging_init
   use MOM_diag_mediator,   only : diag_mediator_init, diag_mediator_infrastructure_init, set_axes_info
   use MOM_diag_mediator,   only : diag_mediator_end, diag_ctrl, diag_mediator_close_registration
+  use MOM_diag_manager_infra, only : diag_manager_set_time_end_infra
   use MOM_domains,         only : MOM_infra_init, MOM_infra_end
   use MOM_domains,         only : MOM_domains_init, clone_MOM_domain, pass_var
   use MOM_dyn_horgrid,     only : dyn_horgrid_type, create_dyn_horgrid, destroy_dyn_horgrid
@@ -142,7 +143,6 @@ program Shelf_main
   integer :: yr, mon, day, hr, mins, sec   ! Temp variables for writing the date.
   type(param_file_type) :: param_file      ! The structure indicating the file(s)
                                            ! containing all run-time parameters.
-  real :: smb !A constant surface mass balance that can be specified in the param_file
   character(len=9)  :: month
   character(len=16) :: calendar = 'noleap'
   integer :: calendar_type=-1
@@ -324,6 +324,8 @@ program Shelf_main
                  timeunit=Time_unit, fail_if_missing=.true.)
     Time_end = daymax
   endif
+
+  call diag_manager_set_time_end_infra (Time_end)
 
   if (Time >= Time_end) call MOM_error(FATAL, &
     "Shelf_driver: The run has been started at or after the end time of the run.")

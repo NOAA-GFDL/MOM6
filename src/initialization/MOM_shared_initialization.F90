@@ -256,8 +256,8 @@ subroutine apply_topography_edits_from_file(D, G, param_file, US)
   call close_file_to_read(ncid, topo_edits_file)
 
   do n = 1, n_edits
-    i = ig(n) - G%isd_global + 2 ! +1 for python indexing and +1 for ig-isd_global+1
-    j = jg(n) - G%jsd_global + 2
+    i = ig(n) - G%idg_offset + 1 ! +1 for python indexing
+    j = jg(n) - G%jdg_offset + 1
     if (i>=G%isc .and. i<=G%iec .and. j>=G%jsc .and. j<=G%jec) then
       if (new_depth(n) /= mask_depth) then
         write(stdout,'(a,3i5,f8.2,a,f8.2,2i4)') &
@@ -1424,30 +1424,30 @@ subroutine write_ocean_geometry_file(G, param_file, directory, US, geom_file)
   call MOM_write_field(IO_handle, fields(3), G%Domain, G%geoLatT)
   call MOM_write_field(IO_handle, fields(4), G%Domain, G%geoLonT)
 
-  call MOM_write_field(IO_handle, fields(5), G%Domain, G%bathyT, scale=US%Z_to_m)
-  call MOM_write_field(IO_handle, fields(6), G%Domain, G%CoriolisBu, scale=US%s_to_T)
+  call MOM_write_field(IO_handle, fields(5), G%Domain, G%bathyT, unscale=US%Z_to_m)
+  call MOM_write_field(IO_handle, fields(6), G%Domain, G%CoriolisBu, unscale=US%s_to_T)
 
-  call MOM_write_field(IO_handle, fields(7),  G%Domain, G%dxCv, scale=US%L_to_m)
-  call MOM_write_field(IO_handle, fields(8),  G%Domain, G%dyCu, scale=US%L_to_m)
-  call MOM_write_field(IO_handle, fields(9),  G%Domain, G%dxCu, scale=US%L_to_m)
-  call MOM_write_field(IO_handle, fields(10), G%Domain, G%dyCv, scale=US%L_to_m)
-  call MOM_write_field(IO_handle, fields(11), G%Domain, G%dxT, scale=US%L_to_m)
-  call MOM_write_field(IO_handle, fields(12), G%Domain, G%dyT, scale=US%L_to_m)
-  call MOM_write_field(IO_handle, fields(13), G%Domain, G%dxBu, scale=US%L_to_m)
-  call MOM_write_field(IO_handle, fields(14), G%Domain, G%dyBu, scale=US%L_to_m)
+  call MOM_write_field(IO_handle, fields(7),  G%Domain, G%dxCv, unscale=US%L_to_m)
+  call MOM_write_field(IO_handle, fields(8),  G%Domain, G%dyCu, unscale=US%L_to_m)
+  call MOM_write_field(IO_handle, fields(9),  G%Domain, G%dxCu, unscale=US%L_to_m)
+  call MOM_write_field(IO_handle, fields(10), G%Domain, G%dyCv, unscale=US%L_to_m)
+  call MOM_write_field(IO_handle, fields(11), G%Domain, G%dxT, unscale=US%L_to_m)
+  call MOM_write_field(IO_handle, fields(12), G%Domain, G%dyT, unscale=US%L_to_m)
+  call MOM_write_field(IO_handle, fields(13), G%Domain, G%dxBu, unscale=US%L_to_m)
+  call MOM_write_field(IO_handle, fields(14), G%Domain, G%dyBu, unscale=US%L_to_m)
 
-  call MOM_write_field(IO_handle, fields(15), G%Domain, G%areaT, scale=US%L_to_m**2)
-  call MOM_write_field(IO_handle, fields(16), G%Domain, G%areaBu, scale=US%L_to_m**2)
+  call MOM_write_field(IO_handle, fields(15), G%Domain, G%areaT, unscale=US%L_to_m**2)
+  call MOM_write_field(IO_handle, fields(16), G%Domain, G%areaBu, unscale=US%L_to_m**2)
 
-  call MOM_write_field(IO_handle, fields(17), G%Domain, G%dx_Cv, scale=US%L_to_m)
-  call MOM_write_field(IO_handle, fields(18), G%Domain, G%dy_Cu, scale=US%L_to_m)
+  call MOM_write_field(IO_handle, fields(17), G%Domain, G%dx_Cv, unscale=US%L_to_m)
+  call MOM_write_field(IO_handle, fields(18), G%Domain, G%dy_Cu, unscale=US%L_to_m)
   call MOM_write_field(IO_handle, fields(19), G%Domain, G%mask2dT)
 
   if (G%bathymetry_at_vel) then
-    call MOM_write_field(IO_handle, fields(20), G%Domain, G%Dblock_u, scale=US%Z_to_m)
-    call MOM_write_field(IO_handle, fields(21), G%Domain, G%Dopen_u, scale=US%Z_to_m)
-    call MOM_write_field(IO_handle, fields(22), G%Domain, G%Dblock_v, scale=US%Z_to_m)
-    call MOM_write_field(IO_handle, fields(23), G%Domain, G%Dopen_v, scale=US%Z_to_m)
+    call MOM_write_field(IO_handle, fields(20), G%Domain, G%Dblock_u, unscale=US%Z_to_m)
+    call MOM_write_field(IO_handle, fields(21), G%Domain, G%Dopen_u, unscale=US%Z_to_m)
+    call MOM_write_field(IO_handle, fields(22), G%Domain, G%Dblock_v, unscale=US%Z_to_m)
+    call MOM_write_field(IO_handle, fields(23), G%Domain, G%Dopen_v, unscale=US%Z_to_m)
   endif
 
   call IO_handle%close()

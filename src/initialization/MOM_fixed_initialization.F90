@@ -60,14 +60,15 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF, write_geom, output_dir)
   logical,                 intent(in)    :: write_geom !< If true, write grid geometry files.
   character(len=*),        intent(in)    :: output_dir !< The directory into which to write files.
 
-  ! Local
+  ! Local variables
   character(len=200) :: inputdir   ! The directory where NetCDF input files are.
   character(len=200) :: config
   logical            :: read_porous_file
   character(len=40)  :: mdl = "MOM_fixed_initialization" ! This module's name.
+  integer :: I, J
   logical :: debug
-! This include declares and sets the variable "version".
-#include "version_variable.h"
+  ! This include declares and sets the variable "version".
+# include "version_variable.h"
 
   call callTree_enter("MOM_initialize_fixed(), MOM_fixed_initialization.F90")
   call log_version(PF, mdl, version, "")
@@ -101,7 +102,7 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF, write_geom, output_dir)
   call open_boundary_impose_land_mask(OBC, G, G%areaCu, G%areaCv, US)
 
   if (debug) then
-    call hchksum(G%bathyT, 'MOM_initialize_fixed: depth ', G%HI, haloshift=1, scale=US%Z_to_m)
+    call hchksum(G%bathyT, 'MOM_initialize_fixed: depth ', G%HI, haloshift=1, unscale=US%Z_to_m)
     call hchksum(G%mask2dT, 'MOM_initialize_fixed: mask2dT ', G%HI)
     call uvchksum('MOM_initialize_fixed: mask2dC[uv]', G%mask2dCu, &
                   G%mask2dCv, G%HI)
@@ -145,6 +146,7 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF, write_geom, output_dir)
   endif
 
   ! Read sub-grid scale topography parameters at velocity points used for porous barrier calculation
+  ! TODO: The following routine call may eventually be merged as one of the CHANNEL_CONFIG options
   call get_param(PF, mdl, "SUBGRID_TOPO_AT_VEL", read_porous_file, &
                  "If true, use variables from TOPO_AT_VEL_FILE as parameters for porous barrier.", &
                  default=.False.)
@@ -156,10 +158,16 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF, write_geom, output_dir)
   call MOM_initialize_rotation(G%CoriolisBu, G, PF, US=US)
 !   Calculate the components of grad f (beta)
   call MOM_calculate_grad_Coriolis(G%dF_dx, G%dF_dy, G, US=US)
+!   Calculate the square of the Coriolis parameter
+  do I=G%IsdB,G%IedB ; do J=G%JsdB,G%JedB
+    G%Coriolis2Bu(I,J) = G%CoriolisBu(I,J)**2
+  enddo ; enddo
+
   if (debug) then
-    call qchksum(G%CoriolisBu, "MOM_initialize_fixed: f ", G%HI, scale=US%s_to_T)
-    call hchksum(G%dF_dx, "MOM_initialize_fixed: dF_dx ", G%HI, scale=US%m_to_L*US%s_to_T)
-    call hchksum(G%dF_dy, "MOM_initialize_fixed: dF_dy ", G%HI, scale=US%m_to_L*US%s_to_T)
+    call qchksum(G%CoriolisBu, "MOM_initialize_fixed: f ", G%HI, unscale=US%s_to_T)
+    call qchksum(G%Coriolis2Bu, "MOM_initialize_fixed: f2 ", G%HI, unscale=US%s_to_T**2)
+    call hchksum(G%dF_dx, "MOM_initialize_fixed: dF_dx ", G%HI, unscale=US%m_to_L*US%s_to_T)
+    call hchksum(G%dF_dy, "MOM_initialize_fixed: dF_dy ", G%HI, unscale=US%m_to_L*US%s_to_T)
   endif
 
   call initialize_grid_rotation_angle(G, PF)
