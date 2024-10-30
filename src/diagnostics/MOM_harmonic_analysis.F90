@@ -324,7 +324,7 @@ subroutine HA_write(ha1, Time, G, CS)
   ! Local variables
   real, dimension(:,:,:), allocatable :: FtSSHw    !< An array containing the harmonic constants [A]
   integer :: year, month, day, hour, minute, second
-  integer :: nc, k, is, ie, js, je
+  integer :: nc, i, j, k, is, ie, js, je
 
   character(len=255)           :: filename         !< Output file name
   type(MOM_infra_file)         :: cdf              !< The file handle for output harmonic constants
@@ -356,6 +356,11 @@ subroutine HA_write(ha1, Time, G, CS)
   ! Create output file
   call create_MOM_file(cdf, trim(filename), cdf_vars, &
                        2*nc+1, cdf_fields, SINGLE_FILE, 86400.0, G=G)
+
+  ! Add the initial field back to the mean state
+  do j=js,je ; do i=is,ie
+    FtSSHw(i,j,1) = FtSSHw(i,j,1) + ha1%ref(i,j)
+  enddo ; enddo
 
   ! Write data
   call MOM_write_field(cdf, cdf_fields(1), G%domain, FtSSHw(:,:,1), 0.0)
