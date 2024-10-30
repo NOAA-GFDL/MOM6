@@ -2710,7 +2710,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     CS%tv%T => CS%T ; CS%tv%S => CS%S
     if (CS%tv%T_is_conT) then
       vd_T = var_desc(name="contemp", units="Celsius", longname="Conservative Temperature", &
-                      cmor_field_name="thetao", cmor_longname="Sea Water Potential Temperature", &
+                      cmor_field_name="bigthetao", cmor_longname="Sea Water Conservative Temperature", &
                       conversion=US%Q_to_J_kg*CS%tv%C_p)
     else
       vd_T = var_desc(name="temp", units="degC", longname="Potential Temperature", &
@@ -2719,7 +2719,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     endif
     if (CS%tv%S_is_absS) then
       vd_S = var_desc(name="abssalt", units="g kg-1", longname="Absolute Salinity", &
-                      cmor_field_name="so", cmor_longname="Sea Water Salinity", &
+                      cmor_field_name="absso", cmor_longname="Sea Water Absolute Salinity", &
                       conversion=0.001*US%S_to_ppt)
     else
       vd_S = var_desc(name="salt", units="psu", longname="Salinity", &
@@ -2803,10 +2803,10 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   CS%time_in_cycle = 0.0 ; CS%time_in_thermo_cycle = 0.0
 
   !allocate porous topography variables
-  allocate(CS%pbv%por_face_areaU(IsdB:IedB,jsd:jed,nz)) ; CS%pbv%por_face_areaU(:,:,:) = 1.0
-  allocate(CS%pbv%por_face_areaV(isd:ied,JsdB:JedB,nz)) ; CS%pbv%por_face_areaV(:,:,:) = 1.0
-  allocate(CS%pbv%por_layer_widthU(IsdB:IedB,jsd:jed,nz+1)) ; CS%pbv%por_layer_widthU(:,:,:) = 1.0
-  allocate(CS%pbv%por_layer_widthV(isd:ied,JsdB:JedB,nz+1)) ; CS%pbv%por_layer_widthV(:,:,:) = 1.0
+  allocate(CS%pbv%por_face_areaU(IsdB:IedB,jsd:jed,nz), source=1.0)
+  allocate(CS%pbv%por_face_areaV(isd:ied,JsdB:JedB,nz), source=1.0)
+  allocate(CS%pbv%por_layer_widthU(IsdB:IedB,jsd:jed,nz+1), source=1.0)
+  allocate(CS%pbv%por_layer_widthV(isd:ied,JsdB:JedB,nz+1), source=1.0)
 
   ! Use the Wright equation of state by default, unless otherwise specified
   ! Note: this line and the following block ought to be in a separate
