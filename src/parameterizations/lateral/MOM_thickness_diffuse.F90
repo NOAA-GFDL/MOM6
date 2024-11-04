@@ -200,7 +200,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
 
   use_VarMix = .false. ; Resoln_scaled = .false. ; use_stored_slopes = .false.
   khth_use_ebt_struct = .false. ; use_Visbeck = .false. ; use_QG_Leith = .false.
-  Depth_scaled = .false. 
+  Depth_scaled = .false.
 
   if (VarMix%use_variable_mixing) then
     use_VarMix = VarMix%use_variable_mixing .and. (CS%KHTH_Slope_Cff > 0.) .or. (CS%Grad_L_Scale > 0.)
@@ -439,7 +439,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
       enddo ; enddo ; enddo
     endif
   endif
-  
+
   if (CS%use_GME_thickness_diffuse) then
     !$OMP do
     do k=1,nz+1 ; do J=js-1,je ; do i=is,ie
