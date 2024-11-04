@@ -846,7 +846,6 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(in)    :: e  !< Interface position [Z ~> m]
   logical,                                     intent(in)    :: calculate_slopes !< If true, calculate slopes
                                                           !! internally otherwise use slopes stored in CS
-  real :: Lgrid                                           !< Grid lengthscale for the grad model [H ~> m] 
 
   ! Local variables
   real :: E_x(SZIB_(G),SZJ_(G))  ! X-slope of interface at u points [Z L-1 ~> nondim] (for diagnostics)
@@ -870,6 +869,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
                         ! the buoyancy frequency squared at v-points [Z T-2 ~> m s-2]
   real    :: UH_grad_local(SZIB_(G), SZJ_(G),SZK_(GV))  ! The depth integral of grad slopes for UH at u-points 
   real    :: VH_grad_local(SZI_(G), SZJB_(G),SZK_(GV))  ! The depth integral of grad slopes for VH at v-points 
+  real    :: Lgrid      ! Grid lengthscale for the grad model [H ~> m] 
   integer :: is, ie, js, je, nz
   integer :: i, j, k
   integer :: l_seg
