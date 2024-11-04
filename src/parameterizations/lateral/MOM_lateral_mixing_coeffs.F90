@@ -840,7 +840,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
   type(verticalGrid_type),                     intent(in)    :: GV !< Vertical grid structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),   intent(inout) :: h  !< Layer thickness [H ~> m or kg m-2]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)),  intent(in) :: uh    !< Interface height times u [ZU ~> m2 s-1]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)),  intent(in) :: vh    !< Interface height times v [ZU ~> m2 s-1] 
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)),  intent(in) :: vh    !< Interface height times v [ZU ~> m2 s-1]
   type(unit_scale_type),                       intent(in)    :: US !< A dimensional unit scaling type
   type(VarMix_CS),                             intent(inout) :: CS !< Variable mixing control structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(in)    :: e  !< Interface position [Z ~> m]
@@ -850,7 +850,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
   ! Local variables
   real :: E_x(SZIB_(G),SZJ_(G))  ! X-slope of interface at u points [Z L-1 ~> nondim] (for diagnostics)
   real :: E_y(SZI_(G),SZJB_(G))  ! Y-slope of interface at v points [Z L-1 ~> nondim] (for diagnostics)
-  real :: U_xH_x(SZIB_(G), SZJ_(G))  ! X-slope of U and H  [T-1 ~> s-1]   
+  real :: U_xH_x(SZIB_(G), SZJ_(G))  ! X-slope of U and H  [T-1 ~> s-1]
   real :: U_yH_y(SZI_(G), SZJB_(G))  ! Y-slope of U and H  [T-1 ~> s-1]
   real :: V_xH_x(SZIB_(G), SZJ_(G))  ! X-slope of V and H  [T-1 ~> s-1]
   real :: V_yH_y(SZI_(G), SZJB_(G))  ! Y-slope of V and H  [T-1 ~> s-1]
@@ -867,9 +867,9 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
                         ! the buoyancy frequency squared at u-points [Z T-2 ~> m s-2]
   real :: S2N2_v_local(SZI_(G),SZJB_(G),SZK_(GV)) ! The depth integral of the slope times
                         ! the buoyancy frequency squared at v-points [Z T-2 ~> m s-2]
-  real    :: UH_grad_local(SZIB_(G), SZJ_(G),SZK_(GV))  ! The depth integral of grad slopes for UH at u-points 
-  real    :: VH_grad_local(SZI_(G), SZJB_(G),SZK_(GV))  ! The depth integral of grad slopes for VH at v-points 
-  real    :: Lgrid      ! Grid lengthscale for the grad model [H ~> m] 
+  real    :: UH_grad_local(SZIB_(G), SZJ_(G),SZK_(GV))  ! The depth integral of grad slopes for UH at u-points
+  real    :: VH_grad_local(SZI_(G), SZJB_(G),SZK_(GV))  ! The depth integral of grad slopes for VH at v-points
+  real    :: Lgrid      ! Grid lengthscale for the grad model [H ~> m]
   integer :: is, ie, js, je, nz
   integer :: i, j, k
   integer :: l_seg
@@ -902,7 +902,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
   ! Set the length scale at u-points.
   do j=js,je ; do I=is-1,ie
     Lgrid = sqrt(G%dxCu(I,j)**2 + G%dyCu(I,j)**2)
-    CS%L2grad_u(I,j) = 1.0 * Lgrid**2 
+    CS%L2grad_u(I,j) = 1.0 * Lgrid**2
   enddo ; enddo
   ! Set length scale at v-points
   do J=js-1,je ; do i=is,ie
@@ -945,8 +945,8 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
                      G%IareaT(I+1,j) + G%IareaT(I,j)) * G%dyCu(I,j) * (1.0*(h(I+1,j,K) - h(I,j,K))/( &
                      h(I+1,j,K) + h(I,j,K) + h_neglect))
         ! Mask slopes where interface intersects topography
-        if (min(h(I,j,k),h(I+1,j,k)) < H_cutoff) U_xH_x(I,j) = 0. 
-        if (min(h(I,j,k),h(I+1,j,k)) < H_cutoff) V_xH_x(I,j) = 0. 
+        if (min(h(I,j,k),h(I+1,j,k)) < H_cutoff) U_xH_x(I,j) = 0.
+        if (min(h(I,j,k),h(I+1,j,k)) < H_cutoff) V_xH_x(I,j) = 0.
       enddo ; enddo
       do J=js-1,je ; do i=is-1,ie+1
         U_yH_y(i,J) =1.0*(G%IdyCu(i,J+1)*G%IdyCu(i,J+1)*uh(i,J+1,K) - G%IdyCu(i,J)*G%IdyCu(i,J)*uh(i,J,k))*( &
@@ -957,23 +957,23 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
                      h(i,J+1,K) + h(i,J,K) + h_neglect))
         ! Mask slopes where interface intersects topography
         if (min(h(i,J,k),h(i,J+1,k)) < H_cutoff) U_yH_y(I,j) = 0.
-        if (min(h(i,J,k),h(i,J+1,k)) < H_cutoff) V_yH_y(I,j) = 0. 
+        if (min(h(i,J,k),h(i,J+1,k)) < H_cutoff) V_yH_y(I,j) = 0.
       enddo ; enddo
     else ! This branch is not used.
       do j=js-1,je+1 ; do I=is-1,ie
         U_xH_x(I,j) =1.0*(G%IdxCu(I+1,j)*G%IdyCu(I+1,j)*uh(I+1,j,K) - G%IdxCu(I,j)*G%IdyCu(I,j)*uh(I,j,k))*( &
                      G%IareaT(I+1,j) + G%IareaT(I,j)) * G%dyCu(I,j) * (1.0*(h(I+1,j,K) - h(I,j,K))/( &
-                     h(I+1,j,K) + h(I,j,K) + h_neglect)) 
+                     h(I+1,j,K) + h(I,j,K) + h_neglect))
         V_xH_x(I,j) =1.0*(G%IdxCv(I+1,j)*G%IdxCv(I+1,j)*vh(I+1,j,K) - G%IdxCv(I,j)*G%IdxCv(I,j)*vh(I,j,k))*( &
                      G%IareaT(I+1,j) + G%IareaT(I,j)) * G%dy_Cu(I,j) * (1.0*(h(I+1,j,K) - h(I,j,K))/( &
-                     h(I+1,j,K) + h(I,j,K) + h_neglect)) 
+                     h(I+1,j,K) + h(I,j,K) + h_neglect))
         if (min(h(I,j,k),h(I+1,j,k)) < H_cutoff) U_xH_x(I,j) = 0.
-        if (min(h(I,j,k),h(I+1,j,k)) < H_cutoff) V_xH_x(I,j) = 0. 
+        if (min(h(I,j,k),h(I+1,j,k)) < H_cutoff) V_xH_x(I,j) = 0.
       enddo ; enddo
       do j=js-1,je ; do I=is-1,ie+1
         U_yH_y(i,J) =1.0*(G%IdyCu(i,J+1)*G%IdyCu(i,J+1)*uh(i,J+1,K) - G%IdyCu(i,J)*G%IdyCu(i,J)*uh(i,J,k))*( &
                      G%IareaT(i,J+1) + G%IareaT(i,J)) * G%dxCu(i,J) * (1.0*(h(i,J+1,K) - h(i,J,K))/( &
-                     h(i,J+1,K) + h(i,J,K) + h_neglect)) 
+                     h(i,J+1,K) + h(i,J,K) + h_neglect))
         V_yH_y(i,J) =1.0*(G%IdyCv(i,J+1)*G%IdxCv(i,J+1)*vh(i,J,K) - G%IdyCv(i,J)*G%IdxCv(i,J)*vh(i,J,k))*( &
                      G%IareaT(i,J+1) + G%IareaT(i,J)) * G%dxCv(I,j) * (1.0*(h(i,J+1,K) - h(i,J,K))/( &
                      h(i,J+1,K) + h(i,J,K) + h_neglect))
@@ -992,7 +992,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
       Hup = 2.*h(i+1,j,k)*h(i+1,j,k-1) / (h(i+1,j,k) + h(i+1,j,k-1) + h_neglect)
       H_geom = sqrt(Hdn*Hup)
       N2 = GV%g_prime(k) / (GV%H_to_Z * max(Hdn, Hup, CS%h_min_N2))
-      gradUH = U_xH_x(I,j) + 0.25*(U_yH_y(I,j)+U_yH_y(I,j-1)+U_yH_y(I+1,j)+U_yH_y(I+1,j-1)) 
+      gradUH = U_xH_x(I,j) + 0.25*(U_yH_y(I,j)+U_yH_y(I,j-1)+U_yH_y(I+1,j)+U_yH_y(I+1,j-1))
       if (min(h(i,j,k-1), h(i+1,j,k-1), h(i,j,k), h(i+1,j,k)) < H_cutoff) &
         S2 = 0.0
       S2N2_u_local(I,j,k) = (H_geom * GV%H_to_Z) * S2 * N2
@@ -1007,7 +1007,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
       Hup = 2.*h(i,j+1,k)*h(i,j+1,k-1) / (h(i,j+1,k) + h(i,j+1,k-1) + h_neglect)
       H_geom = sqrt(Hdn*Hup)
       N2 = GV%g_prime(k) / (GV%H_to_Z * max(Hdn, Hup, CS%h_min_N2))
-      gradVH = 0.25*(V_xH_x(i,J)+V_xH_x(i-1,J)+V_xH_x(i,J+1)+V_xH_x(i-1,J+1))+V_yH_y(i,J) 
+      gradVH = 0.25*(V_xH_x(i,J)+V_xH_x(i-1,J)+V_xH_x(i,J+1)+V_xH_x(i-1,J+1))+V_yH_y(i,J)
       if (min(h(i,j,k-1), h(i,j+1,k-1), h(i,j,k), h(i,j+1,k)) < H_cutoff) &
         S2 = 0.0
       S2N2_v_local(i,J,k) = (H_geom * GV%H_to_Z) * S2 * N2
@@ -1306,8 +1306,8 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "USE_GRADIENT_MODEL", CS%use_gradient_model,&
                  "If true, use the gradient model formula for eddy diffusivity.  This "//&
                  "allows diagnostics to be created even if the scheme is "//&
-                 "not used.  If Grad_L_Scale>0, this is set to true regardless of what "//& 
-                 "is in the parameter file.", default=.false.) 
+                 "not used.  If Grad_L_Scale>0, this is set to true regardless of what "//&
+                 "is in the parameter file.", default=.false.)
   call get_param(param_file, mdl, "USE_VISBECK", CS%use_Visbeck,&
                  "If true, use the Visbeck et al. (1997) formulation for \n"//&
                  "thickness diffusivity.", default=.false.)
@@ -1497,19 +1497,19 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                  "The fixed length scale in the gradient formula.", units="m", &
                  default=1.0)
     allocate(CS%UH_grad(IsdB:IedB,jsd:jed,GV%ke), source=0.0)
-    allocate(CS%VH_grad(isd:ied,JsdB:JedB,GV%ke), source=0.0) 
+    allocate(CS%VH_grad(isd:ied,JsdB:JedB,GV%ke), source=0.0)
     allocate(CS%L2grad_u(IsdB:IedB,jsd:jed), source=0.0)
     allocate(CS%L2grad_v(isd:ied,JsdB:JedB), source=0.0)
     CS%id_UH_grad = register_diag_field('ocean_model', 'UH_grad', diag%axesCu1, Time, &
-     'Inverse gradient eddy time-scale, U_xH_x+U_yH_y, at u-points', 's^-1')   
+     'Inverse gradient eddy time-scale, U_xH_x+U_yH_y, at u-points', 's^-1')
     CS%id_VH_grad = register_diag_field('ocean_model', 'VH_grad', diag%axesCv1, Time, &
      'Inverse gradient eddy time-scale, V_xH_x+V_yH_y, at v-points', 's^-1')
     CS%id_L2grad_u = register_diag_field('ocean_model', 'L2grad_u', diag%axesCu1, Time, &
      'Length scale squared for gradient coefficient, at u-points', 'm^2')
     CS%id_L2grad_v = register_diag_field('ocean_model', 'L2grad_v', diag%axesCv1, Time, &
-     'Length scale squared for gradient coefficient, at v-points', 'm^2') 
+     'Length scale squared for gradient coefficient, at v-points', 'm^2')
   endif
- 
+
   if (CS%calculate_Eady_growth_rate .and. CS%use_stored_slopes) then
     CS%id_N2_u = register_diag_field('ocean_model', 'N2_u', diag%axesCui, Time, &
          'Square of Brunt-Vaisala frequency, N^2, at u-points, as used in Visbeck et al.', &
@@ -1559,7 +1559,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
     allocate(CS%f2_dx2_v(isd:ied,JsdB:JedB), source=0.0)
 
     CS%id_Res_fn = register_diag_field('ocean_model', 'Res_fn', diag%axesT1, Time, &
-       'Resolution function for scaling diffusivities', 'nondim')   
+       'Resolution function for scaling diffusivities', 'nondim')
     call get_param(param_file, mdl, "KH_RES_SCALE_COEF", CS%Res_coef_khth, &
                  "A coefficient that determines how KhTh is scaled away if "//&
                  "RESOLN_SCALED_... is true, as "//&
