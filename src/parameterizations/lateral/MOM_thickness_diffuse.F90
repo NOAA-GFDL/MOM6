@@ -38,7 +38,7 @@ type, public :: thickness_diffuse_CS ; private
   logical :: initialized = .false. !< True if this control structure has been initialized.
   real    :: Khth                !< Background isopycnal depth diffusivity [L2 T-1 ~> m2 s-1]
   real    :: Khth_Slope_Cff      !< Slope dependence coefficient of Khth [nondim]
-  real    :: Grad_L_Scale	 !< Gradient model coefficient  [nondim]
+  real    :: Grad_L_Scale        !< Gradient model coefficient [nondim]
   real    :: max_Khth_CFL        !< Maximum value of the diffusive CFL for isopycnal height diffusion [nondim]
   real    :: Khth_Min            !< Minimum value of Khth [L2 T-1 ~> m2 s-1]
   real    :: Khth_Max            !< Maximum value of Khth [L2 T-1 ~> m2 s-1], or 0 for no max
