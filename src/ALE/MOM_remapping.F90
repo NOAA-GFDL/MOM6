@@ -10,7 +10,6 @@ use regrid_edge_values, only : edge_values_explicit_h4, edge_values_implicit_h4
 use regrid_edge_values, only : edge_values_explicit_h4cw
 use regrid_edge_values, only : edge_values_implicit_h4, edge_values_implicit_h6
 use regrid_edge_values, only : edge_slopes_implicit_h3, edge_slopes_implicit_h5
-use remapping_attic,    only : remapping_attic_unit_tests
 use PCM_functions, only : PCM_reconstruction
 use PLM_functions, only : PLM_reconstruction, PLM_boundary_extrapolation
 use PPM_functions, only : PPM_reconstruction, PPM_boundary_extrapolation
@@ -1604,9 +1603,6 @@ logical function remapping_unit_tests(verbose)
   h_neglect_edge = h_neglect ; if (answer_date < 20190101) h_neglect_edge = 1.0e-10
 
   if (verbose) write(test%stdout,*) '  ===== MOM_remapping: remapping_unit_tests ================='
-
-  ! This line carries out tests on some older remapping schemes.
-  call test%test( remapping_attic_unit_tests(verbose), 'attic remapping unit tests' )
 
   if (verbose) write(test%stdout,*) '  - - - - - 1st generation tests - - - - -'
 
