@@ -322,7 +322,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
   endif
 
   if (use_VarMix) then
-    if (use_gradient_model) then
+    if (use_gradient_model) then  !< Gradient model (Khani & Dawson, 2023)
 !!    if (CS%Grad_L_Scale > 0.0) then
       !$OMP do
       do k=1,nz ; do j=js,je ; do I=is-1,ie
@@ -430,8 +430,8 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
   endif
 
   if (use_VarMix) then
-    if (use_gradient_model) then
-!!    if (CS%Grad_L_Scale > 0.0) then  !< Gradient model
+    if (use_gradient_model) then      !< Gradient model (Khani & Dawson, 2023)
+!!    if (CS%Grad_L_Scale > 0.0) then
       !$OMP do
       do k=1,nz ; do J=js-1,je ; do i=is,ie
         KH_v(i,J,k) = 1.0*CS%Grad_L_Scale*VarMix%L2grad_v(i,J)*VarMix%VH_grad(i,J,k)
