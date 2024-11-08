@@ -1055,13 +1055,18 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
     ! Update do_i so that nothing changes outside of the OBC (problem for interior OBCs only)
     if (associated(OBC)) then ; if (OBC%OBC_pe) then
       if (OBC%specified_v_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) then
-        do i=is,ie-1 ; if (OBC%segnum_v(i,J) /= OBC_NONE) then
-          if (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_N) then
-            do_i(i,j+1) = .false.
-          elseif (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_S) then
-            do_i(i,j) = .false.
+        do i=is,ie
+          if (OBC%segnum_v(i,J-1) /= OBC_NONE) then
+            if (OBC%segment(OBC%segnum_v(i,J-1))%direction == OBC_DIRECTION_N) then
+              do_i(i,j) = .false.
+            endif
           endif
-        endif ; enddo
+          if (OBC%segnum_v(i,J) /= OBC_NONE) then
+            if (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_S) then
+              do_i(i,j) = .false.
+            endif
+          endif
+        enddo
       endif
     endif ; endif
 
