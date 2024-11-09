@@ -58,7 +58,6 @@ subroutine Phillips_initialize_thickness(h, depth_tot, G, GV, US, param_file, ju
   real :: half_depth      ! The depth where the stratification is centered [Z ~> m]
   real :: km_to_grid_unit ! The conversion factor from km to the units of latitude, often 1 [nondim],
                           ! but this could be 1000 [m km-1]
-  logical :: just_read    ! If true, just read parameters but set nothing.
   logical :: reentrant_y  ! If true, model is re-entrant in the y direction
   character(len=40)  :: mdl = "Phillips_initialize_thickness" ! This subroutine's name.
   integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed, nz
@@ -175,7 +174,7 @@ subroutine Phillips_initialize_velocity(u, v, G, GV, US, param_file, just_read)
                           ! higher values use mathematically equivalent expressions that are fully
                           ! rescalable.
   integer :: i, j, k, is, ie, js, je, nz, m
-  logical :: just_read    ! If true, just read parameters but set nothing.
+!  logical :: just_read    ! If true, just read parameters but set nothing.
   logical :: reentrant_y  ! If true, model is re-entrant in the y direction
   character(len=40)  :: mdl = "Phillips_initialize_velocity" ! This subroutine's name.
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
