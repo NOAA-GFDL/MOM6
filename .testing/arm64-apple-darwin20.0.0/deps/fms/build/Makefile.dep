@@ -1,0 +1,414 @@
+# Makefile.dep created by makedep
+
+# Invoked as
+#   /Users/aakash/mom6_files/ML_diffusivity_development/MOM6-examples/src/MOM6/ac/makedep -DPACKAGE_NAME="FMS" -DPACKAGE_TARNAME="fms" -DPACKAGE_VERSION="" -DPACKAGE_STRING="FMS" -DPACKAGE_BUGREPORT="https://github.com/NOAA-GFDL/FMS/issues" -DPACKAGE_URL="" -DHAVE_MPI=1 -D__NR_gettid=SYS_gettid -D__APPLE__=1 -DHAVE_MPI=1 -Duse_libMPI=1 -DHAVE_STDIO_H=1 -DHAVE_STDLIB_H=1 -DHAVE_STRING_H=1 -DHAVE_INTTYPES_H=1 -DHAVE_STDINT_H=1 -DHAVE_STRINGS_H=1 -DHAVE_SYS_STAT_H=1 -DHAVE_SYS_TYPES_H=1 -DHAVE_UNISTD_H=1 -DSTDC_HEADERS=1 -DHAVE_NETCDF_H=1 -Duse_netCDF=1 -o Makefile.dep -e -x libFMS.a -s ../src/test_fms ../src
+
+all: libFMS.a
+
+amip_interp_mod.mod: amip_interp.o
+amip_interp.o: ../src/amip_interp/amip_interp.F90 ../src/amip_interp/include/amip_interp.inc ../src/amip_interp/include/amip_interp_r4.fh ../src/amip_interp/include/amip_interp_r8.fh ../src/include/file_version.h constants_mod.mod constants.o fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o get_cal_time_mod.mod get_cal_time.o horiz_interp_mod.mod horiz_interp.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_interp_mod.mod time_interp.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/amip_interp/include -I../src/include -c $<
+
+astronomy_mod.mod: astronomy.o
+astronomy.o: ../src/astronomy/astronomy.F90 ../src/astronomy/include/astronomy.inc ../src/astronomy/include/astronomy_r4.fh ../src/astronomy/include/astronomy_r8.fh ../src/include/file_version.h constants_mod.mod constants.o fms_io_utils_mod.mod fms_io_utils.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/astronomy/include -I../src/include -c $<
+
+atmos_ocean_fluxes_mod.mod: atmos_ocean_fluxes.o
+atmos_ocean_fluxes.o: ../src/coupler/atmos_ocean_fluxes.F90 ../src/include/file_version.h coupler_types_mod.mod coupler_types.o field_manager_mod.mod field_manager.o fm_util_mod.mod fm_util.o fms_io_utils_mod.mod fms_io_utils.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+axis_utils_mod.mod: axis_utils.o
+axis_utils.o: ../src/axis_utils/axis_utils.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+axis_utils2_mod.mod: axis_utils2.o
+axis_utils2.o: ../src/axis_utils/axis_utils2.F90 ../src/axis_utils/include/axis_utils2.inc ../src/axis_utils/include/axis_utils2_r4.fh ../src/axis_utils/include/axis_utils2_r8.fh ../src/include/file_version.h fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/axis_utils/include -I../src/include -c $<
+
+blackboxio.mod: blackboxio.o
+blackboxio.o: ../src/fms2_io/blackboxio.F90 fms_io_utils_mod.mod fms_io_utils.o fms_netcdf_domain_io_mod.mod fms_netcdf_domain_io.o fms_netcdf_unstructured_domain_io_mod.mod fms_netcdf_unstructured_domain_io.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o netcdf_io_mod.mod netcdf_io.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+block_control_mod.mod: block_control.o
+block_control.o: ../src/block_control/block_control.F90 mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+cloud_interpolator_mod.mod: cloud_interpolator.o
+cloud_interpolator.o: ../src/drifters/cloud_interpolator.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+column_diagnostics_mod.mod: column_diagnostics.o
+column_diagnostics.o: ../src/column_diagnostics/column_diagnostics.F90 ../src/column_diagnostics/include/column_diagnostics.inc ../src/column_diagnostics/include/column_diagnostics_r4.fh ../src/column_diagnostics/include/column_diagnostics_r8.fh ../src/include/file_version.h constants_mod.mod constants.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/column_diagnostics/include -I../src/include -c $<
+
+constants_mod.mod: constants.o
+constants.o: ../src/constants/constants.F90 fmsconstants.mod fmsconstants.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+constantsr4_mod.mod: constantsr4.o
+constantsr4.o: ../src/constants4/constantsr4.F90 fmsconstantsr4.mod fmsconstantsr4.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+coupler_types_mod.mod: coupler_types.o
+coupler_types.o: ../src/coupler/coupler_types.F90 ../src/coupler/include/coupler_types.inc ../src/coupler/include/coupler_types_r4.fh ../src/coupler/include/coupler_types_r8.fh ../src/include/file_version.h data_override_mod.mod data_override.o diag_manager_mod.mod diag_manager.o fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o fms_string_utils_mod.mod fms_string_utils.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/coupler/include -I../src/include -c $<
+
+data_override_r4.mod data_override_r8.mod data_override_mod.mod: data_override.o
+data_override.o: ../src/data_override/data_override.F90 axis_utils2_mod.mod time_interp_external2_mod.mod get_grid_version_mod.mod fms2_io_mod.mod horiz_interp_mod.mod constants_mod.mod yaml_parser_mod.mod fms_mod.mod ../src/data_override/include/data_override.inc ../src/data_override/include/data_override_r4.fh ../src/data_override/include/data_override_r8.fh ../src/include/file_version.h mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/data_override/include -I../src/include -c $<
+
+diag_axis_mod.mod: diag_axis.o
+diag_axis.o: ../src/diag_manager/diag_axis.F90 ../src/include/file_version.h diag_data_mod.mod diag_data.o fms_mod.mod fms.o mpp_domains_mod.mod mpp_domains.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+diag_data_mod.mod: diag_data.o
+diag_data.o: ../src/diag_manager/diag_data.F90 ../src/include/file_version.h fms2_io_mod.mod fms2_io.o fms_diag_bbox_mod.mod fms_diag_bbox.o fms_mod.mod fms.o mpp_domains_mod.mod mpp_domains.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+diag_grid_mod.mod: diag_grid.o
+diag_grid.o: ../src/diag_manager/diag_grid.F90 ../src/include/file_version.h constants_mod.mod constants.o fms_mod.mod fms.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+diag_integral_mod.mod: diag_integral.o
+diag_integral.o: ../src/diag_integral/diag_integral.F90 ../src/diag_integral/include/diag_integral.inc ../src/diag_integral/include/diag_integral_r4.fh ../src/diag_integral/include/diag_integral_r8.fh ../src/include/file_version.h constants_mod.mod constants.o ensemble_manager_mod.mod ensemble_manager.o fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/diag_integral/include -I../src/include -c $<
+
+diag_manager_mod.mod: diag_manager.o
+diag_manager.o: ../src/diag_manager/diag_manager.F90 ../src/include/file_version.h constants_mod.mod constants.o diag_axis_mod.mod diag_axis.o diag_data_mod.mod diag_data.o diag_grid_mod.mod diag_grid.o diag_output_mod.mod diag_output.o diag_table_mod.mod diag_table.o diag_util_mod.mod diag_util.o fms_diag_fieldbuff_update_mod.mod fms_diag_fieldbuff_update.o fms_diag_outfield_mod.mod fms_diag_outfield.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+diag_output_mod.mod: diag_output.o
+diag_output.o: ../src/diag_manager/diag_output.F90 diag_axis_mod.mod diag_axis.o diag_data_mod.mod diag_data.o fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+diag_table_mod.mod: diag_table.o
+diag_table.o: ../src/diag_manager/diag_table.F90 constants_mod.mod constants.o diag_data_mod.mod diag_data.o diag_util_mod.mod diag_util.o fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+diag_util_mod.mod: diag_util.o
+diag_util.o: ../src/diag_manager/diag_util.F90 ../src/include/file_version.h constants_mod.mod constants.o diag_axis_mod.mod diag_axis.o diag_data_mod.mod diag_data.o diag_grid_mod.mod diag_grid.o diag_output_mod.mod diag_output.o fms2_io_mod.mod fms2_io.o fms_diag_bbox_mod.mod fms_diag_bbox.o fms_mod.mod fms.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+drifters_mod.mod: drifters.o
+drifters.o: ../src/drifters/drifters.F90 ../src/drifters/fms_switches.h
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/drifters -c $<
+
+drifters_comm_mod.mod: drifters_comm.o
+drifters_comm.o: ../src/drifters/drifters_comm.F90 ../src/drifters/fms_switches.h
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/drifters -c $<
+
+drifters_core_mod.mod: drifters_core.o
+drifters_core.o: ../src/drifters/drifters_core.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+drifters_input_mod.mod: drifters_input.o
+drifters_input.o: ../src/drifters/drifters_input.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+drifters_io_mod.mod: drifters_io.o
+drifters_io.o: ../src/drifters/drifters_io.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+ensemble_manager_mod.mod: ensemble_manager.o
+ensemble_manager.o: ../src/coupler/ensemble_manager.F90 fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o mpp_mod.mod mpp.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+field_manager_mod.mod: field_manager.o
+field_manager.o: ../src/field_manager/field_manager.F90 ../src/field_manager/include/field_manager.inc ../src/field_manager/include/field_manager_r4.fh ../src/field_manager/include/field_manager_r8.fh ../src/field_manager/parse.inc ../src/include/file_version.h fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/field_manager -I../src/field_manager/include -I../src/include -c $<
+
+fm_util_mod.mod: fm_util.o
+fm_util.o: ../src/field_manager/fm_util.F90 ../src/field_manager/include/fm_util.inc ../src/field_manager/include/fm_util_r4.fh ../src/field_manager/include/fm_util_r8.fh ../src/include/file_version.h field_manager_mod.mod field_manager.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/field_manager/include -I../src/include -c $<
+
+fm_yaml_mod.mod: fm_yaml.o
+fm_yaml.o: ../src/field_manager/fm_yaml.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+fms_mod.mod: fms.o
+fms.o: ../src/fms/fms.F90 ../src/fms/include/fms.inc ../src/fms/include/fms_r4.fh ../src/fms/include/fms_r8.fh ../src/include/file_version.h constants_mod.mod constants.o fms2_io_mod.mod fms2_io.o fms_string_utils_mod.mod fms_string_utils.o grid2_mod.mod grid2.o memutils_mod.mod memutils.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/fms/include -I../src/include -c $<
+
+fms2_io_mod.mod: fms2_io.o
+fms2_io.o: ../src/fms2_io/fms2_io.F90 blackboxio.mod blackboxio.o fms_io_utils_mod.mod fms_io_utils.o fms_netcdf_domain_io_mod.mod fms_netcdf_domain_io.o fms_netcdf_unstructured_domain_io_mod.mod fms_netcdf_unstructured_domain_io.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o netcdf_io_mod.mod netcdf_io.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+fms_affinity_mod.mod: fms_affinity.o
+fms_affinity.o: ../src/affinity/fms_affinity.F90 ../src/include/file_version.h fms_mod.mod fms.o mpp_mod.mod mpp.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+fms_diag_bbox_mod.mod: fms_diag_bbox.o
+fms_diag_bbox.o: ../src/diag_manager/fms_diag_bbox.F90 fms_mod.mod fms.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+fms_diag_elem_weight_procs_mod.mod: fms_diag_elem_weight_procs.o
+fms_diag_elem_weight_procs.o: ../src/diag_manager/fms_diag_elem_weight_procs.F90 platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+fms_diag_fieldbuff_update_mod.mod: fms_diag_fieldbuff_update.o
+fms_diag_fieldbuff_update.o: ../src/diag_manager/fms_diag_fieldbuff_update.F90 ../src/diag_manager/include/fms_diag_fieldbuff_update.fh ../src/diag_manager/include/fms_diag_fieldbuff_update.inc diag_data_mod.mod diag_data.o diag_util_mod.mod diag_util.o fms_diag_bbox_mod.mod fms_diag_bbox.o fms_diag_elem_weight_procs_mod.mod fms_diag_elem_weight_procs.o fms_diag_outfield_mod.mod fms_diag_outfield.o fms_diag_time_reduction_mod.mod fms_diag_time_reduction.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/diag_manager/include -c $<
+
+fms_diag_outfield_mod.mod: fms_diag_outfield.o
+fms_diag_outfield.o: ../src/diag_manager/fms_diag_outfield.F90 diag_data_mod.mod diag_data.o fms_diag_time_reduction_mod.mod fms_diag_time_reduction.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+fms_diag_time_reduction_mod.mod: fms_diag_time_reduction.o
+fms_diag_time_reduction.o: ../src/diag_manager/fms_diag_time_reduction.F90 diag_data_mod.mod diag_data.o fms_mod.mod fms.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+fms_io_mod.mod: fms_io.o
+fms_io.o: ../src/fms/fms_io.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+fms_io_utils_mod.mod: fms_io_utils.o
+fms_io_utils.o: ../src/fms2_io/fms_io_utils.F90 ../src/fms2_io/include/array_utils.inc ../src/fms2_io/include/array_utils_char.inc ../src/fms2_io/include/get_data_type_string.inc fms_string_utils_mod.mod fms_string_utils.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/fms2_io/include -c $<
+
+fms_netcdf_domain_io_mod.mod: fms_netcdf_domain_io.o
+fms_netcdf_domain_io.o: ../src/fms2_io/fms_netcdf_domain_io.F90 ../src/fms2_io/include/compute_global_checksum.inc ../src/fms2_io/include/domain_read.inc ../src/fms2_io/include/domain_write.inc ../src/fms2_io/include/register_domain_restart_variable.inc fms_io_utils_mod.mod fms_io_utils.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o netcdf_io_mod.mod netcdf_io.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/fms2_io/include -c $<
+
+fms_netcdf_unstructured_domain_io_mod.mod: fms_netcdf_unstructured_domain_io.o
+fms_netcdf_unstructured_domain_io.o: ../src/fms2_io/fms_netcdf_unstructured_domain_io.F90 ../src/fms2_io/include/register_unstructured_domain_restart_variable.inc ../src/fms2_io/include/unstructured_domain_read.inc ../src/fms2_io/include/unstructured_domain_write.inc fms_io_utils_mod.mod fms_io_utils.o mpp_domains_mod.mod mpp_domains.o netcdf_io_mod.mod netcdf_io.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/fms2_io/include -c $<
+
+fms_string_utils_mod.mod: fms_string_utils.o
+fms_string_utils.o: ../src/string_utils/fms_string_utils.F90 ../src/string_utils/include/fms_string_utils.inc ../src/string_utils/include/fms_string_utils_r4.fh ../src/string_utils/include/fms_string_utils_r8.fh mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/string_utils/include -c $<
+
+fms_yaml_output_mod.mod: fms_yaml_output.o
+fms_yaml_output.o: ../src/parser/fms_yaml_output.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+fmsconstants.mod: fmsconstants.o
+fmsconstants.o: ../src/constants/fmsconstants.F90 ../src/constants/geos_constants.fh ../src/constants/gfdl_constants.fh ../src/constants/gfs_constants.fh mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/constants -c $<
+
+fmsconstantsr4.mod: fmsconstantsr4.o
+fmsconstantsr4.o: ../src/constants4/fmsconstantsr4.F90 ../src/constants4/geos_constantsR4.fh ../src/constants4/gfdl_constantsR4.fh ../src/constants4/gfs_constantsR4.fh mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/constants4 -c $<
+
+gaussian_topog_mod.mod: gaussian_topog.o
+gaussian_topog.o: ../src/topography/gaussian_topog.F90 ../src/include/file_version.h ../src/topography/include/gaussian_topog.inc ../src/topography/include/gaussian_topog_r4.fh ../src/topography/include/gaussian_topog_r8.fh constants_mod.mod constants.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/topography/include -c $<
+
+get_cal_time_mod.mod: get_cal_time.o
+get_cal_time.o: ../src/time_manager/get_cal_time.F90 ../src/include/file_version.h fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+get_grid_version_mod.mod: get_grid_version.o
+get_grid_version.o: ../src/data_override/get_grid_version.F90 ../src/data_override/include/get_grid_version.inc ../src/data_override/include/get_grid_version_r4.fh ../src/data_override/include/get_grid_version_r8.fh constants_mod.mod constants.o fms2_io_mod.mod fms2_io.o mosaic2_mod.mod mosaic2.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/data_override/include -c $<
+
+gradient_mod.mod: gradient.o
+gradient.o: ../src/mosaic/gradient.F90 ../src/include/file_version.h constants_mod.mod constants.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+grid_mod.mod: grid.o
+grid.o: ../src/mosaic/grid.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+grid2_mod.mod: grid2.o
+grid2.o: ../src/mosaic2/grid2.F90 ../src/include/file_version.h ../src/mosaic2/include/grid2.inc ../src/mosaic2/include/grid2_r4.fh ../src/mosaic2/include/grid2_r8.fh constants_mod.mod constants.o fms2_io_mod.mod fms2_io.o fms_string_utils_mod.mod fms_string_utils.o mosaic2_mod.mod mosaic2.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/mosaic2/include -c $<
+
+horiz_interp_mod.mod: horiz_interp.o
+horiz_interp.o: ../src/horiz_interp/horiz_interp.F90 ../src/horiz_interp/include/horiz_interp.inc ../src/horiz_interp/include/horiz_interp_r4.fh ../src/horiz_interp/include/horiz_interp_r8.fh ../src/include/file_version.h constants_mod.mod constants.o fms_mod.mod fms.o horiz_interp_bicubic_mod.mod horiz_interp_bicubic.o horiz_interp_bilinear_mod.mod horiz_interp_bilinear.o horiz_interp_conserve_mod.mod horiz_interp_conserve.o horiz_interp_spherical_mod.mod horiz_interp_spherical.o horiz_interp_type_mod.mod horiz_interp_type.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/horiz_interp/include -I../src/include -c $<
+
+horiz_interp_bicubic_mod.mod: horiz_interp_bicubic.o
+horiz_interp_bicubic.o: ../src/horiz_interp/horiz_interp_bicubic.F90 ../src/horiz_interp/include/horiz_interp_bicubic.inc ../src/horiz_interp/include/horiz_interp_bicubic_r4.fh ../src/horiz_interp/include/horiz_interp_bicubic_r8.fh ../src/include/file_version.h constants_mod.mod constants.o fms_mod.mod fms.o horiz_interp_type_mod.mod horiz_interp_type.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/horiz_interp/include -I../src/include -c $<
+
+horiz_interp_bilinear_mod.mod: horiz_interp_bilinear.o
+horiz_interp_bilinear.o: ../src/horiz_interp/horiz_interp_bilinear.F90 ../src/horiz_interp/include/horiz_interp_bilinear.inc ../src/horiz_interp/include/horiz_interp_bilinear_r4.fh ../src/horiz_interp/include/horiz_interp_bilinear_r8.fh ../src/include/file_version.h constants_mod.mod constants.o fms_mod.mod fms.o horiz_interp_type_mod.mod horiz_interp_type.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/horiz_interp/include -I../src/include -c $<
+
+horiz_interp_conserve_mod.mod: horiz_interp_conserve.o
+horiz_interp_conserve.o: ../src/horiz_interp/horiz_interp_conserve.F90 ../src/horiz_interp/include/horiz_interp_conserve.inc ../src/horiz_interp/include/horiz_interp_conserve_r4.fh ../src/horiz_interp/include/horiz_interp_conserve_r8.fh ../src/include/file_version.h constants_mod.mod constants.o fms_mod.mod fms.o grid2_mod.mod grid2.o horiz_interp_type_mod.mod horiz_interp_type.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/horiz_interp/include -I../src/include -c $<
+
+horiz_interp_spherical_mod.mod: horiz_interp_spherical.o
+horiz_interp_spherical.o: ../src/horiz_interp/horiz_interp_spherical.F90 ../src/horiz_interp/include/horiz_interp_spherical.inc ../src/horiz_interp/include/horiz_interp_spherical_r4.fh ../src/horiz_interp/include/horiz_interp_spherical_r8.fh ../src/include/file_version.h constants_mod.mod constants.o fms_mod.mod fms.o horiz_interp_type_mod.mod horiz_interp_type.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/horiz_interp/include -I../src/include -c $<
+
+horiz_interp_type_mod.mod: horiz_interp_type.o
+horiz_interp_type.o: ../src/horiz_interp/horiz_interp_type.F90 ../src/horiz_interp/include/horiz_interp_type.inc ../src/horiz_interp/include/horiz_interp_type_r4.fh ../src/horiz_interp/include/horiz_interp_type_r8.fh mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/horiz_interp/include -c $<
+
+interpolator_mod.mod: interpolator.o
+interpolator.o: ../src/interpolator/interpolator.F90 ../src/include/file_version.h ../src/interpolator/include/interpolator.inc ../src/interpolator/include/interpolator_r4.fh ../src/interpolator/include/interpolator_r8.fh constants_mod.mod constants.o diag_manager_mod.mod diag_manager.o fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o horiz_interp_mod.mod horiz_interp.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_interp_mod.mod time_interp.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/interpolator/include -c $<
+
+fms.mod: libFMS.o
+libFMS.o: ../src/libFMS.F90 ../src/include/file_version.h amip_interp_mod.mod amip_interp.o astronomy_mod.mod astronomy.o atmos_ocean_fluxes_mod.mod atmos_ocean_fluxes.o axis_utils2_mod.mod axis_utils2.o block_control_mod.mod block_control.o column_diagnostics_mod.mod column_diagnostics.o coupler_types_mod.mod coupler_types.o data_override_mod.mod data_override.o diag_integral_mod.mod diag_integral.o diag_manager_mod.mod diag_manager.o ensemble_manager_mod.mod ensemble_manager.o field_manager_mod.mod field_manager.o fm_util_mod.mod fm_util.o fms2_io_mod.mod fms2_io.o fms_affinity_mod.mod fms_affinity.o fms_mod.mod fms.o fms_string_utils_mod.mod fms_string_utils.o gaussian_topog_mod.mod gaussian_topog.o get_cal_time_mod.mod get_cal_time.o gradient_mod.mod gradient.o grid2_mod.mod grid2.o horiz_interp_mod.mod horiz_interp.o horiz_interp_type_mod.mod horiz_interp_type.o interpolator_mod.mod interpolator.o memutils_mod.mod memutils.o monin_obukhov_inter.mod monin_obukhov_inter.o monin_obukhov_mod.mod monin_obukhov.o mosaic2_mod.mod mosaic2.o mpp_domains_mod.mod mpp_domains.o mpp_efp_mod.mod mpp_efp.o mpp_memutils_mod.mod mpp_memutils.o mpp_mod.mod mpp.o mpp_parameter_mod.mod mpp_parameter.o mpp_utilities_mod.mod mpp_utilities.o platform_mod.mod platform.o random_numbers_mod.mod random_numbers.o sat_vapor_pres_mod.mod sat_vapor_pres.o stock_constants_mod.mod stock_constants.o time_interp_external2_mod.mod time_interp_external2.o time_interp_mod.mod time_interp.o time_manager_mod.mod time_manager.o topography_mod.mod topography.o tracer_manager_mod.mod tracer_manager.o tridiagonal_mod.mod tridiagonal.o xgrid_mod.mod xgrid.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+memutils_mod.mod: memutils.o
+memutils.o: ../src/memutils/memutils.F90 mpp_memutils_mod.mod mpp_memutils.o mpp_mod.mod mpp.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+mersennetwister_mod.mod: mersennetwister.o
+mersennetwister.o: ../src/random_numbers/mersennetwister.F90 platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+monin_obukhov_mod.mod: monin_obukhov.o
+monin_obukhov.o: ../src/monin_obukhov/monin_obukhov.F90 ../src/include/file_version.h ../src/monin_obukhov/include/monin_obukhov.inc ../src/monin_obukhov/include/monin_obukhov_r4.fh ../src/monin_obukhov/include/monin_obukhov_r8.fh constants_mod.mod constants.o fms_mod.mod fms.o monin_obukhov_inter.mod monin_obukhov_inter.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/monin_obukhov/include -c $<
+
+monin_obukhov_inter.mod: monin_obukhov_inter.o
+monin_obukhov_inter.o: ../src/monin_obukhov/monin_obukhov_inter.F90 ../src/monin_obukhov/include/monin_obukhov_inter.inc ../src/monin_obukhov/include/monin_obukhov_inter_r4.fh ../src/monin_obukhov/include/monin_obukhov_inter_r8.fh platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/monin_obukhov/include -c $<
+
+mosaic_mod.mod: mosaic.o
+mosaic.o: ../src/mosaic/mosaic.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+mosaic2_mod.mod: mosaic2.o
+mosaic2.o: ../src/mosaic2/mosaic2.F90 ../src/include/file_version.h ../src/mosaic2/include/mosaic2.inc ../src/mosaic2/include/mosaic2_r4.fh ../src/mosaic2/include/mosaic2_r8.fh constants_mod.mod constants.o fms2_io_mod.mod fms2_io.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/mosaic2/include -c $<
+
+mpp_mod.mod: mpp.o
+mpp.o: ../src/mpp/mpp.F90 ../src/include/file_version.h ../src/mpp/include/mpp_alltoall_mpi.fh ../src/mpp/include/mpp_chksum.fh ../src/mpp/include/mpp_chksum_int.fh ../src/mpp/include/mpp_chksum_scalar.fh ../src/mpp/include/mpp_comm.inc ../src/mpp/include/mpp_comm_mpi.inc ../src/mpp/include/mpp_error_a_a.fh ../src/mpp/include/mpp_error_a_s.fh ../src/mpp/include/mpp_error_s_a.fh ../src/mpp/include/mpp_error_s_s.fh ../src/mpp/include/mpp_gather.fh ../src/mpp/include/mpp_reduce_mpi.fh ../src/mpp/include/mpp_scatter.fh ../src/mpp/include/mpp_sum.inc ../src/mpp/include/mpp_sum_ad.inc ../src/mpp/include/mpp_sum_mpi.fh ../src/mpp/include/mpp_sum_mpi_ad.fh ../src/mpp/include/mpp_transmit.inc ../src/mpp/include/mpp_transmit_mpi.fh ../src/mpp/include/mpp_type_mpi.fh ../src/mpp/include/mpp_util.inc ../src/mpp/include/mpp_util_mpi.inc ../src/mpp/include/system_clock.fh mpp_data_mod.mod mpp_data.o mpp_parameter_mod.mod mpp_parameter.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/mpp/include -c $<
+
+mpp_data_mod.mod: mpp_data.o
+mpp_data.o: ../src/mpp/mpp_data.F90 ../src/include/file_version.h ../src/mpp/include/mpp_data_mpi.inc mpp_parameter_mod.mod mpp_parameter.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/mpp/include -c $<
+
+mpp_domains_mod.mod: mpp_domains.o
+mpp_domains.o: ../src/mpp/mpp_domains.F90 ../src/include/file_version.h ../src/mpp/include/group_update_pack.inc ../src/mpp/include/group_update_unpack.inc ../src/mpp/include/mpp_define_nest_domains.inc ../src/mpp/include/mpp_do_check.fh ../src/mpp/include/mpp_do_checkV.fh ../src/mpp/include/mpp_do_get_boundary.fh ../src/mpp/include/mpp_do_get_boundary_ad.fh ../src/mpp/include/mpp_do_global_field.fh ../src/mpp/include/mpp_do_global_field_ad.fh ../src/mpp/include/mpp_do_redistribute.fh ../src/mpp/include/mpp_do_update.fh ../src/mpp/include/mpp_do_updateV.fh ../src/mpp/include/mpp_do_updateV_ad.fh ../src/mpp/include/mpp_do_updateV_nonblock.fh ../src/mpp/include/mpp_do_update_ad.fh ../src/mpp/include/mpp_do_update_nest.fh ../src/mpp/include/mpp_do_update_nonblock.fh ../src/mpp/include/mpp_domains_comm.inc ../src/mpp/include/mpp_domains_define.inc ../src/mpp/include/mpp_domains_misc.inc ../src/mpp/include/mpp_domains_reduce.inc ../src/mpp/include/mpp_domains_util.inc ../src/mpp/include/mpp_get_boundary.fh ../src/mpp/include/mpp_get_boundary_ad.fh ../src/mpp/include/mpp_global_field.fh ../src/mpp/include/mpp_global_field_ad.fh ../src/mpp/include/mpp_global_field_ug.fh ../src/mpp/include/mpp_global_reduce.fh ../src/mpp/include/mpp_global_sum.fh ../src/mpp/include/mpp_global_sum_ad.fh ../src/mpp/include/mpp_global_sum_tl.fh ../src/mpp/include/mpp_group_update.fh ../src/mpp/include/mpp_unstruct_domain.inc ../src/mpp/include/mpp_unstruct_pass_data.fh ../src/mpp/include/mpp_update_domains2D.fh ../src/mpp/include/mpp_update_domains2D_ad.fh ../src/mpp/include/mpp_update_domains2D_nonblock.fh ../src/mpp/include/mpp_update_nest_domains.fh mpp_data_mod.mod mpp_data.o mpp_efp_mod.mod mpp_efp.o mpp_memutils_mod.mod mpp_memutils.o mpp_mod.mod mpp.o mpp_parameter_mod.mod mpp_parameter.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/mpp/include -c $<
+
+mpp_efp_mod.mod: mpp_efp.o
+mpp_efp.o: ../src/mpp/mpp_efp.F90 mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+mpp_io_mod.mod: mpp_io.o
+mpp_io.o: ../src/mpp/mpp_io.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+mpp_memutils_mod.mod: mpp_memutils.o
+mpp_memutils.o: ../src/mpp/mpp_memutils.F90 mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+mpp_parameter_mod.mod: mpp_parameter.o
+mpp_parameter.o: ../src/mpp/mpp_parameter.F90 ../src/include/file_version.h platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+mpp_pset_mod.mod: mpp_pset.o
+mpp_pset.o: ../src/mpp/mpp_pset.F90 ../src/include/fms_platform.h mpp_mod.mod mpp.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+mpp_utilities_mod.mod: mpp_utilities.o
+mpp_utilities.o: ../src/mpp/mpp_utilities.F90 ../src/include/file_version.h mpp_mod.mod mpp.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+netcdf_io_mod.mod: netcdf_io.o
+netcdf_io.o: ../src/fms2_io/netcdf_io.F90 ../src/fms2_io/include/compressed_read.inc ../src/fms2_io/include/compressed_write.inc ../src/fms2_io/include/gather_data_bc.inc ../src/fms2_io/include/get_global_attribute.inc ../src/fms2_io/include/get_variable_attribute.inc ../src/fms2_io/include/netcdf_add_restart_variable.inc ../src/fms2_io/include/netcdf_read_data.inc ../src/fms2_io/include/netcdf_write_data.inc ../src/fms2_io/include/register_global_attribute.inc ../src/fms2_io/include/register_variable_attribute.inc ../src/fms2_io/include/scatter_data_bc.inc ../src/fms2_io/include/unpack_data.inc fms_io_utils_mod.mod fms_io_utils.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/fms2_io/include -c $<
+
+platform_mod.mod: platform.o
+platform.o: ../src/platform/platform.F90 ../src/include/fms_platform.h
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+quicksort.o: ../src/drifters/quicksort.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+random_numbers_mod.mod: random_numbers.o
+random_numbers.o: ../src/random_numbers/random_numbers.F90 ../src/random_numbers/include/random_numbers.inc ../src/random_numbers/include/random_numbers_r4.fh ../src/random_numbers/include/random_numbers_r8.fh mersennetwister_mod.mod mersennetwister.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/random_numbers/include -c $<
+
+sat_vapor_pres_mod.mod: sat_vapor_pres.o
+sat_vapor_pres.o: ../src/sat_vapor_pres/sat_vapor_pres.F90 ../src/include/file_version.h ../src/sat_vapor_pres/include/sat_vapor_pres.inc ../src/sat_vapor_pres/include/sat_vapor_pres_r4.fh ../src/sat_vapor_pres/include/sat_vapor_pres_r8.fh constants_mod.mod constants.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o sat_vapor_pres_k_mod.mod sat_vapor_pres_k.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/sat_vapor_pres/include -c $<
+
+sat_vapor_pres_k_mod.mod: sat_vapor_pres_k.o
+sat_vapor_pres_k.o: ../src/sat_vapor_pres/sat_vapor_pres_k.F90 ../src/include/file_version.h ../src/sat_vapor_pres/include/sat_vapor_pres_k.inc ../src/sat_vapor_pres/include/sat_vapor_pres_k_r4.fh ../src/sat_vapor_pres/include/sat_vapor_pres_k_r8.fh fms_mod.mod fms.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/sat_vapor_pres/include -c $<
+
+stock_constants_mod.mod: stock_constants.o
+stock_constants.o: ../src/exchange/stock_constants.F90 ../src/include/file_version.h diag_manager_mod.mod diag_manager.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+time_interp_mod.mod: time_interp.o
+time_interp.o: ../src/time_interp/time_interp.F90 ../src/include/file_version.h ../src/time_interp/include/time_interp.inc ../src/time_interp/include/time_interp_r4.fh ../src/time_interp/include/time_interp_r8.fh fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/time_interp/include -c $<
+
+time_interp_external_mod.mod: time_interp_external.o
+time_interp_external.o: ../src/time_interp/time_interp_external.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+time_interp_external2_mod.mod: time_interp_external2.o
+time_interp_external2.o: ../src/time_interp/time_interp_external2.F90 ../src/include/file_version.h ../src/time_interp/include/time_interp_external2.inc ../src/time_interp/include/time_interp_external2_r4.fh ../src/time_interp/include/time_interp_external2_r8.fh axis_utils2_mod.mod axis_utils2.o fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o get_cal_time_mod.mod get_cal_time.o horiz_interp_mod.mod horiz_interp.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o time_interp_mod.mod time_interp.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/time_interp/include -c $<
+
+time_manager_mod.mod: time_manager.o
+time_manager.o: ../src/time_manager/time_manager.F90 ../src/include/file_version.h constants_mod.mod constants.o fms_mod.mod fms.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+topography_mod.mod: topography.o
+topography.o: ../src/topography/topography.F90 ../src/include/file_version.h ../src/topography/include/topography.inc ../src/topography/include/topography_r4.fh ../src/topography/include/topography_r8.fh constants_mod.mod constants.o fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o gaussian_topog_mod.mod gaussian_topog.o horiz_interp_mod.mod horiz_interp.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/topography/include -c $<
+
+tracer_manager_mod.mod: tracer_manager.o
+tracer_manager.o: ../src/tracer_manager/tracer_manager.F90 ../src/include/file_version.h ../src/tracer_manager/include/tracer_manager.inc ../src/tracer_manager/include/tracer_manager_r4.fh ../src/tracer_manager/include/tracer_manager_r8.fh field_manager_mod.mod field_manager.o fms_mod.mod fms.o mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -I../src/tracer_manager/include -c $<
+
+tridiagonal_mod.mod: tridiagonal.o
+tridiagonal.o: ../src/tridiagonal/tridiagonal.F90 ../src/tridiagonal/include/tridiagonal.inc ../src/tridiagonal/include/tridiagonal_r4.fh ../src/tridiagonal/include/tridiagonal_r8.fh mpp_mod.mod mpp.o platform_mod.mod platform.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/tridiagonal/include -c $<
+
+xgrid_mod.mod: xgrid.o
+xgrid.o: ../src/exchange/xgrid.F90 ../src/include/file_version.h constants_mod.mod constants.o diag_manager_mod.mod diag_manager.o fms2_io_mod.mod fms2_io.o fms_mod.mod fms.o gradient_mod.mod gradient.o mosaic2_mod.mod mosaic2.o mpp_domains_mod.mod mpp_domains.o mpp_mod.mod mpp.o platform_mod.mod platform.o stock_constants_mod.mod stock_constants.o time_manager_mod.mod time_manager.o
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -I../src/include -c $<
+
+yaml_parser_mod.mod: yaml_parser.o
+yaml_parser.o: ../src/parser/yaml_parser.F90 
+	$(FC) $(DEFS) $(CPPFLAGS) $(FCFLAGS) -c $<
+
+affinity.o: ../src/affinity/affinity.c 
+	$(CC) $(DEFS) $(CPPFLAGS) $(CFLAGS) -c $<
+
+create_xgrid.o: ../src/mosaic/create_xgrid.c ../src/mosaic/constant.h ../src/mosaic/create_xgrid.h ../src/mosaic/mosaic_util.h
+	$(CC) $(DEFS) $(CPPFLAGS) $(CFLAGS) -I../src/mosaic -c $<
+
+fms_stacksize.o: ../src/fms/fms_stacksize.c 
+	$(CC) $(DEFS) $(CPPFLAGS) $(CFLAGS) -c $<
+
+fms_string_utils_binding.o: ../src/string_utils/fms_string_utils_binding.c 
+	$(CC) $(DEFS) $(CPPFLAGS) $(CFLAGS) -c $<
+
+gradient_c2l.o: ../src/mosaic/gradient_c2l.c ../src/mosaic/constant.h ../src/mosaic/gradient_c2l.h ../src/mosaic/mosaic_util.h
+	$(CC) $(DEFS) $(CPPFLAGS) $(CFLAGS) -I../src/mosaic -c $<
+
+interp.o: ../src/mosaic/interp.c ../src/mosaic/create_xgrid.h ../src/mosaic/interp.h ../src/mosaic/mosaic_util.h
+	$(CC) $(DEFS) $(CPPFLAGS) $(CFLAGS) -I../src/mosaic -c $<
+
+mosaic_util.o: ../src/mosaic/mosaic_util.c ../src/mosaic/constant.h ../src/mosaic/mosaic_util.h
+	$(CC) $(DEFS) $(CPPFLAGS) $(CFLAGS) -I../src/mosaic -c $<
+
+mpp_memuse.o: ../src/mpp/mpp_memuse.c 
+	$(CC) $(DEFS) $(CPPFLAGS) $(CFLAGS) -c $<
+
+read_mosaic.o: ../src/mosaic/read_mosaic.c ../src/mosaic/constant.h ../src/mosaic/mosaic_util.h ../src/mosaic/read_mosaic.h
+	$(CC) $(DEFS) $(CPPFLAGS) $(CFLAGS) -I../src/mosaic -c $<
+
+yaml_output_functions.o: ../src/parser/yaml_output_functions.c 
+	$(CC) $(DEFS) $(CPPFLAGS) $(CFLAGS) -c $<
+
+yaml_parser_binding.o: ../src/parser/yaml_parser_binding.c 
+	$(CC) $(DEFS) $(CPPFLAGS) $(CFLAGS) -c $<
+
+# Note: The following object files are not associated with modules so we assume we should link with them:
+#  quicksort.o affinity.o fms_stacksize.o create_xgrid.o gradient_c2l.o interp.o mosaic_util.o read_mosaic.o mpp_memuse.o yaml_output_functions.o yaml_parser_binding.o fms_string_utils_binding.o
+
+libFMS.a: fms_affinity.o amip_interp.o astronomy.o axis_utils.o axis_utils2.o block_control.o column_diagnostics.o constants.o fmsconstants.o constantsr4.o fmsconstantsr4.o atmos_ocean_fluxes.o coupler_types.o ensemble_manager.o data_override.o get_grid_version.o diag_integral.o diag_axis.o diag_data.o diag_grid.o diag_manager.o diag_output.o diag_table.o diag_util.o fms_diag_bbox.o fms_diag_elem_weight_procs.o fms_diag_fieldbuff_update.o fms_diag_outfield.o fms_diag_time_reduction.o cloud_interpolator.o drifters.o drifters_comm.o drifters_core.o drifters_input.o drifters_io.o quicksort.o stock_constants.o xgrid.o field_manager.o fm_util.o fm_yaml.o fms.o fms_io.o blackboxio.o fms2_io.o fms_io_utils.o fms_netcdf_domain_io.o fms_netcdf_unstructured_domain_io.o netcdf_io.o horiz_interp.o horiz_interp_bicubic.o horiz_interp_bilinear.o horiz_interp_conserve.o horiz_interp_spherical.o horiz_interp_type.o interpolator.o libFMS.o memutils.o monin_obukhov.o monin_obukhov_inter.o gradient.o grid.o mosaic.o grid2.o mosaic2.o mpp.o mpp_data.o mpp_domains.o mpp_efp.o mpp_io.o mpp_memutils.o mpp_parameter.o mpp_pset.o mpp_utilities.o fms_yaml_output.o yaml_parser.o platform.o mersennetwister.o random_numbers.o sat_vapor_pres.o sat_vapor_pres_k.o fms_string_utils.o time_interp.o time_interp_external.o time_interp_external2.o get_cal_time.o time_manager.o gaussian_topog.o topography.o tracer_manager.o tridiagonal.o affinity.o fms_stacksize.o create_xgrid.o gradient_c2l.o interp.o mosaic_util.o read_mosaic.o mpp_memuse.o yaml_output_functions.o yaml_parser_binding.o fms_string_utils_binding.o
+	$(AR) $(ARFLAGS) $@ $^
+
+clean:
+	rm -f *.mod *.o libFMS.a
+
+remakedep:
+	/Users/aakash/mom6_files/ML_diffusivity_development/MOM6-examples/src/MOM6/ac/makedep -DPACKAGE_NAME="FMS" -DPACKAGE_TARNAME="fms" -DPACKAGE_VERSION="" -DPACKAGE_STRING="FMS" -DPACKAGE_BUGREPORT="https://github.com/NOAA-GFDL/FMS/issues" -DPACKAGE_URL="" -DHAVE_MPI=1 -D__NR_gettid=SYS_gettid -D__APPLE__=1 -DHAVE_MPI=1 -Duse_libMPI=1 -DHAVE_STDIO_H=1 -DHAVE_STDLIB_H=1 -DHAVE_STRING_H=1 -DHAVE_INTTYPES_H=1 -DHAVE_STDINT_H=1 -DHAVE_STRINGS_H=1 -DHAVE_SYS_STAT_H=1 -DHAVE_SYS_TYPES_H=1 -DHAVE_UNISTD_H=1 -DSTDC_HEADERS=1 -DHAVE_NETCDF_H=1 -Duse_netCDF=1 -o Makefile.dep -e -x libFMS.a -s ../src/test_fms ../src

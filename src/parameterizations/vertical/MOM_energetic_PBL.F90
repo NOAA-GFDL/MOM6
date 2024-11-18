@@ -2673,7 +2673,7 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                        units="m2 s-3", default=7.0E-07, scale=(US%m_to_L**2)*(US%T_to_s**3))
 
   ! The coefficients used for machine learned diffusivity
-  ! c1 to c8 used for sigma_m, 
+  ! c1 to c8 used for sigma_m,  
   call get_param(param_file, mdl, "c1", CS%c1, &
                        "Coefficient used for ML diffusivity,  ", units="nondim", default=0.976)
   call get_param(param_file, mdl, "c2", CS%c2, &
@@ -2699,7 +2699,7 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "c11", CS%c11, &
                        "Coefficient used for ML diffusivity,  ", units="nondim", default=1.80)
 
-  ! coefficients related to surface cooling v_0, obtained by empirical fitting (brain)
+  ! coefficients related to surface cooling v_0, obtained by empirical fitting
   call get_param(param_file, mdl, "c12", CS%c12, &
                        "Coefficient used for ML diffusivity,  ", units="nondim", default=0.098)
   call get_param(param_file, mdl, "c13", CS%c13, &
