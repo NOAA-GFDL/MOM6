@@ -2403,6 +2403,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "The actual tracer advection timestep that is used in this "//&
                  "case is the largest integer multiple of the coupling "//&
                  "timestep that is less than or equal to DT_TADVECT.", default=.false.)
+  if ( CS%diabatic_first .and. (CS%dt_tadvect /= CS%dt_therm) ) then
+    call MOM_error(FATAL,"MOM: If using DIABATIC_FIRST, DT_TADVECT must equal DT_THERM.")
+  endif
 
   if (bulkmixedlayer) then
     CS%Hmix = -1.0 ; CS%Hmix_UV = -1.0
