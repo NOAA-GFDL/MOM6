@@ -209,7 +209,6 @@ type, public :: ice_ocean_boundary_type
                                       !! This flag may be set by the flux-exchange code, based on what
                                       !! the sea-ice model is providing.  Otherwise, the value from
                                       !! the surface_forcing_CS is used.
-  logical :: Ice_Sheet_enabled = .false. !< Ice sheet adot is passed through the coupler
 end type ice_ocean_boundary_type
 
 integer :: id_clock_forcing !< A CPU time clock
