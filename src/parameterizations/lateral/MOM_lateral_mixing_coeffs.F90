@@ -924,7 +924,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
         ! Mask slopes where interface intersects topography
         if (min(h(i,J,k),h(i,J+1,k)) < H_cutoff) E_y(I,j) = 0.
       enddo ; enddo
-    else ! This branch is not used.
+    else 
       do j=js-1,je+1 ; do I=is-1,ie
         E_x(I,j) = CS%slope_x(I,j,k)
         if (min(h(I,j,k),h(I+1,j,k)) < H_cutoff) E_x(I,j) = 0.
@@ -959,7 +959,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh, calcul
         if (min(h(i,J,k),h(i,J+1,k)) < H_cutoff) U_yH_y(I,j) = 0.
         if (min(h(i,J,k),h(i,J+1,k)) < H_cutoff) V_yH_y(I,j) = 0.
       enddo ; enddo
-    else ! This branch is not used.
+    else 
       do j=js-1,je+1 ; do I=is-1,ie
         U_xH_x(I,j) =1.0*(G%IdxCu(I+1,j)*G%IdyCu(I+1,j)*uh(I+1,j,K) - G%IdxCu(I,j)*G%IdyCu(I,j)*uh(I,j,k))*( &
                      G%IareaT(I+1,j) + G%IareaT(I,j)) * G%dyCu(I,j) * (1.0*(h(I+1,j,K) - h(I,j,K))/( &
