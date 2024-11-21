@@ -353,24 +353,24 @@ type, public :: ocean_OBC_type
   type(remapping_CS),      pointer :: remap_h_CS=> NULL() !< ALE remapping control structure for
                                                           !! thickness-based fields on segments
   type(OBC_registry_type), pointer :: OBC_Reg => NULL()  !< Registry type for boundaries
-  real, allocatable :: rx_normal(:,:,:)  !< Array storage for normal phase speed for EW radiation OBCs in units of
+  real, pointer :: rx_normal(:,:,:)  !< Array storage for normal phase speed for EW radiation OBCs in units of
                                          !! grid points per timestep [nondim]
-  real, allocatable :: ry_normal(:,:,:)  !< Array storage for normal phase speed for NS radiation OBCs in units of
+  real, pointer :: ry_normal(:,:,:)  !< Array storage for normal phase speed for NS radiation OBCs in units of
                                          !! grid points per timestep [nondim]
-  real, allocatable :: rx_oblique_u(:,:,:) !< X-direction oblique boundary condition radiation speeds squared
+  real, pointer :: rx_oblique_u(:,:,:) !< X-direction oblique boundary condition radiation speeds squared
                                            !! at u points for restarts [L2 T-2 ~> m2 s-2]
-  real, allocatable :: ry_oblique_u(:,:,:) !< Y-direction oblique boundary condition radiation speeds squared
+  real, pointer :: ry_oblique_u(:,:,:) !< Y-direction oblique boundary condition radiation speeds squared
                                            !! at u points for restarts [L2 T-2 ~> m2 s-2]
-  real, allocatable :: rx_oblique_v(:,:,:) !< X-direction oblique boundary condition radiation speeds squared
+  real, pointer :: rx_oblique_v(:,:,:) !< X-direction oblique boundary condition radiation speeds squared
                                            !! at v points for restarts [L2 T-2 ~> m2 s-2]
-  real, allocatable :: ry_oblique_v(:,:,:) !< Y-direction oblique boundary condition radiation speeds squared
+  real, pointer :: ry_oblique_v(:,:,:) !< Y-direction oblique boundary condition radiation speeds squared
                                            !! at v points for restarts [L2 T-2 ~> m2 s-2]
-  real, allocatable :: cff_normal_u(:,:,:) !< Denominator for normalizing EW oblique boundary condition radiation
+  real, pointer :: cff_normal_u(:,:,:) !< Denominator for normalizing EW oblique boundary condition radiation
                                            !! rates at u points for restarts [L2 T-2 ~> m2 s-2]
-  real, allocatable :: cff_normal_v(:,:,:) !< Denominator for normalizing NS oblique boundary condition radiation
+  real, pointer :: cff_normal_v(:,:,:) !< Denominator for normalizing NS oblique boundary condition radiation
                                            !! rates at v points for restarts [L2 T-2 ~> m2 s-2]
-  real, allocatable :: tres_x(:,:,:,:)   !< Array storage of tracer reservoirs for restarts, in unscaled units [conc]
-  real, allocatable :: tres_y(:,:,:,:)   !< Array storage of tracer reservoirs for restarts, in unscaled units [conc]
+  real, pointer :: tres_x(:,:,:,:)   !< Array storage of tracer reservoirs for restarts, in unscaled units [conc]
+  real, pointer :: tres_y(:,:,:,:)   !< Array storage of tracer reservoirs for restarts, in unscaled units [conc]
   logical :: debug                       !< If true, write verbose checksums for debugging purposes.
   real :: silly_h  !< A silly value of thickness outside of the domain that can be used to test
                    !! the independence of the OBCs to this external data [Z ~> m].
@@ -1956,15 +1956,15 @@ subroutine open_boundary_init(G, GV, US, param_file, OBC, restart_CS)
     call create_group_pass(OBC%pass_oblique, OBC%cff_normal_u, OBC%cff_normal_v, G%Domain, To_All+Scalar_Pair)
     call do_group_pass(OBC%pass_oblique, G%Domain)
   endif
-  if (allocated(OBC%tres_x) .and. allocated(OBC%tres_y)) then
+  if (associated(OBC%tres_x) .and. associated(OBC%tres_y)) then
     do m=1,OBC%ntr
       call pass_vector(OBC%tres_x(:,:,:,m), OBC%tres_y(:,:,:,m), G%Domain, To_All+Scalar_Pair)
     enddo
-  elseif (allocated(OBC%tres_x)) then
+  elseif (associated(OBC%tres_x)) then
     do m=1,OBC%ntr
       call pass_var(OBC%tres_x(:,:,:,m), G%Domain, position=EAST_FACE)
     enddo
-  elseif (allocated(OBC%tres_y)) then
+  elseif (associated(OBC%tres_y)) then
     do m=1,OBC%ntr
       call pass_var(OBC%tres_y(:,:,:,m), G%Domain, position=NORTH_FACE)
     enddo
@@ -2009,16 +2009,16 @@ subroutine open_boundary_dealloc(OBC)
   if (allocated(OBC%segment)) deallocate(OBC%segment)
   if (allocated(OBC%segnum_u)) deallocate(OBC%segnum_u)
   if (allocated(OBC%segnum_v)) deallocate(OBC%segnum_v)
-  if (allocated(OBC%rx_normal)) deallocate(OBC%rx_normal)
-  if (allocated(OBC%ry_normal)) deallocate(OBC%ry_normal)
-  if (allocated(OBC%rx_oblique_u)) deallocate(OBC%rx_oblique_u)
-  if (allocated(OBC%ry_oblique_u)) deallocate(OBC%ry_oblique_u)
-  if (allocated(OBC%rx_oblique_v)) deallocate(OBC%rx_oblique_v)
-  if (allocated(OBC%ry_oblique_v)) deallocate(OBC%ry_oblique_v)
-  if (allocated(OBC%cff_normal_u)) deallocate(OBC%cff_normal_u)
-  if (allocated(OBC%cff_normal_v)) deallocate(OBC%cff_normal_v)
-  if (allocated(OBC%tres_x)) deallocate(OBC%tres_x)
-  if (allocated(OBC%tres_y)) deallocate(OBC%tres_y)
+  if (associated(OBC%rx_normal)) nullify(OBC%rx_normal)
+  if (associated(OBC%ry_normal)) nullify(OBC%ry_normal)
+  if (associated(OBC%rx_oblique_u)) nullify(OBC%rx_oblique_u)
+  if (associated(OBC%ry_oblique_u)) nullify(OBC%ry_oblique_u)
+  if (associated(OBC%rx_oblique_v)) nullify(OBC%rx_oblique_v)
+  if (associated(OBC%ry_oblique_v)) nullify(OBC%ry_oblique_v)
+  if (associated(OBC%cff_normal_u)) nullify(OBC%cff_normal_u)
+  if (associated(OBC%cff_normal_v)) nullify(OBC%cff_normal_v)
+  if (associated(OBC%tres_x)) nullify(OBC%tres_x)
+  if (associated(OBC%tres_y)) nullify(OBC%tres_y)
   if (associated(OBC%remap_z_CS)) deallocate(OBC%remap_z_CS)
   if (associated(OBC%remap_h_CS)) deallocate(OBC%remap_h_CS)
   deallocate(OBC)
@@ -3377,7 +3377,7 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
                   haloshift=0, symmetric=sym, unscale=1.0/US%L_T_to_m_s**2)
     endif
     if (OBC%ntr == 0) return
-    if (.not. allocated (OBC%tres_x) .or. .not. allocated (OBC%tres_y)) return
+    if (.not. associated (OBC%tres_x) .or. .not. associated (OBC%tres_y)) return
     do m=1,OBC%ntr
       write(var_num,'(I3.3)') m
       call uvchksum("radiation_OBCs: OBC%tres_[xy]_"//var_num, OBC%tres_x(:,:,:,m), OBC%tres_y(:,:,:,m), G%HI, &
@@ -5497,7 +5497,7 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
                               ((1.0-a_out+a_in)*segment%tr_Reg%Tr(m)%tres(I,j,k)+ &
                               ((u_L_out+a_out)*Reg%Tr(ntr_id)%t(I+ishift,j,k) - &
                                (u_L_in+a_in)*segment%tr_Reg%Tr(m)%t(I,j,k)))
-            if (allocated(OBC%tres_x)) OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(I,j,k)
+            if (associated(OBC%tres_x)) OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(I,j,k)
           enddo ; endif
         enddo
       enddo
@@ -5537,7 +5537,7 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
                               ((1.0-a_out+a_in)*segment%tr_Reg%Tr(m)%tres(i,J,k) + &
                               ((v_L_out+a_out)*Reg%Tr(ntr_id)%t(i,J+jshift,k) - &
                                (v_L_in+a_in)*segment%tr_Reg%Tr(m)%t(i,J,k)))
-            if (allocated(OBC%tres_y)) OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,J,k)
+            if (associated(OBC%tres_y)) OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,J,k)
           enddo ; endif
         enddo
       enddo
@@ -5613,7 +5613,7 @@ subroutine remap_OBC_fields(G, GV, h_old, h_new, OBC, PCM_cell)
 
           ! Update tracer concentrations
           segment%tr_Reg%Tr(m)%tres(I,j,:) = tr_column(:)
-          if (allocated(OBC%tres_x)) then ; do k=1,nz
+          if (associated(OBC%tres_x)) then ; do k=1,nz
             OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(I,j,k)
           enddo ; endif
 
@@ -5680,7 +5680,7 @@ subroutine remap_OBC_fields(G, GV, h_old, h_new, OBC, PCM_cell)
 
           ! Update tracer concentrations
           segment%tr_Reg%Tr(m)%tres(i,J,:) = tr_column(:)
-          if (allocated(OBC%tres_y)) then ; do k=1,nz
+          if (associated(OBC%tres_y)) then ; do k=1,nz
             OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,J,k)
           enddo ; endif
 
