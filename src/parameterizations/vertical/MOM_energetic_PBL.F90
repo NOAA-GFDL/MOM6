@@ -846,7 +846,7 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
   integer :: k, nz, itt, max_itt
  
   ! variables for ML based diffusivity
-  real :: v0_dummy ! Variable which get recycled, set equal to v_0
+  real :: v0_dummy ! Variable which get recycled, set equal to v_0 [Z T-1 ~> m s-1].
   
   nz = GV%ke
 
