@@ -6125,6 +6125,14 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
           segment%field(n)%buffer_src)
     endif
 
+    if (allocated(segment_in%field(n)%buffer_dst)) then
+      call allocate_rotated_array(segment_in%field(n)%buffer_dst, &
+          lbound(segment_in%field(n)%buffer_dst), turns, &
+          segment%field(n)%buffer_dst)
+      call rotate_array(segment_in%field(n)%buffer_dst, turns, &
+          segment%field(n)%buffer_dst)
+    endif
+
     segment%field(n)%nk_src = segment_in%field(n)%nk_src
 
     if (allocated(segment_in%field(n)%dz_src)) then
@@ -6137,6 +6145,8 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
 
     segment%field(n)%value = segment_in%field(n)%value
   enddo
+
+  call rotate_array(segment_in%SSH, turns, segment%SSH)
 
   segment%temp_segment_data_exists = segment_in%temp_segment_data_exists
   segment%salt_segment_data_exists = segment_in%salt_segment_data_exists
