@@ -5128,11 +5128,9 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
       if (len_trim(wave_drag_u) > 0 .and. len_trim(wave_drag_v) > 0) then
         call MOM_read_data(wave_drag_file, wave_drag_u, CS%lin_drag_u, G%Domain, &
                            position=EAST_FACE, scale=wave_drag_scale*GV%m_to_H*US%T_to_s)
-        call pass_var(CS%lin_drag_u, G%Domain)
-
         call MOM_read_data(wave_drag_file, wave_drag_v, CS%lin_drag_v, G%Domain, &
                            position=NORTH_FACE, scale=wave_drag_scale*GV%m_to_H*US%T_to_s)
-        call pass_var(CS%lin_drag_v, G%Domain)
+        call pass_vector(CS%lin_drag_u, CS%lin_drag_v, G%domain, direction=To_All+SCALAR_PAIR)
 
       elseif (len_trim(wave_drag_var) > 0) then
         allocate(lin_drag_h(isd:ied,jsd:jed), source=0.0)
@@ -5168,11 +5166,9 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
         if (len_trim(m2_drag_u) > 0 .and. len_trim(m2_drag_v) > 0) then
           call MOM_read_data(wave_drag_file, m2_drag_u, CS%lin_drag_um2, G%Domain, &
                              position=EAST_FACE, scale=m2_drag_scale*GV%m_to_H*US%T_to_s)
-          call pass_var(CS%lin_drag_um2, G%Domain)
-
           call MOM_read_data(wave_drag_file, m2_drag_v, CS%lin_drag_vm2, G%Domain, &
                              position=NORTH_FACE, scale=m2_drag_scale*GV%m_to_H*US%T_to_s)
-          call pass_var(CS%lin_drag_vm2, G%Domain)
+          call pass_vector(CS%lin_drag_um2, CS%lin_drag_vm2, G%domain, direction=To_All+SCALAR_PAIR)
 
         elseif (len_trim(m2_drag_var) > 0) then
           allocate(lin_drag_h(isd:ied,jsd:jed), source=0.0)
@@ -5194,11 +5190,9 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
         if (len_trim(k1_drag_u) > 0 .and. len_trim(k1_drag_v) > 0) then
           call MOM_read_data(wave_drag_file, k1_drag_u, CS%lin_drag_uk1, G%Domain, &
                              position=EAST_FACE, scale=k1_drag_scale*GV%m_to_H*US%T_to_s)
-          call pass_var(CS%lin_drag_uk1, G%Domain)
-
           call MOM_read_data(wave_drag_file, k1_drag_v, CS%lin_drag_vk1, G%Domain, &
                              position=NORTH_FACE, scale=k1_drag_scale*GV%m_to_H*US%T_to_s)
-          call pass_var(CS%lin_drag_vk1, G%Domain)
+          call pass_vector(CS%lin_drag_uk1, CS%lin_drag_vk1, G%domain, direction=To_All+SCALAR_PAIR)
 
         elseif (len_trim(k1_drag_var) > 0) then
           allocate(lin_drag_h(isd:ied,jsd:jed), source=0.0)
