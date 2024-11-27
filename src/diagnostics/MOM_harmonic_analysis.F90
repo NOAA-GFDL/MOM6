@@ -388,23 +388,16 @@ subroutine HA_solver(ha1, nc, FtF, x)
   type(HA_type), pointer,              intent(in)  :: ha1    !< Control structure for the current field
   integer,                             intent(in)  :: nc     !< Number of harmonic constituents
   real, dimension(:,:),                intent(in)  :: FtF    !< Accumulator of (F' * F) for all fields [nondim]
-  real, dimension(:,:,:), allocatable, intent(out) :: x      !< Solution vector of harmonic constants [A]
+  real, dimension(ha1%is:ha1%ie,ha1%js:ha1%je,2*nc+1), &
+                                       intent(out) :: x      !< Solution vector of harmonic constants [A]
 
   ! Local variables
   real :: tmp0                                !< Temporary variable for Cholesky decomposition [nondim]
-  real, dimension(:,:),   allocatable :: L    !< Lower triangular matrix of Cholesky decomposition [nondim]
-  real, dimension(:),     allocatable :: tmp1 !< Inverse of the diagonal entries of L [nondim]
-  real, dimension(:,:),   allocatable :: tmp2 !< 2D temporary array involving FtSSH [A]
-  real, dimension(:,:,:), allocatable :: y    !< 3D temporary array, i.e., L' * x [A]
-  integer :: k, m, n, is, ie, js, je
-
-  is = ha1%is ; ie = ha1%ie ; js = ha1%js ; je = ha1%je
-
-  allocate(L(1:2*nc+1,1:2*nc+1), source=0.0)
-  allocate(tmp1(1:2*nc+1), source=0.0)
-  allocate(tmp2(is:ie,js:je), source=0.0)
-  allocate(x(is:ie,js:je,2*nc+1), source=0.0)
-  allocate(y(is:ie,js:je,2*nc+1), source=0.0)
+  real, dimension(2*nc+1,2*nc+1)      :: L    !< Lower triangular matrix of Cholesky decomposition [nondim]
+  real, dimension(2*nc+1)             :: tmp1 !< Inverse of the diagonal entries of L [nondim]
+  real, dimension(ha1%is:ha1%ie,ha1%js:ha1%je)        :: tmp2 !< 2D temporary array involving FtSSH [A]
+  real, dimension(ha1%is:ha1%ie,ha1%js:ha1%je,2*nc+1) :: y    !< 3D temporary array, i.e., L' * x [A]
+  integer :: k, m, n
 
   ! Cholesky decomposition
   do m=1,2*nc+1
@@ -444,11 +437,6 @@ subroutine HA_solver(ha1, nc, FtF, x)
     enddo
     x(:,:,k) = (y(:,:,k) - tmp2(:,:)) * tmp1(k)
   enddo
-
-  deallocate(tmp1)
-  deallocate(tmp2)
-  deallocate(L)
-  deallocate(y)
 
 end subroutine HA_solver
 
