@@ -276,10 +276,10 @@ type, public :: MOM_control_struct ; private
   type(time_type), pointer :: Time   !< pointer to the ocean clock
   real    :: dt                      !< (baroclinic) dynamics time step [T ~> s]
   real    :: dt_therm                !< diabatic time step [T ~> s]
-  real    :: dt_tadvect              !< tracer advection time step [T ~> s]
+  real    :: dt_tr_adv               !< tracer advection time step [T ~> s]
   logical :: thermo_spans_coupling   !< If true, thermodynamic and tracer time
                                      !! steps can span multiple coupled time steps.
-  logical :: tadvect_spans_coupling   !< If true, thermodynamic and tracer time
+  logical :: tradv_spans_coupling    !< If true, thermodynamic and tracer time
   integer :: nstep_tot = 0           !< The total number of dynamic timesteps taken
                                      !! so far in this run segment
   logical :: count_calls = .false.   !< If true, count the calls to step_MOM, rather than the
@@ -547,7 +547,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
   real :: time_interval   ! time interval covered by this run segment [T ~> s].
   real :: dt              ! baroclinic time step [T ~> s]
   real :: dtdia           ! time step for diabatic processes [T ~> s]
-  real :: dt_tadvect      ! time step for tracer advection [T ~> s]
+  real :: dt_tr_adv       ! time step for tracer advection [T ~> s]
   real :: dt_therm        ! a limited and quantized version of CS%dt_therm [T ~> s]
   real :: dt_therm_here   ! a further limited value of dt_therm [T ~> s]
 
@@ -562,7 +562,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
   logical :: do_diabatic     ! If true, do diabatic update.
   logical :: thermo_does_span_coupling ! If true,thermodynamic (diabatic) forcing spans
                                        ! multiple coupling timesteps.
-  logical :: tadvect_does_span_coupling ! If true, tracer advection spans
+  logical :: tradv_does_span_coupling  ! If true, tracer advection spans
                                        ! multiple coupling timesteps.
   logical :: do_dyn     ! If true, dynamics are updated with this call.
   logical :: do_thermo  ! If true, thermodynamics and remapping may be applied with this call.
@@ -669,8 +669,8 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
     dt = time_interval / real(n_max)
     thermo_does_span_coupling = (CS%thermo_spans_coupling .and. &
                                 (CS%dt_therm > 1.5*cycle_time))
-    tadvect_does_span_coupling = (CS%tadvect_spans_coupling .and. &
-                                (CS%dt_tadvect > 1.5*cycle_time))
+    tradv_does_span_coupling = (CS%tradv_spans_coupling .and. &
+                                (CS%dt_tr_adv > 1.5*cycle_time))
     if (thermo_does_span_coupling) then
       ! Set dt_therm to be an integer multiple of the coupling time step.
       dt_therm = cycle_time * floor(CS%dt_therm / cycle_time + 0.001)
@@ -683,17 +683,17 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
       ntstep = MAX(1, MIN(n_max, floor(CS%dt_therm/dt + 0.001)))
       dt_therm = dt*ntstep
     endif
-    if (tadvect_does_span_coupling) then
-      ! Set dt_tadvect to be an integer multiple of the coupling time step.
-      dt_tadvect = cycle_time * floor(CS%dt_tadvect / cycle_time + 0.001)
-      ntastep = floor(dt_tadvect/dt + 0.001)
+    if (tradv_does_span_coupling) then
+      ! Set dt_tr_adv to be an integer multiple of the coupling time step.
+      dt_tr_adv = cycle_time * floor(CS%dt_tr_adv / cycle_time + 0.001)
+      ntastep = floor(dt_tr_adv/dt + 0.001)
     elseif (.not.do_thermo) then
-      dt_tadvect = CS%dt_tadvect
-      if (present(cycle_length)) dt_tadvect = min(CS%dt_tadvect, cycle_length)
+      dt_tr_adv = CS%dt_tr_adv
+      if (present(cycle_length)) dt_tr_adv = min(CS%dt_tr_adv, cycle_length)
       ! ntstep is not used.
     else
-      ntastep = MAX(1, MIN(n_max, floor(CS%dt_tadvect/dt + 0.001)))
-      dt_tadvect = dt*ntastep
+      ntastep = MAX(1, MIN(n_max, floor(CS%dt_tr_adv/dt + 0.001)))
+      dt_tr_adv = dt*ntastep
     endif
 
     !---------- Initiate group halo pass of the forcing fields
@@ -945,8 +945,9 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
       !===========================================================================
       ! This is the start of the tracer advection part of the algorithm.
 
-      if (tadvect_does_span_coupling .or. .not.do_thermo) then
-        do_advection = (CS%t_dyn_rel_adv + 0.5*dt > dt_tadvect)
+      if (tradv_does_span_coupling .or. .not.do_thermo) then
+        do_advection = (CS%t_dyn_rel_adv + 0.5*dt > dt_tr_adv)
+        if (CS%t_dyn_rel_thermo + 0.5*dt > dt_therm) do_advection = .true.
       else
         do_advection = ((MOD(n,ntastep) == 0) .or. (n==n_max))
       endif
@@ -2376,12 +2377,11 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "coupling timestep in coupled mode.)", units="s", scale=US%s_to_T, &
                  fail_if_missing=.true.)
   call get_param(param_file, "MOM", "DT_THERM", CS%dt_therm, &
-                 "The thermodynamic time step. "//&
-                 "Ideally DT_THERM should be an integer multiple of DT "//&
-                 "and less than the forcing or coupling time-step, unless "//&
-                 "THERMO_SPANS_COUPLING is true, in which case DT_THERM "//&
-                 "can be an integer multiple of the coupling timestep.  By "//&
-                 "default DT_THERM is set to DT.", &
+                 "The thermodynamic time step. Ideally DT_THERM should be an "//&
+                 "integer multiple of DT and of DT_TRACER_ADVECT "//&
+                 "and less than the forcing or coupling time-step. However, if "//&
+                 "THERMO_SPANS_COUPLING is true, DT_THERM can be an integer multiple "//&
+                 "of the coupling timestep. By default DT_THERM is set to DT.", &
                  units="s", scale=US%s_to_T, default=US%T_to_s*CS%dt)
   call get_param(param_file, "MOM", "THERMO_SPANS_COUPLING", CS%thermo_spans_coupling, &
                  "If true, the MOM will take thermodynamic "//&
@@ -2389,22 +2389,21 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "The actual thermodynamic timestep that is used in this "//&
                  "case is the largest integer multiple of the coupling "//&
                  "timestep that is less than or equal to DT_THERM.", default=.false.)
-  call get_param(param_file, "MOM", "DT_TADVECT", CS%dt_tadvect, &
-                 "The tracer advection time step. "//&
-                 "Ideally DT_TADVECT should be an integer multiple of DT "//&
-                 "and less than the forcing or coupling time-step, unless "//&
-                 "TADVECT_SPANS_COUPLING is true, in which case DT_TADVECT "//&
-                 "can be an integer multiple of the coupling timestep.  By "//&
-                 "default DT_TADVECT is set to DT_THERM.", &
+  call get_param(param_file, "MOM", "DT_TRACER_ADVECT", CS%dt_tr_adv, &
+                 "The tracer advection time step. Ideally DT_TRACER_ADVECT should be an "//&
+                 "integer multiple of DT, less than DT_THERM, and less than the forcing "//&
+                 "or coupling time-step. However, if TRADV_SPANS_COUPLING is true, "//&
+                 "DT_TRACER_ADVECT can be longer than the coupling timestep. By "//&
+                 "default DT_TRACER_ADVECT is set to DT_THERM.", &
                  units="s", scale=US%s_to_T, default=US%T_to_s*CS%dt_therm)
-  call get_param(param_file, "MOM", "TADVECT_SPANS_COUPLING", CS%tadvect_spans_coupling, &
+  call get_param(param_file, "MOM", "TRADV_SPANS_COUPLING", CS%tradv_spans_coupling, &
                  "If true, the MOM will take tracer advection "//&
                  "timesteps that can be longer than the coupling timestep. "//&
                  "The actual tracer advection timestep that is used in this "//&
                  "case is the largest integer multiple of the coupling "//&
-                 "timestep that is less than or equal to DT_TADVECT.", default=.false.)
-  if ( CS%diabatic_first .and. (CS%dt_tadvect /= CS%dt_therm) ) then
-    call MOM_error(FATAL,"MOM: If using DIABATIC_FIRST, DT_TADVECT must equal DT_THERM.")
+                 "timestep that is less than or equal to DT_TRACER_ADVECT.", default=.false.)
+  if ( CS%diabatic_first .and. (CS%dt_tr_adv /= CS%dt_therm) ) then
+    call MOM_error(FATAL,"MOM: If using DIABATIC_FIRST, DT_TRACER_ADVECT must equal DT_THERM.")
   endif
 
   if (bulkmixedlayer) then
