@@ -6092,6 +6092,14 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
     segment%field(n)%handle = segment_in%field(n)%handle
     segment%field(n)%dz_handle = segment_in%field(n)%dz_handle
 
+    if (allocated(segment_in%field(n)%buffer_dst)) then
+      call allocate_rotated_array(segment_in%field(n)%buffer_dst, &
+          lbound(segment_in%field(n)%buffer_dst), turns, &
+          segment%field(n)%buffer_dst)
+      call rotate_array(segment_in%field(n)%buffer_dst, turns, &
+          segment%field(n)%buffer_dst)
+    endif
+
     if (modulo(turns, 2) /= 0) then
       select case (segment_in%field(n)%name)
         case ('U')
@@ -6102,7 +6110,7 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
           segment%field(n)%name = 'Vphase'
         case ('V')
           segment%field(n)%name = 'U'
-          segment%field(n)%value = -segment%field(n)%value
+          segment%field(n)%buffer_dst(:,:,:) = -segment%field(n)%buffer_dst(:,:,:)
         case ('Vamp')
           segment%field(n)%name = 'Uamp'
         case ('Vphase')
@@ -6124,14 +6132,6 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
           segment%field(n)%buffer_src)
       call rotate_array(segment_in%field(n)%buffer_src, turns, &
           segment%field(n)%buffer_src)
-    endif
-
-    if (allocated(segment_in%field(n)%buffer_dst)) then
-      call allocate_rotated_array(segment_in%field(n)%buffer_dst, &
-          lbound(segment_in%field(n)%buffer_dst), turns, &
-          segment%field(n)%buffer_dst)
-      call rotate_array(segment_in%field(n)%buffer_dst, turns, &
-          segment%field(n)%buffer_dst)
     endif
 
     segment%field(n)%nk_src = segment_in%field(n)%nk_src
