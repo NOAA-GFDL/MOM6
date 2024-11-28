@@ -113,7 +113,7 @@ use MOM_obsolete_diagnostics,  only : register_obsolete_diagnostics
 use MOM_open_boundary,         only : ocean_OBC_type, OBC_registry_type
 use MOM_open_boundary,         only : register_temp_salt_segments, update_segment_tracer_reservoirs
 use MOM_open_boundary,         only : open_boundary_register_restarts, remap_OBC_fields
-use MOM_open_boundary,         only : open_boundary_setup_vert
+use MOM_open_boundary,         only : open_boundary_setup_vert, update_OBC_segment_data
 use MOM_open_boundary,         only : rotate_OBC_config, rotate_OBC_init
 use MOM_porous_barriers,       only : porous_widths_layer, porous_widths_interface, porous_barriers_init
 use MOM_porous_barriers,       only : porous_barrier_CS
@@ -3039,8 +3039,13 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
       call update_ALE_sponge_field(CS%ALE_sponge_CSp, S_in, G, GV, CS%S)
     endif
 
-    if (associated(OBC_in)) &
+    if (associated(OBC_in)) then
       call rotate_OBC_init(OBC_in, G, GV, US, param_file, CS%tv, restart_CSp, CS%OBC)
+      if (CS%OBC%some_need_no_IO_for_data) then
+        call calc_derived_thermo(CS%tv, CS%h, G, GV, US)
+        call update_OBC_segment_data(G, GV, US, CS%OBC, CS%tv, CS%h, Time)
+      endif
+    endif
 
     deallocate(u_in)
     deallocate(v_in)
