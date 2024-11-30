@@ -320,7 +320,8 @@ type, public :: ocean_OBC_type
   logical :: add_tide_constituents = .false.          !< If true, add tidal constituents to the boundary elevation
                                                       !! and velocity. Will be set to true if n_tide_constituents > 0.
   character(len=2), allocatable, dimension(:) :: tide_names  !< Names of tidal constituents to add to the boundary data.
-  real, allocatable, dimension(:) :: tide_frequencies !< Angular frequencies of chosen tidal constituents [rad T-1 ~> rad s-1].
+  real, allocatable, dimension(:) :: tide_frequencies !< Angular frequencies of chosen tidal
+                                                      !! constituents [rad T-1 ~> rad s-1].
   real, allocatable, dimension(:) :: tide_eq_phases   !< Equilibrium phases of chosen tidal constituents [rad].
   real, allocatable, dimension(:) :: tide_fn          !< Amplitude modulation of boundary tides by nodal cycle [nondim].
   real, allocatable, dimension(:) :: tide_un          !< Phase modulation of boundary tides by nodal cycle [rad].
