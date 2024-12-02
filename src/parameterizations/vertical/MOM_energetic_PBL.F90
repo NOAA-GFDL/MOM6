@@ -156,7 +156,7 @@ type, public :: energetic_PBL_CS ; private
   real :: Max_Enhance_M = 5. !< The maximum allowed LT enhancement to the mixing [nondim].
 
   !/ Machine learned equation discovery model paramters ! eqdisc
-  logical :: eqdisc, eqdisc_v0  ! Machine Learned Equation discovery - shape function and velocity-scale
+  logical :: eqdisc, eqdisc_v0, eqdisc_v0h  ! Machine Learned Equation discovery - shape function and velocity-scale
   real :: v0 ! <v0 velocity scale from machine learning (GLSscheme) used for diffusivity [Z T-1 ~> m s-1]
   real :: v0_lower_cap ! Lower cap to prevent v0 from attaining anomlously low values [Z T-1 ~> m s-1]
   real :: f_lower ! Lower cap of |f| i.e. absolute of Coriolis parameter.
@@ -166,6 +166,7 @@ type, public :: energetic_PBL_CS ; private
   !/ Coefficients used in Machine learned diffusivity, Equations 6,7,10,11 in Sane et al. 2024
   real :: c1, c2, c3, c4, c5, c6, c7, c8, c9  ! Non-dimensional constants
   real :: c10, c11, c12, c13, c14, c15, c16   ! used in getting v0 and shape function [nondim]
+  real :: c17, c18, c19, c20, c21, c22, c23, c24   ! used in getting v0 and shape function [nondim]
   !/ Others
   type(time_type), pointer :: Time=>NULL() !< A pointer to the ocean model's clock.
 
@@ -998,8 +999,11 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
           v0_dummy = 0.0 ! a variable that gets passed on to subroutine get_eqdisc_v0
           CS%v0 = 0.0
           if (CS%eqdisc_v0 .eqv. .true.) then
-                  call get_eqdisc_v0(CS,absf,B_flux,u_star,MLD_guess,v0_dummy)
-                  CS%v0 = v0_dummy
+            call get_eqdisc_v0(CS,absf,B_flux,u_star,v0_dummy)
+            CS%v0 = v0_dummy
+          elseif (CS%eqdisc_v0h .eqv. .true.) then
+            call get_eqdisc_v0h(CS,B_flux,u_star,MLD_guess,v0_dummy)
+            CS%v0 = v0_dummy
           else
           endif
       endif
@@ -1700,13 +1704,11 @@ subroutine kappa_eqdisc(shape_func, CS, GV, h, absf, B_flux, u_star, MLD_guess)
 
   end subroutine kappa_eqdisc
 
-  subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, MLD_guess, v0_dummy)
+  subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
     ! gives velocity scale using equations that approximate neural network of Sane et al. 2023
     type(energetic_PBL_CS),  intent(inout) :: CS     !< Energetic PBL control struct
     real, intent(in) :: B_flux !< The surface buoyancy flux [Z2 T-3 ~> m2 s-3]
     real, intent(in) :: u_star !< The surface friction velocity [Z T-1 ~> m s-1]
-    real, intent(in) :: MLD_guess !< boundary layer depth guessed/found for iteration [Z ~> m]
-
     real, intent(in) :: absf  !< The absolute value of f [T-1 ~> s-1].
     real, intent(inout) :: v0_dummy   !< velocity scale v0, local variable [Z T-1 ~> m s-1]
 
@@ -1744,7 +1746,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, h, absf, B_flux, u_star, MLD_guess)
     ! setting v0_dummy here:
 
     if (bflux_c >= 0.0) then ! surface heating and neutral conditions
-    ! Equation 10 in Sane et al. 2024:
+    ! Equation 16 in Sane et al. 2024:
     ! \frac{v}{u_*} = \frac{-c_9}{p_1 + c_{10} + \frac{c_{11}^2}{p_1 - c_{11}} }
       p1 =  -(1.0/ust_c) * sqrt(abs(bflux_c)/absf_c) 
       p3 = (CS%c11**2.0) / (p1-CS%c11)
@@ -1752,7 +1754,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, h, absf, B_flux, u_star, MLD_guess)
       v0_dummy = -CS%c9/p4
       
     else ! surface cooling
-    ! Equation 11 in Sane et al. 2024:
+    ! Equation 17 in Sane et al. 2024:
     ! \frac{v}{u_*}=\frac{c_{12} p_1 \cdot \sqrt{p_2} }{1 +  ...
     ! \frac{(c_{13} e^{(-p_2/c_{14})} + c_{15}) }{p_1 ^2} }
     ! p1 is merged in p3
@@ -1774,6 +1776,66 @@ subroutine kappa_eqdisc(shape_func, CS, GV, h, absf, B_flux, u_star, MLD_guess)
     ! some cause issues such as anomlous surface warming. 
     ! this needs further investigation, our choices are motivated by practicallity for now.
 end subroutine get_eqdisc_v0
+
+subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
+    ! gives velocity scale using equations that approximate neural network of Sane et al. 2023
+    type(energetic_PBL_CS),  intent(inout) :: CS     !< Energetic PBL control struct
+    real, intent(in) :: B_flux !< The surface buoyancy flux [Z2 T-3 ~> m2 s-3]
+    real, intent(in) :: u_star !< The surface friction velocity [Z T-1 ~> m s-1]
+    real, intent(in) :: MLD_guess !< boundary layer depth guessed/found for iteration [Z ~> m]
+
+    real, intent(inout) :: v0_dummy   !< velocity scale v0, local variable [Z T-1 ~> m s-1]
+
+    ! local variables for this subroutine
+    real :: bflux_c  ! capped bflux [Z2 T-3 ~> m2 s-3]
+    real :: ust_c    ! capped ustar [Z T-1 ~> m s-1]
+    real :: ust_c_I    ! Inverse of capped ustar [Z-1 T ~> m-1 s]
+  
+    real :: p1 ! nondimensional numbers [nondim]
+    ! from Sane et al. 2024: 
+    ! " p_1 &= \frac{a}{u_*} \frac{|Bh|^(1/3)}
+    !   Where $a = -1$ for $B \leq 0$ and $a = 1$ for $B > 0$ to distinguish between 
+    !  surface heating and cooling conditions. " 
+
+    if (B_flux <= CS%bflux_lower_cap) then
+      bflux_c = CS%bflux_lower_cap
+    elseif (B_flux >= CS%bflux_upper_cap) then
+      bflux_c = CS%bflux_upper_cap
+    else
+      bflux_c = B_flux
+    endif
+    
+    ust_c = u_star
+    ust_c_I = 1.0 / ust_c
+
+    ! setting p1 here:
+    p1 =  abs(bflux_c * MLD_guess)**(1.0/3.0)
+    p1 = p1 * ust_c_I  
+
+    ! setting v0_dummy here:
+
+    if (bflux_c >= 0.0) then ! surface heating and neutral conditions
+    ! Equation 19 in Sane et al. 2024:
+    ! \frac{v_0}{u_*} = \frac{c_{17}}{ c_{18} p_1^3 + c_{19} p_1^2  + c_{20} }
+      v0_dummy = CS%c17 / ( ( CS%c18 * (p1**3.0) +  CS%c19* (p1**2.0) ) + CS%c20 )
+      
+    else ! surface cooling
+    ! Equation 20 in Sane et al. 2024:
+    ! \frac{v_0}{u_*} = \frac{c_{21} p_1}{c_{22} + \frac{c_{23}}{p_1 ^2}}  + c_{24}
+      v0_dummy  = (CS%c21*p1 / (CS%c22 + (CS%c23/ p1**2.0)  ))  +  CS%c24 
+    endif
+    
+    v0_dummy = v0_dummy * ust_c ! v0_dummy = v/u*, so it is multiplied by ust_c to get v0
+    v0_dummy = max(v0_dummy,CS%v0_lower_cap)  ! CS%v0_lower_cap
+    v0_dummy = min(v0_dummy,0.1) ! kept for safety, but has never hit this cap. 
+
+    ! v0_lower_cap has been set to 0.0001 as data below that values does not exist in the training
+    ! solution was tested for lower cap of 0.00001 and was found to be insensitive. 
+    ! sensitivity arises when lower cap is 0.0. That is when diffusivity attains extremely low values and 
+    ! they go near molecular diffusivity. Boundary layers might become "sub-grid" i.e. < 1 metre 
+    ! some cause issues such as anomlous surface warming. 
+    ! this needs further investigation, our choices are motivated by practicallity for now.
+end subroutine get_eqdisc_v0h
 
 !> This subroutine calculates the change in potential energy and or derivatives
 !! for several changes in an interface's diapycnal diffusivity times a timestep.
@@ -2652,6 +2714,10 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
    call get_param(param_file, mdl, "Equation_Discovery_velocity", CS%eqdisc_v0, &
                    "flag for activating equation discovery for velocity scale", &
                    units="nondim", default=.false.)
+   
+   call get_param(param_file, mdl, "Equation_Discovery_velocity_h", CS%eqdisc_v0h, &
+                   "flag for activating equation discovery for velocity scale with h as input", &
+                   units="nondim", default=.false.)
 
   ! sets a  lower cap for abs_f (Coriolis parameter) required in equation for v_0. 
   ! Small value, solution not sensitive below 1 deg Latitute
@@ -2711,10 +2777,28 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "c16", CS%c16, &
                        "Coefficient used for ML diffusivity,  ", units="nondim", default=0.0764)
 
+    ! coefficients related to surface heating v_0h, obtained using Genetic Programming
+  call get_param(param_file, mdl, "c12", CS%c17, &
+                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.104)
+  call get_param(param_file, mdl, "c13", CS%c18, &
+                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.863)
+  call get_param(param_file, mdl, "c14", CS%c19, &
+                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.15)
+  call get_param(param_file, mdl, "c15", CS%c20, &
+                       "Coefficient used for ML diffusivity,  ", units="nondim", default=1.255)
+
+  ! coefficients related to surface cooling v_0h, obtained by empirical fitting
+  call get_param(param_file, mdl, "c16", CS%c21, &
+                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.047)
+  call get_param(param_file, mdl, "c14", CS%c22, &
+                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.285)
+  call get_param(param_file, mdl, "c15", CS%c23, &
+                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.787)
+  call get_param(param_file, mdl, "c16", CS%c24, &
+                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.08)
+
   !/ options end for Machine Learning Equation Discovery
 
-
-  
 !/ Logging parameters
   ! This gives a minimum decay scale that is typically much less than Angstrom.
   CS%ustar_min = 2e-4*CS%omega*(GV%Angstrom_Z + GV%dZ_subroundoff)
