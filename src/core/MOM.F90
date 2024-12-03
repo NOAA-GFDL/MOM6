@@ -962,10 +962,12 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
 
     !===========================================================================
     ! This is the second place where the diabatic processes and remapping could occur.
-    if (thermo_does_span_coupling .or. .not.do_dyn) then
-      do_diabatic = (CS%t_dyn_rel_thermo + 0.5*dt > dt_therm)
-    else
-      do_diabatic = ((MOD(n,ntstep) == 0) .or. (n==n_max))
+    if (do_thermo) then
+      if (thermo_does_span_coupling .or. .not.do_dyn) then
+        do_diabatic = (CS%t_dyn_rel_thermo + 0.5*dt > dt_therm)
+      else
+        do_diabatic = ((MOD(n,ntstep) == 0) .or. (n==n_max))
+      endif
     endif
     if ((CS%t_dyn_rel_adv==0.0) .and. do_thermo .and. (.not.CS%diabatic_first) .and. do_diabatic) then
 
