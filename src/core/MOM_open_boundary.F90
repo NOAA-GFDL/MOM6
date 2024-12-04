@@ -6063,12 +6063,12 @@ subroutine rotate_OBC_init(OBC_in, G, GV, US, param_file, tv, restart_CS, OBC)
                  "If true, Temperature and salinity are used as state "//&
                  "variables.", default=.true., do_not_log=.true.)
 
+  if (use_temperature) &
+    call fill_temp_salt_segments(G, GV, US, OBC, tv)
+
   do l = 1, OBC%number_of_segments
     call rotate_OBC_segment_data(OBC_in%segment(l), OBC%segment(l), G%HI%turns)
   enddo
-
-  if (use_temperature) &
-    call fill_temp_salt_segments(G, GV, US, OBC, tv)
 
   call open_boundary_init(G, GV, US, param_file, OBC, restart_CS)
 end subroutine rotate_OBC_init
