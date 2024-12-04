@@ -6189,6 +6189,50 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
        call rotate_array(segment_in%nudged_tangential_vel, turns, segment%nudged_tangential_vel)
   if (allocated(segment_in%nudged_tangential_grad)) &
        call rotate_array(segment_in%nudged_tangential_grad, turns, segment%nudged_tangential_grad)
+  if (associated(segment_in%tr_Reg)) then
+    do n = 1, segment_in%tr_Reg%ntseg
+      call rotate_array(segment_in%tr_Reg%tr(n)%tres, turns, segment%tr_Reg%tr(n)%tres)
+      ! Testing this to see if it works for contant tres values. Probably wrong otherwise.
+      segment%tr_Reg%Tr(n)%is_initialized=.true.
+    enddo
+  endif
+
+  ! Only doing this here for 1 turns, get flow directed in the opposite direction.
+  ! Currents that are now E_W were N_S and the turns should change their sign.
+  if (turns == 1 .and. segment%is_E_or_W) then
+    if (allocated(segment_in%normal_vel)) &
+          segment%normal_vel(:,:,:) = - segment%normal_vel(:,:,:)
+    if (allocated(segment_in%normal_trans)) &
+          segment%normal_trans(:,:,:) = - segment%normal_trans(:,:,:)
+    if (allocated(segment_in%normal_vel_bt)) &
+          segment%normal_vel_bt(:,:) = - segment%normal_vel_bt(:,:)
+    if (allocated(segment_in%tangential_vel)) &
+          segment%tangential_vel(:,:,:) = - segment%tangential_vel(:,:,:)
+    if (allocated(segment_in%tangential_grad)) &
+          segment%tangential_grad(:,:,:) = - segment%tangential_grad(:,:,:)
+    if (allocated(segment_in%grad_normal)) &
+          segment%grad_normal(:,:,:) = - segment%grad_normal(:,:,:)
+    if (allocated(segment_in%grad_tan)) &
+          segment%grad_tan(:,:,:) = - segment%grad_tan(:,:,:)
+    if (allocated(segment_in%grad_gradient)) &
+          segment%grad_gradient(:,:,:) = - segment%grad_gradient(:,:,:)
+    if (allocated(segment%rx_norm_rad)) &
+          segment%rx_norm_rad(:,:,:) = - segment%rx_norm_rad(:,:,:)
+    if (allocated(segment%ry_norm_rad)) &
+          segment%ry_norm_rad(:,:,:) = - segment%ry_norm_rad(:,:,:)
+    if (allocated(segment%rx_norm_obl)) &
+          segment%rx_norm_obl(:,:,:) = - segment%rx_norm_obl(:,:,:)
+    if (allocated(segment%ry_norm_obl)) &
+          segment%ry_norm_obl(:,:,:) = - segment%ry_norm_obl(:,:,:)
+    if (allocated(segment_in%cff_normal)) &
+          segment%cff_normal(:,:,:) = - segment%cff_normal(:,:,:)
+    if (allocated(segment_in%nudged_normal_vel)) &
+          segment%nudged_normal_vel(:,:,:) = - segment%nudged_normal_vel(:,:,:)
+    if (allocated(segment_in%nudged_tangential_vel)) &
+          segment%nudged_tangential_vel(:,:,:) = - segment%nudged_tangential_vel(:,:,:)
+    if (allocated(segment_in%nudged_tangential_grad)) &
+          segment%nudged_tangential_grad(:,:,:) = - segment%nudged_tangential_grad(:,:,:)
+  endif
 
   segment%temp_segment_data_exists = segment_in%temp_segment_data_exists
   segment%salt_segment_data_exists = segment_in%salt_segment_data_exists

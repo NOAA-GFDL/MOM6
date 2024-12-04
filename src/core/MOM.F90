@@ -113,8 +113,7 @@ use MOM_obsolete_diagnostics,  only : register_obsolete_diagnostics
 use MOM_open_boundary,         only : ocean_OBC_type, OBC_registry_type
 use MOM_open_boundary,         only : register_temp_salt_segments, update_segment_tracer_reservoirs
 use MOM_open_boundary,         only : open_boundary_register_restarts, remap_OBC_fields
-use MOM_open_boundary,         only : open_boundary_setup_vert, update_OBC_segment_data
-use MOM_open_boundary,         only : initialize_segment_data
+use MOM_open_boundary,         only : open_boundary_setup_vert
 use MOM_open_boundary,         only : rotate_OBC_config, rotate_OBC_init
 use MOM_porous_barriers,       only : porous_widths_layer, porous_widths_interface, porous_barriers_init
 use MOM_porous_barriers,       only : porous_barrier_CS
