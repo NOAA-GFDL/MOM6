@@ -2002,6 +2002,9 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
        'ice shelf surface mass flux deposition from atmosphere', &
        'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
   endif
+  CS%id_shelf_sfc_mass_flux = register_diag_field('ice_shelf_model', 'sfc_mass_flux', CS%diag%axesT1, CS%Time, &
+      'ice shelf surface mass flux deposition from atmosphere', &
+      'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
 
   ! Scalars (area integrated over all ice sheets)
   CS%id_vaf = register_scalar_field('ice_shelf_model', 'int_vaf', CS%diag%axesT1, CS%Time, &
@@ -2232,6 +2235,10 @@ subroutine initialize_ice_shelf_fluxes(CS, ocn_grid, US, fluxes_in)
     deallocate(fluxes)
   endif
 
+  call register_restart_field(fluxes_in%shelf_sfc_mass_flux, "sfc_mass_flux", .true., CS%restart_CSp, &
+     "ice shelf surface mass flux deposition from atmosphere", &
+     'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
+
 end subroutine initialize_ice_shelf_fluxes
 
 !> Allocate and initialize the ice-shelf forcing elements of a mechanical forcing type.
@@ -2351,8 +2358,8 @@ subroutine initialize_shelf_mass(G, param_file, CS, ISS, new_sim)
 
 end subroutine initialize_shelf_mass
 !> This subroutine applies net accumulation/ablation at the top surface to the dynamic ice shelf.
-!>>acc_rate[m-s]=surf_mass_flux/density_ice is ablation/accumulation rate
-!>>positive for accumulation negative for ablation
+!! acc_rate[m-s]=surf_mass_flux/density_ice is ablation/accumulation rate
+!! positive for accumulation negative for ablation
 subroutine change_thickness_using_precip(CS, ISS, G, US, fluxes, time_step, Time)
   type(ice_shelf_CS),    intent(in)    :: CS  !< A pointer to the ice shelf control structure
   type(ocean_grid_type), intent(inout) :: G  !< The ocean's grid structure.
