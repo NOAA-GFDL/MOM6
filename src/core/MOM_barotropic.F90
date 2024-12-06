@@ -27,7 +27,6 @@ use MOM_restart, only : query_initialized, MOM_restart_CS
 use MOM_self_attr_load, only : scalar_SAL_sensitivity
 use MOM_self_attr_load, only : SAL_CS
 use MOM_streaming_filter, only : Filt_register, Filt_accum, Filter_CS
-use MOM_tidal_forcing, only : tidal_frequency
 use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : BT_cont_type, alloc_bt_cont_type
@@ -250,10 +249,9 @@ type, public :: barotropic_CS ; private
   logical :: linearized_BT_PV  !< If true, the PV and interface thicknesses used
                              !! in the barotropic Coriolis calculation is time
                              !! invariant and linearized.
-  logical :: use_filter_m2   !< If true, apply streaming band-pass filter for detecting
-                             !! instantaneous tidal signals.
-  logical :: use_filter_k1   !< If true, apply streaming band-pass filter for detecting
-                             !! instantaneous tidal signals.
+  logical :: use_filter      !< If true, use streaming band-pass filter to detect the
+                             !! instantaneous tidal signals in the simulation.
+  integer :: n_filters       !< Number of streaming band-pass filters to be used in the simulation.
   logical :: use_wide_halos  !< If true, use wide halos and march in during the
                              !! barotropic time stepping for efficiency.
   logical :: clip_velocity   !< If true, limit any velocity components that are
@@ -297,10 +295,8 @@ type, public :: barotropic_CS ; private
   type(hor_index_type), pointer :: debug_BT_HI => NULL() !< debugging copy of horizontal index_type
   type(SAL_CS), pointer :: SAL_CSp => NULL() !< Control structure for SAL
   type(harmonic_analysis_CS), pointer :: HA_CSp => NULL() !< Control structure for harmonic analysis
-  type(Filter_CS) :: Filt_CS_um2, & !< Control structures for the M2 streaming filter
-                     Filt_CS_vm2, & !< Control structures for the M2 streaming filter
-                     Filt_CS_uk1, & !< Control structures for the K1 streaming filter
-                     Filt_CS_vk1    !< Control structures for the K1 streaming filter
+  type(Filter_CS) :: Filt_CS_u, & !< Control structures for the streaming band-pass filter on u-grid
+                     Filt_CS_v    !< Control structures for the streaming band-pass filter on v-grid
   logical :: module_is_initialized = .false.  !< If true, module has been initialized
 
   integer :: isdw !< The lower i-memory limit for the wide halo arrays.
@@ -608,8 +604,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     DCor_v, &     ! An averaged total thickness at v points [H ~> m or kg m-2].
     Datv          ! Basin depth at v-velocity grid points times the x-grid
                   ! spacing [H L ~> m2 or kg m-1].
-  real, dimension(:,:), pointer :: um2, uk1, vm2, vk1
-                  ! M2 and K1 velocities from the output of streaming filters [m s-1]
+  real, dimension(:,:,:), pointer :: ufilt, vfilt
+                  ! Filtered velocities from the output of streaming filters [m s-1]
   real, target, dimension(SZIW_(CS),SZJW_(CS)) :: &
     eta, &        ! The barotropic free surface height anomaly or column mass
                   ! anomaly [H ~> m or kg m-2]
@@ -1598,15 +1594,9 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     endif ; enddo ; enddo
   endif
 
-  ! Here is an example of how the filter equations are time stepped to determine the M2 and K1 velocities.
-  ! The filters are initialized and registered in subroutine barotropic_init.
-  if (CS%use_filter_m2) then
-    call Filt_accum(ubt, um2, CS%Time, US, CS%Filt_CS_um2)
-    call Filt_accum(vbt, vm2, CS%Time, US, CS%Filt_CS_vm2)
-  endif
-  if (CS%use_filter_k1) then
-    call Filt_accum(ubt, uk1, CS%Time, US, CS%Filt_CS_uk1)
-    call Filt_accum(vbt, vk1, CS%Time, US, CS%Filt_CS_vk1)
+  if (CS%use_filter) then
+    call Filt_accum(ubt, ufilt, CS%Time, US, CS%Filt_CS_u)
+    call Filt_accum(vbt, vfilt, CS%Time, US, CS%Filt_CS_v)
   endif
 
   ! Zero out the arrays for various time-averaged quantities.
@@ -5283,32 +5273,17 @@ subroutine register_barotropic_restarts(HI, GV, US, param_file, CS, restart_CS)
                  "sum(u dh_dt) while also correcting for truncation errors.", &
                  default=.false., do_not_log=.true.)
 
-  call get_param(param_file, mdl, "STREAMING_FILTER_M2", CS%use_filter_m2, &
-                 "If true, turn on streaming band-pass filter for detecting "//&
-                 "instantaneous tidal signals.", default=.false.)
-  call get_param(param_file, mdl, "STREAMING_FILTER_K1", CS%use_filter_k1, &
-                 "If true, turn on streaming band-pass filter for detecting "//&
-                 "instantaneous tidal signals.", default=.false.)
-  call get_param(param_file, mdl, "FILTER_ALPHA_M2", am2, &
-                 "Bandwidth parameter of the streaming filter targeting the M2 frequency. "//&
-                 "Must be positive. To turn off filtering, set FILTER_ALPHA_M2 <= 0.0.", &
-                 default=0.0, units="nondim", do_not_log=.not.CS%use_filter_m2)
-  call get_param(param_file, mdl, "FILTER_ALPHA_K1", ak1, &
-                 "Bandwidth parameter of the streaming filter targeting the K1 frequency. "//&
-                 "Must be positive. To turn off filtering, set FILTER_ALPHA_K1 <= 0.0.", &
-                 default=0.0, units="nondim", do_not_log=.not.CS%use_filter_k1)
-  call get_param(param_file, mdl, "TIDE_M2_FREQ", om2, &
-                 "Frequency of the M2 tidal constituent. "//&
-                 "This is only used if TIDES and TIDE_M2"// &
-                 " are true, or if OBC_TIDE_N_CONSTITUENTS > 0 and M2"// &
-                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=tidal_frequency("M2"), &
-                 scale=US%T_to_s, do_not_log=.true.)
-  call get_param(param_file, mdl, "TIDE_K1_FREQ", ok1, &
-                 "Frequency of the K1 tidal constituent. "//&
-                 "This is only used if TIDES and TIDE_K1"// &
-                 " are true, or if OBC_TIDE_N_CONSTITUENTS > 0 and K1"// &
-                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=tidal_frequency("K1"), &
-                 scale=US%T_to_s, do_not_log=.true.)
+  call get_param(param_file, mdl, "USE_FILTER", CS%use_filter, &
+                 "If true, use streaming band-pass filters to detect the "//&
+                 "instantaneous tidal signals in the simulation.", default=.false.)
+  call get_param(param_file, mdl, "N_FILTERS", CS%n_filters, &
+                 "Number of streaming band-pass filters to be used in the simulation.", &
+                 default=0, do_not_log=.not.CS%use_filter)
+  if (CS%n_filters==0) CS%use_filter = .false.
+  if (CS%use_filter) then
+    call Filt_register(CS%n_filters, 'u', HI, US, param_file, CS%Filt_CS_u)
+    call Filt_register(CS%n_filters, 'v', HI, US, param_file, CS%Filt_CS_v)
+  endif
 
   ALLOC_(CS%ubtav(IsdB:IedB,jsd:jed))      ; CS%ubtav(:,:) = 0.0
   ALLOC_(CS%vbtav(isd:ied,JsdB:JedB))      ; CS%vbtav(:,:) = 0.0
@@ -5337,24 +5312,6 @@ subroutine register_barotropic_restarts(HI, GV, US, param_file, CS, restart_CS)
 
   call register_restart_field(CS%dtbt, "DTBT", .false., restart_CS, &
                               longname="Barotropic timestep", units="seconds", conversion=US%T_to_s)
-
-  ! Initialize and register streaming filters
-  if (CS%use_filter_m2) then
-    if (am2 > 0.0 .and. om2 > 0.0) then
-      call Filt_register(am2, om2, 'u', HI, CS%Filt_CS_um2)
-      call Filt_register(am2, om2, 'v', HI, CS%Filt_CS_vm2)
-    else
-      CS%use_filter_m2 = .false.
-    endif
-  endif
-  if (CS%use_filter_k1) then
-    if (ak1 > 0.0 .and. ok1 > 0.0) then
-      call Filt_register(ak1, ok1, 'u', HI, CS%Filt_CS_uk1)
-      call Filt_register(ak1, ok1, 'v', HI, CS%Filt_CS_vk1)
-    else
-      CS%use_filter_k1 = .false.
-    endif
-  endif
 
 end subroutine register_barotropic_restarts
 
