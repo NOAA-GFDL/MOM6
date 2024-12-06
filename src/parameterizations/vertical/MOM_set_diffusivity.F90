@@ -182,7 +182,7 @@ type, public :: set_diffusivity_CS ; private
   integer :: id_Kd_quad    = -1, id_Kd_itidal   = -1, id_Kd_Froude  = -1, id_Kd_slope = -1
   integer :: id_prof_leak  = -1, id_prof_quad   = -1, id_prof_itidal= -1
   integer :: id_prof_Froude= -1, id_prof_slope  = -1, id_bbl_thick = -1, id_kbbl = -1
-  integer :: id_Kd_Work_added
+  integer :: id_Kd_Work_added = -1
   !>@}
 
 end type set_diffusivity_CS
