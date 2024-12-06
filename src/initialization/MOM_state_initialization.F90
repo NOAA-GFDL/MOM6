@@ -278,6 +278,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
              " \t uniform - uniform thickness layers evenly distributed \n"//&
              " \t\t between the surface and MAXIMUM_DEPTH. \n"//&
              " \t list - read a list of positive interface depths. \n"//&
+             " \t param - use thicknesses from parameter THICKNESS_INIT_VALUES. \n"//&
              " \t DOME - use a slope and channel configuration for the \n"//&
              " \t\t DOME sill-overflow test case. \n"//&
              " \t ISOMIP - use a configuration for the \n"//&
@@ -317,6 +318,8 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
       case ("uniform"); call initialize_thickness_uniform(dz, depth_tot, G, GV, PF, &
                                  just_read=just_read)
       case ("list"); call initialize_thickness_list(dz, depth_tot, G, GV, US, PF, &
+                                 just_read=just_read)
+      case ("param"); call initialize_thickness_param(dz, depth_tot, G, GV, US, PF, &
                                  just_read=just_read)
       case ("DOME"); call DOME_initialize_thickness(dz, depth_tot, G, GV, PF, &
                               just_read=just_read)
@@ -1010,6 +1013,68 @@ subroutine initialize_thickness_list(h, depth_tot, G, GV, US, param_file, just_r
 
   call callTree_leave(trim(mdl)//'()')
 end subroutine initialize_thickness_list
+
+!> Initializes thickness based on a run-time parameter with nominal thickness
+!! for each layer
+subroutine initialize_thickness_param(h, depth_tot, G, GV, US, param_file, just_read)
+  type(ocean_grid_type),   intent(in)  :: G           !< The ocean's grid structure.
+  type(verticalGrid_type), intent(in)  :: GV          !< The ocean's vertical grid structure.
+  type(unit_scale_type),   intent(in)  :: US          !< A dimensional unit scaling type
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(out) :: h           !< The thickness that is being initialized [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)), &
+                           intent(in)  :: depth_tot   !< The nominal total depth of the ocean [Z ~> m]
+  type(param_file_type),   intent(in)  :: param_file  !< A structure indicating the open file
+                                                      !! to parse for model parameter values.
+  logical,                 intent(in)  :: just_read   !< If true, this call will only read
+                                                      !! parameters without changing h.
+  ! Local variables
+  character(len=40)  :: mdl = "initialize_thickness_param" ! This subroutine's name.
+  real :: e0(SZK_(GV)+1)  ! The resting interface heights [Z ~> m], usually
+                          ! negative because it is positive upward.
+  real :: eta1D(SZK_(GV)+1)! Interface height relative to the sea surface,
+                          ! positive upward [Z ~> m].
+  real :: dz(SZK_(GV))    ! The nominal initial layer thickness [Z ~> m], usually
+  real :: h0_def(SZK_(GV)) ! Uniform default values for dz [Z ~> m], usually
+  integer :: i, j, k, is, ie, js, je, nz
+
+  call callTree_enter(trim(mdl)//"(), MOM_state_initialization.F90")
+  if (G%max_depth<=0.) call MOM_error(FATAL, "initialize_thickness_param: "// &
+      "MAXIMUM_DEPTH has a nonsensical value! Was it set?")
+
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+
+  h0_def(:) = ( G%max_depth / real(nz) ) * US%Z_to_m
+  call get_param(param_file, mdl, "THICKNESS_INIT_VALUES", dz, &
+                 "A list of nominal thickness for each layer to initialize with", &
+                 units="m", scale=US%m_to_Z, defaults=h0_def, do_not_log=just_read)
+  if (just_read) return ! This subroutine has no run-time parameters.
+
+  e0(nz+1) = -G%max_depth
+  do k=nz, 1, -1
+    e0(K) = e0(K+1) + dz(k)
+  enddo
+
+  do j=js,je ; do i=is,ie
+    ! This sets the initial thickness (in m) of the layers.  The
+    ! thicknesses are set to insure that: 1.  each layer is at least an
+    ! Angstrom thick, and 2.  the interfaces are where they should be
+    ! based on the resting depths and interface height perturbations,
+    ! as long at this doesn't interfere with 1.
+    eta1D(nz+1) = -depth_tot(i,j)
+    do k=nz,1,-1
+      eta1D(K) = e0(K)
+      if (eta1D(K) < (eta1D(K+1) + GV%Angstrom_Z)) then
+        eta1D(K) = eta1D(K+1) + GV%Angstrom_Z
+        h(i,j,k) = GV%Angstrom_Z
+      else
+        h(i,j,k) = eta1D(K) - eta1D(K+1)
+      endif
+    enddo
+  enddo ; enddo
+
+  call callTree_leave(trim(mdl)//'()')
+end subroutine initialize_thickness_param
 
 !> Search density space for location of layers (not implemented!)
 subroutine initialize_thickness_search
@@ -2339,26 +2404,6 @@ subroutine set_velocity_depth_max(G)
   enddo ; enddo
 end subroutine set_velocity_depth_max
 
-!> Subroutine to pre-compute global integrals of grid quantities for
-!! later use in reporting diagnostics
-subroutine compute_global_grid_integrals(G, US)
-  type(ocean_grid_type), intent(inout) :: G !< The ocean's grid structure
-  type(unit_scale_type), intent(in)    :: US !< A dimensional unit scaling type
-  ! Local variables
-  real, dimension(G%isc:G%iec, G%jsc:G%jec) :: tmpForSumming ! Masked and unscaled areas for sums [m2]
-  real :: area_scale ! A conversion factor to prepare for reproducing sums [m2 L-2 ~> 1]
-  integer :: i,j
-
-  area_scale = US%L_to_m**2
-  tmpForSumming(:,:) = 0.
-  G%areaT_global = 0.0 ; G%IareaT_global = 0.0
-  do j=G%jsc,G%jec ; do i=G%isc,G%iec
-    tmpForSumming(i,j) = area_scale*G%areaT(i,j) * G%mask2dT(i,j)
-  enddo ; enddo
-  G%areaT_global = reproducing_sum(tmpForSumming)
-  G%IareaT_global = 1. / (G%areaT_global)
-end subroutine compute_global_grid_integrals
-
 !> This subroutine sets the 4 bottom depths at velocity points to be the
 !! minimum of the adjacent depths.
 subroutine set_velocity_depth_min(G)
@@ -2577,10 +2622,12 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
                  "that were in use at the end of 2018.  Higher values result in the use of more "//&
                  "robust and accurate forms of mathematically equivalent expressions.", &
                  default=default_answer_date, do_not_log=just_read.or.(.not.GV%Boussinesq))
+    call get_param(PF, mdl, "REMAPPING_USE_OM4_SUBCELLS", om4_remap_via_sub_cells, &
+                   do_not_log=.true., default=.true.)
     call get_param(PF, mdl, "Z_INIT_REMAPPING_USE_OM4_SUBCELLS", om4_remap_via_sub_cells, &
                  "If true, use the OM4 remapping-via-subcells algorithm for initialization. "//&
                  "See REMAPPING_USE_OM4_SUBCELLS for more details. "//&
-                 "We recommend setting this option to false.", default=.true.)
+                 "We recommend setting this option to false.", default=om4_remap_via_sub_cells)
     if (.not.GV%Boussinesq) remap_answer_date = max(remap_answer_date, 20230701)
   endif
   call get_param(PF, mdl, "HOR_REGRID_ANSWER_DATE", hor_regrid_answer_date, &
