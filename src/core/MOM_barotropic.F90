@@ -26,7 +26,7 @@ use MOM_restart, only : register_restart_field, register_restart_pair
 use MOM_restart, only : query_initialized, MOM_restart_CS
 use MOM_self_attr_load, only : scalar_SAL_sensitivity
 use MOM_self_attr_load, only : SAL_CS
-use MOM_streaming_filter, only : Filt_register, Filt_accum, Filter_CS
+use MOM_streaming_filter, only : Filt_register, Filt_init, Filt_accum, Filter_CS
 use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : BT_cont_type, alloc_bt_cont_type
@@ -4974,6 +4974,12 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
     endif ! len_trim(wave_drag_file) > 0
   endif ! CS%linear_wave_drag
 
+  ! Initialize streaming band-pass filters
+  if (CS%use_filter) then
+    call Filt_init(param_file, US, CS%Filt_CS_u, restart_CS)
+    call Filt_init(param_file, US, CS%Filt_CS_v, restart_CS)
+  endif
+
   CS%dtbt_fraction = 0.98 ; if (dtbt_input < 0.0) CS%dtbt_fraction = -dtbt_input
 
   dtbt_tmp = -1.0
@@ -5259,8 +5265,6 @@ subroutine register_barotropic_restarts(HI, GV, US, param_file, CS, restart_CS)
   type(vardesc) :: vd(3)
   character(len=40)  :: mdl = "MOM_barotropic"  ! This module's name.
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
-  real :: am2, ak1      !< Bandwidth parameters of the M2 and K1 streaming filters [nondim]
-  real :: om2, ok1      !< Target frequencies of the M2 and K1 streaming filters [T-1 ~> s-1]
 
   isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed
   IsdB = HI%IsdB ; IedB = HI%IedB ; JsdB = HI%JsdB ; JedB = HI%JedB
@@ -5272,18 +5276,6 @@ subroutine register_barotropic_restarts(HI, GV, US, param_file, CS, restart_CS)
                  "This is a decent approximation to the inclusion of "//&
                  "sum(u dh_dt) while also correcting for truncation errors.", &
                  default=.false., do_not_log=.true.)
-
-  call get_param(param_file, mdl, "USE_FILTER", CS%use_filter, &
-                 "If true, use streaming band-pass filters to detect the "//&
-                 "instantaneous tidal signals in the simulation.", default=.false.)
-  call get_param(param_file, mdl, "N_FILTERS", CS%n_filters, &
-                 "Number of streaming band-pass filters to be used in the simulation.", &
-                 default=0, do_not_log=.not.CS%use_filter)
-  if (CS%n_filters==0) CS%use_filter = .false.
-  if (CS%use_filter) then
-    call Filt_register(CS%n_filters, 'u', HI, US, param_file, CS%Filt_CS_u)
-    call Filt_register(CS%n_filters, 'v', HI, US, param_file, CS%Filt_CS_v)
-  endif
 
   ALLOC_(CS%ubtav(IsdB:IedB,jsd:jed))      ; CS%ubtav(:,:) = 0.0
   ALLOC_(CS%vbtav(isd:ied,JsdB:JedB))      ; CS%vbtav(:,:) = 0.0
@@ -5312,6 +5304,19 @@ subroutine register_barotropic_restarts(HI, GV, US, param_file, CS, restart_CS)
 
   call register_restart_field(CS%dtbt, "DTBT", .false., restart_CS, &
                               longname="Barotropic timestep", units="seconds", conversion=US%T_to_s)
+
+  ! Initialize and register streaming band-pass filters
+  call get_param(param_file, mdl, "USE_FILTER", CS%use_filter, &
+                 "If true, use streaming band-pass filters to detect the "//&
+                 "instantaneous tidal signals in the simulation.", default=.false.)
+  call get_param(param_file, mdl, "N_FILTERS", CS%n_filters, &
+                 "Number of streaming band-pass filters to be used in the simulation.", &
+                 default=0, do_not_log=.not.CS%use_filter)
+  if (CS%n_filters==0) CS%use_filter = .false.
+  if (CS%use_filter) then
+    call Filt_register(CS%n_filters, 'ubt', 'u', HI, CS%Filt_CS_u, restart_CS)
+    call Filt_register(CS%n_filters, 'vbt', 'v', HI, CS%Filt_CS_v, restart_CS)
+  endif
 
 end subroutine register_barotropic_restarts
 
