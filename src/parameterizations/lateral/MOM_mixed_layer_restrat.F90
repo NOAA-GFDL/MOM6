@@ -510,7 +510,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
     absf = 0.5*(abs(G%CoriolisBu(I,J-1)) + abs(G%CoriolisBu(I,J)))
     ! If needed, res_scaling_fac = min( ds, L_d ) / l_f
     if (res_upscale) res_scaling_fac = &
-          ( sqrt( 0.5 * ( G%dxCu(I,j)**2 + G%dyCu(I,j)**2 ) ) * I_LFront ) &
+          ( sqrt( 0.5 * ( (G%dxCu(I,j)**2) + (G%dyCu(I,j)**2) ) ) * I_LFront ) &
           * min( 1., 0.5*( VarMix%Rd_dx_h(i,j) + VarMix%Rd_dx_h(i+1,j) ) )
 
     ! peak ML visc: u_star * von_Karman * (h_ml*u_star)/(absf*h_ml + 4.0*u_star)
@@ -597,7 +597,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
     absf = 0.5*(abs(G%CoriolisBu(I-1,J)) + abs(G%CoriolisBu(I,J)))
     ! If needed, res_scaling_fac = min( ds, L_d ) / l_f
     if (res_upscale) res_scaling_fac = &
-          ( sqrt( 0.5 * ( (G%dxCv(i,J))**2 + (G%dyCv(i,J))**2 ) ) * I_LFront ) &
+          ( sqrt( 0.5 * ( (G%dxCv(i,J)**2) + (G%dyCv(i,J)**2) ) ) * I_LFront ) &
           * min( 1., 0.5*( VarMix%Rd_dx_h(i,j) + VarMix%Rd_dx_h(i,j+1) ) )
 
     ! peak ML visc: u_star * von_Karman * (h_ml*u_star)/(absf*h_ml + 4.0*u_star)
@@ -1064,8 +1064,8 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
       h_big = 0.5*( big_H(i,j) + big_H(i+1,j) )                       ! H ~> m or kg m-3
       grd_b = ( buoy_av(i+1,j) - buoy_av(i,j) ) * G%IdxCu(I,j)        ! L H-1 T-2 ~> s-2 or m3 kg-1 s-2
       r_wpup = 2. / ( wpup(i,j) + wpup(i+1,j) )                       ! T2 L-1 H-1 ~> s2 m-2 or m s2 kg-1
-      psi_mag = ( ( ( CS%Cr_space(i,j) * grid_dsd ) * ( absf * h_sml ) ) &       ! L2 H T-1 ~> m3 s-1 or kg s-1
-                  * ( ( h_big**2 ) * grd_b ) ) * r_wpup
+      psi_mag = ( ( ( (0.5*(CS%Cr_space(i,j) + CS%Cr_space(i+1,j))) * grid_dsd ) & ! L2 H T-1 ~> m3 s-1 or kg s-1
+                  * ( absf * h_sml ) ) * ( ( h_big**2 ) * grd_b ) ) * r_wpup
     else  ! There is no flux on land and no gradient at open boundary points.
       psi_mag = 0.0
     endif
@@ -1105,8 +1105,8 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
       h_big = 0.5*( big_H(i,j) + big_H(i,j+1) )                       ! H ~> m or kg m-3
       grd_b = ( buoy_av(i,j+1) - buoy_av(i,j) ) * G%IdyCv(I,j)        ! L H-1 T-2 ~> s-2 or m3 kg-1 s-2
       r_wpup = 2. / ( wpup(i,j) + wpup(i,j+1) )                       ! T2 L-1 H-1 ~> s2 m-2 or m s2 kg-1
-      psi_mag = ( ( ( CS%Cr_space(i,j) * grid_dsd ) * ( absf * h_sml ) ) &       ! L2 H T-1 ~> m3 s-1 or kg s-1
-                  * ( ( h_big**2 ) * grd_b ) ) * r_wpup
+      psi_mag = ( ( ( (0.5*(CS%Cr_space(i,j) + CS%Cr_space(i,j+1))) * grid_dsd ) & ! L2 H T-1 ~> m3 s-1 or kg s-1
+                  * ( absf * h_sml ) ) * ( ( h_big**2 ) * grd_b ) ) * r_wpup
     else  ! There is no flux on land and no gradient at open boundary points.
       psi_mag = 0.0
     endif
@@ -1670,6 +1670,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
       filename = trim(inputdir) // "/" // trim(filename)
       allocate(CS%MLD_Tfilt_space(G%isd:G%ied,G%jsd:G%jed), source=0.0)
       call MOM_read_data(filename, varname, CS%MLD_Tfilt_space, G%domain, scale=US%s_to_T)
+      call pass_var(CS%MLD_Tfilt_space, G%domain)
     endif
     allocate(CS%Cr_space(G%isd:G%ied,G%jsd:G%jed), source=CS%Cr)
     if (CS%Cr_grid) then
@@ -1681,6 +1682,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
               default="Cr")
       filename = trim(inputdir) // "/" // trim(filename)
       call MOM_read_data(filename, varname, CS%Cr_space, G%domain)
+      call pass_var(CS%Cr_space, G%domain)
     endif
     call closeParameterBlock(param_file) ! The remaining parameters do not have MLE% prepended
     call get_param(param_file, mdl, "MLE_USE_PBL_MLD", CS%MLE_use_PBL_MLD, &
@@ -1951,10 +1953,10 @@ logical function test_answer(verbose, u, u_true, label, tol)
   if (abs(u - u_true) > tolerance) test_answer = .true.
   if (test_answer .or. verbose) then
     if (test_answer) then
-      print '(3(a,1pe24.16),x,a,x,a)','computed =',u,' correct =',u_true, &
+      print '(3(a,1pe24.16),1x,a,1x,a)','computed =',u,' correct =',u_true, &
             ' err=',u-u_true,' < wrong',label
     else
-      print '(2(a,1pe24.16),x,a)','computed =',u,' correct =',u_true,label
+      print '(2(a,1pe24.16),1x,a)','computed =',u,' correct =',u_true,label
     endif
   endif
 

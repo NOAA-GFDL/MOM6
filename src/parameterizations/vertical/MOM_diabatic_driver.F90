@@ -3256,13 +3256,8 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
         'Mixed layer depth (delta rho = 0.125)', 'm', conversion=US%Z_to_m)
     call get_param(param_file, mdl, "MLD_EN_VALS", CS%MLD_En_vals, &
          "The energy values used to compute MLDs.  If not set (or all set to 0.), the "//&
-         "default will overwrite to 25., 2500., 250000.", &
-         units='J/m2', default=0., scale=US%W_m2_to_RZ3_T3*US%s_to_T)
-    if ((CS%MLD_En_vals(1)==0.).and.(CS%MLD_En_vals(2)==0.).and.(CS%MLD_En_vals(3)==0.)) then
-      CS%MLD_En_vals = (/ 25.*US%W_m2_to_RZ3_T3*US%s_to_T, &
-                        2500.*US%W_m2_to_RZ3_T3*US%s_to_T, &
-                      250000.*US%W_m2_to_RZ3_T3*US%s_to_T /)
-    endif
+         "default will overwrite to 25., 2500., 250000.", units='J/m2', &
+         defaults=(/25., 2500., 250000./), scale=US%W_m2_to_RZ3_T3*US%s_to_T)
     write(EN1,'(F10.2)') CS%MLD_En_vals(1)*US%RZ3_T3_to_W_m2*US%T_to_s
     write(EN2,'(F10.2)') CS%MLD_En_vals(2)*US%RZ3_T3_to_W_m2*US%T_to_s
     write(EN3,'(F10.2)') CS%MLD_En_vals(3)*US%RZ3_T3_to_W_m2*US%T_to_s
@@ -3588,8 +3583,9 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
 end subroutine diabatic_driver_init
 
 !> Routine to register restarts, pass-through to children modules
-subroutine register_diabatic_restarts(G, US, param_file, int_tide_CSp, restart_CSp)
+subroutine register_diabatic_restarts(G, GV, US, param_file, int_tide_CSp, restart_CSp)
   type(ocean_grid_type), intent(in)    :: G           !< The ocean's grid structure
+  type(verticalGrid_type), intent(in)  :: GV          !< The ocean's vertical grid structure
   type(unit_scale_type), intent(in)    :: US          !< A dimensional unit scaling type
   type(param_file_type), intent(in)    :: param_file  !< A structure to parse for run-time parameters
   type(int_tide_CS),     pointer       :: int_tide_CSp !< Internal tide control structure
@@ -3602,7 +3598,7 @@ subroutine register_diabatic_restarts(G, US, param_file, int_tide_CSp, restart_C
   call read_param(param_file, "INTERNAL_TIDES", use_int_tides)
 
   if (use_int_tides) then
-    call register_int_tide_restarts(G, US, param_file, int_tide_CSp, restart_CSp)
+    call register_int_tide_restarts(G, GV, US, param_file, int_tide_CSp, restart_CSp)
   endif
 
 end subroutine register_diabatic_restarts

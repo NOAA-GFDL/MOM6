@@ -55,6 +55,7 @@ type, public :: MEKE_CS ; private
   logical :: initialized = .false. !< True if this control structure has been initialized.
   ! Parameters
   real :: MEKE_FrCoeff  !< Efficiency of conversion of ME into MEKE [nondim]
+  real :: MEKE_bhFrCoeff!< Efficiency of conversion of ME into MEKE by the biharmonic dissipation [nondim]
   real :: MEKE_GMcoeff  !< Efficiency of conversion of PE into MEKE [nondim]
   real :: MEKE_GMECoeff !< Efficiency of conversion of MEKE into ME by GME [nondim]
   real :: MEKE_damping  !< Local depth-independent MEKE dissipation rate [T-1 ~> s-1].
@@ -123,11 +124,14 @@ type, public :: MEKE_CS ; private
   logical :: debug      !< If true, write out checksums of data for debugging
   integer :: eke_src !< Enum specifying whether EKE is stepped forward prognostically (default),
                      !! read in from a file, or inferred via a neural network
+  logical :: sqg_use_MEKE !< If True, use MEKE%Le for the SQG vertical structure.
   type(diag_ctrl), pointer :: diag => NULL() !< A type that regulates diagnostics output
   !>@{ Diagnostic handles
   integer :: id_MEKE = -1, id_Ue = -1, id_Kh = -1, id_src = -1
+  integer :: id_src_adv = -1, id_src_mom_K4 = -1, id_src_btm_drag = -1
+  integer :: id_src_GM = -1, id_src_mom_lp = -1, id_src_mom_bh = -1
   integer :: id_Ub = -1, id_Ut = -1
-  integer :: id_GM_src = -1, id_mom_src = -1, id_GME_snk = -1, id_decay = -1
+  integer :: id_GM_src = -1, id_mom_src = -1, id_mom_src_bh = -1, id_GME_snk = -1, id_decay = -1
   integer :: id_KhMEKE_u = -1, id_KhMEKE_v = -1, id_Ku = -1, id_Au = -1
   integer :: id_Le = -1, id_gamma_b = -1, id_gamma_t = -1
   integer :: id_Lrhines = -1, id_Leady = -1
@@ -192,6 +196,14 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
     depth_tot, &    ! The depth of the water column [H ~> m or kg m-2].
     src, &          ! The sum of all MEKE sources [L2 T-3 ~> W kg-1] (= m2 s-3).
     MEKE_decay, &   ! A diagnostic of the MEKE decay timescale [T-1 ~> s-1].
+    src_adv, &      ! The MEKE source/tendency from the horizontal advection of MEKE [L2 T-3 ~> W kg-1] (= m2 s-3).
+    src_mom_K4, &   ! The MEKE source/tendency from the bihamornic of MEKE [L2 T-3 ~> W kg-1] (= m2 s-3).
+    src_btm_drag, & ! The MEKE source/tendency from the bottom drag acting on MEKE [L2 T-3 ~> W kg-1] (= m2 s-3).
+    src_GM, &       ! The MEKE source/tendency from the thickness mixing (GM) [L2 T-3 ~> W kg-1] (= m2 s-3).
+    src_mom_lp, &   ! The MEKE source/tendency from the Laplacian of the resolved flow [L2 T-3 ~> W kg-1] (= m2 s-3).
+    src_mom_bh, &   ! The MEKE source/tendency from the biharmonic of the resolved flow [L2 T-3 ~> W kg-1] (= m2 s-3).
+    damp_rate_s1, & ! The MEKE damping rate computed at the 1st Strang splitting stage [T-1 ~> s-1].
+    MEKE_current, & ! A copy of MEKE for use in computing the MEKE damping [L2 T-2 ~> m2 s-2].
     drag_rate_visc, & ! Near-bottom velocity contribution to bottom drag [H T-1 ~> m s-1 or kg m-2 s-1]
     drag_rate, &    ! The MEKE spindown timescale due to bottom drag [T-1 ~> s-1].
     del2MEKE, &     ! Laplacian of MEKE, used for bi-harmonic diffusion [T-2 ~> s-2].
@@ -222,9 +234,11 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
   real :: cdrag2    ! The square of the drag coefficient times unit conversion factors [H2 L-2 ~> nondim or kg2 m-6]
   real :: advFac    ! The product of the advection scaling factor and 1/dt [T-1 ~> s-1]
   real :: mass_neglect ! A negligible mass [R Z ~> kg m-2].
-  real :: ldamping  ! The MEKE damping rate [T-1 ~> s-1].
   real :: sdt       ! dt to use locally [T ~> s] (could be scaled to accelerate)
   real :: sdt_damp  ! dt for damping [T ~> s] (sdt could be split).
+  real :: damp_step ! Size of damping timestep relative to sdt [nondim]
+  real :: damp_rate ! The MEKE damping rate [T-1 ~> s-1].
+  real :: damping   ! The net damping of a field after sdt_damp [nondim]
   logical :: use_drag_rate ! Flag to indicate drag_rate is finite
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
   real(kind=real32), dimension(size(MEKE%MEKE),NUM_FEATURES) :: features_array ! The array of features
@@ -254,6 +268,8 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
     if (CS%debug) then
       if (allocated(MEKE%mom_src)) &
         call hchksum(MEKE%mom_src, 'MEKE mom_src', G%HI, unscale=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
+      if (allocated(MEKE%mom_src_bh)) &
+        call hchksum(MEKE%mom_src_bh, 'MEKE mom_src_bh', G%HI, scale=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
       if (allocated(MEKE%GME_snk)) &
         call hchksum(MEKE%GME_snk, 'MEKE GME_snk', G%HI, unscale=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
       if (allocated(MEKE%GM_src)) &
@@ -272,7 +288,9 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
 
     ! With a depth-dependent (and possibly strong) damping, it seems
     ! advisable to use Strang splitting between the damping and diffusion.
-    sdt_damp = sdt ; if (CS%MEKE_KH >= 0.0 .or. CS%MEKE_K4 >= 0.) sdt_damp = 0.5*sdt
+    damp_step = 1.
+    if (CS%MEKE_KH >= 0. .or. CS%MEKE_K4 >= 0.) damp_step = 0.5
+    sdt_damp = sdt * damp_step
 
     ! Calculate depth integrated mass exchange if doing advection [R Z L2 ~> kg]
     if (CS%MEKE_advection_factor>0.) then
@@ -322,10 +340,10 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
       !$OMP parallel do default(shared)
       do j=js,je ; do i=is,ie
         drag_rate_visc(i,j) = (0.25*G%IareaT(i,j) * &
-                ((G%areaCu(I-1,j)*drag_vel_u(I-1,j) + &
-                  G%areaCu(I,j)*drag_vel_u(I,j)) + &
-                 (G%areaCv(i,J-1)*drag_vel_v(i,J-1) + &
-                  G%areaCv(i,J)*drag_vel_v(i,J)) ) )
+                (((G%areaCu(I-1,j)*drag_vel_u(I-1,j)) + &
+                  (G%areaCu(I,j)*drag_vel_u(I,j))) + &
+                 ((G%areaCv(i,J-1)*drag_vel_v(i,J-1)) + &
+                  (G%areaCv(i,J)*drag_vel_v(i,J))) ) )
       enddo ; enddo
     else
       !$OMP parallel do default(shared)
@@ -383,16 +401,32 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
       call hchksum(LmixScale, 'MEKE LmixScale', G%HI, unscale=US%L_to_m)
     endif
 
+    if (allocated(MEKE%Le)) then
+      !$OMP parallel do default(shared)
+      do j=js,je ; do i=is,ie
+        MEKE%Le(i,j) = LmixScale(i,j)
+      enddo ; enddo
+    endif
+
     ! Aggregate sources of MEKE (background, frictional and GM)
     !$OMP parallel do default(shared)
     do j=js,je ; do i=is,ie
       src(i,j) = CS%MEKE_BGsrc
+      src_adv(i,j) = 0.
+      src_mom_K4(i,j) = 0.
+      src_btm_drag(i,j) = 0.
+      src_GM(i,j) = 0.
+      src_mom_lp(i,j) = 0.
+      src_mom_bh(i,j) = 0.
     enddo ; enddo
 
     if (allocated(MEKE%mom_src)) then
       !$OMP parallel do default(shared)
       do j=js,je ; do i=is,ie
-        src(i,j) = src(i,j) - CS%MEKE_FrCoeff*I_mass(i,j)*MEKE%mom_src(i,j)
+        src(i,j) = src(i,j) - CS%MEKE_FrCoeff*I_mass(i,j)*MEKE%mom_src(i,j) &
+                   - (CS%MEKE_bhFrCoeff-CS%MEKE_FrCoeff)*I_mass(i,j)*MEKE%mom_src_bh(i,j)
+        src_mom_lp(i,j) = - CS%MEKE_FrCoeff*I_mass(i,j)*(MEKE%mom_src(i,j)-MEKE%mom_src_bh(i,j))
+        src_mom_bh(i,j) = - CS%MEKE_bhFrCoeff*I_mass(i,j)*MEKE%mom_src_bh(i,j)
       enddo ; enddo
     endif
 
@@ -414,6 +448,7 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
         !$OMP parallel do default(shared)
         do j=js,je ; do i=is,ie
           src(i,j) = src(i,j) - CS%MEKE_GMcoeff*I_mass(i,j)*MEKE%GM_src(i,j)
+          src_GM(i,j) = -CS%MEKE_GMcoeff*I_mass(i,j)*MEKE%GM_src(i,j)
         enddo ; enddo
       endif
     endif
@@ -433,6 +468,7 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
     ! Increase EKE by a full time-steps worth of source
     !$OMP parallel do default(shared)
     do j=js,je ; do i=is,ie
+      MEKE_current(i,j) = MEKE%MEKE(i,j)
       MEKE%MEKE(i,j) = (MEKE%MEKE(i,j) + sdt*src(i,j))*G%mask2dT(i,j)
     enddo ; enddo
 
@@ -453,12 +489,29 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
     ! First stage of Strang splitting
     !$OMP parallel do default(shared)
     do j=js,je ; do i=is,ie
-      ldamping = CS%MEKE_damping + drag_rate(i,j) * bottomFac2(i,j)
-      if (MEKE%MEKE(i,j) < 0.) ldamping = 0.
+      damp_rate = CS%MEKE_damping + drag_rate(i,j) * bottomFac2(i,j)
+      if (MEKE%MEKE(i,j) < 0.) damp_rate = 0.
       ! notice that the above line ensures a damping only if MEKE is positive,
       ! while leaving MEKE unchanged if it is negative
-      MEKE%MEKE(i,j) =  MEKE%MEKE(i,j) / (1.0 + sdt_damp*ldamping)
-      MEKE_decay(i,j) = ldamping*G%mask2dT(i,j)
+
+      damping = 1. / (1. + sdt_damp * damp_rate)
+
+      ! NOTE: MEKE%MEKE should use `damping` but we must preserve the existing
+      ! expression for bit reproducibility
+      MEKE%MEKE(i,j) =  MEKE%MEKE(i,j) / (1. + sdt_damp * damp_rate)
+      MEKE_decay(i,j) = damp_rate * G%mask2dT(i,j)
+
+      src_GM(i,j) = src_GM(i,j) * damping
+      src_mom_lp(i,j) = src_mom_lp(i,j) * damping
+      src_mom_bh(i,j) = src_mom_bh(i,j) * damping
+
+      src_btm_drag(i,j) = - MEKE_current(i,j) * ( &
+          damp_step * (damp_rate * damping) &
+      )
+
+      ! Store the effective damping rate if sdt is split
+      if (CS%MEKE_KH >= 0. .or. CS%MEKE_K4 >= 0.) &
+        damp_rate_s1(i,j) = damp_rate * damping
     enddo ; enddo
 
     if (CS%kh_flux_enabled .or. CS%MEKE_K4 >= 0.0) then
@@ -528,6 +581,9 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
         del4MEKE(i,j) = (sdt*(G%IareaT(i,j)*I_mass(i,j))) * &
             ((MEKE_uflux(I-1,j) - MEKE_uflux(I,j)) + &
              (MEKE_vflux(i,J-1) - MEKE_vflux(i,J)))
+        src_mom_K4(i,j) = (G%IareaT(i,j)*I_mass(i,j))  * &
+            ((MEKE_uflux(I-1,j) - MEKE_uflux(I,j)) + &
+             (MEKE_vflux(i,J-1) - MEKE_vflux(i,J)))
       enddo ; enddo
     endif !
 
@@ -595,6 +651,9 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
         MEKE%MEKE(i,j) = MEKE%MEKE(i,j) + (sdt*(G%IareaT(i,j)*I_mass(i,j))) * &
             ((MEKE_uflux(I-1,j) - MEKE_uflux(I,j)) + &
              (MEKE_vflux(i,J-1) - MEKE_vflux(i,J)))
+        src_adv(i,j) = (G%IareaT(i,j)*I_mass(i,j)) * &
+            ((MEKE_uflux(I-1,j) - MEKE_uflux(I,j)) + &
+             (MEKE_vflux(i,J-1) - MEKE_vflux(i,J)))
       enddo ; enddo
     endif ! MEKE_KH>0
 
@@ -608,25 +667,38 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
 
     ! Second stage of Strang splitting
     if (CS%MEKE_KH >= 0.0 .or. CS%MEKE_K4 >= 0.0) then
-      if (sdt>sdt_damp) then
-        ! Recalculate the drag rate, since MEKE has changed.
-        if (use_drag_rate) then
-          !$OMP parallel do default(shared)
-          do j=js,je ; do i=is,ie
-            drag_rate(i,j) = (GV%H_to_RZ * I_mass(i,j)) * sqrt( drag_rate_visc(i,j)**2 + &
-                   cdrag2 * ( max(0.0, 2.0*bottomFac2(i,j)*MEKE%MEKE(i,j)) + CS%MEKE_Uscale**2 ) )
-          enddo ; enddo
-        endif
+      ! Recalculate the drag rate, since MEKE has changed.
+      if (use_drag_rate) then
         !$OMP parallel do default(shared)
         do j=js,je ; do i=is,ie
-          ldamping = CS%MEKE_damping + drag_rate(i,j) * bottomFac2(i,j)
-          if (MEKE%MEKE(i,j) < 0.) ldamping = 0.
-          ! notice that the above line ensures a damping only if MEKE is positive,
-          ! while leaving MEKE unchanged if it is negative
-          MEKE%MEKE(i,j) =  MEKE%MEKE(i,j) / (1.0 + sdt_damp*ldamping)
-          MEKE_decay(i,j) = ldamping*G%mask2dT(i,j)
+          drag_rate(i,j) = (GV%H_to_RZ * I_mass(i,j)) * sqrt( drag_rate_visc(i,j)**2 + &
+                 cdrag2 * ( max(0.0, 2.0*bottomFac2(i,j)*MEKE%MEKE(i,j)) + CS%MEKE_Uscale**2 ) )
         enddo ; enddo
       endif
+      !$OMP parallel do default(shared)
+      do j=js,je ; do i=is,ie
+        damp_rate = CS%MEKE_damping + drag_rate(i,j) * bottomFac2(i,j)
+        if (MEKE%MEKE(i,j) < 0.) damp_rate = 0.
+        ! notice that the above line ensures a damping only if MEKE is positive,
+        ! while leaving MEKE unchanged if it is negative
+
+        damping = 1. / (1. + sdt_damp * damp_rate)
+
+        ! NOTE: As above, MEKE%MEKE should use `damping` but we must preserve
+        !   the existing expression for bit reproducibility.
+        MEKE%MEKE(i,j) =  MEKE%MEKE(i,j) / (1.0 + sdt_damp*damp_rate)
+        MEKE_decay(i,j) = damp_rate*G%mask2dT(i,j)
+
+        src_GM(i,j) = src_GM(i,j) * damping
+        src_mom_lp(i,j) = src_mom_lp(i,j) * damping
+        src_mom_bh(i,j) = src_mom_bh(i,j) * damping
+        src_adv(i,j) = src_adv(i,j) * damping
+        src_mom_K4(i,j) = src_mom_K4(i,j) * damping
+
+        src_btm_drag(i,j) = -MEKE_current(i,j) * ( &
+           damp_step * damping * (damp_rate + damp_rate_s1(i,j)) &
+        )
+      enddo ; enddo
     endif ! MEKE_KH>=0
 
     if (CS%debug) then
@@ -693,7 +765,8 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
     enddo ; enddo
   endif
 
-  if (allocated(MEKE%Kh) .or. allocated(MEKE%Ku) .or. allocated(MEKE%Au)) then
+  if (allocated(MEKE%Kh) .or. allocated(MEKE%Ku) .or. allocated(MEKE%Au) &
+      .or. allocated(MEKE%Le)) then
     call cpu_clock_begin(CS%id_clock_pass)
     call do_group_pass(CS%pass_Kh, G%Domain)
     call cpu_clock_end(CS%id_clock_pass)
@@ -727,9 +800,16 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
   if (CS%id_KhMEKE_u>0) call post_data(CS%id_KhMEKE_u, Kh_u, CS%diag)
   if (CS%id_KhMEKE_v>0) call post_data(CS%id_KhMEKE_v, Kh_v, CS%diag)
   if (CS%id_src>0) call post_data(CS%id_src, src, CS%diag)
+  if (CS%id_src_adv>0) call post_data(CS%id_src_adv, src_adv, CS%diag)
+  if (CS%id_src_mom_K4>0) call post_data(CS%id_src_mom_K4, src_mom_K4, CS%diag)
+  if (CS%id_src_btm_drag>0) call post_data(CS%id_src_btm_drag, src_btm_drag, CS%diag)
+  if (CS%id_src_GM>0) call post_data(CS%id_src_GM, src_GM, CS%diag)
+  if (CS%id_src_mom_lp>0) call post_data(CS%id_src_mom_lp, src_mom_lp, CS%diag)
+  if (CS%id_src_mom_bh>0) call post_data(CS%id_src_mom_bh, src_mom_bh, CS%diag)
   if (CS%id_decay>0) call post_data(CS%id_decay, MEKE_decay, CS%diag)
   if (CS%id_GM_src>0) call post_data(CS%id_GM_src, MEKE%GM_src, CS%diag)
   if (CS%id_mom_src>0) call post_data(CS%id_mom_src, MEKE%mom_src, CS%diag)
+  if (CS%id_mom_src_bh>0) call post_data(CS%id_mom_src_bh, MEKE%mom_src_bh, CS%diag)
   if (CS%id_GME_snk>0) call post_data(CS%id_GME_snk, MEKE%GME_snk, CS%diag)
   if (CS%id_Le>0) call post_data(CS%id_Le, LmixScale, CS%diag)
   if (CS%id_gamma_b>0) then
@@ -821,8 +901,8 @@ subroutine MEKE_equilibrium(CS, MEKE, G, GV, US, SN_u, SN_v, drag_rate_visc, I_m
                       (depth_tot(i,j)-depth_tot(i,j-1)) * G%IdyCv(i,J-1) &
                   / max(depth_tot(i,j), depth_tot(i,j-1), h_neglect) )
       endif
-      beta =  sqrt((G%dF_dx(i,j) + beta_topo_x)**2 + &
-                   (G%dF_dy(i,j) + beta_topo_y)**2 )
+      beta =  sqrt(((G%dF_dx(i,j) + beta_topo_x)**2) + &
+                   ((G%dF_dy(i,j) + beta_topo_y)**2) )
 
       if (KhCoeff*SN*I_mass(i,j)>0.) then
         ! Solve resid(E) = 0, where resid = Kh(E) * (SN)^2 - damp_rate(E) E
@@ -1001,8 +1081,8 @@ subroutine MEKE_lengthScales(CS, MEKE, G, GV, US, SN_u, SN_v, EKE, depth_tot, &
                       (depth_tot(i,j)-depth_tot(i,j-1)) * G%IdyCv(i,J-1) &
                  / max(depth_tot(i,j), depth_tot(i,j-1), h_neglect) )
       endif
-      beta =  sqrt((G%dF_dx(i,j) + beta_topo_x)**2 + &
-                   (G%dF_dy(i,j) + beta_topo_y)**2 )
+      beta =  sqrt(((G%dF_dx(i,j) + beta_topo_x)**2) + &
+                   ((G%dF_dy(i,j) + beta_topo_y)**2) )
 
     else
       beta = 0.
@@ -1210,6 +1290,10 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
                    "The efficiency of the conversion of mean energy into "//&
                    "MEKE.  If MEKE_FRCOEFF is negative, this conversion "//&
                    "is not used or calculated.", units="nondim", default=-1.0)
+    call get_param(param_file, mdl, "MEKE_BHFRCOEFF", CS%MEKE_bhFrCoeff, &
+                 "The efficiency of the conversion of mean energy into "//&
+                 "MEKE by the biharmonic dissipation.  If MEKE_bhFRCOEFF is negative, this conversion "//&
+                 "is not used or calculated.", units="nondim", default=-1.0)
     call get_param(param_file, mdl, "MEKE_GMECOEFF", CS%MEKE_GMECoeff, &
                    "The efficiency of the conversion of MEKE into mean energy "//&
                    "by GME.  If MEKE_GMECOEFF is negative, this conversion "//&
@@ -1350,6 +1434,9 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
                  "computing beta in the expression of Rhines scale. Use 1 if full "//&
                  "topographic beta effect is considered; use 0 if it's completely ignored.", &
                  units="nondim", default=0.0)
+  call get_param(param_file, mdl, "SQG_USE_MEKE", CS%sqg_use_MEKE, &
+                 "If true, the eddy scale of MEKE is used for the SQG vertical structure ",&
+                 default=.false.)
 
   ! Nonlocal module parameters
   call get_param(param_file, mdl, "CDRAG", cdrag, &
@@ -1399,6 +1486,20 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
   if (.not. allocated(MEKE%MEKE)) CS%id_Ut = -1
   CS%id_src = register_diag_field('ocean_model', 'MEKE_src', diag%axesT1, Time, &
      'MEKE energy source', 'm2 s-3', conversion=(US%L_T_to_m_s**2)*US%s_to_T)
+  !add diagnostics for the terms in the MEKE budget
+  CS%id_src_adv = register_diag_field('ocean_model', 'MEKE_src_adv', diag%axesT1, Time, &
+     'MEKE energy source from the horizontal advection of MEKE', 'm2 s-3', conversion=(US%L_T_to_m_s**2)*US%s_to_T)
+  CS%id_src_mom_K4 = register_diag_field('ocean_model', 'MEKE_src_mom_K4', diag%axesT1, Time, &
+     'MEKE energy source from the biharmonic of MEKE', 'm2 s-3', conversion=(US%L_T_to_m_s**2)*US%s_to_T)
+  CS%id_src_btm_drag = register_diag_field('ocean_model', 'MEKE_src_btm_drag', diag%axesT1, Time, &
+     'MEKE energy source from the bottom drag acting on MEKE', 'm2 s-3', conversion=(US%L_T_to_m_s**2)*US%s_to_T)
+  CS%id_src_GM = register_diag_field('ocean_model', 'MEKE_src_GM', diag%axesT1, Time, &
+     'MEKE energy source from the thickness mixing (GM scheme)', 'm2 s-3', conversion=(US%L_T_to_m_s**2)*US%s_to_T)
+  CS%id_src_mom_lp = register_diag_field('ocean_model', 'MEKE_src_mom_lp', diag%axesT1, Time, &
+     'MEKE energy source from the Laplacian of resolved flows', 'm2 s-3', conversion=(US%L_T_to_m_s**2)*US%s_to_T)
+  CS%id_src_mom_bh = register_diag_field('ocean_model', 'MEKE_src_mom_bh', diag%axesT1, Time, &
+     'MEKE energy source from the biharmonic of resolved flows', 'm2 s-3', conversion=(US%L_T_to_m_s**2)*US%s_to_T)
+ !end
   CS%id_decay = register_diag_field('ocean_model', 'MEKE_decay', diag%axesT1, Time, &
      'MEKE decay rate', 's-1', conversion=US%s_to_T)
   CS%id_GM_src = register_diag_field('ocean_model', 'MEKE_GM_src', diag%axesT1, Time, &
@@ -1409,6 +1510,10 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
      'MEKE energy available from momentum', &
      'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
   if (.not. allocated(MEKE%mom_src)) CS%id_mom_src = -1
+  CS%id_mom_src_bh = register_diag_field('ocean_model', 'MEKE_mom_src_bh',diag%axesT1, Time, &
+     'MEKE energy available from the biharmonic dissipation of momentum', &
+     'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
+  if (.not. allocated(MEKE%mom_src_bh)) CS%id_mom_src_bh = -1
   CS%id_GME_snk = register_diag_field('ocean_model', 'MEKE_GME_snk',diag%axesT1, Time, &
      'MEKE energy lost to GME backscatter', &
      'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
@@ -1438,6 +1543,7 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
 
   CS%id_clock_pass = cpu_clock_id('(Ocean continuity halo updates)', grain=CLOCK_ROUTINE)
 
+
   ! Detect whether this instance of MEKE_init() is at the beginning of a run
   ! or after a restart. If at the beginning, we will initialize MEKE to a local
   ! equilibrium.
@@ -1445,6 +1551,12 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
   if (coldStart) CS%initialize = .false.
   if (CS%initialize) call MOM_error(WARNING, &
                        "MEKE_init: Initializing MEKE with a local equilibrium balance.")
+  if (.not.query_initialized(MEKE%Le, "MEKE_Le", restart_CS) .and. allocated(MEKE%Le)) then
+    !$OMP parallel do default(shared)
+    do j=js,je ; do i=is,ie
+      MEKE%Le(i,j) = sqrt(G%areaT(i,j))
+    enddo ; enddo
+  endif
 
   ! Set up group passes.  In the case of a restart, these fields need a halo update now.
   if (allocated(MEKE%MEKE)) then
@@ -1455,8 +1567,10 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
   if (allocated(MEKE%Kh)) call create_group_pass(CS%pass_Kh, MEKE%Kh, G%Domain)
   if (allocated(MEKE%Ku)) call create_group_pass(CS%pass_Kh, MEKE%Ku, G%Domain)
   if (allocated(MEKE%Au)) call create_group_pass(CS%pass_Kh, MEKE%Au, G%Domain)
+  if (allocated(MEKE%Le)) call create_group_pass(CS%pass_Kh, MEKE%Le, G%Domain)
 
-  if (allocated(MEKE%Kh) .or. allocated(MEKE%Ku) .or. allocated(MEKE%Au)) &
+  if (allocated(MEKE%Kh) .or. allocated(MEKE%Ku) .or. allocated(MEKE%Au) &
+      .or. allocated(MEKE%Le)) &
     call do_group_pass(CS%pass_Kh, G%Domain)
 
 end function MEKE_init
@@ -1618,9 +1732,9 @@ subroutine ML_MEKE_calculate_features(G, GV, US, CS, Rd_dx_h, u, v, tv, h, dt, f
     endif
 
     ! Calculate mean kinetic energy
-    u_t = a_e*u(I,j,1)+a_w*u(I-1,j,1)
-    v_t = a_n*v(i,J,1)+a_s*v(i,J-1,1)
-    mke(i,j) = 0.5*( u_t*u_t + v_t*v_t )
+    u_t = (a_e*u(I,j,1)) + (a_w*u(I-1,j,1))
+    v_t = (a_n*v(i,J,1)) + (a_s*v(i,J-1,1))
+    mke(i,j) = 0.5*( (u_t*u_t) + (v_t*v_t) )
 
     ! Calculate the magnitude of the slope
     slope_t = slope_x_vert_avg(I,j)*a_e+slope_x_vert_avg(I-1,j)*a_w
@@ -1632,8 +1746,8 @@ subroutine ML_MEKE_calculate_features(G, GV, US, CS, Rd_dx_h, u, v, tv, h, dt, f
 
   ! Calculate relative vorticity
   do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
-    dvdx = (v(i+1,J,1)*G%dyCv(i+1,J) - v(i,J,1)*G%dyCv(i,J))
-    dudy = (u(I,j+1,1)*G%dxCu(I,j+1) - u(I,j,1)*G%dxCu(I,j))
+    dvdx = ((v(i+1,J,1)*G%dyCv(i+1,J)) - (v(i,J,1)*G%dyCv(i,J)))
+    dudy = ((u(I,j+1,1)*G%dxCu(I,j+1)) - (u(I,j,1)*G%dxCu(I,j)))
     ! Assumed no slip
     rv_z(I,J) = (2.0-G%mask2dBu(I,J)) * (dvdx - dudy) * G%IareaBu(I,J)
   enddo; enddo
@@ -1742,10 +1856,11 @@ subroutine MEKE_alloc_register_restart(HI, US, param_file, MEKE, restart_CS)
   type(MOM_restart_CS),  intent(inout) :: restart_CS !< MOM restart control struct
 
   ! Local variables
-  real :: MEKE_GMcoeff, MEKE_FrCoeff, MEKE_GMECoeff  ! Coefficients for various terms [nondim]
+  real :: MEKE_GMcoeff, MEKE_FrCoeff, MEKE_bhFrCoeff, MEKE_GMECoeff  ! Coefficients for various terms [nondim]
   real :: MEKE_KHCoeff, MEKE_viscCoeff_Ku, MEKE_viscCoeff_Au  ! Coefficients for various terms [nondim]
   logical :: Use_KH_in_MEKE
   logical :: useMEKE
+  logical :: sqg_use_MEKE
   integer :: isd, ied, jsd, jed
 
 ! Determine whether this module will be used
@@ -1754,11 +1869,13 @@ subroutine MEKE_alloc_register_restart(HI, US, param_file, MEKE, restart_CS)
 ! Read these parameters to determine what should be in the restarts
   MEKE_GMcoeff = -1. ; call read_param(param_file,"MEKE_GMCOEFF",MEKE_GMcoeff)
   MEKE_FrCoeff = -1. ; call read_param(param_file,"MEKE_FRCOEFF",MEKE_FrCoeff)
+  MEKE_bhFrCoeff = -1. ; call read_param(param_file,"MEKE_bhFRCOEFF",MEKE_bhFrCoeff)
   MEKE_GMEcoeff = -1. ; call read_param(param_file,"MEKE_GMECOEFF",MEKE_GMEcoeff)
   MEKE_KhCoeff = 1. ; call read_param(param_file,"MEKE_KHCOEFF",MEKE_KhCoeff)
   MEKE_viscCoeff_Ku = 0. ; call read_param(param_file,"MEKE_VISCOSITY_COEFF_KU",MEKE_viscCoeff_Ku)
   MEKE_viscCoeff_Au = 0. ; call read_param(param_file,"MEKE_VISCOSITY_COEFF_AU",MEKE_viscCoeff_Au)
   Use_KH_in_MEKE = .false. ; call read_param(param_file,"USE_KH_IN_MEKE", Use_KH_in_MEKE)
+  sqg_use_MEKE = .false. ; call read_param(param_file,"SQG_USE_MEKE", sqg_use_MEKE)
 
   if (.not. useMEKE) return
 
@@ -1770,8 +1887,12 @@ subroutine MEKE_alloc_register_restart(HI, US, param_file, MEKE, restart_CS)
            longname="Mesoscale Eddy Kinetic Energy", units="m2 s-2", conversion=US%L_T_to_m_s**2)
 
   if (MEKE_GMcoeff>=0.) allocate(MEKE%GM_src(isd:ied,jsd:jed), source=0.0)
-  if (MEKE_FrCoeff>=0. .or. MEKE_GMECoeff>=0.) &
+  if (MEKE_FrCoeff>=0. .or. MEKE_bhFrCoeff>=0. .or. MEKE_GMECoeff>=0.) then
     allocate(MEKE%mom_src(isd:ied,jsd:jed), source=0.0)
+    allocate(MEKE%mom_src_bh(isd:ied,jsd:jed), source=0.0)
+  endif
+  if (MEKE_FrCoeff<0.) MEKE_FrCoeff = 0.
+  if (MEKE_bhFrCoeff<0.) MEKE_bhFrCoeff = 0.
   if (MEKE_GMECoeff>=0.) allocate(MEKE%GME_snk(isd:ied,jsd:jed), source=0.0)
   if (MEKE_KhCoeff>=0.) then
     allocate(MEKE%Kh(isd:ied,jsd:jed), source=0.0)
@@ -1785,6 +1906,12 @@ subroutine MEKE_alloc_register_restart(HI, US, param_file, MEKE, restart_CS)
     call register_restart_field(MEKE%Ku, "MEKE_Ku", .false., restart_CS, &
              longname="Lateral viscosity from Mesoscale Eddy Kinetic Energy", &
              units="m2 s-1", conversion=US%L_to_m**2*US%s_to_T)
+  endif
+  if (sqg_use_MEKE) then
+    allocate(MEKE%Le(isd:ied,jsd:jed), source=0.0)
+    call register_restart_field(MEKE%Le, "MEKE_Le", .false., restart_CS, &
+             longname="Eddy length scale from Mesoscale Eddy Kinetic Energy", &
+             units="m", conversion=US%L_to_m)
   endif
   if (Use_Kh_in_MEKE) then
     allocate(MEKE%Kh_diff(isd:ied,jsd:jed), source=0.0)
@@ -1817,8 +1944,10 @@ subroutine MEKE_end(MEKE)
   if (allocated(MEKE%Kh)) deallocate(MEKE%Kh)
   if (allocated(MEKE%GME_snk)) deallocate(MEKE%GME_snk)
   if (allocated(MEKE%mom_src)) deallocate(MEKE%mom_src)
+  if (allocated(MEKE%mom_src_bh)) deallocate(MEKE%mom_src_bh)
   if (allocated(MEKE%GM_src)) deallocate(MEKE%GM_src)
   if (allocated(MEKE%MEKE)) deallocate(MEKE%MEKE)
+  if (allocated(MEKE%Le)) deallocate(MEKE%Le)
 end subroutine MEKE_end
 
 !> \namespace mom_meke
