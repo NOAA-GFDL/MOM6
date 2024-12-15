@@ -403,7 +403,10 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
   call get_param(param_file, mdl, "PASSIVE_STOKES_DDT", CS%Passive_Stokes_DDT, &
        "Flag to make Stokes d/dt diagnostic only", &
        default=.false.)
-
+  if (CS%robust_Stokes_PGF .and. CS%Stokes_PGF) then
+    !To avoid conflicts, these two options cannot be set to True simultaneously.
+    call MOM_error(FATAL, "ROBUST_STOKES_PGF and STOKES_PGF are both True, please set one to False to continue.")
+  endif 
   ! Get Wave Method and write to integer WaveMethod
   call get_param(param_file,mdl,"WAVE_METHOD",TMPSTRING1,             &
        "Choice of wave method, valid options include: \n"//           &
