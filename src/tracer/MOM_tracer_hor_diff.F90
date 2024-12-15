@@ -1683,12 +1683,11 @@ subroutine tracer_hor_diff_init(Time, G, GV, US, param_file, diag, EOS, diabatic
                  "along-isopycnal mixed layer to interior mixing code, while higher values use "//&
                  "mathematically equivalent expressions that recover rotational symmetry "//&
                  "when DIFFUSE_ML_TO_INTERIOR is true.", &
-                 default=20240101, do_not_log=.not.CS%Diffuse_ML_interior)
-                 !### Change the default later to default_answer_date.
+                 default=default_answer_date, do_not_log=.not.CS%Diffuse_ML_interior)
   call get_param(param_file, mdl, "HOR_DIFF_LIMIT_BUG", CS%limit_bug, &
                  "If true and the answer date is 20240330 or below, use a rotational symmetry "//&
                  "breaking bug when limiting the tracer properties in tracer_epipycnal_ML_diff.", &
-                 default=.true., do_not_log=((.not.CS%Diffuse_ML_interior).or.(CS%answer_date>=20240331)))
+                 default=.false., do_not_log=((.not.CS%Diffuse_ML_interior).or.(CS%answer_date>=20240331)))
   CS%ML_KhTR_scale = 1.0
   if (CS%Diffuse_ML_interior) then
     call get_param(param_file, mdl, "ML_KHTR_SCALE", CS%ML_KhTR_scale, &

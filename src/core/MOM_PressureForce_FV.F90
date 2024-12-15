@@ -1777,7 +1777,7 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp,
       "The vintage of self-attraction and loading (SAL) and tidal forcing calculations in "//&
       "Boussinesq mode. Values below 20230701 recover the old answers in which the SAL is "//&
       "part of the tidal forcing calculation.  The change is due to a reordered summation "//&
-      "and the difference is only at bit level.", default=20230630)
+      "and the difference is only at bit level.", default=default_answer_date)
   endif
   call get_param(param_file, mdl, "CALCULATE_SAL", CS%calculate_SAL, &
                  "If true, calculate self-attraction and loading.", default=CS%tides)
