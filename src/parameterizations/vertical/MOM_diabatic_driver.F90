@@ -858,7 +858,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     endif
 
     call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
-    call energetic_PBL(h, u_h, v_h, tv, fluxes, dt, Kd_ePBL, G, GV, US, &
+    call energetic_PBL(h, u_h, v_h, tv, fluxes, visc, dt, Kd_ePBL, G, GV, US, &
                        CS%ePBL, stoch_CS, dSV_dT, dSV_dS, cTKE, SkinBuoyFlux, waves=waves)
 
     call energetic_PBL_get_MLD(CS%ePBL, BLD(:,:), G, US)
@@ -1410,7 +1410,7 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     endif
 
     call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
-    call energetic_PBL(h, u_h, v_h, tv, fluxes, dt, Kd_ePBL, G, GV, US, &
+    call energetic_PBL(h, u_h, v_h, tv, fluxes, visc, dt, Kd_ePBL, G, GV, US, &
                        CS%ePBL, stoch_CS, dSV_dT, dSV_dS, cTKE, SkinBuoyFlux, waves=waves)
 
     call energetic_PBL_get_MLD(CS%ePBL, BLD(:,:), G, US)
@@ -3256,13 +3256,8 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
         'Mixed layer depth (delta rho = 0.125)', 'm', conversion=US%Z_to_m)
     call get_param(param_file, mdl, "MLD_EN_VALS", CS%MLD_En_vals, &
          "The energy values used to compute MLDs.  If not set (or all set to 0.), the "//&
-         "default will overwrite to 25., 2500., 250000.", &
-         units='J/m2', default=0., scale=US%W_m2_to_RZ3_T3*US%s_to_T)
-    if ((CS%MLD_En_vals(1)==0.).and.(CS%MLD_En_vals(2)==0.).and.(CS%MLD_En_vals(3)==0.)) then
-      CS%MLD_En_vals = (/ 25.*US%W_m2_to_RZ3_T3*US%s_to_T, &
-                        2500.*US%W_m2_to_RZ3_T3*US%s_to_T, &
-                      250000.*US%W_m2_to_RZ3_T3*US%s_to_T /)
-    endif
+         "default will overwrite to 25., 2500., 250000.", units='J/m2', &
+         defaults=(/25., 2500., 250000./), scale=US%W_m2_to_RZ3_T3*US%s_to_T)
     write(EN1,'(F10.2)') CS%MLD_En_vals(1)*US%RZ3_T3_to_W_m2*US%T_to_s
     write(EN2,'(F10.2)') CS%MLD_En_vals(2)*US%RZ3_T3_to_W_m2*US%T_to_s
     write(EN3,'(F10.2)') CS%MLD_En_vals(3)*US%RZ3_T3_to_W_m2*US%T_to_s

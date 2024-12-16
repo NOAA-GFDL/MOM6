@@ -332,9 +332,9 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
   if (CS%id_masso > 0) then
     mass_cell(:,:) = 0.0
     do k=1,nz ; do j=js,je ; do i=is,ie
-      mass_cell(i,j) = mass_cell(i,j) + (GV%H_to_kg_m2*h(i,j,k)) * US%L_to_m**2*G%areaT(i,j)
+      mass_cell(i,j) = mass_cell(i,j) + (GV%H_to_RZ*h(i,j,k)) * G%areaT(i,j)
     enddo ; enddo ; enddo
-    masso = reproducing_sum(mass_cell)
+    masso = reproducing_sum(mass_cell, unscale=US%RZL2_to_kg)
     call post_data(CS%id_masso, masso, CS%diag)
   endif
 
@@ -1616,10 +1616,13 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
   call get_param(param_file, mdl, "INTERNAL_WAVE_SPEED_BETTER_EST", better_speed_est, &
                  "If true, use a more robust estimate of the first mode wave speed as the "//&
                  "starting point for iterations.", default=.true.)
+  call get_param(param_file, mdl, "REMAPPING_USE_OM4_SUBCELLS", om4_remap_via_sub_cells, &
+                 do_not_log=.true., default=.true.)
+
   call get_param(param_file, mdl, "INTWAVE_REMAPPING_USE_OM4_SUBCELLS", om4_remap_via_sub_cells, &
                  "If true, use the OM4 remapping-via-subcells algorithm for calculating EBT structure. "//&
                  "See REMAPPING_USE_OM4_SUBCELLS for details. "//&
-                 "We recommend setting this option to false.", default=.true.)
+                 "We recommend setting this option to false.", default=om4_remap_via_sub_cells)
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
@@ -1641,8 +1644,9 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
       Time, 'Mass per unit area of liquid ocean grid cell', 'kg m-2', conversion=GV%H_to_kg_m2, &
       standard_name='sea_water_mass_per_unit_area', v_extensive=.true.)
 
-  CS%id_masso = register_scalar_field('ocean_model', 'masso', Time, &
-      diag, 'Mass of liquid ocean', 'kg', standard_name='sea_water_mass')
+  CS%id_masso = register_scalar_field('ocean_model', 'masso', Time, diag, &
+      'Mass of liquid ocean', units='kg', conversion=US%RZL2_to_kg, &
+      standard_name='sea_water_mass')
 
   CS%id_thkcello = register_diag_field('ocean_model', 'thkcello', diag%axesTL, Time, &
       long_name='Cell Thickness', standard_name='cell_thickness', &
