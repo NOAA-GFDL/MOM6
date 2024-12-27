@@ -26,6 +26,7 @@ public :: vec_chksum, vec_chksum_C, vec_chksum_B, vec_chksum_A
 public :: MOM_debugging_init, totalStuff, totalTandS
 public :: check_column_integral, check_column_integrals
 public :: query_debugging_checks
+public :: reset_h_var_halo_vals, reset_vector_halo_vals
 
 ! These interfaces come from MOM_checksums.
 public :: hchksum, Bchksum, qchksum, is_NaN, chksum, uvchksum, hchksum_pair
@@ -65,6 +66,16 @@ end interface vec_chksum_B
 interface vec_chksum_A
   module procedure chksum_vec_A3d, chksum_vec_A2d
 end interface vec_chksum_A
+
+!> Reset the values in the halo points of a tracer-cell array to a specified value.
+interface reset_h_var_halo_vals
+  module procedure reset_h_var_halo_vals_3d, reset_h_var_halo_vals_2d
+end interface reset_h_var_halo_vals
+
+!> Reset the values in the halo points of C-grid vector components to a specified value.
+interface reset_vector_halo_vals
+  module procedure reset_vector_halo_vals_2d, reset_vector_halo_vals_3d
+end interface reset_vector_halo_vals
 
 ! Note: these parameters are module data but ONLY used when debugging and
 !       so can violate the thread-safe requirement of no module/global data.
@@ -633,6 +644,74 @@ subroutine check_redundant_vT2d(mesg, u_comp, v_comp, G, is, ie, js, je, &
   enddo ; enddo
 
 end subroutine  check_redundant_vT2d
+
+
+! The following routines are here because they are useful for manipulating halo values for
+! debugging in concert with the chksum calls.
+
+!> Reset the values in the halo points of a tracer-cell array to a specified value.
+subroutine reset_h_var_halo_vals_2d(HI, array, val)
+  type(hor_index_type), intent(in) :: HI     !< A horizontal index type
+  real, intent(inout) :: array(HI%isd:,HI%jsd:) !< The array to reset [arbitrary]
+  real, intent(in)    :: val       !< The value to set in the halos [arbitrary]
+  integer :: isd, ied, jsd, jed, is, ie, js, je
+
+  is = HI%isc ; ie = HI%iec ; js = HI%jsc ; je = HI%jec
+  isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed
+  array(isd:is-1,:) = val ; array(ie+1:ied,:) = val
+  array(:,jsd:js-1) = val ; array(:,je+1:jed) = val
+end subroutine reset_h_var_halo_vals_2d
+
+!> Reset the values in the halo points of a tracer-cell array to a specified value.
+subroutine reset_h_var_halo_vals_3d(HI, array, val)
+  type(hor_index_type), intent(in) :: HI     !< A horizontal index type
+  real, intent(inout) :: array(HI%isd:,HI%jsd:,:) !< The array to reset [arbitrary]
+  real, intent(in)    :: val       !< The value to set in the halos [arbitrary]
+  integer :: isd, ied, jsd, jed, is, ie, js, je
+
+  is = HI%isc ; ie = HI%iec ; js = HI%jsc ; je = HI%jec
+  isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed
+  array(isd:is-1,:,:) = val ; array(ie+1:ied,:,:) = val
+  array(:,jsd:js-1,:) = val ; array(:,je+1:jed,:) = val
+end subroutine reset_h_var_halo_vals_3d
+
+!> Reset the values in the halo points of C-grid vector components to a specified value.
+subroutine reset_vector_halo_vals_2d(HI, u, v, val)
+  type(hor_index_type), intent(in) :: HI     !< A horizontal index type
+  real, intent(inout) :: u(HI%IsdB:,HI%jsd:) !< The u-component array to reset [arbitrary]
+  real, intent(inout) :: v(HI%isd:,HI%JsdB:) !< The v-component array to reset [arbitrary]
+  real, intent(in)    :: val               !< The value to set in the halos [arbitrary]
+  integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq
+  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
+
+  is = HI%isc ; ie = HI%iec ; js = HI%jsc ; je = HI%jec
+  Isq  = HI%IscB ; Ieq  = HI%IecB ; Jsq  = HI%JscB ; Jeq  = HI%JecB
+  isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed
+  IsdB = HI%IsdB ; IedB = HI%IedB ; JsdB = HI%JsdB ; JedB = HI%JedB
+
+  u(IsdB:Isq-1,:) = val ; u(Ieq+1:IedB,:) = val ; u(:,jsd:js-1) = val ; u(:,je+1:jed) = val
+  v(isd:is-1,:) = val ; v(ie+1:ied,:) = val ; v(:,JsdB:Jsq-1) = val ; v(:,Jeq+1:JedB) = val
+end subroutine reset_vector_halo_vals_2d
+
+!> Reset the values in the halo points of C-grid vector components to a specified value.
+subroutine reset_vector_halo_vals_3d(HI, u, v, val)
+  type(hor_index_type), intent(in) :: HI     !< A horizontal index type
+  real, intent(inout) :: u(HI%IsdB:,HI%jsd:,:) !< The u-component array to reset [arbitrary]
+  real, intent(inout) :: v(HI%isd:,HI%JsdB:,:) !< The v-component array to reset [arbitrary]
+  real, intent(in)    :: val                 !< The value to set in the halos [arbitrary]
+  integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq
+  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
+
+  is = HI%isc ; ie = HI%iec ; js = HI%jsc ; je = HI%jec
+  Isq  = HI%IscB ; Ieq  = HI%IecB ; Jsq  = HI%JscB ; Jeq  = HI%JecB
+  isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed
+  IsdB = HI%IsdB ; IedB = HI%IedB ; JsdB = HI%JsdB ; JedB = HI%JedB
+
+  u(IsdB:Isq-1,:,:) = val ; u(Ieq+1:IedB,:,:) = val
+  u(:,jsd:js-1,:) = val ; u(:,je+1:jed,:) = val
+  v(isd:is-1,:,:) = val ; v(ie+1:ied,:,:) = val
+  v(:,JsdB:Jsq-1,:) = val ; v(:,Jeq+1:JedB,:) = val
+end subroutine reset_vector_halo_vals_3d
 
 
 ! It appears that none of the other routines in this file are ever called.
