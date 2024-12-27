@@ -901,6 +901,8 @@ subroutine convert_MLD_to_ML_thickness(MLD_in, h, h_MLD, tv, G, GV, halo)
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
+  h_MLD(:,:) = 0.0
+
   halos = 0 ; if (present(halo)) halos = halo
   if (present(halo)) then
     is = G%isc-halo ; ie = G%iec+halo ; js = G%jsc-halo ; je = G%jec+halo

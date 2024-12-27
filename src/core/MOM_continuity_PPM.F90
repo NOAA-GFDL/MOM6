@@ -598,6 +598,7 @@ subroutine zonal_mass_flux(u, h_in, h_W, h_E, uh, dt, G, GV, US, CS, OBC, por_fa
     local_open_BC = OBC%open_u_BCs_exist_globally
   endif ; endif
 
+  if (present(u_cor)) u_cor(:,:,:) = 0.0
   if (present(du_cor)) du_cor(:,:) = 0.0
 
   if (present(LB_in)) then
@@ -1491,6 +1492,7 @@ subroutine meridional_mass_flux(v, h_in, h_S, h_N, vh, dt, G, GV, US, CS, OBC, p
     local_open_BC = OBC%open_v_BCs_exist_globally
   endif ; endif
 
+  if (present(v_cor)) v_cor(:,:,:) = 0.0
   if (present(dv_cor)) dv_cor(:,:) = 0.0
 
   if (present(LB_in)) then

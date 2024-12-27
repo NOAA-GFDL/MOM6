@@ -1198,6 +1198,11 @@ subroutine MEKE_lengthScales(CS, MEKE, G, GV, US, SN_u, SN_v, EKE, depth_tot, &
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   h_neglect = GV%H_subroundoff
 
+  ! This code sets the halo regions for these intent(out) variables.
+  LmixScale(:,:) = 0.0
+  bottomFac2(:,:) = 0.0
+  barotrFac2(:,:) = 0.0
+
 !$OMP do
   do j=js,je ; do i=is,ie
     if (.not.CS%use_old_lscale) then
