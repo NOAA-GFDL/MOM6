@@ -3,12 +3,13 @@ module MOM_state_initialization
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
-use MOM_debugging, only : hchksum, qchksum, uvchksum
-use MOM_density_integrals, only : int_specific_vol_dp
-use MOM_density_integrals, only : find_depth_of_pressure_in_cell
 use MOM_coms, only : max_across_PEs, min_across_PEs, reproducing_sum
 use MOM_cpu_clock, only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
-use MOM_cpu_clock, only :  CLOCK_ROUTINE, CLOCK_LOOP
+use MOM_cpu_clock, only : CLOCK_ROUTINE, CLOCK_LOOP
+use MOM_debugging, only : hchksum, qchksum, uvchksum
+use MOM_debugging, only : reset_h_var_halo_vals, reset_vector_halo_vals
+use MOM_density_integrals, only : int_specific_vol_dp
+use MOM_density_integrals, only : find_depth_of_pressure_in_cell
 use MOM_domains, only : pass_var, pass_vector, sum_across_PEs, broadcast
 use MOM_domains, only : root_PE, To_All, SCALAR_PAIR, CGRID_NE, AGRID
 use MOM_error_handler, only : MOM_mesg, MOM_error, FATAL, WARNING, is_root_pe
@@ -17,6 +18,7 @@ use MOM_file_parser, only : get_param, read_param, log_param, param_file_type
 use MOM_file_parser, only : log_version
 use MOM_get_input, only : directories
 use MOM_grid, only : ocean_grid_type, isPointInCell
+use MOM_grid_initialize, only : initialize_masks, set_grid_metrics
 use MOM_interface_heights, only : find_eta, dz_to_thickness, dz_to_thickness_simple
 use MOM_interface_heights, only : calc_derived_thermo
 use MOM_io, only : file_exists, field_size, MOM_read_data, MOM_read_vector, slasher
@@ -28,7 +30,6 @@ use MOM_open_boundary, only : open_boundary_test_extern_h
 use MOM_open_boundary, only : fill_temp_salt_segments
 use MOM_open_boundary, only : update_OBC_segment_data
 !use MOM_open_boundary, only : set_3D_OBC_data
-use MOM_grid_initialize, only : initialize_masks, set_grid_metrics
 use MOM_restart, only : restore_state, is_new_run, copy_restart_var, copy_restart_vector
 use MOM_restart, only : restart_registry_lock, MOM_restart_CS
 use MOM_sponge, only : set_up_sponge_field, set_up_sponge_ML_density
@@ -169,6 +170,12 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
                          ! by a large surface pressure by squeezing the column.
   logical :: trim_ic_for_p_surf ! If true, remove the mass that would be displaced
                          ! by a large surface pressure, such as with an ice sheet.
+  logical :: reset_state_halos ! If true, reset the values in the halo points of the 3 or 5 primary
+                         ! state variables to appropriate values over land after initialization
+                         ! to counter the effects of initializing them via intent(out) variables
+                         ! that do not explicitly set the halo points.  In reentrant cases or on
+                         ! interior processor boundaries, these values will be reset again
+                         ! immediately by halo updates.
   logical :: regrid_accelerate
   integer :: regrid_iterations
   logical :: convert
@@ -244,6 +251,13 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
                  "the time read from a restart file is the same as time_in, and issue a fatal "//&
                  "error if it is not.  Otherwise, simply set the time to time_in if present.", &
                  default=.false.)
+  call get_param(PF, mdl, "RESET_STATE_HALOS_POST_INIT", reset_state_halos, &
+                 "If true, reset the values in the halo points of the 3 (u, v and h) or 5 "//&
+                 "(T, S, u, v and h) primary state variables to appropriate values over land "//&
+                 "after initialization to undo the effects of initializing them via intent(out) "//&
+                 "variables that do not explicitly set the halo points.  In reentrant cases or on "//&
+                 "interior processor boundaries, these values will be reset again immediately by "//&
+                 "halo updates.", default=.false.) !### Change the default to .true.
 
   ! The remaining initialization calls are done, regardless of whether the
   ! fields are actually initialized here (if just_read=.false.) or whether it
@@ -488,6 +502,8 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
     endif
   endif
 
+  ! Ensure that the halo point thicknesses have appropriate values for land.
+  if (new_sim .and. reset_state_halos) call reset_h_var_halo_vals(G%HI, h, GV%Angstrom_H)
   ! The thicknesses in halo points might be needed to initialize the velocities.
   if (new_sim) call pass_var(h, G%Domain)
 
@@ -517,6 +533,17 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
     case default ; call MOM_error(FATAL,  "MOM_initialize_state: "//&
           "Unrecognized velocity configuration "//trim(config))
   end select
+
+  ! Ensure that the halo point velocities, temperatures and salinities start with appropriate
+  ! values for land.  In reentrant domains or at interior processor boundaries, the halo values
+  ! will be replaced in a few lines by the pass_vector or pass_var calls.
+  if (new_sim .and. reset_state_halos) then
+    call reset_vector_halo_vals(G%HI, u, v, 0.0)
+    if ( use_temperature ) then
+      call reset_h_var_halo_vals(G%HI, tv%T, 0.0)
+      call reset_h_var_halo_vals(G%HI, tv%S, 0.0)
+    endif
+  endif
 
   if (new_sim) call pass_vector(u, v, G%Domain)
   if (debug .and. new_sim) then
