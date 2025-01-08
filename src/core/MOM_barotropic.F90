@@ -289,7 +289,7 @@ type, public :: barotropic_CS ; private
   logical :: tidal_sal_flather !< Apply adjustment to external gravity wave speed
                              !! consistent with tidal self-attraction and loading
                              !! used within the barotropic solver
-  logical :: wt_uv_fix       !< If true, use a normalized wt_[uv] for vertical averages.
+  logical :: wt_uv_bug = .true. !< If true, recover a bug that wt_[uv] that is not normalized.
   type(time_type), pointer :: Time  => NULL() !< A pointer to the ocean models clock.
   type(diag_ctrl), pointer :: diag => NULL()  !< A structure that is used to regulate
                              !! the timing of diagnostic output.
@@ -1070,7 +1070,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     wt_v(i,J,k) = CS%frhatv(i,J,k) * visc_rem
   enddo ; enddo ; enddo
 
-  if (CS%wt_uv_fix) then
+  if (.not. CS%wt_uv_bug) then
     do j=js,je ; do I=is-1,ie ; Iwt_u_tot(I,j) = wt_u(I,j,1) ; enddo ; enddo
     do k=2,nz ; do j=js,je ; do I=is-1,ie
       Iwt_u_tot(I,j) = Iwt_u_tot(I,j) + wt_u(I,j,k)
@@ -4652,11 +4652,10 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
   call get_param(param_file, mdl, "VISC_REM_BUG", visc_rem_bug, default=.true., do_not_log=.true.)
-  call get_param(param_file, mdl, "VISC_REM_BT_WEIGHT_FIX", CS%wt_uv_fix, &
-                 "If true, use a normalized weight function for vertical averages of "//&
-                 "baroclinic velocity and forcing. Default of this flag is set by "//&
-                 "VISC_REM_BUG. This flag should be used with VISC_REM_TIMESTEP_FIX.", &
-                 default=.not.visc_rem_bug)
+  call get_param(param_file, mdl, "VISC_REM_BT_WEIGHT_BUG", CS%wt_uv_bug, &
+                 "If true, recover a bug in barotropic solver that uses an unnormalized weight "//&
+                 "function for vertical averages of baroclinic velocity and forcing. Default "//&
+                 "of this flag is set by VISC_REM_BUG.", default=visc_rem_bug)
   call get_param(param_file, mdl, "TIDES", use_tides, &
                  "If true, apply tidal momentum forcing.", default=.false.)
   if (use_tides .and. present(HA_CSp)) CS%HA_CSp => HA_CSp
@@ -4960,15 +4959,10 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
 
       if (len_trim(wave_drag_u) > 0 .and. len_trim(wave_drag_v) > 0) then
         call MOM_read_data(wave_drag_file, wave_drag_u, CS%lin_drag_u, G%Domain, &
-                           position=EAST_FACE, scale=GV%m_to_H*US%T_to_s)
-        call pass_var(CS%lin_drag_u, G%Domain)
-        CS%lin_drag_u(:,:) = wave_drag_scale * CS%lin_drag_u(:,:)
-
+                           position=EAST_FACE, scale=wave_drag_scale*GV%m_to_H*US%T_to_s)
         call MOM_read_data(wave_drag_file, wave_drag_v, CS%lin_drag_v, G%Domain, &
-                           position=NORTH_FACE, scale=GV%m_to_H*US%T_to_s)
-        call pass_var(CS%lin_drag_v, G%Domain)
-        CS%lin_drag_v(:,:) = wave_drag_scale * CS%lin_drag_v(:,:)
-
+                           position=NORTH_FACE, scale=wave_drag_scale*GV%m_to_H*US%T_to_s)
+        call pass_vector(CS%lin_drag_u, CS%lin_drag_v, G%domain, direction=To_All+SCALAR_PAIR)
       else
         allocate(lin_drag_h(isd:ied,jsd:jed), source=0.0)
 
@@ -5271,7 +5265,7 @@ subroutine register_barotropic_restarts(HI, GV, US, param_file, CS, restart_CS)
   character(len=40)  :: mdl = "MOM_barotropic"  ! This module's name.
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
   real :: am2, ak1      !< Bandwidth parameters of the M2 and K1 streaming filters [nondim]
-  real :: om2, ok1      !< Target frequencies of the M2 and K1 streaming filters [T-1 ~> s-1]
+  real :: om2, ok1      !< Target frequencies of the M2 and K1 streaming filters [rad T-1 ~> rad s-1]
 
   isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed
   IsdB = HI%IsdB ; IedB = HI%IedB ; JsdB = HI%JsdB ; JedB = HI%JedB
@@ -5302,13 +5296,13 @@ subroutine register_barotropic_restarts(HI, GV, US, param_file, CS, restart_CS)
                  "Frequency of the M2 tidal constituent. "//&
                  "This is only used if TIDES and TIDE_M2"// &
                  " are true, or if OBC_TIDE_N_CONSTITUENTS > 0 and M2"// &
-                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=tidal_frequency("M2"), &
+                 " is in OBC_TIDE_CONSTITUENTS.", units="rad s-1", default=tidal_frequency("M2"), &
                  scale=US%T_to_s, do_not_log=.true.)
   call get_param(param_file, mdl, "TIDE_K1_FREQ", ok1, &
                  "Frequency of the K1 tidal constituent. "//&
                  "This is only used if TIDES and TIDE_K1"// &
                  " are true, or if OBC_TIDE_N_CONSTITUENTS > 0 and K1"// &
-                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=tidal_frequency("K1"), &
+                 " is in OBC_TIDE_CONSTITUENTS.", units="rad s-1", default=tidal_frequency("K1"), &
                  scale=US%T_to_s, do_not_log=.true.)
 
   ALLOC_(CS%ubtav(IsdB:IedB,jsd:jed))      ; CS%ubtav(:,:) = 0.0

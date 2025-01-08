@@ -76,7 +76,9 @@ type, public :: set_diffusivity_CS ; private
   real    :: Von_Karm        !< The von Karman constant as used in the BBL diffusivity calculation
                              !! [nondim].  See (http://en.wikipedia.org/wiki/Von_Karman_constant)
   real    :: BBL_effic       !< efficiency with which the energy extracted
-                             !! by bottom drag drives BBL diffusion [nondim]
+                             !! by bottom drag drives BBL diffusion in the original BBL scheme [nondim]
+  real    :: ePBL_BBL_effic  !< efficiency with which the energy extracted
+                             !! by bottom drag drives BBL diffusion in the ePBL BBL scheme [nondim]
   real    :: cdrag           !< quadratic drag coefficient [nondim]
   real    :: dz_BBL_avg_min  !< A minimal distance over which to average to determine the average
                              !! bottom boundary layer density [Z ~> m]
@@ -182,6 +184,7 @@ type, public :: set_diffusivity_CS ; private
   integer :: id_Kd_quad    = -1, id_Kd_itidal   = -1, id_Kd_Froude  = -1, id_Kd_slope = -1
   integer :: id_prof_leak  = -1, id_prof_quad   = -1, id_prof_itidal= -1
   integer :: id_prof_Froude= -1, id_prof_slope  = -1, id_bbl_thick = -1, id_kbbl = -1
+  integer :: id_Kd_Work_added = -1
   !>@}
 
 end type set_diffusivity_CS
@@ -192,7 +195,8 @@ type diffusivity_diags
     N2_3d     => NULL(), & !< squared buoyancy frequency at interfaces [T-2 ~> s-2]
     Kd_user   => NULL(), & !< user-added diffusivity at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_BBL    => NULL(), & !< BBL diffusivity at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    Kd_work   => NULL(), & !< layer integrated work by diapycnal mixing [R Z3 T-3 ~> W m-2]
+    Kd_Work   => NULL(), & !< layer integrated work by diapycnal mixing [R Z3 T-3 ~> W m-2]
+    Kd_Work_added   => NULL(), & !< layer integrated work by added mixing [R Z3 T-3 ~> W m-2]
     maxTKE    => NULL(), & !< energy required to entrain to h_max [H Z2 T-3 ~> m3 s-3 or W m-2]
     Kd_bkgnd  => NULL(), & !< Background diffusivity at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kv_bkgnd  => NULL(), & !< Viscosity from background diffusivity at interfaces [H Z T-1 ~> m2 s-1 or Pa s]
@@ -359,7 +363,8 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
 
   if (CS%id_N2 > 0) allocate(dd%N2_3d(isd:ied,jsd:jed,nz+1), source=0.0)
   if (CS%id_Kd_user > 0) allocate(dd%Kd_user(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (CS%id_Kd_work > 0) allocate(dd%Kd_work(isd:ied,jsd:jed,nz), source=0.0)
+  if (CS%id_Kd_Work > 0) allocate(dd%Kd_Work(isd:ied,jsd:jed,nz), source=0.0)
+  if (CS%id_Kd_Work_added > 0) allocate(dd%Kd_Work_added(isd:ied,jsd:jed,nz), source=0.0)
   if (CS%id_maxTKE > 0) allocate(dd%maxTKE(isd:ied,jsd:jed,nz), source=0.0)
   if (CS%id_TKE_to_Kd > 0) allocate(dd%TKE_to_Kd(isd:ied,jsd:jed,nz), source=0.0)
   if ((CS%double_diffusion) .and. (CS%id_KT_extra > 0)) &
@@ -549,7 +554,7 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
       enddo ; enddo
     endif
 
-    if (CS%ML_radiation .or. CS%use_tidal_mixing .or. associated(dd%Kd_work)) then
+    if (CS%ML_radiation .or. CS%use_tidal_mixing .or. associated(dd%Kd_Work)) then
       call thickness_to_dz(h, tv, dz, j, G, GV)
     endif
 
@@ -662,7 +667,7 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
       enddo ; enddo
     endif
 
-    if (associated(dd%Kd_work)) then
+    if (associated(dd%Kd_Work)) then
       do k=1,nz ; do i=is,ie
         dd%Kd_Work(i,j,k) = GV%H_to_RZ * Kd_lay_2d(i,k) * N2_lay(i,k) * dz(i,k)  ! Watt m-2 = kg s-3
       enddo ; enddo
@@ -672,6 +677,12 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
     if ((CS%Kd_add > 0.0) .and. (present(Kd_lay))) then
       do k=1,nz ; do i=is,ie
         Kd_lay_2d(i,k) = Kd_lay_2d(i,k) + CS%Kd_add
+      enddo ; enddo
+    endif
+
+    if (associated(dd%Kd_Work_added)) then
+      do k=1,nz ; do i=is,ie
+        dd%Kd_Work_added(i,j,k) = GV%H_to_RZ * CS%Kd_add * N2_lay(i,k) * dz(i,k)  ! Watt m-2 = kg s-3
       enddo ; enddo
     endif
 
@@ -754,12 +765,13 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
   if (CS%use_tidal_mixing) &
     call post_tidal_diagnostics(G, GV, h, CS%tidal_mixing)
 
-  if (CS%id_N2 > 0)         call post_data(CS%id_N2,        dd%N2_3d,     CS%diag)
-  if (CS%id_Kd_Work > 0)    call post_data(CS%id_Kd_Work,   dd%Kd_Work,   CS%diag)
-  if (CS%id_maxTKE > 0)     call post_data(CS%id_maxTKE,    dd%maxTKE,    CS%diag)
-  if (CS%id_TKE_to_Kd > 0)  call post_data(CS%id_TKE_to_Kd, dd%TKE_to_Kd, CS%diag)
+  if (CS%id_N2 > 0)             call post_data(CS%id_N2,        dd%N2_3d,     CS%diag)
+  if (CS%id_Kd_Work > 0)        call post_data(CS%id_Kd_Work,   dd%Kd_Work,   CS%diag)
+  if (CS%id_Kd_Work_added > 0)  call post_data(CS%id_Kd_Work_added,   dd%Kd_Work_added,   CS%diag)
+  if (CS%id_maxTKE > 0)         call post_data(CS%id_maxTKE,    dd%maxTKE,    CS%diag)
+  if (CS%id_TKE_to_Kd > 0)      call post_data(CS%id_TKE_to_Kd, dd%TKE_to_Kd, CS%diag)
 
-  if (CS%id_Kd_user > 0)    call post_data(CS%id_Kd_user,   dd%Kd_user,   CS%diag)
+  if (CS%id_Kd_user > 0)        call post_data(CS%id_Kd_user,   dd%Kd_user,   CS%diag)
 
   ! double diffusive mixing
   if (CS%double_diffusion) then
@@ -773,7 +785,8 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
   if (CS%id_Kd_BBL > 0)   call post_data(CS%id_Kd_BBL, dd%Kd_BBL, CS%diag)
 
   if (associated(dd%N2_3d)) deallocate(dd%N2_3d)
-  if (associated(dd%Kd_work)) deallocate(dd%Kd_work)
+  if (associated(dd%Kd_Work)) deallocate(dd%Kd_Work)
+  if (associated(dd%Kd_Work_added)) deallocate(dd%Kd_Work_added)
   if (associated(dd%Kd_user)) deallocate(dd%Kd_user)
   if (associated(dd%maxTKE)) deallocate(dd%maxTKE)
   if (associated(dd%TKE_to_Kd)) deallocate(dd%TKE_to_Kd)
@@ -1203,7 +1216,7 @@ end subroutine find_N2
 
 !> This subroutine sets the additional diffusivities of temperature and
 !! salinity due to double diffusion, using the same functional form as is
-!! used in MOM4.1, and taken from an NCAR technical note (REF?) that updates
+!! used in MOM4.1, and taken from the appendix of Danabasoglu et al. (2006), which updates
 !! what was in Large et al. (1994).  All the coefficients here should probably
 !! be made run-time variables rather than hard-coded constants.
 !!
@@ -1246,8 +1259,6 @@ subroutine double_diffusion(tv, h, T_f, S_f, j, G, GV, US, CS, Kd_T_dd, Kd_S_dd)
   real :: Kd_dd   ! The dominant double diffusive diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
   real :: prandtl ! flux ratio for diffusive convection regime [nondim]
 
-  real, parameter :: Rrho0  = 1.9 ! limit for double-diffusive density ratio [nondim]
-
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   integer :: i, k, is, ie, nz
   is = G%isc ; ie = G%iec ; nz = GV%ke
@@ -1273,8 +1284,8 @@ subroutine double_diffusion(tv, h, T_f, S_f, j, G, GV, US, CS, Kd_T_dd, Kd_S_dd)
         beta_dS  = dRho_dS(i) * (S_f(i,j,k-1) - S_f(i,j,k))
 
         if ((alpha_dT > beta_dS) .and. (beta_dS > 0.0)) then  ! salt finger case
-          Rrho = min(alpha_dT / beta_dS, Rrho0)
-          diff_dd = 1.0 - ((RRho-1.0)/(RRho0-1.0))
+          Rrho = min(alpha_dT / beta_dS, CS%Max_Rrho_salt_fingers)
+          diff_dd = 1.0 - ((RRho-1.0)/(CS%Max_Rrho_salt_fingers-1.0))
           Kd_dd = CS%Max_salt_diff_salt_fingers * diff_dd*diff_dd*diff_dd
           Kd_T_dd(i,K) = 0.7 * Kd_dd
           Kd_S_dd(i,K) = Kd_dd
@@ -1934,7 +1945,7 @@ subroutine set_BBL_TKE(u, v, h, tv, fluxes, visc, G, GV, US, CS, OBC)
   if (.not.CS%initialized) call MOM_error(FATAL,"set_BBL_TKE: "//&
          "Module must be initialized before it is used.")
 
-  if (.not.CS%bottomdraglaw .or. (CS%BBL_effic<=0.0)) then
+  if (.not.CS%bottomdraglaw .or. (CS%BBL_effic<=0.0 .and. CS%ePBL_BBL_effic<=0.0)) then
     if (allocated(visc%ustar_BBL)) then
       do j=js,je ; do i=is,ie ; visc%ustar_BBL(i,j) = 0.0 ; enddo ; enddo
     endif
@@ -2350,6 +2361,8 @@ subroutine set_diffusivity_init(Time, G, GV, US, param_file, diag, CS, int_tide_
                  "The efficiency with which the energy extracted by "//&
                  "bottom drag drives BBL diffusion.  This is only "//&
                  "used if BOTTOMDRAGLAW is true.", units="nondim", default=0.20)
+    call get_param(param_file, mdl, "EPBL_BBL_EFFIC", CS%ePBL_BBL_effic, &
+                 units="nondim", default=0.0,do_not_log=.true.)
     call get_param(param_file, mdl, "BBL_MIXING_MAX_DECAY", decay_length, &
                  "The maximum decay scale for the BBL diffusion, or 0 to allow the mixing "//&
                  "to penetrate as far as stratification and rotation permit.  The default "//&
@@ -2519,6 +2532,8 @@ subroutine set_diffusivity_init(Time, G, GV, US, param_file, diag, CS, int_tide_
   if (CS%use_tidal_mixing) then
     CS%id_Kd_Work = register_diag_field('ocean_model', 'Kd_Work', diag%axesTL, Time, &
          'Work done by Diapycnal Mixing', 'W m-2', conversion=US%RZ3_T3_to_W_m2)
+    CS%id_Kd_Work_added = register_diag_field('ocean_model', 'Kd_Work_added', diag%axesTL, Time, &
+         'Work done by additional mixing Kd_add', 'W m-2', conversion=US%RZ3_T3_to_W_m2)
     CS%id_maxTKE = register_diag_field('ocean_model', 'maxTKE', diag%axesTL, Time, &
            'Maximum layer TKE', 'm3 s-3', conversion=(GV%H_to_m*US%Z_to_m**2*US%s_to_T**3))
     CS%id_TKE_to_Kd = register_diag_field('ocean_model', 'TKE_to_Kd', diag%axesTL, Time, &
@@ -2541,7 +2556,7 @@ subroutine set_diffusivity_init(Time, G, GV, US, param_file, diag, CS, int_tide_
   if (CS%double_diffusion) then
     call get_param(param_file, mdl, "MAX_RRHO_SALT_FINGERS", CS%Max_Rrho_salt_fingers, &
                  "Maximum density ratio for salt fingering regime.", &
-                 default=2.55, units="nondim")
+                 default=1.9, units="nondim")
     call get_param(param_file, mdl, "MAX_SALT_DIFF_SALT_FINGERS", CS%Max_salt_diff_salt_fingers, &
                  "Maximum salt diffusivity for salt fingering regime.", &
                  default=1.e-4, units="m2 s-1", scale=GV%m2_s_to_HZ_T)
