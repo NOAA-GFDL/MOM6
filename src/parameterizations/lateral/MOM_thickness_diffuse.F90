@@ -2275,12 +2275,12 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
                  "MEKE_GM_SRC_ALT is true.  Values below 20240601 recover the answers from the "//&
                  "original implementation, while higher values use expressions that satisfy "//&
                  "rotational symmetry.", &
-                 default=20240101, do_not_log=.not.CS%GM_src_alt) ! ### Change default to default_answer_date.
+                 default=default_answer_date, do_not_log=.not.CS%GM_src_alt)
   call get_param(param_file, mdl, "MEKE_GM_SRC_ALT_SLOPE_BUG", CS%MEKE_src_slope_bug, &
                  "If true, use a bug that limits the positive values, but not the negative values, "//&
                  "of the slopes used when MEKE_GM_SRC_ALT is true.  When this is true, it breaks "//&
                  "all of the symmetry rules that MOM6 is supposed to obey.", &
-                 default=.true., do_not_log=.not.CS%GM_src_alt) ! ### Change default to False.
+                 default=.false., do_not_log=.not.CS%GM_src_alt)
 
   call get_param(param_file, mdl, "MEKE_GEOMETRIC", CS%MEKE_GEOMETRIC, &
                  "If true, uses the GM coefficient formulation from the GEOMETRIC "//&

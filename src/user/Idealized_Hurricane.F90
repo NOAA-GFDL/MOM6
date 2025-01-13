@@ -242,7 +242,7 @@ subroutine idealized_hurricane_wind_init(Time, G, US, param_file, CS)
                  "If true and IDL_HURR_SCM is true, use a bug that does all of the tapering and "//&
                  "inflow angle calculations for radii between RAD_EDGE and RAD_AMBIENT as though "//&
                  "they were at RAD_EDGE.", &
-                 default=CS%SCM_mode, do_not_log=.not.CS%SCM_mode) !### Change the default to false.
+                 default=.false., do_not_log=.not.CS%SCM_mode)
   if (.not.CS%SCM_mode) CS%edge_taper_bug = .false.
   call get_param(param_file, mdl, "IDL_HURR_SCM_LOCY", CS%dy_from_center, &
                  "Y distance of station used in the SCM idealized hurricane wind profile.", &
