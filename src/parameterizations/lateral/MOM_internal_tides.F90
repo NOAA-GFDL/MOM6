@@ -152,8 +152,6 @@ type, public :: int_tide_CS ; private
   integer :: En_restart_power !< A power factor of 2 by which to multiply the energy in restart [nondim]
   type(time_type), pointer :: Time => NULL() !< A pointer to the model's clock.
   character(len=200) :: inputdir !< directory to look for coastline angle file
-  real :: decay_rate    !< A constant rate at which internal tide energy is
-                        !! lost to the interior ocean internal wave field [T-1 ~> s-1].
   real, allocatable, dimension(:,:,:,:) :: decay_rate_2d !< same as above but with a horizontal
                         !! structure for each harmonic [T-1 ~> s-1].
   real :: cdrag         !< The bottom drag coefficient [nondim].
@@ -3391,6 +3389,8 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   real, dimension(:,:), allocatable :: ridge_temp ! array for temporary storage of flags
                                                   ! of cells with double-reflecting ridges [nondim]
   real, dimension(:,:), allocatable :: tmp_decay ! a temp array to store decay rates [T-1 ~> s-1]
+  real :: decay_rate                             ! A constant rate at which internal tide energy is
+                                                 ! lost to the interior ocean internal wave field [T-1 ~> s-1].
   logical :: use_int_tides, use_temperature
   logical :: om4_remap_via_sub_cells ! Use the OM4-era ramap_via_sub_cells for calculating the EBT structure
   real    :: IGW_c1_thresh ! A threshold first mode internal wave speed below which all higher
@@ -3551,7 +3551,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "MAX_TKE_TO_KD", CS%max_TKE_to_Kd, &
                  "Limiter for TKE_to_Kd.", &
                  units="", default=1e9, scale=US%Z_to_m*US%s_to_T**2)
-  call get_param(param_file, mdl, "INTERNAL_TIDE_DECAY_RATE", CS%decay_rate, &
+  call get_param(param_file, mdl, "INTERNAL_TIDE_DECAY_RATE", decay_rate, &
                  "The rate at which internal tide energy is lost to the "//&
                  "interior ocean internal wave field.", &
                  units="s-1", default=0.0, scale=US%T_to_s)
@@ -3699,14 +3699,14 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
       ! read 2d field for each harmonic
       filename = trim(CS%inputdir) // trim(decay_file)
       write(var_name, '("decay_rate_freq",i1,"_mode",i1)') fr, m
-      call MOM_read_data(filename, var_name, tmp_decay, G%domain)
+      call MOM_read_data(filename, var_name, tmp_decay, G%domain, scale=US%T_to_s)
       do j=G%jsc,G%jec ; do i=G%isc,G%iec
         CS%decay_rate_2d(i,j,fr,m) = tmp_decay(i,j)
       enddo ; enddo
     enddo ; enddo
   else
     do m=1,num_mode ; do fr=1,num_freq ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
-      CS%decay_rate_2d(i,j,fr,m) = CS%decay_rate
+      CS%decay_rate_2d(i,j,fr,m) = decay_rate
     enddo ; enddo ; enddo ; enddo
   endif
 
