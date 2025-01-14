@@ -320,7 +320,8 @@ type, public :: ocean_OBC_type
   logical :: add_tide_constituents = .false.          !< If true, add tidal constituents to the boundary elevation
                                                       !! and velocity. Will be set to true if n_tide_constituents > 0.
   character(len=2), allocatable, dimension(:) :: tide_names  !< Names of tidal constituents to add to the boundary data.
-  real, allocatable, dimension(:) :: tide_frequencies !< Angular frequencies of chosen tidal constituents [T-1 ~> s-1].
+  real, allocatable, dimension(:) :: tide_frequencies !< Angular frequencies of chosen tidal
+                                                      !! constituents [rad T-1 ~> rad s-1].
   real, allocatable, dimension(:) :: tide_eq_phases   !< Equilibrium phases of chosen tidal constituents [rad].
   real, allocatable, dimension(:) :: tide_fn          !< Amplitude modulation of boundary tides by nodal cycle [nondim].
   real, allocatable, dimension(:) :: tide_un          !< Phase modulation of boundary tides by nodal cycle [rad].
@@ -705,10 +706,13 @@ subroutine open_boundary_config(G, US, param_file, OBC)
                  "that were in use at the end of 2018.  Higher values result in the use of more "//&
                  "robust and accurate forms of mathematically equivalent expressions.", &
                  default=default_answer_date)
+    call get_param(param_file, mdl, "REMAPPING_USE_OM4_SUBCELLS", OBC%om4_remap_via_sub_cells, &
+                   do_not_log=.true., default=.true.)
+
     call get_param(param_file, mdl, "OBC_REMAPPING_USE_OM4_SUBCELLS", OBC%om4_remap_via_sub_cells, &
                  "If true, use the OM4 remapping-via-subcells algorithm for neutral diffusion. "//&
                  "See REMAPPING_USE_OM4_SUBCELLS for more details. "//&
-                 "We recommend setting this option to false.", default=.true.)
+                 "We recommend setting this option to false.", default=OBC%om4_remap_via_sub_cells)
 
   endif ! OBC%number_of_segments > 0
 
@@ -1231,7 +1235,7 @@ subroutine initialize_obc_tides(OBC, US, param_file)
         "This is only used if TIDES and TIDE_"//trim(OBC%tide_names(c))// &
         " are true, or if OBC_TIDE_N_CONSTITUENTS > 0 and "//trim(OBC%tide_names(c))//&
         " is in OBC_TIDE_CONSTITUENTS.", &
-        units="s-1", default=tidal_frequency(trim(OBC%tide_names(c))), scale=US%T_to_s)
+        units="rad s-1", default=tidal_frequency(trim(OBC%tide_names(c))), scale=US%T_to_s)
 
     ! Find equilibrium phase if needed
     if (OBC%add_eq_phase) then
@@ -1476,7 +1480,7 @@ subroutine setup_u_point_obc(OBC, G, US, segment_str, l_seg, PF, reentrant_y)
                      "Timescales in days for nudging along a segment, "//&
                      "for inflow, then outflow. Setting both to zero should "//&
                      "behave like SIMPLE obcs for the baroclinic velocities.", &
-                     fail_if_missing=.true., default=0., units="days", scale=86400.0*US%s_to_T)
+                     fail_if_missing=.true., units="days", scale=86400.0*US%s_to_T)
       OBC%segment(l_seg)%Velocity_nudging_timescale_in = tnudge(1)
       OBC%segment(l_seg)%Velocity_nudging_timescale_out = tnudge(2)
       deallocate(tnudge)
@@ -1617,7 +1621,7 @@ subroutine setup_v_point_obc(OBC, G, US, segment_str, l_seg, PF, reentrant_x)
                      "Timescales in days for nudging along a segment, "//&
                      "for inflow, then outflow. Setting both to zero should "//&
                      "behave like SIMPLE obcs for the baroclinic velocities.", &
-                     fail_if_missing=.true., default=0., units="days", scale=86400.0*US%s_to_T)
+                     fail_if_missing=.true., units="days", scale=86400.0*US%s_to_T)
       OBC%segment(l_seg)%Velocity_nudging_timescale_in = tnudge(1)
       OBC%segment(l_seg)%Velocity_nudging_timescale_out = tnudge(2)
       deallocate(tnudge)
