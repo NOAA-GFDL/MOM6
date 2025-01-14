@@ -152,8 +152,10 @@ type, public :: int_tide_CS ; private
   integer :: En_restart_power !< A power factor of 2 by which to multiply the energy in restart [nondim]
   type(time_type), pointer :: Time => NULL() !< A pointer to the model's clock.
   character(len=200) :: inputdir !< directory to look for coastline angle file
-  real, allocatable, dimension(:,:,:,:) :: decay_rate_2d !< same as above but with a horizontal
-                        !! structure for each harmonic [T-1 ~> s-1].
+  real, allocatable, dimension(:,:,:,:) :: decay_rate_2d !< rate at which internal tide energy is
+                                                         !! lost to the interior ocean internal wave field
+                                                         !! as a function of longitude, latitude, frequency
+                                                         !! and vertical mode [T-1 ~> s-1].
   real :: cdrag         !< The bottom drag coefficient [nondim].
   real :: drag_min_depth !< The minimum total ocean thickness that will be used in the denominator
                         !! of the quadratic drag terms for internal tides when
