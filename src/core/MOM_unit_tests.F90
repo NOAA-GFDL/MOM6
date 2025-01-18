@@ -3,6 +3,7 @@ module MOM_unit_tests
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
+use MOM_diag_buffers,               only : diag_buffer_unit_tests_2d, diag_buffer_unit_tests_3d
 use MOM_error_handler,              only : MOM_error, FATAL, is_root_pe
 use MOM_hor_bnd_diffusion,          only : near_boundary_unit_tests
 use MOM_intrinsic_functions,        only : intrinsic_functions_unit_tests
@@ -49,6 +50,10 @@ subroutine unit_tests(verbosity)
        "MOM_unit_tests: CFC_cap_unit_tests FAILED")
     if (mixedlayer_restrat_unit_tests(verbose)) call MOM_error(FATAL, &
        "MOM_unit_tests: mixedlayer_restrat_unit_tests FAILED")
+    if (diag_buffer_unit_tests_2d(verbose)) call MOM_error(FATAL, &
+       "MOM_unit_tests: diag_buffer_unit_tests_2d FAILED")
+    if (diag_buffer_unit_tests_3d(verbose)) call MOM_error(FATAL, &
+       "MOM_unit_tests: diag_buffer_unit_tests_3d FAILED")
   endif
 
 end subroutine unit_tests
