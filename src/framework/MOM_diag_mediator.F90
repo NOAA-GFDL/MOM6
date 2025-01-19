@@ -9,6 +9,7 @@ use MOM_checksums,        only : hchksum, uchksum, vchksum, Bchksum
 use MOM_coms,             only : PE_here
 use MOM_cpu_clock,        only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock,        only : CLOCK_MODULE, CLOCK_ROUTINE
+use MOM_diag_buffers,     only : diag_buffer_2d, diag_buffer_3d
 use MOM_diag_manager_infra, only : MOM_diag_manager_init, MOM_diag_manager_end
 use MOM_diag_manager_infra, only : diag_axis_init=>MOM_diag_axis_init, get_MOM_diag_axis_name
 use MOM_diag_manager_infra, only : send_data_infra, MOM_diag_field_add_attribute, EAST, NORTH
@@ -43,6 +44,7 @@ implicit none ; private
 #define MAX_DSAMP_LEV 2
 
 public set_axes_info, post_data, register_diag_field, time_type
+public post_data_3d_by_column, post_data_3d_final
 public post_product_u, post_product_sum_u, post_product_v, post_product_sum_v
 public set_masks_for_axes
 ! post_data_1d_k is a deprecated interface that can be replaced by a call to post_data, but
@@ -134,6 +136,10 @@ type, public :: axes_grp
   real, pointer, dimension(:,:)   :: mask2d => null() !< Mask for 2d (x-y) axes [nondim]
   real, pointer, dimension(:,:,:) :: mask3d => null() !< Mask for 3d axes [nondim]
   type(diag_dsamp), dimension(2:MAX_DSAMP_LEV) :: dsamp !< Downsample container
+
+  ! For diagnostics posted piecemeal
+  type(diag_buffer_2d) :: buffer_2d
+  type(diag_buffer_3d) :: buffer_3d
 end type axes_grp
 
 !> Contains an array to store a diagnostic target grid
@@ -1102,6 +1108,8 @@ subroutine define_axes_group(diag_cs, handles, axes, nz, vertical_coordinate_num
     if (axes%is_u_point) axes%mask2d => diag_cs%mask2dCu
     if (axes%is_v_point) axes%mask2d => diag_cs%mask2dCv
     if (axes%is_q_point) axes%mask2d => diag_cs%mask2dBu
+    call axes%buffer_2d%set_horizontal_extents(lbound(axes%mask2d,1), ubound(axes%mask2d,1), &
+                                               lbound(axes%mask2d,2), ubound(axes%mask2d,2))
   endif
   ! A static 3d mask for non-native coordinates can only be setup when a grid is available
   axes%mask3d => null()
@@ -1118,7 +1126,11 @@ subroutine define_axes_group(diag_cs, handles, axes, nz, vertical_coordinate_num
       if (axes%is_v_point) axes%mask3d => diag_cs%mask3dCvi
       if (axes%is_q_point) axes%mask3d => diag_cs%mask3dBi
     endif
+    call axes%buffer_3d%set_horizontal_extents(is=lbound(axes%mask3d,1), ie=ubound(axes%mask3d,1), &
+                                               js=lbound(axes%mask3d,2), je=ubound(axes%mask3d,2))
+    call axes%buffer_3d%set_vertical_extent(ks=lbound(axes%mask3d,3), ke=ubound(axes%mask3d,3))
   endif
+
 
 end subroutine define_axes_group
 
@@ -1921,6 +1933,58 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
     deallocate( locfield )
 
 end subroutine post_data_3d_low
+
+!> Put data into the buffer for a diagnostic one column at a time
+subroutine post_data_3d_by_column(diag_field_id, field, diag_cs, i, j)
+  integer,            intent(in) :: diag_field_id !< The id for an output variable returned by a
+                                                  !! previous call to register_diag_field.
+  real, dimension(:), intent(in) :: field         !< 3-d array being offered for output or averaging
+                                                  !! in internally scaled arbitrary units [A ~> a]
+  type(diag_ctrl), target, intent(in) :: diag_CS  !< Structure used to regulate diagnostic output
+  integer,            intent(in) :: i             !< The i-index to post the data in the buffer
+  integer,            intent(in) :: j             !< The j-index to post the data in the buffer
+
+  type(diag_type), pointer :: diag => null()
+  integer :: buffer_slot
+
+  diag => diag_cs%diags(diag_field_id)
+  buffer_slot = diag%axes%buffer_3d%check_capacity_by_id(diag_field_id)
+  diag%axes%buffer_3d%buffer(buffer_slot,i,j,:) = field
+end subroutine post_data_3d_by_column
+
+!> Put data into the buffer for a diagnostic one point at a time
+subroutine post_data_3d_by_point(diag_field_id, field, diag_cs, i, j, k)
+  integer,           intent(in) :: diag_field_id !< The id for an output variable returned by a
+                                                 !! previous call to register_diag_field.
+  real,              intent(in) :: field         !< 3-d array being offered for output or averaging
+                                                 !! in internally scaled arbitrary units [A ~> a]
+  type(diag_ctrl), target, intent(in) :: diag_CS !< Structure used to regulate diagnostic output
+  integer,           intent(in) :: i             !< The i-index to post the data in the buffer
+  integer,           intent(in) :: j             !< The j-index to post the data in the buffer
+  integer,           intent(in) :: k             !< The k-index to post the data in the buffer
+
+  type(diag_type), pointer :: diag => null()
+  integer :: buffer_slot
+
+  diag => diag_cs%diags(diag_field_id)
+  buffer_slot = diag%axes%buffer_3d%find_buffer_slot(diag_field_id)
+  diag%axes%buffer_3d%buffer(buffer_slot, i, j, k) = field
+end subroutine post_data_3d_by_point
+
+!> Post the final buffer using the standard post_data interface
+subroutine post_data_3d_final(diag_field_id, diag_cs)
+  integer,           intent(in) :: diag_field_id !< The id for an output variable returned by a
+                                                 !! previous call to register_diag_field.
+  type(diag_ctrl), target, intent(in) :: diag_CS !< Structure used to regulate diagnostic output
+
+  type(diag_type), pointer :: diag => null()
+  integer :: buffer_slot
+
+  diag => diag_cs%diags(diag_field_id)
+  buffer_slot = diag%axes%buffer_3d%find_buffer_slot(diag_field_id)
+  call post_data(diag_field_id, diag%axes%buffer_3d%buffer(buffer_slot,:,:,:), diag_CS)
+  call diag%axes%buffer_3d%mark_available(diag_field_id)
+end subroutine post_data_3d_final
 
 !> Calculate and write out diagnostics that are the product of two 3-d arrays at u-points
 subroutine post_product_u(id, u_a, u_b, G, nz, diag, mask, alt_h)
