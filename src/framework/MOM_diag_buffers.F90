@@ -10,6 +10,7 @@ implicit none ; private
 
 public :: diag_buffer_unit_tests_2d, diag_buffer_unit_tests_3d
 
+!> The base class for the diagnostic buffers in this module
 type, abstract :: diag_buffer_base ; private
   integer :: is !< The start slot of the array i-direction
   integer :: js !< The start slot of the array j-direction
@@ -21,12 +22,12 @@ type, abstract :: diag_buffer_base ; private
 
   contains
 
-  procedure(a_grow), deferred :: grow
-  procedure, public :: check_capacity_by_id
-  procedure, public :: set_horizontal_extents
-  procedure, public :: mark_available
-  procedure, public :: grow_ids
-  procedure, public :: find_buffer_slot
+  procedure(a_grow), deferred :: grow !< Increase the size of the buffer
+  procedure, public :: check_capacity_by_id !< Check the size size of the buffer and increase if necessary
+  procedure, public :: set_horizontal_extents !< Define the horizontal extents of the arrays
+  procedure, public :: mark_available !< Mark that a slot in the buffer can be reused
+  procedure, public :: grow_ids !< Increase the size of the vector storing diagnostic ids
+  procedure, public :: find_buffer_slot !< Find the slot corresponding to a specific diagnostic id
 end type diag_buffer_base
 
 !> Dynamically growing buffer for 2D arrays.
@@ -35,8 +36,8 @@ type, extends(diag_buffer_base), public :: diag_buffer_2d
 
   contains
 
-  procedure, public :: grow => grow_2d
-  procedure, public :: store => store_2d
+  procedure, public :: grow => grow_2d !< Increase the size of the buffer
+  procedure, public :: store => store_2d !< Store a field in the buffer, increasing as necessary
 end type diag_buffer_2d
 
 !> Dynamically growing buffer for 3D arrays.
@@ -47,9 +48,9 @@ type, extends(diag_buffer_base), public :: diag_buffer_3d ; private
 
   contains
 
-  procedure, public :: set_vertical_extent
-  procedure, public :: grow => grow_3d
-  procedure, public :: store => store_3d
+  procedure, public :: set_vertical_extent !< Set the vertical extents of the buffer
+  procedure, public :: grow => grow_3d !< Increase the size of the buffer
+  procedure, public :: store => store_3d !< Store a field in the buffer, increasing as necessary
 end type diag_buffer_3d
 
 contains
@@ -199,6 +200,7 @@ subroutine store_3d(this, data, id)
   this%buffer(slot,:,:,:) = data(:,:,:)
 end subroutine store_3d
 
+!> Unit tests for the 2d version of the diag buffer
 function diag_buffer_unit_tests_2d(verbose) result(fail)
   logical, intent(in) :: verbose !< If true, write results to stdout
   logical :: fail !< True if any of the unit tests fail
@@ -306,6 +308,7 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
 
 end function diag_buffer_unit_tests_2d
 
+!> Test the 3d version of the buffer
 function diag_buffer_unit_tests_3d(verbose) result(fail)
   logical, intent(in) :: verbose !< If true, write results to stdout
   logical :: fail !< True if any of the unit tests fail
@@ -416,6 +419,3 @@ end function diag_buffer_unit_tests_3d
 
 end module MOM_diag_buffers
 
-!> \namespace mom_cpu_clock
-!!
-!! APIs are defined and implemented in mom_cpu_clock_infra.

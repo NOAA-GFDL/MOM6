@@ -138,8 +138,8 @@ type, public :: axes_grp
   type(diag_dsamp), dimension(2:MAX_DSAMP_LEV) :: dsamp !< Downsample container
 
   ! For diagnostics posted piecemeal
-  type(diag_buffer_2d) :: buffer_2d
-  type(diag_buffer_3d) :: buffer_3d
+  type(diag_buffer_2d) :: buffer_2d !< A dynamically reallocated buffer for 2d piecemeal diagnostics
+  type(diag_buffer_3d) :: buffer_3d !< A dynamically reallocated buffer for 3d piecemeal diagnostics
 end type axes_grp
 
 !> Contains an array to store a diagnostic target grid
