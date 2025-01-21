@@ -5,6 +5,7 @@
 
 This is the MOM6 source code.
 
+This is a test commit.
 
 # Where to find information
 
