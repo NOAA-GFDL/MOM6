@@ -1110,6 +1110,7 @@ subroutine define_axes_group(diag_cs, handles, axes, nz, vertical_coordinate_num
     if (axes%is_q_point) axes%mask2d => diag_cs%mask2dBu
     call axes%buffer_2d%set_horizontal_extents(lbound(axes%mask2d,1), ubound(axes%mask2d,1), &
                                                lbound(axes%mask2d,2), ubound(axes%mask2d,2))
+    call axes%buffer_2d%set_fill_value(diag_cs%missing_value)
   endif
   ! A static 3d mask for non-native coordinates can only be setup when a grid is available
   axes%mask3d => null()
@@ -1129,6 +1130,7 @@ subroutine define_axes_group(diag_cs, handles, axes, nz, vertical_coordinate_num
     call axes%buffer_3d%set_horizontal_extents(is=lbound(axes%mask3d,1), ie=ubound(axes%mask3d,1), &
                                                js=lbound(axes%mask3d,2), je=ubound(axes%mask3d,2))
     call axes%buffer_3d%set_vertical_extent(ks=lbound(axes%mask3d,3), ke=ubound(axes%mask3d,3))
+    call axes%buffer_3d%set_fill_value(diag_cs%missing_value)
   endif
 
 
@@ -1968,7 +1970,7 @@ subroutine post_data_3d_by_point(diag_field_id, field, diag_cs, i, j, k)
 
   diag => diag_cs%diags(diag_field_id)
   buffer_slot = diag%axes%buffer_3d%find_buffer_slot(diag_field_id)
-  diag%axes%buffer_3d%buffer(buffer_slot, i, j, k) = field
+  diag%axes%buffer_3d%buffer(buffer_slot,i,j,k) = field
 end subroutine post_data_3d_by_point
 
 !> Post the final buffer using the standard post_data interface
