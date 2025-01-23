@@ -16,6 +16,7 @@ type, abstract :: diag_buffer_base ; private
   integer :: js !< The start slot of the array j-direction
   integer :: ie !< The end slot of the array i-direction
   integer :: je !< The end slot of the array j-direction
+  real :: fill_value = 0. !< Set the fill value to use when growing the buffer
 
   integer, allocatable, dimension(:) :: ids  !< List of diagnostic ids whose slot corresponds to the row in the buffer
   integer :: length = 0 !< The number of slots in the buffer
@@ -23,6 +24,7 @@ type, abstract :: diag_buffer_base ; private
   contains
 
   procedure(a_grow), deferred :: grow !< Increase the size of the buffer
+  procedure, public :: set_fill_value !< Set the fill value to use when growing the buffer
   procedure, public :: check_capacity_by_id !< Check the size size of the buffer and increase if necessary
   procedure, public :: set_horizontal_extents !< Define the horizontal extents of the arrays
   procedure, public :: mark_available !< Mark that a slot in the buffer can be reused
@@ -59,6 +61,13 @@ contains
 subroutine a_grow(this)
   class(diag_buffer_base), intent(inout) :: this !< The diagnostic buffer
 end subroutine
+
+!> Set the fill value to use when growing the buffer
+subroutine set_fill_value(this, fill_value)
+  class(diag_buffer_base), intent(inout) :: this !< The diagnostic buffer
+  real,                    intent(in)    :: fill_value !< The fill value to use when growing the buffer [arbitrary]
+
+end subroutine set_fill_value
 
 !> Mark a slot in the buffer as unused based on a diagnostic id. For example,
 !! the data in that slot has already been consumed and can thus be overwritten
@@ -154,7 +163,7 @@ subroutine grow_2d(this)
   call this%grow_ids()
 
   n = this%length
-  allocate(temp(n+1, this%is:this%ie, this%js:this%je), source=0.)
+  allocate(temp(n+1, this%is:this%ie, this%js:this%je), source=this%fill_value)
   if (n>0) temp(1:n,:,:) = this%buffer(:,:,:)
   call move_alloc(temp, this%buffer)
   this%length = this%length + 1
@@ -183,7 +192,7 @@ subroutine grow_3d(this)
   call this%grow_ids()
 
   n = this%length
-  allocate(temp(n+1, this%is:this%ie, this%js:this%je, this%ks:this%ke), source=0.)
+  allocate(temp(n+1, this%is:this%ie, this%js:this%je, this%ks:this%ke), source=this%fill_value)
   if (n>0) temp(1:n,:,:,:) = this%buffer(:,:,:,:)
   call move_alloc(temp, this%buffer)
   this%length = this%length + 1
