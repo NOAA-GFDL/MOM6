@@ -79,7 +79,7 @@ pure function find_buffer_slot(this, id) result(slot)
   integer, dimension(1) :: temp
   integer :: slot !< The slot in the buffer corresponding to the diagnostic id
 
-  if(allocated(this%ids)) then
+  if (allocated(this%ids)) then
     !NOTE: Alternatively could do slot = SUM(findloc(...))
     temp = findloc(this%ids(:), id)
     slot = temp(1)
@@ -99,7 +99,7 @@ subroutine grow_ids(this)
   n = this%length
 
   allocate(temp(n+1))
-  if(n>0) temp(1:n) = this%ids(:)
+  if (n>0) temp(1:n) = this%ids(:)
   call move_alloc(temp, this%ids)
 end subroutine grow_ids
 
@@ -111,9 +111,9 @@ impure function check_capacity_by_id(this, id) result(slot)
   integer :: slot
 
   slot = this%find_buffer_slot(id)
-  if(slot==0) then
+  if (slot==0) then
     ! Check to see if there is an open slot
-    if(allocated(this%ids)) slot = this%find_buffer_slot(0)
+    if (allocated(this%ids)) slot = this%find_buffer_slot(0)
     ! If slot is still 0, then the buffer must grow
     if (slot==0) then
       call this%grow()
@@ -154,7 +154,7 @@ subroutine grow_2d(this)
 
   n = this%length
   allocate(temp(n+1, this%is:this%ie, this%js:this%je), source=0.)
-  if(n>0) temp(1:n,:,:) = this%buffer(:,:,:)
+  if (n>0) temp(1:n,:,:) = this%buffer(:,:,:)
   call move_alloc(temp, this%buffer)
   this%length = this%length + 1
 end subroutine grow_2d
@@ -182,7 +182,7 @@ subroutine grow_3d(this)
 
   n = this%length
   allocate(temp(n+1, this%is:this%ie, this%js:this%je, this%ks:this%ke), source=0.)
-  if(n>0) temp(1:n,:,:,:) = this%buffer(:,:,:,:)
+  if (n>0) temp(1:n,:,:,:) = this%buffer(:,:,:,:)
   call move_alloc(temp, this%buffer)
   this%length = this%length + 1
 end subroutine grow_3d
@@ -222,7 +222,7 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
     local_fail = local_fail .or. allocated(buffer_2d%buffer)
     local_fail = local_fail .or. allocated(buffer_2d%ids)
     local_fail = local_fail .or. buffer_2d%length /= 0
-    if(verbose) write(stdout,*) "new_buffer_2d: ", local_fail
+    if (verbose) write(stdout,*) "new_buffer_2d: ", local_fail
   end function new_buffer_2d
 
   !> Test the growing of a buffer
@@ -245,7 +245,7 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
       local_fail = local_fail .or. (lbound(buffer_2d%buffer, 3) /= js)
       local_fail = local_fail .or. (ubound(buffer_2d%buffer, 3) /= je)
     enddo
-    if(verbose) write(stdout,*) "grow_buffer_2d: ", local_fail
+    if (verbose) write(stdout,*) "grow_buffer_2d: ", local_fail
   end function grow_buffer_2d
 
   !> Test storing a buffer based on a unique id
@@ -266,7 +266,7 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
     enddo
     local_fail = ANY(buffer_2d%buffer /= test_2d)
 
-    if(verbose) write(stdout,*) "store_buffer_2d: ", local_fail
+    if (verbose) write(stdout,*) "store_buffer_2d: ", local_fail
   end function store_buffer_2d
 
   !> Test the reuse of a buffer. Fill it first like store_buffer_2d. Then,
@@ -303,7 +303,7 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
     enddo
     local_fail = local_fail .or. any(buffer_2d%ids /= [14, 7, 21])
     local_fail = local_fail .or. any(buffer_2d%buffer /= test_2d_first)
-    if(verbose) write(stdout,*) "reuse_buffer_2d: ", local_fail
+    if (verbose) write(stdout,*) "reuse_buffer_2d: ", local_fail
   end function reuse_buffer_2d
 
 end function diag_buffer_unit_tests_2d
@@ -330,7 +330,7 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
     local_fail = local_fail .or. allocated(buffer_3d%buffer)
     local_fail = local_fail .or. allocated(buffer_3d%ids)
     local_fail = local_fail .or. buffer_3d%length /= 0
-    if(verbose) write(stdout,*) "new_buffer_3d: ", local_fail
+    if (verbose) write(stdout,*) "new_buffer_3d: ", local_fail
   end function new_buffer_3d
 
   !> Test the growing of a buffer
@@ -355,7 +355,7 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
       local_fail = local_fail .or. (lbound(buffer_3d%buffer, 4) /= ks)
       local_fail = local_fail .or. (ubound(buffer_3d%buffer, 4) /= ke)
     enddo
-    if(verbose) write(stdout,*) "grow_buffer_3d: ", local_fail
+    if (verbose) write(stdout,*) "grow_buffer_3d: ", local_fail
   end function grow_buffer_3d
 
   !> Test storing a buffer based on a unique id
@@ -375,7 +375,7 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
     enddo
     local_fail = ANY(buffer_3d%buffer /= test_3d)
 
-    if(verbose) write(stdout,*) "store_buffer_3d: ", local_fail
+    if (verbose) write(stdout,*) "store_buffer_3d: ", local_fail
   end function store_buffer_3d
 
   !> Test the reuse of a buffer. Fill it first like store_buffer_3d. Then,
@@ -412,7 +412,7 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
     enddo
     local_fail = local_fail .or. any(buffer_3d%ids /= [14, 7, 21])
     local_fail = local_fail .or. any(buffer_3d%buffer /= test_3d_first)
-    if(verbose) write(stdout,*) "reuse_buffer_3d: ", local_fail
+    if (verbose) write(stdout,*) "reuse_buffer_3d: ", local_fail
   end function reuse_buffer_3d
 
 end function diag_buffer_unit_tests_3d
