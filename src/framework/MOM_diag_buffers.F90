@@ -32,7 +32,7 @@ end type diag_buffer_base
 
 !> Dynamically growing buffer for 2D arrays.
 type, extends(diag_buffer_base), public :: diag_buffer_2d
-  real, public, allocatable, dimension(:,:,:) :: buffer !< The actual buffer to store data
+  real, public, allocatable, dimension(:,:,:) :: buffer !< The actual buffer to store data [arbitrary]
 
   contains
 
@@ -44,7 +44,7 @@ end type diag_buffer_2d
 type, extends(diag_buffer_base), public :: diag_buffer_3d ; private
   integer :: ks !< The start slot in the k-dimension
   integer :: ke !< The last slot in the k-dimension
-  real, public, allocatable, dimension(:,:,:,:) :: buffer !< The actual buffer to store data
+  real, public, allocatable, dimension(:,:,:,:) :: buffer !< The actual buffer to store data [arbitrary]
 
   contains
 
@@ -148,7 +148,8 @@ subroutine grow_2d(this)
   class(diag_buffer_2d), intent(inout) :: this !< This 2d buffer
 
   integer :: n
-  real, allocatable, dimension(:,:,:) :: temp
+  real, allocatable, dimension(:,:,:) :: temp ! Temporary array to hold the contents of the buffer
+                                              ! prior to allocating new memory [arbitrary]
 
   call this%grow_ids()
 
@@ -162,7 +163,7 @@ end subroutine grow_2d
 !> Store a 2D array into this buffer
 subroutine store_2d(this, data, id)
   class(diag_buffer_2d), intent(inout) :: this !< This 2d buffer
-  real, dimension(:,:),  intent(in)    :: data !< The data to be stored in the buffer
+  real, dimension(:,:),  intent(in)    :: data !< The data to be stored in the buffer [arbitrary]
   integer,               intent(in)    :: id !< The diagnostic id
 
   integer :: slot
@@ -176,7 +177,8 @@ subroutine grow_3d(this)
   class(diag_buffer_3d), intent(inout) :: this !< This 3d buffer
 
   integer :: n
-  real, allocatable, dimension(:,:,:,:) :: temp
+  real, allocatable, dimension(:,:,:,:) :: temp ! Temporary array to hold the contents of the buffer
+                                                ! prior to allocating new memory [arbitrary]
 
   call this%grow_ids()
 
@@ -190,7 +192,7 @@ end subroutine grow_3d
 !> Store a 3d array into this buffer
 subroutine store_3d(this, data, id)
   class(diag_buffer_3d),  intent(inout) :: this !< This 3d buffer
-  real, dimension(:,:,:), intent(in)    :: data !< The data to be stored in the buffer
+  real, dimension(:,:,:), intent(in)    :: data !< The data to be stored in the buffer [arbitrary]
   integer,                intent(in)    :: id !< The diagnostic id
 
   integer :: slot
