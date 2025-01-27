@@ -5471,8 +5471,8 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
         if (G%mask2dT(I+ishift,j) == 0.0) cycle
         ! Update the reservoir tracer concentration implicitly using a Backward-Euler timestep
         do m=1,segment%tr_Reg%ntseg
-          ntr_id = segment%tr_reg%Tr(m)%ntr_index
-          fd_id = segment%tr_reg%Tr(m)%fd_index
+          ntr_id = segment%tr_Reg%Tr(m)%ntr_index
+          fd_id = segment%tr_Reg%Tr(m)%fd_index
           if (fd_id == -1) then
             resrv_lfac_out = 1.0
             resrv_lfac_in  = 1.0
@@ -5515,8 +5515,8 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
         if (G%mask2dT(i,j+jshift) == 0.0) cycle
         ! Update the reservoir tracer concentration implicitly using a Backward-Euler timestep
         do m=1,segment%tr_Reg%ntseg
-          ntr_id = segment%tr_reg%Tr(m)%ntr_index
-          fd_id = segment%tr_reg%Tr(m)%fd_index
+          ntr_id = segment%tr_Reg%Tr(m)%ntr_index
+          fd_id = segment%tr_Reg%Tr(m)%fd_index
           if (fd_id == -1) then
             resrv_lfac_out = 1.0
             resrv_lfac_in  = 1.0
