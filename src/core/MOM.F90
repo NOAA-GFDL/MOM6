@@ -2404,7 +2404,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "timesteps that can be longer than the coupling timestep. "//&
                  "The actual tracer advection timestep that is used in this "//&
                  "case is the largest integer multiple of the coupling "//&
-                 "timestep that is less than or equal to DT_TRACER_ADVECT.", & 
+                 "timestep that is less than or equal to DT_TRACER_ADVECT.", &
                  default=CS%thermo_spans_coupling)
   if ( CS%diabatic_first .and. (CS%dt_tr_adv /= CS%dt_therm) ) then
     call MOM_error(FATAL,"MOM: If using DIABATIC_FIRST, DT_TRACER_ADVECT must equal DT_THERM.")
