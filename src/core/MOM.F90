@@ -944,7 +944,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
 
       !===========================================================================
       ! This is the start of the tracer advection part of the algorithm.
-
+      do_advection = .false.
       if (tradv_does_span_coupling .or. .not.do_thermo) then
         do_advection = (CS%t_dyn_rel_adv + 0.5*dt > dt_tr_adv)
         if (CS%t_dyn_rel_thermo + 0.5*dt > dt_therm) do_advection = .true.
@@ -2404,7 +2404,8 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "timesteps that can be longer than the coupling timestep. "//&
                  "The actual tracer advection timestep that is used in this "//&
                  "case is the largest integer multiple of the coupling "//&
-                 "timestep that is less than or equal to DT_TRACER_ADVECT.", default=.false.)
+                 "timestep that is less than or equal to DT_TRACER_ADVECT.", & 
+                 default=CS%thermo_spans_coupling)
   if ( CS%diabatic_first .and. (CS%dt_tr_adv /= CS%dt_therm) ) then
     call MOM_error(FATAL,"MOM: If using DIABATIC_FIRST, DT_TRACER_ADVECT must equal DT_THERM.")
   endif
