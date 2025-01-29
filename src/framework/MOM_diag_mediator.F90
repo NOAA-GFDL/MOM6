@@ -138,8 +138,8 @@ type, public :: axes_grp
   type(diag_dsamp), dimension(2:MAX_DSAMP_LEV) :: dsamp !< Downsample container
 
   ! For diagnostics posted piecemeal
-  type(diag_buffer_2d) :: buffer_2d !< A dynamically reallocated buffer for 2d piecemeal diagnostics
-  type(diag_buffer_3d) :: buffer_3d !< A dynamically reallocated buffer for 3d piecemeal diagnostics
+  type(diag_buffer_2d) :: piecemeal_2d !< A dynamically reallocated buffer for 2d piecemeal diagnostics
+  type(diag_buffer_3d) :: piecemeal_3d !< A dynamically reallocated buffer for 3d piecemeal diagnostics
 end type axes_grp
 
 !> Contains an array to store a diagnostic target grid
@@ -1108,9 +1108,9 @@ subroutine define_axes_group(diag_cs, handles, axes, nz, vertical_coordinate_num
     if (axes%is_u_point) axes%mask2d => diag_cs%mask2dCu
     if (axes%is_v_point) axes%mask2d => diag_cs%mask2dCv
     if (axes%is_q_point) axes%mask2d => diag_cs%mask2dBu
-    call axes%buffer_2d%set_horizontal_extents(lbound(axes%mask2d,1), ubound(axes%mask2d,1), &
+    call axes%piecemeal_2d%set_horizontal_extents(lbound(axes%mask2d,1), ubound(axes%mask2d,1), &
                                                lbound(axes%mask2d,2), ubound(axes%mask2d,2))
-    call axes%buffer_2d%set_fill_value(diag_cs%missing_value)
+    call axes%piecemeal_2d%set_fill_value(diag_cs%missing_value)
   endif
   ! A static 3d mask for non-native coordinates can only be setup when a grid is available
   axes%mask3d => null()
@@ -1127,10 +1127,10 @@ subroutine define_axes_group(diag_cs, handles, axes, nz, vertical_coordinate_num
       if (axes%is_v_point) axes%mask3d => diag_cs%mask3dCvi
       if (axes%is_q_point) axes%mask3d => diag_cs%mask3dBi
     endif
-    call axes%buffer_3d%set_horizontal_extents(is=lbound(axes%mask3d,1), ie=ubound(axes%mask3d,1), &
+    call axes%piecemeal_3d%set_horizontal_extents(is=lbound(axes%mask3d,1), ie=ubound(axes%mask3d,1), &
                                                js=lbound(axes%mask3d,2), je=ubound(axes%mask3d,2))
-    call axes%buffer_3d%set_vertical_extent(ks=lbound(axes%mask3d,3), ke=ubound(axes%mask3d,3))
-    call axes%buffer_3d%set_fill_value(diag_cs%missing_value)
+    call axes%piecemeal_3d%set_vertical_extent(ks=lbound(axes%mask3d,3), ke=ubound(axes%mask3d,3))
+    call axes%piecemeal_3d%set_fill_value(diag_cs%missing_value)
   endif
 
 
@@ -1950,8 +1950,8 @@ subroutine post_data_3d_by_column(diag_field_id, field, diag_cs, i, j)
   integer :: buffer_slot
 
   diag => diag_cs%diags(diag_field_id)
-  buffer_slot = diag%axes%buffer_3d%check_capacity_by_id(diag_field_id)
-  diag%axes%buffer_3d%buffer(buffer_slot,i,j,:) = field
+  buffer_slot = diag%axes%piecemeal_3d%check_capacity_by_id(diag_field_id)
+  diag%axes%piecemeal_3d%buffer(buffer_slot)%field(i,j,:) = field(:)
 end subroutine post_data_3d_by_column
 
 !> Put data into the buffer for a diagnostic one point at a time
@@ -1969,8 +1969,8 @@ subroutine post_data_3d_by_point(diag_field_id, field, diag_cs, i, j, k)
   integer :: buffer_slot
 
   diag => diag_cs%diags(diag_field_id)
-  buffer_slot = diag%axes%buffer_3d%find_buffer_slot(diag_field_id)
-  diag%axes%buffer_3d%buffer(buffer_slot,i,j,k) = field
+  buffer_slot = diag%axes%piecemeal_3d%find_buffer_slot(diag_field_id)
+  diag%axes%piecemeal_3d%buffer(buffer_slot)%field(i,j,k) = field
 end subroutine post_data_3d_by_point
 
 !> Post the final buffer using the standard post_data interface
@@ -1983,9 +1983,9 @@ subroutine post_data_3d_final(diag_field_id, diag_cs)
   integer :: buffer_slot
 
   diag => diag_cs%diags(diag_field_id)
-  buffer_slot = diag%axes%buffer_3d%find_buffer_slot(diag_field_id)
-  call post_data(diag_field_id, diag%axes%buffer_3d%buffer(buffer_slot,:,:,:), diag_CS)
-  call diag%axes%buffer_3d%mark_available(diag_field_id)
+  buffer_slot = diag%axes%piecemeal_3d%find_buffer_slot(diag_field_id)
+  call post_data(diag_field_id, diag%axes%piecemeal_3d%buffer(buffer_slot)%field(:,:,:), diag_CS)
+  call diag%axes%piecemeal_3d%mark_available(diag_field_id)
 end subroutine post_data_3d_final
 
 !> Calculate and write out diagnostics that are the product of two 3-d arrays at u-points
