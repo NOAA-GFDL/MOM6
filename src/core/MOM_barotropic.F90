@@ -600,7 +600,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     uhbt0, &      ! The difference between the sum of the layer zonal thickness
                   ! fluxes and the barotropic thickness flux using the same
                   ! velocity [H L2 T-1 ~> m3 s-1 or kg s-1].
-    ubt_first, &  ! The starting value of ubt in a series of barotropic steps [L T-1 ~> m s-1].
     Cor_ref_u, &  ! The zonal barotropic Coriolis acceleration due
                   ! to the reference velocities [L T-2 ~> m s-2].
     Rayleigh_u, & ! A Rayleigh drag timescale operating at u-points for drag parameterizations
@@ -623,7 +622,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     vhbt0, &      ! The difference between the sum of the layer meridional
                   ! thickness fluxes and the barotropic thickness flux using
                   ! the same velocities [H L2 T-1 ~> m3 s-1 or kg s-1].
-    vbt_first, &  ! The starting value of vbt in a series of barotropic steps [L T-1 ~> m s-1].
     Cor_ref_v, &  ! The meridional barotropic Coriolis acceleration due
                   ! to the reference velocities [L T-2 ~> m s-2].
     Rayleigh_v, & ! A Rayleigh drag timescale operating at v-points for drag parameterizations
@@ -1316,8 +1314,11 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   uhbt(:,:) = 0.0 ; vhbt(:,:) = 0.0
   u_accel_bt(:,:) = 0.0 ; v_accel_bt(:,:) = 0.0
 
-  if (apply_OBCs) then
-    ubt_first(:,:) = ubt(:,:) ; vbt_first(:,:) = vbt(:,:)
+  if (apply_OBCs .or. (CS%id_ubtdt > 0)) then
+    do j=js,je ; do I=is-1,ie ; ubt_st(I,j) = ubt(I,j) ; enddo ; enddo
+  endif
+  if (apply_OBCs .or. (CS%id_vbtdt > 0)) then
+    do J=js-1,je ; do i=is,ie ; vbt_st(i,J) = vbt(i,J) ; enddo ; enddo
   endif
 
 !   Here the vertical average accelerations due to the Coriolis, advective,
@@ -1788,17 +1789,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     endif
   endif
 
-  if (CS%id_ubtdt > 0) then
-    do j=js-1,je+1 ; do I=is-1,ie
-      ubt_st(I,j) = ubt(I,j)
-    enddo ; enddo
-  endif
-  if (CS%id_vbtdt > 0) then
-    do J=js-1,je ; do i=is-1,ie+1
-      vbt_st(i,J) = vbt(i,J)
-    enddo ; enddo
-  endif
-
   if (query_averaging_enabled(CS%diag)) then
     if (CS%id_eta_st > 0) call post_data(CS%id_eta_st, eta(isd:ied,jsd:jed), CS%diag)
     if (CS%id_ubt_st > 0) call post_data(CS%id_ubt_st, ubt(IsdB:IedB,jsd:jed), CS%diag)
@@ -2014,13 +2004,13 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     ! symmetric-memory computational domain, not in the wide halo regions.
     if (CS%BT_OBC%u_OBCs_on_PE) then ; do j=js,je ; do I=is-1,ie
       if (CS%BT_OBC%u_OBC_type(I,j) /= 0) then
-        u_accel_bt(I,j) = (ubt_wtd(I,j) - ubt_first(I,j)) / dt
+        u_accel_bt(I,j) = (ubt_wtd(I,j) - ubt_st(I,j)) / dt
         do k=1,nz ; accel_layer_u(I,j,k) = u_accel_bt(I,j) ; enddo
       endif
     enddo ; enddo ; endif
     if (CS%BT_OBC%v_OBCs_on_PE) then ; do J=js-1,je ; do i=is,ie
       if (CS%BT_OBC%v_OBC_type(i,J) /= 0) then
-        v_accel_bt(i,J) = (vbt_wtd(i,J) - vbt_first(i,J)) / dt
+        v_accel_bt(i,J) = (vbt_wtd(i,J) - vbt_st(i,J)) / dt
         do k=1,nz ; accel_layer_v(i,J,k) = v_accel_bt(i,J) ; enddo
       endif
     enddo ; enddo ; endif
