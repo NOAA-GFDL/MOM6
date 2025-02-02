@@ -1469,7 +1469,7 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
   ! Copy eta into an output array.
   do j=js,je ; do i=is,ie ; eta(i,j) = CS%eta(i,j) ; enddo ; enddo
 
-  call barotropic_init(u, v, h, CS%eta, Time, G, GV, US, param_file, diag, &
+  call barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, &
                        CS%barotropic_CSp, restart_CS, calc_dtbt, CS%BT_cont, &
                        CS%SAL_CSp, HA_CSp)
 

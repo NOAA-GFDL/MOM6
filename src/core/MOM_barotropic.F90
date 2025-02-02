@@ -4424,7 +4424,7 @@ end subroutine bt_mass_source
 !> barotropic_init initializes a number of time-invariant fields used in the
 !! barotropic calculation and initializes any barotropic fields that have not
 !! already been initialized.
-subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, &
+subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                            restart_CS, calc_dtbt, BT_cont, SAL_CSp, HA_CSp)
   type(ocean_grid_type),   intent(inout) :: G    !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)    :: GV   !< The ocean's vertical grid structure.
@@ -4435,9 +4435,6 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
                            intent(in)    :: v    !< The meridional velocity [L T-1 ~> m s-1].
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                            intent(in)    :: h    !< Layer thicknesses [H ~> m or kg m-2].
-  real, dimension(SZI_(G),SZJ_(G)), &
-                           intent(in)    :: eta  !< Free surface height or column mass anomaly
-                                                 !! [Z ~> m] or [H ~> kg m-2].
   type(time_type), target, intent(in)    :: Time !< The current model time.
   type(param_file_type),   intent(in)    :: param_file !< A structure to parse for run-time parameters.
   type(diag_ctrl), target, intent(inout) :: diag !< A structure that is used to regulate diagnostic
@@ -4465,7 +4462,7 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   real :: SSH_extra     ! An estimate of how much higher SSH might get, for use
                         ! in calculating the safe external wave speed [Z ~> m].
   real :: dtbt_input    ! The input value of DTBT, [nondim] if negative or [s] if positive.
-  real :: dtbt_tmp      ! A temporary copy of CS%dtbt read from a restart file [T ~> s]
+  real :: dtbt_restart  ! A temporary copy of CS%dtbt read from a restart file [T ~> s]
   real :: wave_drag_scale ! A scaling factor for the barotropic linear wave drag
                           ! piston velocities [nondim].
   character(len=200) :: inputdir       ! The directory in which to find input files.
@@ -4978,9 +4975,9 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
 
   CS%dtbt_fraction = 0.98 ; if (dtbt_input < 0.0) CS%dtbt_fraction = -dtbt_input
 
-  dtbt_tmp = -1.0
+  dtbt_restart = -1.0
   if (query_initialized(CS%dtbt, "DTBT", restart_CS)) then
-    dtbt_tmp = CS%dtbt
+    dtbt_restart = CS%dtbt
   endif
 
   ! Estimate the maximum stable barotropic time step.
@@ -4991,14 +4988,17 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
     H_to_Z = GV%H_to_RZ / CS%Rho_BT_lin
     do k=1,GV%ke ; gtot_estimate = gtot_estimate + H_to_Z*GV%g_prime(K) ; enddo
   endif
+
+  ! CS%dtbt calculated here by set_dtbt is only used when dtbt is not reset during the run, i.e. DTBT_RESET_PERIOD<0.
   call set_dtbt(G, GV, US, CS, gtot_est=gtot_estimate, SSH_add=SSH_extra)
 
   if (dtbt_input > 0.0) then
     CS%dtbt = US%s_to_T * dtbt_input
-  elseif (dtbt_tmp > 0.0) then
-    CS%dtbt = dtbt_tmp
+  elseif (dtbt_restart > 0.0) then
+    CS%dtbt = dtbt_restart
   endif
-  if ((dtbt_tmp > 0.0) .and. (dtbt_input > 0.0)) calc_dtbt = .false.
+
+  calc_dtbt = .true. ; if ((dtbt_restart > 0.0) .and. (dtbt_input > 0.0)) calc_dtbt = .false.
 
   call log_param(param_file, mdl, "DTBT as used", CS%dtbt, units="s", unscale=US%T_to_s)
   call log_param(param_file, mdl, "estimated maximum DTBT", CS%dtbt_max, units="s", unscale=US%T_to_s)
