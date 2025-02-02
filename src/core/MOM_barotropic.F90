@@ -2847,26 +2847,26 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
 
 end subroutine btstep
 
-!> This subroutine automatically determines an optimal value for dtbt based
-!! on some state of the ocean.
-subroutine set_dtbt(G, GV, US, CS, eta, pbce, BT_cont, gtot_est, SSH_add)
+!> This subroutine automatically determines an optimal value for dtbt based on some state of the ocean. Either pbce or
+!! gtot_est is required to calculate gravitational acceleration. Column thickness can be estimated using BT_cont, eta,
+!! and SSH_add (default=0), with priority given in that order. The subroutine sets CS%dtbt_max and CS%dtbt.
+subroutine set_dtbt(G, GV, US, CS, pbce, gtot_est, BT_cont, eta, SSH_add)
   type(ocean_grid_type),        intent(inout) :: G    !< The ocean's grid structure.
   type(verticalGrid_type),      intent(in)    :: GV   !< The ocean's vertical grid structure.
   type(unit_scale_type),        intent(in)    :: US   !< A dimensional unit scaling type
   type(barotropic_CS),          intent(inout) :: CS   !< Barotropic control structure
-  real, dimension(SZI_(G),SZJ_(G)), optional, intent(in) :: eta  !< The barotropic free surface
-                                                      !! height anomaly or column mass anomaly [H ~> m or kg m-2].
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), optional, intent(in) :: pbce  !< The baroclinic pressure
-                                                      !! anomaly in each layer due to free surface
-                                                      !! height anomalies [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
-  type(BT_cont_type), optional, pointer       :: BT_cont  !< A structure with elements that describe
-                                                      !! the effective open face areas as a
-                                                      !! function of barotropic flow.
-  real,               optional, intent(in)    :: gtot_est !< An estimate of the total gravitational
-                                                      !! acceleration [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
-  real,               optional, intent(in)    :: SSH_add  !< An additional contribution to SSH to
-                                                      !! provide a margin of error when
-                                                      !! calculating the external wave speed [Z ~> m].
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                      optional, intent(in)    :: pbce !< The baroclinic pressure anomaly in each layer due to free
+                                                      !! surface height anomalies [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
+  real,               optional, intent(in)    :: gtot_est !< An estimate of the total gravitational acceleration
+                                                      !! [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
+  type(BT_cont_type), optional, pointer       :: BT_cont  !< A structure with elements that describe the effective open
+                                                      !! face areas as a function of barotropic flow.
+  real, dimension(SZI_(G),SZJ_(G)), &
+                      optional, intent(in)    :: eta  !< The barotropic free surface height anomaly or  column mass
+                                                      !! anomaly [H ~> m or kg m-2].
+  real,               optional, intent(in)    :: SSH_add !< An additional contribution to SSH to provide a margin of
+                                                      !! error when calculating the external wave speed [Z ~> m].
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
