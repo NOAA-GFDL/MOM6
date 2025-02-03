@@ -609,7 +609,7 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
       enddo
     endif ; enddo ! i-loop
 
-    if CS%VS_viscosity_bug then
+    if (CS%VS_viscosity_bug) then
       do K=1,nz+1 ; do I=IsB,IeB
         tke_io(I,J,K) = G%mask2dBu(I,J) * tke_2d(I,K)
         kv_io(I,J,K) = ( G%mask2dBu(I,J) * kappa_2d(I,K,J2) ) * CS%Prandtl_turb
