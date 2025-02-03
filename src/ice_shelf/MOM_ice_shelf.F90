@@ -1875,7 +1875,12 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
 
   CS%restart_output_dir = dirs%restart_output_dir
 
-
+  if (present(fluxes_in)) then
+     call initialize_ice_shelf_fluxes(CS, ocn_grid, US, fluxes_in)
+     call register_restart_field(fluxes_in%shelf_sfc_mass_flux, "sfc_mass_flux", .true., CS%restart_CSp, &
+        "ice shelf surface mass flux deposition from atmosphere", &
+        'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
+  endif
 
   if (new_sim .and. (.not. (CS%override_shelf_movement .and. CS%mass_from_file))) then
     ! This model is initialized internally or from a file.
@@ -2176,12 +2181,12 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
 
   call MOM_IS_diag_mediator_close_registration(CS%diag)
 
-  if (present(fluxes_in)) then
-     call initialize_ice_shelf_fluxes(CS, ocn_grid, US, fluxes_in)
-     call register_restart_field(fluxes_in%shelf_sfc_mass_flux, "sfc_mass_flux", .true., CS%restart_CSp, &
-        "ice shelf surface mass flux deposition from atmosphere", &
-        'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
-  endif
+!  if (present(fluxes_in)) then
+!     call initialize_ice_shelf_fluxes(CS, ocn_grid, US, fluxes_in)
+!     call register_restart_field(fluxes_in%shelf_sfc_mass_flux, "sfc_mass_flux", .true., CS%restart_CSp, &
+!        "ice shelf surface mass flux deposition from atmosphere", &
+!        'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
+!  endif
   if (present(forces_in)) call initialize_ice_shelf_forces(CS, ocn_grid, US, forces_in)
 
 end subroutine initialize_ice_shelf
