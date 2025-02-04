@@ -149,7 +149,7 @@ type, public :: diabatic_CS ; private
                                      !! diffusivity of Kd_min_tr (see below) were operating.
   real    :: Kd_BBL_tr               !< A bottom boundary layer tracer diffusivity that
                                      !! will allow for explicitly specified bottom fluxes
-                                     !! [H2 T-1 ~> m2 s-1 or kg2 m-4 s-2].  The entrainment at the
+                                     !! [H2 T-1 ~> m2 s-1 or kg2 m-4 s-1].  The entrainment at the
                                      !! bottom is at least sqrt(Kd_BBL_tr*dt) over the same distance.
   real    :: Kd_min_tr               !< A minimal diffusivity that should always be
                                      !! applied to tracers, especially in massless layers
@@ -858,7 +858,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     endif
 
     call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
-    call energetic_PBL(h, u_h, v_h, tv, fluxes, dt, Kd_ePBL, G, GV, US, &
+    call energetic_PBL(h, u_h, v_h, tv, fluxes, visc, dt, Kd_ePBL, G, GV, US, &
                        CS%ePBL, stoch_CS, dSV_dT, dSV_dS, cTKE, SkinBuoyFlux, waves=waves)
 
     call energetic_PBL_get_MLD(CS%ePBL, BLD(:,:), G, US)
@@ -1410,7 +1410,7 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     endif
 
     call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
-    call energetic_PBL(h, u_h, v_h, tv, fluxes, dt, Kd_ePBL, G, GV, US, &
+    call energetic_PBL(h, u_h, v_h, tv, fluxes, visc, dt, Kd_ePBL, G, GV, US, &
                        CS%ePBL, stoch_CS, dSV_dT, dSV_dS, cTKE, SkinBuoyFlux, waves=waves)
 
     call energetic_PBL_get_MLD(CS%ePBL, BLD(:,:), G, US)

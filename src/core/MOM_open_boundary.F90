@@ -398,7 +398,7 @@ end type ocean_OBC_type
 !> Control structure for open boundaries that read from files.
 !! Probably lots to update here.
 type, public :: file_OBC_CS ; private
-  real :: tide_flow = 3.0e6         !< Placeholder for now..., perhaps in [m3 s-1]?
+  logical :: OBC_file_used = .false.     !< Placeholder for now to avoid an empty type.
 end type file_OBC_CS
 
 !> Type to carry something (what??) for the OBC registry.
@@ -1169,26 +1169,30 @@ subroutine initialize_obc_tides(OBC, US, param_file)
   type(astro_longitudes) :: nodal_longitudes  !< Solar and lunar longitudes for tidal forcing
   type(time_type) :: nodal_time               !< Model time to calculate nodal modulation for.
   integer :: c                                !< Index to tidal constituent.
+  logical :: tides                            !< True if astronomical tides are also used.
 
   call get_param(param_file, mdl, "OBC_TIDE_CONSTITUENTS", tide_constituent_str, &
       "Names of tidal constituents being added to the open boundaries.", &
       fail_if_missing=.true.)
 
-  call get_param(param_file, mdl, "OBC_TIDE_ADD_EQ_PHASE", OBC%add_eq_phase, &
+  call get_param(param_file, mdl, "TIDES", tides, &
+      "If true, apply tidal momentum forcing.", default=.false., do_not_log=.true.)
+
+  call get_param(param_file, mdl, "TIDE_USE_EQ_PHASE", OBC%add_eq_phase, &
       "If true, add the equilibrium phase argument to the specified tidal phases.", &
-      default=.false., fail_if_missing=.false.)
+      old_name="OBC_TIDE_ADD_EQ_PHASE", default=.false., do_not_log=tides)
 
-  call get_param(param_file, mdl, "OBC_TIDE_ADD_NODAL", OBC%add_nodal_terms, &
+  call get_param(param_file, mdl, "TIDE_ADD_NODAL", OBC%add_nodal_terms, &
       "If true, include 18.6 year nodal modulation in the boundary tidal forcing.", &
-      default=.false.)
+      old_name="OBC_TIDE_ADD_NODAL", default=.false., do_not_log=tides)
 
-  call get_param(param_file, mdl, "OBC_TIDE_REF_DATE", tide_ref_date, &
+  call get_param(param_file, mdl, "TIDE_REF_DATE", tide_ref_date, &
       "Reference date to use for tidal calculations and equilibrium phase.", &
-      fail_if_missing=.true.)
+      old_name="OBC_TIDE_REF_DATE", defaults=(/0, 0, 0/), do_not_log=tides)
 
-  call get_param(param_file, mdl, "OBC_TIDE_NODAL_REF_DATE", nodal_ref_date, &
+  call get_param(param_file, mdl, "TIDE_NODAL_REF_DATE", nodal_ref_date, &
       "Fixed reference date to use for nodal modulation of boundary tides.", &
-      fail_if_missing=.false., default=0)
+      old_name="OBC_TIDE_NODAL_REF_DATE", defaults=(/0, 0, 0/), do_not_log=tides)
 
   if (.not. OBC%add_eq_phase) then
     ! If equilibrium phase argument is not added, the input phases
@@ -1200,7 +1204,7 @@ subroutine initialize_obc_tides(OBC, US, param_file)
   read(tide_constituent_str, *) OBC%tide_names
 
   ! Set reference time (t = 0) for boundary tidal forcing.
-  OBC%time_ref = set_date(tide_ref_date(1), tide_ref_date(2), tide_ref_date(3))
+  OBC%time_ref = set_date(tide_ref_date(1), tide_ref_date(2), tide_ref_date(3), 0, 0, 0)
 
   ! Find relevant lunar and solar longitudes at the reference time
   if (OBC%add_eq_phase) call astro_longitudes_init(OBC%time_ref, OBC%tidal_longitudes)
@@ -1210,7 +1214,7 @@ subroutine initialize_obc_tides(OBC, US, param_file)
   if (OBC%add_nodal_terms) then
     if (sum(nodal_ref_date) /= 0) then
       ! A reference date was provided for the nodal correction
-      nodal_time = set_date(nodal_ref_date(1), nodal_ref_date(2), nodal_ref_date(3))
+      nodal_time = set_date(nodal_ref_date(1), nodal_ref_date(2), nodal_ref_date(3), 0, 0, 0)
       call astro_longitudes_init(nodal_time, nodal_longitudes)
     elseif (OBC%add_eq_phase) then
       ! Astronomical longitudes were already calculated for use in equilibrium phases,
@@ -5470,7 +5474,7 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
           endif
           I_scale = 1.0 ; if (segment%tr_Reg%Tr(m)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(m)%scale
           if (allocated(segment%tr_Reg%Tr(m)%tres)) then ; do k=1,nz
-            ! Calculate weights. Both a and u_L are nodim. Adding them together has no meaning.
+            ! Calculate weights. Both a and u_L are nondim. Adding them together has no meaning.
             ! However, since they cannot be both non-zero, adding them works like a switch.
             ! When InvLscale_out is 0 and outflow, only interior data is applied to reservoirs
             ! When InvLscale_in is 0 and inflow, only nudged data is applied to reservoirs

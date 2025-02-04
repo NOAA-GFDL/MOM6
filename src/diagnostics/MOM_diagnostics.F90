@@ -204,7 +204,7 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
                                             ! including [nondim] and [H ~> m or kg m-2].
   real :: uh_tmp(SZIB_(G),SZJ_(G),SZK_(GV)) ! A temporary zonal transport [H L2 T-1 ~> m3 s-1 or kg s-1]
   real :: vh_tmp(SZI_(G),SZJB_(G),SZK_(GV)) ! A temporary meridional transport [H L2 T-1 ~> m3 s-1 or kg s-1]
-  real :: mass_cell(SZI_(G),SZJ_(G))       ! The vertically integrated mass in a grid cell [kg]
+  real :: mass_cell(SZI_(G),SZJ_(G))       ! The vertically integrated mass in a grid cell [R Z L2 ~> kg]
   real :: rho_in_situ(SZI_(G))             ! In situ density [R ~> kg m-3]
   real :: cg1(SZI_(G),SZJ_(G))             ! First baroclinic gravity wave speed [L T-1 ~> m s-1]
   real :: Rd1(SZI_(G),SZJ_(G))             ! First baroclinic deformation radius [L ~> m]
@@ -226,7 +226,7 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
   real, dimension(SZK_(GV)) :: salt_layer_ave ! The average salinity in a layer [S ~> ppt]
   real :: thetaoga  ! The volume mean potential temperature [C ~> degC]
   real :: soga      ! The volume mean ocean salinity [S ~> ppt]
-  real :: masso     ! The total mass of the ocean [kg]
+  real :: masso     ! The total mass of the ocean [R Z L2 ~> kg]
   real :: tosga     ! The area mean sea surface temperature [C ~> degC]
   real :: sosga     ! The area mean sea surface salinity [S ~> ppt]
 
@@ -332,9 +332,9 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
   if (CS%id_masso > 0) then
     mass_cell(:,:) = 0.0
     do k=1,nz ; do j=js,je ; do i=is,ie
-      mass_cell(i,j) = mass_cell(i,j) + (GV%H_to_kg_m2*h(i,j,k)) * US%L_to_m**2*G%areaT(i,j)
+      mass_cell(i,j) = mass_cell(i,j) + (GV%H_to_RZ*h(i,j,k)) * G%areaT(i,j)
     enddo ; enddo ; enddo
-    masso = reproducing_sum(mass_cell)
+    masso = reproducing_sum(mass_cell, unscale=US%RZL2_to_kg)
     call post_data(CS%id_masso, masso, CS%diag)
   endif
 
@@ -1341,7 +1341,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     zos  ! dynamic sea lev (zero area mean) from inverse-barometer adjusted ssh [Z ~> m]
   real :: I_time_int    ! The inverse of the time interval [T-1 ~> s-1].
   real :: zos_area_mean ! Global area mean sea surface height [Z ~> m]
-  real :: volo          ! Total volume of the ocean [m3]
+  real :: volo          ! Total volume of the ocean [Z L2 ~> m3]
   real :: ssh_ga        ! Global ocean area weighted mean sea seaface height [Z ~> m]
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   integer :: i, j, is, ie, js, je
@@ -1375,7 +1375,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     do j=js,je ; do i=is,ie
       work_2d(i,j) = G%mask2dT(i,j) * (ssh(i,j) + G%bathyT(i,j))
     enddo ; enddo
-    volo = global_area_integral(work_2d, G, unscale=US%Z_to_m)
+    volo = global_area_integral(work_2d, G, tmp_scale=US%Z_to_m)
     call post_data(IDs%id_volo, volo, diag)
   endif
 
@@ -1574,7 +1574,7 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
   real :: wave_speed_tol      ! The fractional tolerance for finding the wave speeds [nondim]
   real :: convert_H           ! A conversion factor from internal thickness units to the appropriate
                               ! MKS units (m or kg m-2) for thicknesses depending on whether the
-                              ! Boussinesq approximation is being made [m H-1 or kg m-2 H-1 ~> 1]
+                              ! Boussinesq approximation is being made [m H-1 ~> 1] or [kg m-2 H-1 ~> 1]
   logical :: better_speed_est ! If true, use a more robust estimate of the first
                               ! mode wave speed as the starting point for iterations.
   logical :: split            ! True if using the barotropic-baroclinic split algorithm
@@ -1644,8 +1644,9 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
       Time, 'Mass per unit area of liquid ocean grid cell', 'kg m-2', conversion=GV%H_to_kg_m2, &
       standard_name='sea_water_mass_per_unit_area', v_extensive=.true.)
 
-  CS%id_masso = register_scalar_field('ocean_model', 'masso', Time, &
-      diag, 'Mass of liquid ocean', 'kg', standard_name='sea_water_mass')
+  CS%id_masso = register_scalar_field('ocean_model', 'masso', Time, diag, &
+      'Mass of liquid ocean', units='kg', conversion=US%RZL2_to_kg, &
+      standard_name='sea_water_mass')
 
   CS%id_thkcello = register_diag_field('ocean_model', 'thkcello', diag%axesTL, Time, &
       long_name='Cell Thickness', standard_name='cell_thickness', &
@@ -1913,7 +1914,7 @@ subroutine register_surface_diags(Time, G, US, IDs, diag, tv)
 
   ! Vertically integrated, budget, and surface state diagnostics
   IDs%id_volo = register_scalar_field('ocean_model', 'volo', Time, diag, &
-      long_name='Total volume of liquid ocean', units='m3', &
+      long_name='Total volume of liquid ocean', units='m3', conversion=US%Z_to_m*US%L_to_m**2, &
       standard_name='sea_water_volume')
   IDs%id_zos = register_diag_field('ocean_model', 'zos', diag%axesT1, Time, &
       standard_name = 'sea_surface_height_above_geoid', &

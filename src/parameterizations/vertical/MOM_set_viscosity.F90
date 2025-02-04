@@ -196,7 +196,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
     S_vel, &    ! Arithmetic mean of the layer salinities adjacent to a
                 ! velocity point [S ~> ppt].
     SpV_vel, &  ! Arithmetic mean of the layer averaged specific volumes adjacent to a
-                ! velocity point [R-1 ~> kg m-3].
+                ! velocity point [R-1 ~> m3 kg-1].
     Rml_vel     ! Arithmetic mean of the layer coordinate densities adjacent
                 ! to a velocity point [R ~> kg m-3].
   real :: dz(SZI_(G),SZJ_(G),SZK_(GV)) ! Height change across layers [Z ~> m]
@@ -313,7 +313,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
   h_neglect = GV%H_subroundoff
   dz_neglect = GV%dZ_subroundoff
 
-  Rho0x400_G = 400.0*(GV%H_to_RZ / (US%L_to_Z**2 * GV%g_Earth))
+  Rho0x400_G = 400.0*(GV%H_to_RZ / GV%g_Earth_Z_T2)
 
   if (.not.CS%initialized) call MOM_error(FATAL,"MOM_set_viscosity(BBL): "//&
          "Module must be initialized before it is used.")
@@ -2045,7 +2045,7 @@ subroutine set_viscous_ML(u, v, h, tv, forces, visc, dt, G, GV, US, CS)
   if (.not.(CS%dynamic_viscous_ML .or. associated(forces%frac_shelf_u) .or. &
             associated(forces%frac_shelf_v)) ) return
 
-  Rho0x400_G = 400.0*(GV%H_to_RZ / (US%L_to_Z**2 * GV%g_Earth))
+  Rho0x400_G = 400.0*(GV%H_to_RZ / GV%g_Earth_Z_T2)
   cdrag_sqrt = sqrt(CS%cdrag)
   cdrag_sqrt_H = cdrag_sqrt * US%L_to_m * GV%m_to_H
   cdrag_sqrt_H_RL = cdrag_sqrt * US%L_to_Z * GV%RZ_to_H
@@ -3139,7 +3139,8 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
     allocate(visc%kv_bbl_u(IsdB:IedB,jsd:jed), source=0.0)
     allocate(visc%kv_bbl_v(isd:ied,JsdB:JedB), source=0.0)
     allocate(visc%ustar_bbl(isd:ied,jsd:jed), source=0.0)
-    allocate(visc%TKE_bbl(isd:ied,jsd:jed), source=0.0)
+    allocate(visc%BBL_meanKE_loss(isd:ied,jsd:jed), source=0.0)
+    allocate(visc%BBL_meanKE_loss_sqrtCd(isd:ied,jsd:jed), source=0.0)
 
     CS%id_bbl_thick_u = register_diag_field('ocean_model', 'bbl_thick_u', &
        diag%axesCu1, Time, 'BBL thickness at u points', 'm', conversion=US%Z_to_m)
@@ -3214,7 +3215,8 @@ subroutine set_visc_end(visc, CS)
   if (associated(visc%Kv_shear)) deallocate(visc%Kv_shear)
   if (associated(visc%Kv_shear_Bu)) deallocate(visc%Kv_shear_Bu)
   if (allocated(visc%ustar_bbl)) deallocate(visc%ustar_bbl)
-  if (allocated(visc%TKE_bbl)) deallocate(visc%TKE_bbl)
+  if (allocated(visc%BBL_meanKE_loss)) deallocate(visc%BBL_meanKE_loss)
+  if (allocated(visc%BBL_meanKE_loss_sqrtCd)) deallocate(visc%BBL_meanKE_loss_sqrtCd)
   if (allocated(visc%taux_shelf)) deallocate(visc%taux_shelf)
   if (allocated(visc%tauy_shelf)) deallocate(visc%tauy_shelf)
   if (allocated(visc%tbl_thick_shelf_u)) deallocate(visc%tbl_thick_shelf_u)

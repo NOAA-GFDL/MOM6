@@ -1360,7 +1360,7 @@ subroutine int_spec_vol_dp_generic_pcm(T, S, p_t, p_b, alpha_ref, HI, EOS, US, d
   real :: S5((5*HI%isd+1):(5*(HI%ied+2)))  ! Salinities along a line of subgrid locations [S ~> ppt]
   real :: p5((5*HI%isd+1):(5*(HI%ied+2)))  ! Pressures along a line of subgrid locations [R L2 T-2 ~> Pa]
   real :: a5((5*HI%isd+1):(5*(HI%ied+2)))  ! Specific volumes anomalies along a line of subgrid
-                                           ! locations [R-1 ~> m3 kg-3]
+                                           ! locations [R-1 ~> m3 kg-1]
   real :: T15((15*HI%isd+1):(15*(HI%ied+1))) ! Temperatures at an array of subgrid locations [C ~> degC]
   real :: S15((15*HI%isd+1):(15*(HI%ied+1))) ! Salinities at an array of subgrid locations [S ~> ppt]
   real :: p15((15*HI%isd+1):(15*(HI%ied+1))) ! Pressures at an array of subgrid locations [R L2 T-2 ~> Pa]
@@ -1621,7 +1621,7 @@ subroutine int_spec_vol_dp_generic_plm(T_t, T_b, S_t, S_b, p_t, p_b, alpha_ref, 
   real :: S5((5*HI%iscB+1):(5*(HI%iecB+2)))  ! Salinities along a line of subgrid locations [S ~> ppt]
   real :: p5((5*HI%iscB+1):(5*(HI%iecB+2)))  ! Pressures along a line of subgrid locations [R L2 T-2 ~> Pa]
   real :: a5((5*HI%iscB+1):(5*(HI%iecB+2)))  ! Specific volumes anomalies along a line of subgrid
-                                             ! locations [R-1 ~> m3 kg-3]
+                                             ! locations [R-1 ~> m3 kg-1]
   real :: T15((15*HI%iscB+1):(15*(HI%iecB+1))) ! Temperatures at an array of subgrid locations [C ~> degC]
   real :: S15((15*HI%iscB+1):(15*(HI%iecB+1))) ! Salinities at an array of subgrid locations [S ~> ppt]
   real :: p15((15*HI%iscB+1):(15*(HI%iecB+1))) ! Pressures at an array of subgrid locations [R L2 T-2 ~> Pa]
@@ -2001,7 +2001,7 @@ end subroutine diagnose_mass_weight_p
 
 !> Find the depth at which the reconstructed pressure matches P_tgt
 subroutine find_depth_of_pressure_in_cell(T_t, T_b, S_t, S_b, z_t, z_b, P_t, P_tgt, &
-                       rho_ref, G_e, EOS, US, P_b, z_out, z_tol)
+                       rho_ref, G_e, EOS, US, P_b, z_out, z_tol, frac_dp_bugfix)
   real,                  intent(in)  :: T_t !< Potential temperature at the cell top [C ~> degC]
   real,                  intent(in)  :: T_b !< Potential temperature at the cell bottom [C ~> degC]
   real,                  intent(in)  :: S_t !< Salinity at the cell top [S ~> ppt]
@@ -2020,6 +2020,7 @@ subroutine find_depth_of_pressure_in_cell(T_t, T_b, S_t, S_b, z_t, z_b, P_t, P_t
   real,                  intent(out) :: P_b !< Pressure at the bottom of the cell [R L2 T-2 ~> Pa]
   real,                  intent(out) :: z_out !< Absolute depth at which anomalous pressure = p_tgt [Z ~> m]
   real,                  intent(in)  :: z_tol !< The tolerance in finding z_out [Z ~> m]
+  logical,               intent(in)  :: frac_dp_bugfix !< If true, use bugfix in frac_dp_at_pos
 
   ! Local variables
   real :: dp    ! Pressure thickness of the layer [R L2 T-2 ~> Pa]
@@ -2032,7 +2033,7 @@ subroutine find_depth_of_pressure_in_cell(T_t, T_b, S_t, S_b, z_t, z_b, P_t, P_t
   GxRho = G_e * rho_ref
 
   ! Anomalous pressure difference across whole cell
-  dp = frac_dp_at_pos(T_t, T_b, S_t, S_b, z_t, z_b, rho_ref, G_e, 1.0, EOS)
+  dp = frac_dp_at_pos(T_t, T_b, S_t, S_b, z_t, z_b, rho_ref, G_e, 1.0, EOS, frac_dp_bugfix)
 
   P_b = P_t + dp ! Anomalous pressure at bottom of cell
 
@@ -2063,7 +2064,7 @@ subroutine find_depth_of_pressure_in_cell(T_t, T_b, S_t, S_b, z_t, z_b, P_t, P_t
      call MOM_error(FATAL, 'find_depth_of_pressure_in_cell completes too many iterations: '//msg)
     endif
     z_out = z_t + ( z_b - z_t ) * F_guess
-    Pa = frac_dp_at_pos(T_t, T_b, S_t, S_b, z_t, z_b, rho_ref, G_e, F_guess, EOS) - ( P_tgt - P_t )
+    Pa = frac_dp_at_pos(T_t, T_b, S_t, S_b, z_t, z_b, rho_ref, G_e, F_guess, EOS, frac_dp_bugfix) - ( P_tgt - P_t )
 
     if (Pa<Pa_left) then
       write(msg,*) Pa_left,Pa,Pa_right,P_t-P_tgt,P_b-P_tgt
@@ -2119,7 +2120,7 @@ end subroutine avg_specific_vol
 
 !> Returns change in anomalous pressure change from top to non-dimensional
 !! position pos between z_t and z_b [R L2 T-2 ~> Pa]
-real function frac_dp_at_pos(T_t, T_b, S_t, S_b, z_t, z_b, rho_ref, G_e, pos, EOS)
+real function frac_dp_at_pos(T_t, T_b, S_t, S_b, z_t, z_b, rho_ref, G_e, pos, EOS, frac_dp_bugfix)
   real,           intent(in)  :: T_t !< Potential temperature at the cell top [C ~> degC]
   real,           intent(in)  :: T_b !< Potential temperature at the cell bottom [C ~> degC]
   real,           intent(in)  :: S_t !< Salinity at the cell top [S ~> ppt]
@@ -2131,6 +2132,7 @@ real function frac_dp_at_pos(T_t, T_b, S_t, S_b, z_t, z_b, rho_ref, G_e, pos, EO
   real,           intent(in)  :: G_e !< The Earth's gravitational acceleration [L2 Z-1 T-2 ~> m s-2]
   real,           intent(in)  :: pos !< The fractional vertical position, 0 to 1 [nondim]
   type(EOS_type), intent(in)  :: EOS !< Equation of state structure
+  logical,        intent(in)  :: frac_dp_bugfix !< If true, use bugfix in frac_dp_at_pos
 
   ! Local variables
   real, parameter :: C1_90 = 1.0/90.0  ! A rational constant [nondim]
@@ -2150,7 +2152,11 @@ real function frac_dp_at_pos(T_t, T_b, S_t, S_b, z_t, z_b, rho_ref, G_e, pos, EO
     ! Salinity and temperature points are linearly interpolated
     S5(n) = top_weight * S_t + bottom_weight * S_b
     T5(n) = top_weight * T_t + bottom_weight * T_b
-    p5(n) = ( top_weight * z_t + bottom_weight * z_b ) * ( G_e * rho_ref )
+    if (frac_dp_bugfix) then
+      p5(n) = (-1) * ( top_weight * z_t + bottom_weight * z_b ) * ( G_e * rho_ref )
+    else
+      p5(n) = ( top_weight * z_t + bottom_weight * z_b ) * ( G_e * rho_ref )
+    endif !bugfix
   enddo
   call calculate_density(T5, S5, p5, rho5, EOS)
   rho5(:) = rho5(:) !- rho_ref ! Work with anomalies relative to rho_ref
