@@ -1433,9 +1433,12 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   ! Compute instantaneous tidal velocities and apply frequency-dependent drag.
   ! Note that the filtered velocities are only updated during the current predictor step,
   ! and are calculated using the barotropic velocity from the previous correction step.
-  if (CS%use_filter .and. CS%linear_freq_drag) then
+  if (CS%use_filter) then
     call Filt_accum(ubt, ufilt, CS%Time, US, CS%Filt_CS_u)
     call Filt_accum(vbt, vfilt, CS%Time, US, CS%Filt_CS_v)
+  endif
+
+  if (CS%use_filter .and. CS%linear_freq_drag) then
     call wave_drag_calc(ufilt, vfilt, Drag_u, Drag_v, G, CS%Drag_CS)
     !$OMP do
     do j=js,je ; do I=is-1,ie
@@ -1461,8 +1464,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
         Drag_v(i,J) = 0.0
       endif
     enddo ; enddo
-  else
-    Drag_u(:,:) = 0.0 ; Drag_v(:,:) = 0.0
   endif
 
   if ((Isq > is-1) .or. (Jsq > js-1)) then
@@ -2090,12 +2091,19 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
         !$OMP do schedule(static)
         do J=jsv-1,jev ; do i=isv-1,iev+1
           v_accel_bt(i,J) = v_accel_bt(i,J) + wt_accel(n) * &
-              ((Cor_v(i,J) + PFv(i,J)) - (vbt(i,J)*Rayleigh_v(i,J) + Drag_v(i,J)))
+              ((Cor_v(i,J) + PFv(i,J)) - vbt(i,J)*Rayleigh_v(i,J))
         enddo ; enddo
       else
         !$OMP do schedule(static)
         do J=jsv-1,jev ; do i=isv-1,iev+1
-          v_accel_bt(i,J) = v_accel_bt(i,J) + wt_accel(n) * (Cor_v(i,J) + PFv(i,J) - Drag_v(i,J))
+          v_accel_bt(i,J) = v_accel_bt(i,J) + wt_accel(n) * (Cor_v(i,J) + PFv(i,J))
+        enddo ; enddo
+      endif
+
+      if (CS%use_filter .and. CS%linear_freq_drag) then ! Apply frequency-dependent drag
+        !$OMP do schedule(static)
+        do J=jsv-1,jev ; do i=isv-1,iev+1
+          v_accel_bt(i,J) = v_accel_bt(i,J) - wt_accel(n) * Drag_v(i,J)
         enddo ; enddo
       endif
 
@@ -2168,13 +2176,21 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
         !$OMP do schedule(static)
         do j=jsv,jev ; do I=isv-1,iev
           u_accel_bt(I,j) = u_accel_bt(I,j) + wt_accel(n) * &
-             ((Cor_u(I,j) + PFu(I,j)) - (ubt(I,j)*Rayleigh_u(I,j) + Drag_u(I,j)))
+             ((Cor_u(I,j) + PFu(I,j)) - ubt(I,j)*Rayleigh_u(I,j))
         enddo ; enddo
         !$OMP end do nowait
       else
         !$OMP do schedule(static)
         do j=jsv,jev ; do I=isv-1,iev
-          u_accel_bt(I,j) = u_accel_bt(I,j) + wt_accel(n) * (Cor_u(I,j) + PFu(I,j) - Drag_u(I,j))
+          u_accel_bt(I,j) = u_accel_bt(I,j) + wt_accel(n) * (Cor_u(I,j) + PFu(I,j))
+        enddo ; enddo
+        !$OMP end do nowait
+      endif
+
+      if (CS%use_filter .and. CS%linear_freq_drag) then ! Apply frequency-dependent drag
+        !$OMP do schedule(static)
+        do j=jsv,jev ; do I=isv-1,iev
+          u_accel_bt(I,j) = u_accel_bt(I,j) - wt_accel(n) * Drag_u(I,j)
         enddo ; enddo
         !$OMP end do nowait
       endif
@@ -2245,12 +2261,19 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
         !$OMP do schedule(static)
         do j=jsv-1,jev+1 ; do I=isv-1,iev
           u_accel_bt(I,j) = u_accel_bt(I,j) + wt_accel(n) * &
-              ((Cor_u(I,j) + PFu(I,j)) - (ubt(I,j)*Rayleigh_u(I,j) + Drag_u(I,j)))
+              ((Cor_u(I,j) + PFu(I,j)) - ubt(I,j)*Rayleigh_u(I,j))
         enddo ; enddo
       else
         !$OMP do schedule(static)
         do j=jsv-1,jev+1 ; do I=isv-1,iev
-          u_accel_bt(I,j) = u_accel_bt(I,j) + wt_accel(n) * (Cor_u(I,j) + PFu(I,j) - Drag_u(I,j))
+          u_accel_bt(I,j) = u_accel_bt(I,j) + wt_accel(n) * (Cor_u(I,j) + PFu(I,j))
+        enddo ; enddo
+      endif
+
+      if (CS%use_filter .and. CS%linear_freq_drag) then ! Apply frequency-dependent drag
+        !$OMP do schedule(static)
+        do j=jsv-1,jev+1 ; do I=isv-1,iev
+          u_accel_bt(I,j) = u_accel_bt(I,j) - wt_accel(n) * Drag_u(I,j)
         enddo ; enddo
       endif
 
@@ -2334,13 +2357,21 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
         !$OMP do schedule(static)
         do J=jsv-1,jev ; do i=isv,iev
           v_accel_bt(i,J) = v_accel_bt(i,J) + wt_accel(n) * &
-             ((Cor_v(i,J) + PFv(i,J)) - (vbt(i,J)*Rayleigh_v(i,J) + Drag_v(i,J)))
+             ((Cor_v(i,J) + PFv(i,J)) - vbt(i,J)*Rayleigh_v(i,J))
         enddo ; enddo
         !$OMP end do nowait
       else
         !$OMP do schedule(static)
         do J=jsv-1,jev ; do i=isv,iev
-          v_accel_bt(i,J) = v_accel_bt(i,J) + wt_accel(n) * (Cor_v(i,J) + PFv(i,J) - Drag_v(i,J))
+          v_accel_bt(i,J) = v_accel_bt(i,J) + wt_accel(n) * (Cor_v(i,J) + PFv(i,J))
+        enddo ; enddo
+        !$OMP end do nowait
+      endif
+
+      if (CS%use_filter .and. CS%linear_freq_drag) then ! Apply frequency-dependent drag
+        !$OMP do schedule(static)
+        do J=jsv-1,jev ; do i=isv,iev
+          v_accel_bt(i,J) = v_accel_bt(i,J) - wt_accel(n) * Drag_v(i,J)
         enddo ; enddo
         !$OMP end do nowait
       endif
@@ -5011,10 +5042,12 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   endif ! CS%linear_wave_drag
 
   ! Initialize streaming band-pass filters and frequency-dependent drag
-  if (CS%use_filter .and. CS%linear_freq_drag) then
+  if (CS%use_filter) then
     call Filt_init(param_file, US, CS%Filt_CS_u, restart_CS)
     call Filt_init(param_file, US, CS%Filt_CS_v, restart_CS)
+  endif
 
+  if (CS%use_filter .and. CS%linear_freq_drag) then
     if (.not.CS%linear_wave_drag .and. len_trim(wave_drag_file) > 0) then
       inputdir = "." ;  call get_param(param_file, mdl, "INPUTDIR", inputdir)
       wave_drag_file = trim(slasher(inputdir))//trim(wave_drag_file)
