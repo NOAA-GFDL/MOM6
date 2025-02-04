@@ -552,7 +552,7 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
       (.not.associated(fluxes%fprec))) call MOM_error(FATAL, &
     "MOM_forcing_type extractFluxes1d: fluxes%lprec or fluxes%fprec not associated.")
 
-    if (.not.associated(fluxes%seaice_melt)) call MOM_error(FATAL, &
+  if (.not.associated(fluxes%seaice_melt)) call MOM_error(FATAL, &
     "MOM_forcing_type extractFluxes1d: fluxes%seaice_melt is not associated.")
 
   do i=is,ie ; htot(i) = h(i,1) ; enddo
