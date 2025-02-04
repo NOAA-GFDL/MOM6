@@ -18,10 +18,9 @@ public wave_drag_init, wave_drag_calc
 
 !> Control structure for the MOM_wave_drag module
 type, public :: wave_drag_CS ; private
-  integer :: nf                       !< Number of filters to be used in the simulation
-  !>@{ Spatially varying, frequency-dependent drag coefficients [H T-1 ~> m s-1]
-  real, allocatable, dimension(:,:,:) :: coef_u, coef_v
-  !>@}
+  integer :: nf                                 !< Number of filters to be used in the simulation
+  real, allocatable, dimension(:,:,:) :: coef_u !< frequency-dependent drag coefficients [H T-1 ~> m s-1]
+  real, allocatable, dimension(:,:,:) :: coef_v !< frequency-dependent drag coefficients [H T-1 ~> m s-1]
 end type wave_drag_CS
 
 contains
@@ -92,13 +91,14 @@ end subroutine wave_drag_init
 subroutine wave_drag_calc(u, v, drag_u, drag_v, G, CS)
   type(ocean_grid_type),           intent(in) :: G     !< The ocean's grid structure
   type(wave_drag_CS),              intent(in) :: CS    !< Control structure of MOM_wave_drag
-  !>@{ Tidal velocities from the output of streaming band-pass filters [L T-1 ~> m s-1]
-  real, dimension(:,:,:), pointer, intent(in) :: u, v
-  !>@}
-  !>@{ Sum of products of tidal velocities and scaled frequency-dependent drag [L2 T-2 ~> m2 s-2]
-  real, dimension(G%IsdB:G%IedB,G%jsd:G%jed), intent(out) :: drag_u
-  real, dimension(G%isd:G%ied,G%JsdB:G%JedB), intent(out) :: drag_v
-  !>@}
+  real, dimension(:,:,:), pointer, intent(in) :: u     !< Zonal velocity from the output of
+                                                       !! streaming band-pass filters [L T-1 ~> m s-1]
+  real, dimension(:,:,:), pointer, intent(in) :: v     !< Meridional velocity from the output of
+                                                       !! streaming band-pass filters [L T-1 ~> m s-1]
+  real, dimension(G%IsdB:G%IedB,G%jsd:G%jed), intent(out) :: drag_u !< Sum of products of filtered velocities
+                                                       !! and scaled frequency-dependent drag [L2 T-2 ~> m2 s-2]
+  real, dimension(G%isd:G%ied,G%JsdB:G%JedB), intent(out) :: drag_v !< Sum of products of filtered velocities
+                                                       !! and scaled frequency-dependent drag [L2 T-2 ~> m2 s-2]
 
   ! Local variables
   integer :: is, ie, js, je, i, j, k
