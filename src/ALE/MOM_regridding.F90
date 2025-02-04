@@ -127,7 +127,7 @@ type, public :: regridding_CS ; private
   type(zlike_CS),  pointer :: zlike_CS  => null() !< Control structure for z-like coordinate generator
   type(sigma_CS),  pointer :: sigma_CS  => null() !< Control structure for sigma coordinate generator
   type(rho_CS),    pointer :: rho_CS    => null() !< Control structure for rho coordinate generator
-  type(scalar_CS), pointer :: scalar_CS => null() !< Control structure for rho coordinate generator
+  type(scalar_CS), pointer :: scalar_CS => null() !< Control structure for scalar coordinate generator
   type(hycom_CS),  pointer :: hycom_CS  => null() !< Control structure for hybrid coordinate generator
   type(adapt_CS),  pointer :: adapt_CS  => null() !< Control structure for adaptive coordinate generator
   type(hybgen_regrid_CS), pointer :: hybgen_CS => NULL() !< Control structure for hybgen regridding
@@ -681,7 +681,7 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
                  "regions appear stratified.", units="nondim", default=0.)
     call get_param(param_file, mdl, create_coord_param(param_prefix, "HISTOGRAM_EXTENSIVE_DIAGS", param_suffix), &
                     histogram_extensive_diags, &
-                    "If true, extensive diagnostics are remapped using a histogram procedure"//&
+                    "If true, extensive diagnostics are remapped using a histogram procedure. "//&
                     "This is therefore suitable for coordinates that are non-monotonic "//&
                     "in the vertical dimension. This should only be set True for **diagnostic**"//&
                     "coordinates.", units="nondim", default=.false.)
