@@ -3415,44 +3415,6 @@ subroutine set_up_BT_OBC(OBC, eta, SpV_avg, BT_OBC, BT_Domain, G, GV, US, CS, MS
   call do_group_pass(BT_OBC%pass_h, BT_Domain)
   call do_group_pass(BT_OBC%pass_cg, BT_Domain)
 
-  ! Update IareaT_OBCmask so that nothing changes outside of the OBC (problem for interior OBCs only)
-  if (BT_OBC%apply_u_OBCs) then
-    do i=isd,ied
-      if (OBC%specified_u_BCs_exist_globally .or. OBC%open_u_BCs_exist_globally) then
-        do j=jsd,jed
-          if (OBC%segnum_u(I-1,j) /= OBC_NONE) then
-            if (OBC%segment(OBC%segnum_u(I-1,j))%direction == OBC_DIRECTION_E) then
-              CS%IareaT_OBCmask(i,j) = 0.0
-            endif
-          endif
-          if (OBC%segnum_u(I,j) /= OBC_NONE) then
-            if (OBC%segment(OBC%segnum_u(I,j))%direction == OBC_DIRECTION_W) then
-              CS%IareaT_OBCmask(i,j) = 0.0
-            endif
-          endif
-        enddo
-      endif
-    enddo
-  endif
-  if (BT_OBC%apply_v_OBCs) then
-    do j=jsd,jed
-      if (OBC%specified_v_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) then
-        do i=isd,ied
-          if (OBC%segnum_v(i,J-1) /= OBC_NONE) then
-            if (OBC%segment(OBC%segnum_v(i,J-1))%direction == OBC_DIRECTION_N) then
-              CS%IareaT_OBCmask(i,j) = 0.0
-            endif
-          endif
-          if (OBC%segnum_v(i,J) /= OBC_NONE) then
-            if (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_S) then
-              CS%IareaT_OBCmask(i,j) = 0.0
-            endif
-          endif
-        enddo
-      endif
-    enddo
-  endif
-
 end subroutine set_up_BT_OBC
 
 !> Clean up the BT_OBC memory.
@@ -4466,7 +4428,7 @@ end subroutine bt_mass_source
 !! barotropic calculation and initializes any barotropic fields that have not
 !! already been initialized.
 subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, &
-                           restart_CS, calc_dtbt, BT_cont, SAL_CSp, HA_CSp)
+                           restart_CS, calc_dtbt, BT_cont, OBC, SAL_CSp, HA_CSp)
   type(ocean_grid_type),   intent(inout) :: G    !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)    :: GV   !< The ocean's vertical grid structure.
   type(unit_scale_type),   intent(in)    :: US   !< A dimensional unit scaling type
@@ -4490,7 +4452,8 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   type(BT_cont_type),      pointer       :: BT_cont    !< A structure with elements that describe the
                                                  !! effective open face areas as a function of
                                                  !! barotropic flow.
-  type(SAL_CS), target, optional :: SAL_CSp      !< A pointer to the control structure of the
+  type(ocean_OBC_type),    pointer       :: OBC  !< The open boundary condition structure.
+  type(SAL_CS), target,    optional      :: SAL_CSp  !< A pointer to the control structure of the
                                                  !! SAL module.
   type(harmonic_analysis_CS), target, optional :: HA_CSp !< A pointer to the control structure of the
                                                  !! harmonic analysis module
@@ -4926,12 +4889,48 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   ALLOC_(CS%IdyCv(CS%isdw:CS%iedw,CS%jsdw-1:CS%jedw)) ; CS%IdyCv(:,:) = 0.0
   ALLOC_(CS%dy_Cu(CS%isdw-1:CS%iedw,CS%jsdw:CS%jedw)) ; CS%dy_Cu(:,:) = 0.0
   ALLOC_(CS%dx_Cv(CS%isdw:CS%iedw,CS%jsdw-1:CS%jedw)) ; CS%dx_Cv(:,:) = 0.0
-  allocate(CS%IareaT_OBCmask(isd:ied,jsd:jed))
+  allocate(CS%IareaT_OBCmask(isdw:iedw,jsdw:jedw), source=0.0)
   do j=G%jsd,G%jed ; do i=G%isd,G%ied
     CS%IareaT(i,j) = G%IareaT(i,j)
     CS%bathyT(i,j) = G%bathyT(i,j)
     CS%IareaT_OBCmask(i,j) = CS%IareaT(i,j)
   enddo ; enddo
+
+  ! Update IareaT_OBCmask so that nothing changes outside of the OBC (problem for interior OBCs only)
+  if (associated(OBC))then
+    if (OBC%specified_u_BCs_exist_globally .or. OBC%open_u_BCs_exist_globally) then
+      do i=isd,ied
+        do j=jsd,jed
+          if (OBC%segnum_u(I-1,j) /= OBC_NONE) then
+            if (OBC%segment(OBC%segnum_u(I-1,j))%direction == OBC_DIRECTION_E) then
+              CS%IareaT_OBCmask(i,j) = 0.0
+            endif
+          endif
+          if (OBC%segnum_u(I,j) /= OBC_NONE) then
+            if (OBC%segment(OBC%segnum_u(I,j))%direction == OBC_DIRECTION_W) then
+              CS%IareaT_OBCmask(i,j) = 0.0
+            endif
+          endif
+        enddo
+      enddo
+    endif
+    if (OBC%specified_v_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) then
+      do j=jsd,jed
+        do i=isd,ied
+          if (OBC%segnum_v(i,J-1) /= OBC_NONE) then
+            if (OBC%segment(OBC%segnum_v(i,J-1))%direction == OBC_DIRECTION_N) then
+              CS%IareaT_OBCmask(i,j) = 0.0
+            endif
+          endif
+          if (OBC%segnum_v(i,J) /= OBC_NONE) then
+            if (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_S) then
+              CS%IareaT_OBCmask(i,j) = 0.0
+            endif
+          endif
+        enddo
+      enddo
+    endif
+  endif
 
   ! Note: G%IdxCu & G%IdyCv may be valid for a smaller extent than CS%IdxCu & CS%IdyCv, even without
   !   wide halos.
@@ -4943,6 +4942,7 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   enddo ; enddo
   call create_group_pass(pass_static_data, CS%IareaT, CS%BT_domain, To_All)
   call create_group_pass(pass_static_data, CS%bathyT, CS%BT_domain, To_All)
+  call create_group_pass(pass_static_data, CS%IareaT_OBCmask, CS%BT_domain, To_All)
   call create_group_pass(pass_static_data, CS%IdxCu, CS%IdyCv, CS%BT_domain, To_All+Scalar_Pair)
   call create_group_pass(pass_static_data, CS%dy_Cu, CS%dx_Cv, CS%BT_domain, To_All+Scalar_Pair)
   call do_group_pass(pass_static_data, CS%BT_domain)
