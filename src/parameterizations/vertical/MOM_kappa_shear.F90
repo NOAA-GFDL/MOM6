@@ -1885,7 +1885,7 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "VERTEX_SHEAR_VISCOSITY_BUG", CS%VS_viscosity_bug, &
                  "If true, use a bug in vertex shear that zeros out viscosities at "//&
                  "vertices on coastlines.", &
-                 default=.true., do_not_log=just_read)
+                 default=.true., do_not_log=just_read.or.(.not.CS%KS_at_vertex))
   call get_param(param_file, mdl, "RINO_CRIT", CS%RiNo_crit, &
                  "The critical Richardson number for shear mixing.", &
                  units="nondim", default=0.25, do_not_log=just_read)
