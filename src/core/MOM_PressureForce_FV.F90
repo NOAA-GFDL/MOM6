@@ -59,6 +59,8 @@ type, public :: PressureForce_FV_CS ; private
   logical :: reset_intxpa_integral !< If true and the surface displacement between adjacent cells
                             !! exceeds the vertical grid spacing, reset intxpa at the interface below
                             !! a trusted interior cell.  (This often applies in ice shelf cavities.)
+  logical :: isolate_MassWghtPGF !< If true, isolate effect of mass weighting and don't affect cells above
+                            !! and below's PGF
   real    :: h_nonvanished  !< A minimal layer thickness that indicates that a layer is thick enough
                             !! to usefully reestimate the pressure integral across the interface
                             !! below it [H ~> m or kg m-2]
@@ -167,12 +169,16 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
     intx_za     ! The zonal integral of the geopotential anomaly along the
                 ! interfaces, divided by the grid spacing [L2 T-2 ~> m2 s-2].
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: &
-    intx_dza    ! The change in intx_za through a layer [L2 T-2 ~> m2 s-2].
+    intx_dza, & ! The change in intx_za through a layer [L2 T-2 ~> m2 s-2].
+    intx_dza_nonWght ! The change in intx_za through a layer [L2 T-2 ~> m2 s-2].
+                     ! forcing MWIPG to be off
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1) :: &
     inty_za     ! The meridional integral of the geopotential anomaly along the
                 ! interfaces, divided by the grid spacing [L2 T-2 ~> m2 s-2].
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: &
-    inty_dza    ! The change in inty_za through a layer [L2 T-2 ~> m2 s-2].
+    inty_dza, & ! The change in inty_za through a layer [L2 T-2 ~> m2 s-2].
+    inty_dza_nonWght ! The change in inty_za through a layer [L2 T-2 ~> m2 s-2].
+                     ! forcing MWIPG to be off
   real, dimension(SZI_(G),SZJ_(G)) :: &
     T_top, &    ! Temperature of top layer used with correction_intxpa [C ~> degC]
     S_top, &    ! Salinity of top layer used with correction_intxpa [S ~> ppt]
@@ -355,6 +361,14 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                     p(:,:,K), p(:,:,K+1), alpha_ref, dp_neglect, p(:,:,nz+1), G%HI, &
                     tv%eqn_of_state, US, dza(:,:,k), intp_dza(:,:,k), intx_dza(:,:,k), inty_dza(:,:,k), &
                     P_surf=p(:,:,1), MassWghtInterp=CS%MassWghtInterp)
+          if ((CS%isolate_MassWghtPGF).and.(CS%MassWghtInterp > 0)) then
+            ! CY: For lack of a better idea at the moment, repeat calculation
+            ! forcing MASS_WEIGHT_IN_PRESSURE_GRADIENT to be off so we have 'clean' intx_dza
+            call int_spec_vol_dp_generic_plm( T_t(:,:,k), T_b(:,:,k), S_t(:,:,k), S_b(:,:,k), &
+                    p(:,:,K), p(:,:,K+1), alpha_ref, dp_neglect, p(:,:,nz+1), G%HI, &
+                    tv%eqn_of_state, US, dza(:,:,k), intp_dza(:,:,k), intx_dza_nonWght(:,:,k), &
+                    inty_dza_nonWght(:,:,k), P_surf=p(:,:,1), MassWghtInterp=0)
+          endif
         elseif ( CS%Recon_Scheme == 2 ) then
           call MOM_error(FATAL, "PressureForce_FV_nonBouss: "//&
                          "int_spec_vol_dp_generic_ppm does not exist yet.")
@@ -369,6 +383,15 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
                                US, dza(:,:,k), intp_dza(:,:,k), intx_dza(:,:,k), &
                                inty_dza(:,:,k), bathyP=p(:,:,nz+1), P_surf=p(:,:,1), dP_tiny=dp_neglect, &
                                MassWghtInterp=CS%MassWghtInterp)
+        if ((CS%isolate_MassWghtPGF).and.(CS%MassWghtInterp > 0)) then
+          ! CY: For lack of a better idea at the moment, repeat calculation
+          ! forcing MASS_WEIGHT_IN_PRESSURE_GRADIENT to be off so we have 'clean' intx_dza
+        call int_specific_vol_dp(tv_tmp%T(:,:,k), tv_tmp%S(:,:,k), p(:,:,K), &
+                               p(:,:,K+1), alpha_ref, G%HI, tv%eqn_of_state, &
+                               US, dza(:,:,k), intp_dza(:,:,k), intx_dza_nonWght(:,:,k), &
+                               inty_dza_nonWght(:,:,k), bathyP=p(:,:,nz+1), P_surf=p(:,:,1), &
+                               dP_tiny=dp_neglect, MassWghtInterp=0)
+        endif
       endif
       if ((CS%id_MassWt_u > 0) .or. (CS%id_MassWt_v > 0)) &
         call diagnose_mass_weight_p(p(:,:,K), p(:,:,K+1), p(:,:,nz+1), p(:,:,1), dp_neglect, CS%MassWghtInterp, &
@@ -544,18 +567,34 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_
     enddo ; enddo
   endif
 
-  do k=1,nz
-    !$OMP parallel do default(shared)
-    do j=js,je ; do I=Isq,Ieq
-      intx_za(I,j,K+1) = intx_za(I,j,K) - intx_dza(I,j,k)
-    enddo ; enddo
-  enddo
-  do k=1,nz
-    !$OMP parallel do default(shared)
-    do J=Jsq,Jeq ; do i=is,ie
-      inty_za(i,J,K+1) = inty_za(i,J,K) - inty_dza(i,J,k)
-    enddo ; enddo
-  enddo
+  if ((CS%isolate_MassWghtPGF).and.(CS%MassWghtInterp > 0)) then
+    ! Use intx_dza without MASS_WEIGHT_IN_PRESSURE_GRADIENT to accumulate intx_za
+    do k=1,nz
+      !$OMP parallel do default(shared)
+      do j=js,je ; do I=Isq,Ieq
+        intx_za(I,j,K+1) = intx_za(I,j,K) - intx_dza_nonWght(I,j,k)
+      enddo ; enddo
+    enddo
+    do k=1,nz
+      !$OMP parallel do default(shared)
+      do J=Jsq,Jeq ; do i=is,ie
+        inty_za(i,J,K+1) = inty_za(i,J,K) - inty_dza_nonWght(i,J,k)
+      enddo ; enddo
+    enddo
+  else ! Use intx_dza eve if MassWght affected to cumulatively get intx_za
+    do k=1,nz
+      !$OMP parallel do default(shared)
+      do j=js,je ; do I=Isq,Ieq
+        intx_za(I,j,K+1) = intx_za(I,j,K) - intx_dza(I,j,k)
+      enddo ; enddo
+    enddo
+    do k=1,nz
+      !$OMP parallel do default(shared)
+      do J=Jsq,Jeq ; do i=is,ie
+        inty_za(i,J,K+1) = inty_za(i,J,K) - inty_dza(i,J,k)
+      enddo ; enddo
+    enddo
+  endif
 
   if (CS%debug) then
     call uvchksum("Prelim int[xy]_za", intx_za, inty_za, G%HI, haloshift=0, &
@@ -898,12 +937,16 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm
     intx_pa     ! The zonal integral of the pressure anomaly along the interface
                 ! atop a layer, divided by the grid spacing [R L2 T-2 ~> Pa].
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: &
-    intx_dpa    ! The change in intx_pa through a layer [R L2 T-2 ~> Pa].
+    intx_dpa, & ! The change in intx_pa through a layer [R L2 T-2 ~> Pa].
+    intx_dpa_nonWght ! The change in intx_pa through a layer [R L2 T-2 ~> Pa].
+                     ! forcing MWIPG to be off
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1) :: &
     inty_pa     ! The meridional integral of the pressure anomaly along the
                 ! interface atop a layer, divided by the grid spacing [R L2 T-2 ~> Pa].
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: &
-    inty_dpa    ! The change in inty_pa through a layer [R L2 T-2 ~> Pa].
+    inty_dpa, & ! The change in inty_pa through a layer [R L2 T-2 ~> Pa].
+    inty_dpa_nonWght ! The change in inty_pa through a layer [R L2 T-2 ~> Pa].
+                     ! forcing MWIPG to be off
   real, dimension(SZIB_(G),SZJ_(G)) :: &
     intx_pa_cor ! Correction for curvature in intx_pa [R L2 T-2 ~> Pa]
   real, dimension(SZI_(G),SZJB_(G)) :: &
@@ -1174,18 +1217,47 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm
                     intx_dpa(:,:,k), inty_dpa(:,:,k), &
                     MassWghtInterp=CS%MassWghtInterp, &
                     use_inaccurate_form=CS%use_inaccurate_pgf_rho_anom, Z_0p=Z_0p)
+          if ((CS%isolate_MassWghtPGF).and.(CS%MassWghtInterp > 0)) then
+            ! CY: For lack of a better idea at the moment, repeat calculation
+            ! forcing MASS_WEIGHT_IN_PRESSURE_GRADIENT to be off so we have 'clean' intx_dpa
+            call int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, &
+                    rho_ref, CS%Rho0, GV%g_Earth, dz_neglect, G%bathyT, &
+                    G%HI, GV, tv%eqn_of_state, US, CS%use_stanley_pgf, dpa(:,:,k), intz_dpa(:,:,k), &
+                    intx_dpa_nonWght(:,:,k), inty_dpa_nonWght(:,:,k), &
+                    MassWghtInterp=0, &
+                    use_inaccurate_form=CS%use_inaccurate_pgf_rho_anom, Z_0p=Z_0p)
+
+          endif
         elseif ( CS%Recon_Scheme == 2 ) then
           call int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
                     rho_ref, CS%Rho0, GV%g_Earth, dz_neglect, G%bathyT, &
                     G%HI, GV, tv%eqn_of_state, US, CS%use_stanley_pgf, dpa(:,:,k), intz_dpa(:,:,k), &
                     intx_dpa(:,:,k), inty_dpa(:,:,k), &
                     MassWghtInterp=CS%MassWghtInterp, Z_0p=Z_0p)
+          if ((CS%isolate_MassWghtPGF).and.(CS%MassWghtInterp > 0)) then
+            ! CY: For lack of a better idea at the moment, repeat calculation
+            ! forcing MASS_WEIGHT_IN_PRESSURE_GRADIENT to be off so we have 'clean' intx_dpa
+            call int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
+                    rho_ref, CS%Rho0, GV%g_Earth, dz_neglect, G%bathyT, &
+                    G%HI, GV, tv%eqn_of_state, US, CS%use_stanley_pgf, dpa(:,:,k), intz_dpa(:,:,k), &
+                    intx_dpa_nonWght(:,:,k), inty_dpa_nonWght(:,:,k), &
+                    MassWghtInterp=0, Z_0p=Z_0p)
+          endif
         endif
       else
         call int_density_dz(tv_tmp%T(:,:,k), tv_tmp%S(:,:,k), e(:,:,K), e(:,:,K+1), &
                   rho_ref, CS%Rho0, GV%g_Earth, G%HI, tv%eqn_of_state, US, dpa(:,:,k), &
                   intz_dpa(:,:,k), intx_dpa(:,:,k), inty_dpa(:,:,k), G%bathyT, e(:,:,1), dz_neglect, &
                   CS%MassWghtInterp, Z_0p=Z_0p)
+        if ((CS%isolate_MassWghtPGF).and.(CS%MassWghtInterp > 0)) then
+          ! CY: For lack of a better idea at the moment, repeat calculation
+          ! forcing MASS_WEIGHT_IN_PRESSURE_GRADIENT to be off so we have `clean' intx_dpa
+          call int_density_dz(tv_tmp%T(:,:,k), tv_tmp%S(:,:,k), e(:,:,K), e(:,:,K+1), &
+                  rho_ref, CS%Rho0, GV%g_Earth, G%HI, tv%eqn_of_state, US, dpa(:,:,k), &
+                  intz_dpa(:,:,k), intx_dpa_nonWght(:,:,k), inty_dpa_nonWght(:,:,k), &
+                  G%bathyT, e(:,:,1), dz_neglect, &
+                  MassWghtInterp=0, Z_0p=Z_0p)
+        endif
       endif
       if (GV%Z_to_H /= 1.0) then
         !$OMP parallel do default(shared)
@@ -1422,18 +1494,34 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm
     enddo ; enddo
   endif
 
-  do k=1,nz
-    !$OMP parallel do default(shared)
-    do j=js,je ; do I=Isq,Ieq
-      intx_pa(I,j,K+1) = intx_pa(I,j,K) + intx_dpa(I,j,k)
-    enddo ; enddo
-  enddo
-  do k=1,nz
-    !$OMP parallel do default(shared)
-    do J=Jsq,Jeq ; do i=is,ie
-      inty_pa(i,J,K+1) = inty_pa(i,J,K) + inty_dpa(i,J,k)
-    enddo ; enddo
-  enddo
+  if ((CS%isolate_MassWghtPGF).and.(CS%MassWghtInterp > 0)) then
+    ! Use intx_dpa without MASS_WEIGHT_IN_PRESSURE_GRADIENT to accumulate intx_pa
+    do k=1,nz
+      !$OMP parallel do default(shared)
+      do j=js,je ; do I=Isq,Ieq
+        intx_pa(I,j,K+1) = intx_pa(I,j,K) + intx_dpa_nonWght(I,j,k)
+      enddo ; enddo
+    enddo
+    do k=1,nz
+      !$OMP parallel do default(shared)
+      do J=Jsq,Jeq ; do i=is,ie
+        inty_pa(i,J,K+1) = inty_pa(i,J,K) + inty_dpa_nonWght(i,J,k)
+      enddo ; enddo
+    enddo
+  else ! Use intx_dpa eve if MassWght affected to cumulatively get intx_pa
+    do k=1,nz
+      !$OMP parallel do default(shared)
+      do j=js,je ; do I=Isq,Ieq
+        intx_pa(I,j,K+1) = intx_pa(I,j,K) + intx_dpa(I,j,k)
+      enddo ; enddo
+    enddo
+    do k=1,nz
+      !$OMP parallel do default(shared)
+      do J=Jsq,Jeq ; do i=is,ie
+        inty_pa(i,J,K+1) = inty_pa(i,J,K) + inty_dpa(i,J,k)
+      enddo ; enddo
+    enddo
+  endif
 
   if (CS%reset_intxpa_integral) then
     ! Having stored the pressure gradient info, we can work out where the first nonvanished layers is
@@ -1902,6 +1990,11 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp,
   call get_param(param_file, mdl, "RESET_INTXPA_INTEGRAL", CS%reset_intxpa_integral, &
                  "If true, reset INTXPA to match pressures at first nonvanished cell. "//&
                  "Includes pressure correction.", default=.false., do_not_log=.not.use_EOS)
+  call get_param(param_file, mdl, "ISOLATE_MASS_WEIGHT_PGF", CS%isolate_MassWghtPGF, &
+                 "If true, don't use MASS_WEIGHT_IN_PRESSURE_GRADIENT intx_dpa to "//&
+                 "get subsequent intx_pa through summation.", default=.false., &
+                 do_not_log=.not.use_EOS)
+
   if (.not.use_EOS) then  ! These options do nothing without an equation of state.
     CS%correction_intxpa = .false.
     CS%reset_intxpa_integral = .false.
