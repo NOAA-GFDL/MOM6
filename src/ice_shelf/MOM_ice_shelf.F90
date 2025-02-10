@@ -856,7 +856,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   if (CS%id_h_shelf > 0) call post_data(CS%id_h_shelf, ISS%h_shelf, CS%diag)
   if (CS%id_dhdt_shelf > 0) call post_data(CS%id_dhdt_shelf, ISS%dhdt_shelf, CS%diag)
   if (CS%id_h_mask > 0) call post_data(CS%id_h_mask,ISS%hmask,CS%diag)
-  call process_and_post_scalar_data(CS, vaf0, vaf0_A, vaf0_G, Itime_step, dh_adott, dh_bdott)
+  if (CS%active_shelf_dynamics) call process_and_post_scalar_data(CS, vaf0, vaf0_A, vaf0_G, Itime_step, dh_adott, dh_bdott)
   call disable_averaging(CS%diag)
 
   call cpu_clock_end(id_clock_shelf)
@@ -2181,12 +2181,6 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
 
   call MOM_IS_diag_mediator_close_registration(CS%diag)
 
-!  if (present(fluxes_in)) then
-!     call initialize_ice_shelf_fluxes(CS, ocn_grid, US, fluxes_in)
-!     call register_restart_field(fluxes_in%shelf_sfc_mass_flux, "sfc_mass_flux", .true., CS%restart_CSp, &
-!        "ice shelf surface mass flux deposition from atmosphere", &
-!        'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
-!  endif
   if (present(forces_in)) call initialize_ice_shelf_forces(CS, ocn_grid, US, forces_in)
 
 end subroutine initialize_ice_shelf
