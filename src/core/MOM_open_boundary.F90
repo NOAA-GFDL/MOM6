@@ -5061,7 +5061,9 @@ subroutine mask_outside_OBCs(G, US, param_file, OBC)
   integer :: i, j
   integer :: l_seg
   logical :: fatal_error = .False.
-  real    :: min_depth ! The minimum depth for ocean points [Z ~> m]
+  real    :: min_depth  ! The minimum depth for ocean points [Z ~> m]
+  real    :: mask_depth ! The masking depth for ocean points [Z ~> m]
+  real    :: Dmask      ! The depth for masking in the same units as G%bathyT [Z ~> m].
   integer, parameter :: cin = 3, cout = 4, cland = -1, cedge = -2
   character(len=256) :: mesg    ! Message for error messages.
   real, allocatable, dimension(:,:) :: color, color2  ! For sorting inside from outside,
@@ -5071,6 +5073,12 @@ subroutine mask_outside_OBCs(G, US, param_file, OBC)
 
   call get_param(param_file, mdl, "MINIMUM_DEPTH", min_depth, &
                  units="m", default=0.0, scale=US%m_to_Z, do_not_log=.true.)
+  call get_param(param_file, mdl, "MASKING_DEPTH", mask_depth, &
+                 units="m", default=-9999.0, scale=US%m_to_Z, do_not_log=.true.)
+
+  Dmask = mask_depth
+  if (mask_depth == -9999.0*US%m_to_Z) Dmask = min_depth
+
   ! The reference depth on a dyn_horgrid is 0, otherwise would need:  min_depth = min_depth - G%Z_ref
 
   allocate(color(G%isd:G%ied, G%jsd:G%jed), source=0.0)
@@ -5161,7 +5169,7 @@ subroutine mask_outside_OBCs(G, US, param_file, OBC)
           &"the masking of the outside grid points.")') i, j
       call MOM_error(WARNING,"MOM mask_outside_OBCs: "//mesg, all_print=.true.)
     endif
-    if (color(i,j) == cout) G%bathyT(i,j) = min_depth
+    if (color(i,j) == cout) G%bathyT(i,j) = Dmask
   enddo ; enddo
   if (fatal_error) call MOM_error(FATAL, &
       "MOM_open_boundary: inconsistent OBC segments.")
@@ -5463,8 +5471,8 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
         if (G%mask2dT(I+ishift,j) == 0.0) cycle
         ! Update the reservoir tracer concentration implicitly using a Backward-Euler timestep
         do m=1,segment%tr_Reg%ntseg
-          ntr_id = segment%tr_reg%Tr(m)%ntr_index
-          fd_id = segment%tr_reg%Tr(m)%fd_index
+          ntr_id = segment%tr_Reg%Tr(m)%ntr_index
+          fd_id = segment%tr_Reg%Tr(m)%fd_index
           if (fd_id == -1) then
             resrv_lfac_out = 1.0
             resrv_lfac_in  = 1.0
@@ -5507,8 +5515,8 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
         if (G%mask2dT(i,j+jshift) == 0.0) cycle
         ! Update the reservoir tracer concentration implicitly using a Backward-Euler timestep
         do m=1,segment%tr_Reg%ntseg
-          ntr_id = segment%tr_reg%Tr(m)%ntr_index
-          fd_id = segment%tr_reg%Tr(m)%fd_index
+          ntr_id = segment%tr_Reg%Tr(m)%ntr_index
+          fd_id = segment%tr_Reg%Tr(m)%fd_index
           if (fd_id == -1) then
             resrv_lfac_out = 1.0
             resrv_lfac_in  = 1.0
