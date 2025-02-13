@@ -1968,6 +1968,9 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
       'ice shelf thickness', 'm', conversion=US%Z_to_m)
   CS%id_dhdt_shelf = register_diag_field('ice_shelf_model', 'dhdt_shelf', CS%diag%axesT1, CS%Time, &
       'change in ice shelf thickness over time', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
+  CS%id_mass_flux = register_diag_field('ice_shelf_model', 'mass_flux', CS%diag%axesT1,&
+      CS%Time, 'Total mass flux of freshwater across the ice-ocean interface.', &
+      'kg/s', conversion=US%RZ_T_to_kg_m2s*US%L_to_m**2)
 
   if (CS%const_gamma) then ! use ISOMIP+ eq. with rho_fw = 1000. kg m-3
     meltrate_conversion = 86400.0*365.0*US%Z_to_m*US%s_to_T / (1000.0*US%kg_m3_to_R)
