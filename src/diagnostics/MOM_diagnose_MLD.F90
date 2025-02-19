@@ -238,7 +238,7 @@ subroutine diagnoseMLDbyDensityDifference(id_MLD, h, tv, densityDiff, G, GV, US,
   if (id_ref_rho > 0) call post_data(id_ref_rho, rhoSurf_2d , diagPtr)
 
   if (present(MLD_out)) then
-    MLD_out = 0.0
+    MLD_out(:,:) = 0.0
     MLD_out(is:ie,js:je) = MLD(is:ie,js:je)
   endif
 
@@ -334,8 +334,6 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, diagPtr,
   do iM=1,3
     PE_threshold(iM) = Mixing_Energy(iM) / GV%g_Earth_Z_T2
   enddo
-
-  MLD(:,:,:) = 0.0
 
   EOSdom(:) = EOS_domain(G%HI)
 
@@ -478,7 +476,7 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, diagPtr,
   if (id_MLD(3) > 0) call post_data(id_MLD(3), MLD(:,:,3), diagPtr)
 
   if (present(MLD_out)) then
-    MLD_out = 0.0
+    MLD_out(:,:) = 0.0
     MLD_out(is:ie,js:je) = MLD(is:ie,js:je,1)
   endif
 
