@@ -80,6 +80,7 @@ subroutine set_fill_value(this, fill_value)
   class(diag_buffer_base), intent(inout) :: this !< The diagnostic buffer
   real,                    intent(in)    :: fill_value !< The fill value to use when growing the buffer [arbitrary]
 
+  this%fill_value = fill_value
 end subroutine set_fill_value
 
 !> Mark a slot in the buffer as unused based on a diagnostic id. For example,
@@ -249,6 +250,7 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
   write(stdout,*) '==== MOM_diag_buffers: diag_buffers_unit_tests_2d ==='
   fail = fail .or. new_buffer_2d()
   fail = fail .or. grow_buffer_2d()
+  fail = fail .or. fill_value_2d()
   fail = fail .or. store_buffer_2d()
   fail = fail .or. reuse_buffer_2d()
 
@@ -288,6 +290,25 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
     enddo
     if (verbose) write(stdout,*) "grow_buffer_2d: ", local_fail
   end function grow_buffer_2d
+
+  !> Test that growing new buffer fills the array with a set fill value
+  function fill_value_2d() result(local_fail)
+    type(diag_buffer_2d) :: buffer
+    logical :: local_fail !< True if any of the unit tests fail
+    integer, parameter :: is=1, ie=2, js=3, je=6
+    real, parameter :: fill_value = -123.456
+    integer :: i
+
+
+    local_fail = .false.
+
+    call buffer%set_horizontal_extents(is=is, ie=ie, js=js, je=je)
+    call buffer%set_fill_value(fill_value)
+    ! Grow the buffer 3 times
+    call buffer%grow()
+    if (any(buffer%buffer(1)%field(:,:) /= fill_value)) local_fail = .true.
+    if (verbose) write(stdout,*) "fill_value_2d: ", local_fail
+  end function fill_value_2d
 
   !> Test storing a buffer based on a unique id
   function store_buffer_2d() result(local_fail)
@@ -363,6 +384,7 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
   write(stdout,*) '==== MOM_diag_buffers: diag_buffers_unit_tests_3d ==='
   fail = fail .or. new_buffer_3d()
   fail = fail .or. grow_buffer_3d()
+  fail = fail .or. fill_value_3d()
   fail = fail .or. store_buffer_3d()
   fail = fail .or. reuse_buffer_3d()
 
@@ -404,6 +426,25 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
     enddo
     if (verbose) write(stdout,*) "grow_buffer_3d: ", local_fail
   end function grow_buffer_3d
+
+  !> Test that growing new buffer fills the array with a set fill value
+  function fill_value_3d() result(local_fail)
+    type(diag_buffer_3d) :: buffer
+    logical :: local_fail !< True if any of the unit tests fail
+    integer, parameter :: is=1, ie=2, js=3, je=6
+    real, parameter :: fill_value = -123.456
+    integer :: i
+
+
+    local_fail = .false.
+
+    call buffer%set_horizontal_extents(is=is, ie=ie, js=js, je=je)
+    call buffer%set_fill_value(fill_value)
+    ! Grow the buffer 3 times
+    call buffer%grow()
+    if (any(buffer%buffer(1)%field(:,:,:) /= fill_value)) local_fail = .true.
+    if (verbose) write(stdout,*) "fill_value_3d: ", local_fail
+  end function fill_value_3d
 
   !> Test storing a buffer based on a unique id
   function store_buffer_3d() result(local_fail)
