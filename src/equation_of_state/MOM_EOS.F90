@@ -1474,7 +1474,7 @@ subroutine EOS_init(param_file, EOS, US)
   logical :: EOS_quad_default
   real :: Rho_Tref_Sref ! Density at Tref degC and Sref ppt [kg m-3]
   real :: Tref          ! Reference temperature [degC]
-  real :: Sref          ! Reference calinity [psu]
+  real :: Sref          ! Reference salinity [psu]
 
   ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, "")
