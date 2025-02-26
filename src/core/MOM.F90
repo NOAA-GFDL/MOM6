@@ -1712,7 +1712,7 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
 end subroutine step_MOM_thermo
 
 !> ALE_regridding_and_remapping does regridding (the generation of a new grid) and remapping
-! (from the old grid to the new grid). This is done after the themrodynamic step.
+!! (from the old grid to the new grid). This is done after the themrodynamic step.
 subroutine ALE_regridding_and_remapping(CS, G, GV, US, u, v, h, tv, dtdia, Time_end_thermo)
   type(MOM_control_struct), intent(inout) :: CS     !< Master MOM control structure
   type(ocean_grid_type),    intent(inout) :: G      !< ocean grid structure
@@ -1881,9 +1881,9 @@ subroutine ALE_regridding_and_remapping(CS, G, GV, US, u, v, h, tv, dtdia, Time_
 
 end subroutine ALE_regridding_and_remapping
 
-!> post_diabatic_halo_updates does halo updates and calculates derived thermodynamic quantities 
-! (e.g. specific volume). This must be done after the diabatic step regardless of is ALE 
-! cooridinates are used or not.
+!> post_diabatic_halo_updates does halo updates and calculates derived thermodynamic quantities
+!! (e.g. specific volume). This must be done after the diabatic step regardless of is ALE
+!! cooridinates are used or not.
 subroutine post_diabatic_halo_updates(CS, G, GV, US, u, v, h, tv)
   type(MOM_control_struct), intent(inout) :: CS     !< Master MOM control structure
   type(ocean_grid_type),    intent(inout) :: G      !< ocean grid structure
@@ -1906,7 +1906,7 @@ subroutine post_diabatic_halo_updates(CS, G, GV, US, u, v, h, tv)
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   showCallTree = callTree_showQuery()
-  if (showCallTree) call callTree_enter("(), MOM.F90")
+  if (showCallTree) call callTree_enter("post_diabatic_halo_updates, MOM.F90")
   if (CS%debug) call query_debugging_checks(do_redundant=debug_redundant)
 
   if (CS%use_particles) then
@@ -1926,7 +1926,8 @@ subroutine post_diabatic_halo_updates(CS, G, GV, US, u, v, h, tv)
   if (allocated(tv%SpV_avg)) then
     call calc_derived_thermo(tv, h, G, GV, US, halo=dynamics_stencil, debug=CS%debug)
   endif
-end subroutine post_diabatic_halo_updates 
+  if (showCallTree) call callTree_leave("post_diabatic_halo_updates, MOM.F90")
+end subroutine post_diabatic_halo_updates
 
 !> step_offline is the main driver for running tracers offline in MOM6. This has been primarily
 !! developed with ALE configurations in mind. Some work has been done in isopycnal configuration, but
