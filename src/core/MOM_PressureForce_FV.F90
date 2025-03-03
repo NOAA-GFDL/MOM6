@@ -2059,8 +2059,8 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, SAL_CSp,
                  "If true, reset INTXPA to match pressures at first nonvanished cell. "//&
                  "Includes pressure correction.", default=.false., do_not_log=.not.use_EOS)
   call get_param(param_file, mdl, "RESET_INTXPA_INTEGRAL_FLATTEST", CS%reset_intxpa_flattest, &
-                 "If true, use flattest layer as reference layer where there is no "//&
-                 "better choice for RESET_INTXPA_INTEGRAL. Otherwise, use top layer.", &
+                 "If true, use flattest interface as reference interface where there is no "//&
+                 "better choice for RESET_INTXPA_INTEGRAL. Otherwise, use surface interface.", &
                  default=.false., do_not_log=.not.use_EOS)
   if (.not.use_EOS) then  ! These options do nothing without an equation of state.
     CS%correction_intxpa = .false.
