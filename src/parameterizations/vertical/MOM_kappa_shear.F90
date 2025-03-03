@@ -2272,11 +2272,13 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
          's-2', conversion=US%s_to_T**2)
   else
     CS%id_TKE = register_diag_field('ocean_model','TKE_shear', diag%axesTi, Time, &
-         'Shear-driven Turbulent Kinetic Energy at horizontal tracer points', 'm2 s-2', conversion=US%Z_to_m**2*US%s_to_T**2)
+         'Shear-driven Turbulent Kinetic Energy at horizontal tracer points', 'm2 s-2', &
+         conversion=US%Z_to_m**2*US%s_to_T**2)
     CS%id_S2_init = register_diag_field('ocean_model','S2_shear_in', diag%axesTi, Time, &
          'Interface shear squared at horizontal tracer points, as input to kappa-shear', 's-2', conversion=US%s_to_T**2)
     CS%id_N2_init = register_diag_field('ocean_model','N2_shear_in', diag%axesTi, Time, &
-         'Interface straitification at horizontal tracer points, as input to kappa-shear', 's-2', conversion=US%s_to_T**2)
+         'Interface straitification at horizontal tracer points, as input to kappa-shear', 's-2', &
+         conversion=US%s_to_T**2)
     CS%id_S2_mean = register_diag_field('ocean_model','S2_shear_mean', diag%axesTi, Time, &
          'Interface shear squared at horizontal tracer points, averaged over timestep in kappa-shear', &
          's-2', conversion=US%s_to_T**2)
