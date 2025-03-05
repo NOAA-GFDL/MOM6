@@ -90,6 +90,10 @@ type, public :: Kappa_shear_CS ; private
                              !! greater than 1.  The lower limit for the permitted fractional
                              !! decrease is (1 - 0.5/kappa_src_max_chg).  These limits could
                              !! perhaps be made dynamic with an improved iterative solver.
+  real    :: VS_GeometricMean_Kd_min !< A minimum diffusivity for computing the horizontal averages
+                             !! when using the geometric mean with VERTEX_SHEAR=True.  The model
+                             !! is sensitive to this value, which is a drawback of using the
+                             !! geometric average as currently implemented.
   logical :: psurf_bug       !< If true, do a simple average of the cell surface pressures to get a
                              !! surface pressure at the corner if VERTEX_SHEAR=True.  Otherwise mask
                              !! out any land points in the average.
@@ -824,10 +828,10 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
           ! Set the diffusivities in tracer columns from the values at vertices.
           !  The geometric mean is zero if any component is zero, hence the need
           !  and sensitivity to a value of kappa_trunc in regions on boundaries of shear zones.
-          Kd_ll = max(kappa_vertex(I-1,J-1,K),CS%kappa_trunc) ! Diffusivity, lower left
-          Kd_ur = max(kappa_vertex(I,J,K),CS%kappa_trunc) ! Diffusivity, upper right
-          Kd_ul = max(kappa_vertex(I-1,J,K),CS%kappa_trunc) ! Diffusivity, upper left
-          Kd_lr = max(kappa_vertex(I,J-1,K),CS%kappa_trunc) ! Difusivity, lower right
+          Kd_ll = max(kappa_vertex(I-1,J-1,K),CS%VS_GeometricMean_Kd_min) ! Diffusivity, lower left
+          Kd_ur = max(kappa_vertex(I,J,K),CS%VS_GeometricMean_Kd_min) ! Diffusivity, upper right
+          Kd_ul = max(kappa_vertex(I-1,J,K),CS%VS_GeometricMean_Kd_min) ! Diffusivity, upper left
+          Kd_lr = max(kappa_vertex(I,J-1,K),CS%VS_GeometricMean_Kd_min) ! Difusivity, lower right
           if (CS%VS_ThicknessMean) then
             weight_ll = hweight_ll(i,j,k)
             weight_ur = hweight_ur(i,j,k)
@@ -2152,9 +2156,19 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
                 "Answer date for the algorithm for arithmetic horizontal mean of "//&
                 "Kd from vertices to tracer points.  Less than 20250304 uses an older algorithm.", &
                  default=20250303, do_not_log=just_read.or.(.not.CS%KS_at_vertex))
-  if ((CS%Kd_tracer_mean_answer_date<20250304).and.(CS%VS_ThicknessMean .or. CS%VS_GeometricMean)) then
-    call MOM_error(FATAL,"Cannot use VERTEX_SHEAR_THICKNESS_MEAN or VERTEX_SHEAR_GEOMETRIC_MEAN "//&
-                   "with VERTEX_SHEAR_KD_MEAN_ANSWER_DATE < 20250304")
+  if (CS%Kd_tracer_mean_answer_date<20250304) then
+    if (CS%VS_ThicknessMean .or. CS%VS_GeometricMean) then
+      call MOM_error(FATAL,"Cannot use VERTEX_SHEAR_THICKNESS_MEAN or VERTEX_SHEAR_GEOMETRIC_MEAN "//&
+                     "with VERTEX_SHEAR_KD_MEAN_ANSWER_DATE < 20250304")
+    endif
+  else
+    if (CS%VS_GeometricMean) then
+      call get_param(param_file, mdl, "VERTEX_SHEAR_GEOMETRIC_MEAN_KDMIN", &
+                     CS%VS_GeometricMean_Kd_min, "If using the geometric mean in vertex shear, "//&
+                     "use this minimum value for Kd. This is an ad-hoc parameter, the "//&
+                     "diffusivities on the edge of shear regions are sensitive to the choice.",&
+                     units="m2 s-1",default=0.0, scale=GV%m2_s_to_HZ_T, do_not_log=just_read)
+    endif
   endif
   call get_param(param_file, mdl, "RINO_CRIT", CS%RiNo_crit, &
                  "The critical Richardson number for shear mixing.", &
