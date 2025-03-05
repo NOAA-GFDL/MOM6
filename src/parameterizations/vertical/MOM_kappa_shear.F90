@@ -521,6 +521,11 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
   if (CS%id_N2_mean>0) diag_N2_mean(:,:,:) = 0.0
   if (CS%id_S2_mean>0) diag_S2_mean(:,:,:) = 0.0
   kappa_vertex(:,:,:) = 0.0
+  hweight_ul(:,:,:) = 0.0
+  hweight_ur(:,:,:) = 0.0
+  hweight_ll(:,:,:) = 0.0
+  hweight_lr(:,:,:) = 0.0
+  h_int_mask(:,:,:) = 0.0
 
   use_temperature = associated(tv%T)
 
