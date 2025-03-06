@@ -90,6 +90,10 @@ type, public :: Kappa_shear_CS ; private
                              !! greater than 1.  The lower limit for the permitted fractional
                              !! decrease is (1 - 0.5/kappa_src_max_chg).  These limits could
                              !! perhaps be made dynamic with an improved iterative solver.
+  real    :: VS_GeometricMean_Kd_min !< A minimum diffusivity for computing the horizontal averages
+                             !! when using the geometric mean with VERTEX_SHEAR=True.  The model
+                             !! is sensitive to this value, which is a drawback of using the
+                             !! geometric average as currently implemented.
   logical :: psurf_bug       !< If true, do a simple average of the cell surface pressures to get a
                              !! surface pressure at the corner if VERTEX_SHEAR=True.  Otherwise mask
                              !! out any land points in the average.
@@ -760,16 +764,16 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
           !  on the value of kappa_trunc in regions on boundaries of shear zones.
           I_htot = 1.0 / ((h_SW + h_NE) + (h_NW + h_SE))
           kappa_io(i,j,K) = G%mask2dT(i,j) * mks_to_HZ_T * &
-                              ( ((GV%HZ_T_to_MKS * max(kappa_vertex(I-1,J-1,K),CS%kappa_trunc))**(h_SW*I_htot) * &
-                                 (GV%HZ_T_to_MKS * max(kappa_vertex(I,J,K),CS%kappa_trunc))**(h_NE*I_htot)) * &
-                                ((GV%HZ_T_to_MKS * max(kappa_vertex(I-1,J,K),CS%kappa_trunc))**(h_NW*I_htot) * &
-                                 (GV%HZ_T_to_MKS * max(kappa_vertex(I,J-1,K),CS%kappa_trunc))**(h_SE*I_htot)) )
+                              ( ((GV%HZ_T_to_MKS * max(kappa_vertex(I-1,J-1,K),CS%VS_GeometricMean_Kd_min))**(h_SW*I_htot) * &
+                                 (GV%HZ_T_to_MKS * max(kappa_vertex(I,J,K),CS%VS_GeometricMean_Kd_min))**(h_NE*I_htot)) * &
+                                ((GV%HZ_T_to_MKS * max(kappa_vertex(I-1,J,K),CS%VS_GeometricMean_Kd_min))**(h_NW*I_htot) * &
+                                 (GV%HZ_T_to_MKS * max(kappa_vertex(I,J-1,K),CS%VS_GeometricMean_Kd_min))**(h_SE*I_htot)) )
         else
           ! If all points have zero thickness, the thikncess-weighted geometric mean is undefined, so use
           ! the non-thickness weighted geometric mean instead.
           kappa_io(i,j,K) = G%mask2dT(i,j) * sqrt(sqrt( &
-                (max(kappa_vertex(I-1,J-1,K),CS%kappa_trunc) * max(kappa_vertex(I,J,K),CS%kappa_trunc)) * &
-                (max(kappa_vertex(I-1,J,K),CS%kappa_trunc) * max(kappa_vertex(I,J-1,K),CS%kappa_trunc)) ))
+                (max(kappa_vertex(I-1,J-1,K),CS%VS_GeometricMean_Kd_min) * max(kappa_vertex(I,J,K),CS%VS_GeometricMean_Kd_min)) * &
+                (max(kappa_vertex(I-1,J,K),CS%VS_GeometricMean_Kd_min) * max(kappa_vertex(I,J-1,K),CS%VS_GeometricMean_Kd_min)) ))
         endif
       else
         ! The following expression is a thickness weighted arithmetic mean at tracer points:
@@ -783,8 +787,8 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
     !$OMP parallel do default(private) shared(nz,G,CS,kappa_io,kappa_vertex)
     do K=2,nz ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
       kappa_io(i,j,K) = G%mask2dT(i,j) * sqrt(sqrt( &
-            (max(kappa_vertex(I-1,J-1,K),CS%kappa_trunc) * max(kappa_vertex(I,J,K),CS%kappa_trunc)) * &
-            (max(kappa_vertex(I-1,J,K),CS%kappa_trunc) * max(kappa_vertex(I,J-1,K),CS%kappa_trunc)) ))
+            (max(kappa_vertex(I-1,J-1,K),CS%VS_GeometricMean_Kd_min) * max(kappa_vertex(I,J,K),CS%VS_GeometricMean_Kd_min)) * &
+            (max(kappa_vertex(I-1,J,K),CS%VS_GeometricMean_Kd_min) * max(kappa_vertex(I,J-1,K),CS%VS_GeometricMean_Kd_min)) ))
     enddo ; enddo ; enddo
   else   ! Use a non-thickness weighted arithmetic mean.
     !$OMP parallel do default(private) shared(nz,G,CS,kappa_io,kappa_vertex)
@@ -2083,6 +2087,13 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
                  "If true, apply thickness weighting to horizontal averagings of diffusivity "//&
                  "to tracer points in the kappa shear solver.", &
                  default=.false.)
+  if (CS%VS_GeometricMean) then
+    call get_param(param_file, mdl, "VERTEX_SHEAR_GEOMETRIC_MEAN_KDMIN", &
+                   CS%VS_GeometricMean_Kd_min, "If using the geometric mean in vertex shear, "//&
+                   "use this minimum value for Kd. This is an ad-hoc parameter, the "//&
+                   "diffusivities on the edge of shear regions are sensitive to the choice.",&
+                   units="m2 s-1",default=0.0, scale=GV%m2_s_to_HZ_T, do_not_log=just_read)
+  endif
   call get_param(param_file, mdl, "RINO_CRIT", CS%RiNo_crit, &
                  "The critical Richardson number for shear mixing.", &
                  units="nondim", default=0.25, do_not_log=just_read)
