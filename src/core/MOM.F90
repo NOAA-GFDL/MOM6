@@ -1842,9 +1842,15 @@ subroutine ALE_regridding_and_remapping(CS, G, GV, US, u, v, h, tv, dtdia, Time_
   if (showCallTree) call callTree_waypoint("finished ALE_regrid (ALE_regridding_and_remapping)")
   call cpu_clock_end(id_clock_ALE)
 
+  ! Update derived thermodynamic quantities.
+  if (allocated(CS%tv%SpV_avg)) then
+    call calc_derived_thermo(CS%tv, CS%h, G, GV, US, halo=1, debug=CS%debug)
+  endif
+
   ! Whenever thickness changes let the diag manager know, target grids
-  ! for vertical remapping may need to be regenerated. This needs to
-  ! happen after the H update and before the next post_data.
+  ! for vertical remapping may need to be regenerated.  In non-Boussinesq mode,
+  ! calc_derived_thermo needs to be called before diag_update_remap_grids.
+  ! This needs to happen after the H update and before the next post_data.
   call diag_update_remap_grids(CS%diag)
 
   call postALE_tracer_diagnostics(CS%tracer_Reg, G, GV, CS%diag, dtdia)
