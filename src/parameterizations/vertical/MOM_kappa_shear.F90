@@ -97,12 +97,11 @@ type, public :: Kappa_shear_CS ; private
                              !! time average TKE when there is mass in all layers.  Otherwise always
                              !! report the time-averaged TKE, as is currently done when there
                              !! are some massless layers.
-  integer :: Kd_tracer_mean_answer_date !< Answer date for Kd tracer point horizontal averaging
   logical :: VS_viscosity_bug !< If true, use a bug in the calculation of the viscosity that sets
                              !! it to zero for all vertices that are on a coastline.
   logical :: VS_GeometricMean !< If true use geometric averaging for Kd from vertices to tracer points
   logical :: VS_ThicknessMean !< If true use thickness weighting when averaging Kd from vertices to
-                             !!tracer points
+                             !! tracer points
   logical :: restrictive_tolerance_check !< If false, uses the less restrictive tolerance check to
                              !! determine if a timestep is acceptable for the KS_it outer iteration
                              !! loop, as the code was originally written.  True uses the more
@@ -349,10 +348,8 @@ subroutine Calculate_kappa_shear(u_in, v_in, h, tv, p_surf, kappa_io, tke_io, &
             kappa_2d(i,K) = kappa_avg(kc(K))
             tke_2d(i,K) = tke_avg(kc(K))
           else
-            kappa_2d(i,K) = (1.0-kf(K)) * kappa_avg(kc(K)) + &
-                             kf(K) * kappa_avg(kc(K)+1)
-            tke_2d(i,K) = (1.0-kf(K)) * tke_avg(kc(K)) + &
-                           kf(K) * tke_avg(kc(K)+1)
+            kappa_2d(i,K) = (1.0-kf(K)) * kappa_avg(kc(K)) + kf(K) * kappa_avg(kc(K)+1)
+            tke_2d(i,K) = (1.0-kf(K)) * tke_avg(kc(K)) + kf(K) * tke_avg(kc(K)+1)
           endif
         enddo
         do K=1,nz+1
@@ -362,22 +359,14 @@ subroutine Calculate_kappa_shear(u_in, v_in, h, tv, p_surf, kappa_io, tke_io, &
             if (CS%id_N2_init>0) diag_N2_init(i,j,K) = N2_init(kc(K))
             if (CS%id_S2_init>0) diag_S2_init(i,j,K) = S2_init(kc(K))
           else
-             if (CS%id_N2_mean>0) then
-               diag_N2_mean(i,j,K) = (1.0-kf(K)) * N2_mean(kc(K)) &
-                                     + kf(K) *N2_mean(kc(K)+1)
-             endif
-             if (CS%id_S2_mean>0) then
-               diag_S2_mean(i,j,K) = (1.0-kf(K)) * S2_mean(kc(K)) &
-                                     + kf(K) *S2_mean(kc(K)+1)
-             endif
-             if (CS%id_N2_init>0) then
-               diag_N2_init(i,j,K) = (1.0-kf(K)) * N2_init(kc(K)) &
-                                     + kf(K) *N2_init(kc(K)+1)
-             endif
-             if (CS%id_S2_init>0) then
-               diag_S2_init(i,j,K) = (1.0-kf(K)) * S2_init(kc(K)) &
-                                     + kf(K) *S2_init(kc(K)+1)
-             endif
+            if (CS%id_N2_mean>0) &
+              diag_N2_mean(i,j,K) = (1.0-kf(K)) * N2_mean(kc(K)) + kf(K) * N2_mean(kc(K)+1)
+            if (CS%id_S2_mean>0) &
+              diag_S2_mean(i,j,K) = (1.0-kf(K)) * S2_mean(kc(K)) + kf(K) * S2_mean(kc(K)+1)
+            if (CS%id_N2_init>0) &
+              diag_N2_init(i,j,K) = (1.0-kf(K)) * N2_init(kc(K)) + kf(K) * N2_init(kc(K)+1)
+            if (CS%id_S2_init>0) &
+              diag_S2_init(i,j,K) = (1.0-kf(K)) * S2_init(kc(K)) + kf(K) * S2_init(kc(K)+1)
           endif
         enddo
       endif
@@ -457,20 +446,18 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
     diag_S2_mean    ! Diagnostic of S2 averaged over the timestep applied [T-2 ~> s-2]
 
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: &
-    dz_3d               ! Vertical distance between interface heights [Z ~> m].
+    dz_3d           ! Vertical distance between interface heights [Z ~> m].
+  real, dimension(SZIB_(G),SZJB_(G),SZK_(GV)+1) :: &
+    kappa_vertex    ! Diffusivity at interfaces and vertices [H Z T-1 ~> m2 s-1 or Pa s]
+  real, dimension(SZIB_(G),SZJB_(G),SZK_(GV)+1) :: &
+    h_vert          ! Thicknesses interpolated to vertices [H Z T-1 ~> m2 s-1 or Pa s]
   real, dimension(SZIB_(G),SZK_(GV)) :: &
-    h_2d, &             ! A 2-D version of h [H ~> m or kg m-2].
+    h_2d, &             ! A 2-D version of h interpolated to vertices [H ~> m or kg m-2].
     dz_2d, &            ! Vertical distance between interface heights [Z ~> m].
     u_2d, v_2d, &       ! 2-D versions of u_in and v_in, converted to [L T-1 ~> m s-1].
     T_2d, S_2d, rho_2d  ! 2-D versions of T [C ~> degC], S [S ~> ppt], and rho [R ~> kg m-3].
-  real, dimension(SZIB_(G),SZJB_(G),SZK_(GV)+1) :: &
-    kappa_vertex, & ! kappa_io on vertices [H Z T-1 ~> m2 s-1 or Pa s]
-    h_int_mask      ! masked h sumed over bounding layers on vertices [H ~> m or kg m-2]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: &
-    hweight_ul, & ! thickness weighting at cell center from upper-left vertex
-    hweight_ur, & ! thickness weighting at cell center from upper-right vertex
-    hweight_ll, & ! thickness weighting at cell center from lower-left vertex
-    hweight_lr    ! thickness weighting at cell center from lower-right vertex
+  real, dimension(SZIB_(G),SZK_(GV)+1) :: &
+    kappa_2d    ! 2-D slice of kappa_vert [H Z T-1 ~> m2 s-1 or Pa s]
   real, dimension(SZIB_(G),SZK_(GV)+1) :: &
     tke_2d      ! 2-D version tke_io [Z2 T-2 ~> m2 s-2].
   real, dimension(SZK_(GV)) :: &
@@ -497,9 +484,9 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
   real :: dz_in_lay     !   The running sum of the thickness in a layer [H ~> m or kg m-2]
   real :: k0dt          ! The background diffusivity times the timestep [H Z ~> m2 or kg m-1]
   real :: dz_massless   ! A layer thickness that is considered massless [H ~> m or kg m-2]
-  real :: I_hwt         ! The inverse of the masked thickness weights [H-1 ~> m-1 or m2 kg-1].
+  real :: I_hwt         ! The inverse of the sum of the adjacent masked thickness weights [H-1 ~> m-1 or m2 kg-1]
+  real :: I_htot        ! The inverse of the sum of the thicknesses at adjacent vertices [H-1 ~> m-1 or m2 kg-1]
   real :: I_Prandtl     ! The inverse of the turbulent Prandtl number [nondim].
-  real :: hweight_denom ! A weighting factor for thickness averaging [H ~> m or kg m-2]
   logical :: use_temperature  !  If true, temperature and salinity have been
                         ! allocated and are being used as state variables.
 
@@ -508,9 +495,10 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
                         ! merged into nearby massive layers.
   real, dimension(SZK_(GV)+1) :: kf ! The fractional weight of interface kc+1 for
                         ! interpolating back to the original index space [nondim].
-  ! Terms in horizontal averaging of diffusivity to tracer location
-  real :: Kd_ll, Kd_lr, Kd_ul, Kd_ur, weight_ll, weight_lr, weight_ul, weight_ur
-  ! Other useful indices
+  real :: h_SW, h_SE, h_NW, h_NE ! Thicknesses at adjacent vertices [H ~> m or kg m-2]
+  real :: mks_to_HZ_T   ! A factor used to restore dimensional scaling after the geomentric mean
+                        ! diffusivity is taken using thickness weighted powers [H Z s m-2 T-1 ~> 1]
+                        ! or [H Z m s kg-1 T-1 ~> 1]
   integer :: IsB, IeB, JsB, JeB, i, j, k, nz, nzc
 
   ! Diagnostics that should be deleted?
@@ -531,61 +519,8 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
   ! Convert layer thicknesses into geometric thickness in height units.
   call thickness_to_dz(h, tv, dz_3d, G, GV, US, halo_size=1)
 
-  if (CS%VS_ThicknessMean) then
-    hweight_ul(:,:,:) = 0.0
-    hweight_ur(:,:,:) = 0.0
-    hweight_ll(:,:,:) = 0.0
-    hweight_lr(:,:,:) = 0.0
-    h_int_mask(:,:,:) = 0.0
-    !Loop over halo and pre compute a masked thickness around each interface
-    ! (excluding the top and bottom boundary)
-    do j=G%jsc-1,G%jec+1; do K=2,nz; do i=G%isc-1,G%iec+1
-      h_int_mask(i,j,K) = G%mask2dT(i,j)*(h(i,j,k-1)+h(i,j,k))/2.
-    enddo; enddo ; enddo
-    !Compute the thickness weighting if requested for horizontal mean
-    do J=JsB,JeB ; do K=2,nz ; do I=IsB,IeB
-      hweight_denom = h_int_mask(i-1,j-1,k) + &   !left,bot
-                      2.*h_int_mask(i-1,j,k) + &  !left,cen
-                      h_int_mask(i-1,j+1,k) + &   !left,top
-                      2. * h_int_mask(i,j-1,k) + &!mid,bot
-                      4. * h_int_mask(i,j,k) + &  !mid,cen
-                      2. * h_int_mask(i,j+1,k) + &!mid,top
-                      h_int_mask(i+1,j-1,k) + &   !right,bot
-                      2. * h_int_mask(i-1,j,k) + &!right,cen
-                      h_int_mask(i+1,j+1,k) + &   !right,top
-                      GV%H_subroundoff
-      ! Computing the weighting of the 4 vertices to each cell center
-      hweight_ul(I,J,K) = ((h_int_mask(i-1,j,k) + &   !left,cen
-                            h_int_mask(i-1,j+1,k)) + &!left,top
-                           (h_int_mask(i,j,k) + &     !mid,cen
-                            h_int_mask(i,j+1,k)) &    !mid,top
-                           ) / hweight_denom
-      hweight_ur(I,J,k) = ((h_int_mask(i,j,k) + &   !mid,cen
-                            h_int_mask(i,j+1,k)) + &!mid,top
-                           (h_int_mask(i+1,j,k) + & !right,cen
-                            h_int_mask(i+1,j+1,k)) &!right,top
-                            ) / hweight_denom
-      hweight_ll(I,J,k) = ((h_int_mask(i-1,j-1,k) + &!left,bot
-                            h_int_mask(i-1,j,k)) + & !left,cen
-                           (h_int_mask(i+1,j-1,k) + &!mid,bot
-                            h_int_mask(i+1,j,k)) &   !mid,cen
-                            ) / hweight_denom
-      hweight_lr(I,J,k) = ((h_int_mask(i,j-1,k) + &  !mid,bot
-                            h_int_mask(i,j,k)) + &   !mid,cen
-                           (h_int_mask(i+1,j-1,k) + &!right,bot
-                            h_int_mask(i+1,j,k)) &   !right,cen
-                           ) / hweight_denom
-    enddo ; enddo ; enddo
-  else
-    ! Set some weights for horizontal averaging factors
-    weight_ll=0.25
-    weight_lr=0.25
-    weight_ul=0.25
-    weight_ur=0.25
-  endif
-
-  !$OMP parallel do default(private) shared(jsB,jeB,isB,ieB,nz,h,u_in,v_in,use_temperature,tv,G,GV, &
-  !$OMP                                US,CS,kappa_io,dz_massless,k0dt,p_surf,dt,tke_io,kv_io,I_Prandtl, &
+  !$OMP parallel do default(private) shared(jsB,jeB,isB,ieB,nz,h,u_in,v_in,use_temperature,tv,G,GV,US,CS,kappa_io, &
+  !$OMP                                     dz_massless,k0dt,p_surf,dt,tke_io,kv_io,kappa_vertex,h_vert,I_Prandtl, &
   !$OMP                                     diag_N2_init,diag_S2_init,diag_N2_mean,diag_S2_mean)
   do J=JsB,JeB
 
@@ -727,7 +662,7 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
     ! Extrapolate from the vertically reduced grid back to the original layers.
       if (nz == nzc) then
         do K=1,nz+1
-          kappa_vertex(I,J,K) = kappa_avg(K)
+          kappa_2d(I,K) = kappa_avg(K)
           if (CS%all_layer_TKE_bug) then
             tke_2d(i,K) = tke(K)
           else
@@ -749,10 +684,10 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
       else
         do K=1,nz+1
           if (kf(K) == 0.0) then
-            kappa_vertex(I,J,K) = kappa_avg(kc(K))
+            kappa_2d(I,K) = kappa_avg(kc(K))
             tke_2d(I,K) = tke_avg(kc(K))
           else
-            kappa_vertex(I,J,K) = (1.0-kf(K)) * kappa_avg(kc(K)) + kf(K) * kappa_avg(kc(K)+1)
+            kappa_2d(I,K) = (1.0-kf(K)) * kappa_avg(kc(K)) + kf(K) * kappa_avg(kc(K)+1)
             tke_2d(I,K) = (1.0-kf(K)) * tke_avg(kc(K)) + kf(K) * tke_avg(kc(K)+1)
           endif
         enddo
@@ -763,102 +698,102 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
             if (CS%id_N2_init>0) diag_N2_init(I,J,K) = N2_init(kc(K))
             if (CS%id_S2_init>0) diag_S2_init(I,J,K) = S2_init(kc(K))
           else
-             if (CS%id_N2_mean>0) then
-               diag_N2_mean(I,J,K) = (1.0-kf(K)) * N2_mean(kc(K)) &
-                                     + kf(K) *N2_mean(kc(K)+1)
-             endif
-             if (CS%id_S2_mean>0) then
-               diag_S2_mean(I,J,K) = (1.0-kf(K)) * S2_mean(kc(K)) &
-                                     + kf(K) *S2_mean(kc(K)+1)
-             endif
-             if (CS%id_N2_init>0) then
-               diag_N2_init(I,J,K) = (1.0-kf(K)) * N2_init(kc(K)) &
-                                     + kf(K) *N2_init(kc(K)+1)
-             endif
-             if (CS%id_S2_init>0) then
-               diag_S2_init(I,J,K) = (1.0-kf(K)) * S2_init(kc(K)) &
-                                     + kf(K) *S2_init(kc(K)+1)
-             endif
+            if (CS%id_N2_mean>0) &
+              diag_N2_mean(I,J,K) = (1.0-kf(K)) * N2_mean(kc(K)) + kf(K) * N2_mean(kc(K)+1)
+            if (CS%id_S2_mean>0) &
+              diag_S2_mean(I,J,K) = (1.0-kf(K)) * S2_mean(kc(K)) + kf(K) * S2_mean(kc(K)+1)
+            if (CS%id_N2_init>0) &
+              diag_N2_init(I,J,K) = (1.0-kf(K)) * N2_init(kc(K)) + kf(K) * N2_init(kc(K)+1)
+            if (CS%id_S2_init>0) &
+              diag_S2_init(I,J,K) = (1.0-kf(K)) * S2_init(kc(K)) + kf(K) * S2_init(kc(K)+1)
           endif
         enddo
       endif
     ! call cpu_clock_end(Id_clock_setup)
     else  ! Land points, still inside the i-loop.
       do K=1,nz+1
-        kappa_vertex(I,J,K) = 0.0 ; tke_2d(I,K) = 0.0
+        kappa_2d(I,K) = 0.0 ; tke_2d(I,K) = 0.0
       enddo
     endif ; enddo ! i-loop
 
+    ! Store the 2-d slices back in the 3-d arrays for restarts or interpolation back to tracer points.
+    if (CS%VS_ThicknessMean) then
+      do K=1,nz+1 ; do I=IsB,IeB
+        h_vert(I,J,k) = h_2d(I,k)
+      enddo ; enddo
+    endif
     if (CS%VS_viscosity_bug) then
       do K=1,nz+1 ; do I=IsB,IeB
+        kappa_vertex(I,J,K) = kappa_2d(I,K)
         tke_io(I,J,K) = G%mask2dBu(I,J) * tke_2d(I,K)
         kv_io(I,J,K) = ( G%mask2dBu(I,J) * kappa_vertex(I,J,K) ) * CS%Prandtl_turb
-      enddo; enddo
+      enddo ; enddo
     else
       do K=1,nz+1 ; do I=IsB,IeB
+        kappa_vertex(I,J,K) = kappa_2d(I,K)
         tke_io(I,J,K) = tke_2d(I,K)
         kv_io(I,J,K) = kappa_vertex(I,J,K) * CS%Prandtl_turb
-      enddo; enddo
+      enddo ; enddo
     endif
   enddo ! end of J-loop
 
+  ! Set the diffusivities in tracer columns from the values at vertices.
 
-  do j=G%jsc,G%jec
-    if (CS%Kd_tracer_mean_answer_date < 20250304) then
-      ! This is a non-thickness weighted arithmetic mean, but it is not bitwise identical to the more general
-      ! version of the mean below the "else" that includes a mathematically equivalent form.
-      do K=1,nz+1 ; do i=G%isc,G%iec
-        ! Set the diffusivities in tracer columns from the values at vertices.
-        kappa_io(i,j,K) = G%mask2dT(i,j) * 0.25 * &
-                         ((kappa_vertex(I-1,J-1,K)+kappa_vertex(I,J,K)) +&
-                          (kappa_vertex(I-1,J,K)+kappa_vertex(I,J-1,K)))
-      enddo; enddo
-    else
-      do i=G%isc,G%iec
-        ! It doesn't matter what these values are so make them zero.
-        kappa_io(i,j,1) = 0.0
-        kappa_io(i,j,nz+1) = 0.0
-      enddo
+  !$OMP parallel do default(private) shared(G,kappa_io)
+  do j=G%jsc,G%jec ; do i=G%isc,G%iec
+    ! The turbulent length scales (and hence turbulent diffusivity) should always go to 0 at the top and bottom.
+    kappa_io(i,j,1) = 0.0
+    kappa_io(i,j,nz+1) = 0.0
+  enddo ; enddo
+  if (CS%VS_ThicknessMean) then
+    ! This conversion factor is required to allow for aribtrary fracional powers of the diffusivities.
+    if (CS%VS_GeometricMean) mks_to_HZ_T = 1.0 /  GV%HZ_T_to_MKS
+    !$OMP parallel do default(private) shared(nz,G,GV,CS,kappa_io,kappa_vertex,h_vert)
+    do K=2,nz ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
+      h_SW = 0.5 * (h_vert(I-1,J-1,k) + h_vert(I-1,J-1,k-1))
+      h_NE = 0.5 * (h_vert(I,J,k) + h_vert(I,J,k-1))
+      h_NW = 0.5 * (h_vert(I-1,J,k) + h_vert(I-1,J,k-1))
+      h_SE = 0.5 * (h_vert(I,J-1,k) + h_vert(I,J-1,k-1))
       if (CS%VS_GeometricMean) then
-        do K=2,nz ; do i=G%isc,G%iec
-          ! Set the diffusivities in tracer columns from the values at vertices.
-          !  The geometric mean is zero if any component is zero, hence the need
-          !  and sensitivity to a value of kappa_trunc in regions on boundaries of shear zones.
-          Kd_ll = max(kappa_vertex(I-1,J-1,K),CS%kappa_trunc) ! Diffusivity, lower left
-          Kd_ur = max(kappa_vertex(I,J,K),CS%kappa_trunc) ! Diffusivity, upper right
-          Kd_ul = max(kappa_vertex(I-1,J,K),CS%kappa_trunc) ! Diffusivity, upper left
-          Kd_lr = max(kappa_vertex(I,J-1,K),CS%kappa_trunc) ! Difusivity, lower right
-          if (CS%VS_ThicknessMean) then
-            weight_ll = hweight_ll(i,j,k)
-            weight_ur = hweight_ur(i,j,k)
-            weight_ul = hweight_ul(i,j,k)
-            weight_lr = hweight_lr(i,j,k)
-          endif
-
-          ! The following expression generalizes the geometric mean at tracer points, w/ or w/o thickness weighting:
-          kappa_io(i,j,K) = G%mask2dT(i,j) * &
-                            ( ((Kd_ll**weight_ll)*(Kd_ur**weight_ur)) * &
-                              ((Kd_ul**weight_ul)*(Kd_lr**weight_lr)) )
-        enddo; enddo
-      else !arithmetic mean
-        do K=2,nz ; do i=G%isc,G%iec
-          Kd_ll = kappa_vertex(I-1,J-1,K) ! Diffusivity, lower left
-          Kd_ur = kappa_vertex(I,J,K) ! Diffusivity, upper right
-          Kd_ul = kappa_vertex(I-1,J,K) ! Diffusivity, upper left
-          Kd_lr = kappa_vertex(I,J-1,K) ! Difusivity, lower right
-          if (CS%VS_ThicknessMean) then
-            weight_ll = hweight_ll(i,j,k)
-            weight_ur = hweight_ur(i,j,k)
-            weight_ul = hweight_ul(i,j,k)
-            weight_lr = hweight_lr(i,j,k)
-          endif
-          ! The following expression generalizes the geometric mean at tracer points, w/ or w/o thickness weighting:
-          kappa_io(i,j,K) = G%mask2dT(i,j) * &
-                            ((Kd_ll*weight_ll + Kd_ur*weight_ur) + (Kd_ul*weight_ul + Kd_lr*weight_lr))
-        enddo; enddo
-      endif ! geometric/arithmetic mean
-    endif ! Answer date
-  enddo ! j loop
+        if ((h_SW + h_NE) + (h_NW + h_SE) > 0.0) then
+          !  The geometric mean is zero if any component is zero, hence the need to use a floor
+          !  on the value of kappa_trunc in regions on boundaries of shear zones.
+          I_htot = 1.0 / ((h_SW + h_NE) + (h_NW + h_SE))
+          kappa_io(i,j,K) = G%mask2dT(i,j) * mks_to_HZ_T * &
+                              ( ((GV%HZ_T_to_MKS * max(kappa_vertex(I-1,J-1,K),CS%kappa_trunc))**(h_SW*I_htot) * &
+                                 (GV%HZ_T_to_MKS * max(kappa_vertex(I,J,K),CS%kappa_trunc))**(h_NE*I_htot)) * &
+                                ((GV%HZ_T_to_MKS * max(kappa_vertex(I-1,J,K),CS%kappa_trunc))**(h_NW*I_htot) * &
+                                 (GV%HZ_T_to_MKS * max(kappa_vertex(I,J-1,K),CS%kappa_trunc))**(h_SE*I_htot)) )
+        else
+          ! If all points have zero thickness, the thikncess-weighted geometric mean is undefined, so use
+          ! the non-thickness weighted geometric mean instead.
+          kappa_io(i,j,K) = G%mask2dT(i,j) * sqrt(sqrt( &
+                (max(kappa_vertex(I-1,J-1,K),CS%kappa_trunc) * max(kappa_vertex(I,J,K),CS%kappa_trunc)) * &
+                (max(kappa_vertex(I-1,J,K),CS%kappa_trunc) * max(kappa_vertex(I,J-1,K),CS%kappa_trunc)) ))
+        endif
+      else
+        ! The following expression is a thickness weighted arithmetic mean at tracer points:
+        I_htot = 1.0 / (((h_SW + h_NE) + (h_NW + h_SE)) + GV%H_subroundoff)
+        kappa_io(i,j,K) = G%mask2dT(i,j) * &
+              (((kappa_vertex(I-1,J-1,K)*h_SW) + (kappa_vertex(I,J,K)*h_NE)) + &
+               ((kappa_vertex(I-1,J,K)*h_NW) + (kappa_vertex(I,J-1,K)*h_SE))) * I_htot
+      endif
+    enddo ; enddo ; enddo
+  elseif (CS%VS_GeometricMean) then   ! The geometic mean diffusivities are not thickness weighted.
+    !$OMP parallel do default(private) shared(nz,G,CS,kappa_io,kappa_vertex)
+    do K=2,nz ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
+      kappa_io(i,j,K) = G%mask2dT(i,j) * sqrt(sqrt( &
+            (max(kappa_vertex(I-1,J-1,K),CS%kappa_trunc) * max(kappa_vertex(I,J,K),CS%kappa_trunc)) * &
+            (max(kappa_vertex(I-1,J,K),CS%kappa_trunc) * max(kappa_vertex(I,J-1,K),CS%kappa_trunc)) ))
+    enddo ; enddo ; enddo
+  else   ! Use a non-thickness weighted arithmetic mean.
+    !$OMP parallel do default(private) shared(nz,G,CS,kappa_io,kappa_vertex)
+    do K=2,nz ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
+      kappa_io(i,j,K) = G%mask2dT(i,j) * 0.25 * &
+                       ((kappa_vertex(I-1,J-1,K) + kappa_vertex(I,J,K)) +&
+                        (kappa_vertex(I-1,J,K) + kappa_vertex(I,J-1,K)))
+    enddo ; enddo ; enddo
+  endif
 
   if (CS%debug) then
     call hchksum(kappa_io, "kappa", G%HI, unscale=GV%HZ_T_to_m2_s)
@@ -2148,14 +2083,6 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
                  "If true, apply thickness weighting to horizontal averagings of diffusivity "//&
                  "to tracer points in the kappa shear solver.", &
                  default=.false.)
-  call get_param(param_file, mdl, "VERTEX_SHEAR_KD_MEAN_ANSWER_DATE", CS%Kd_tracer_mean_answer_date, &
-                "Answer date for the algorithm for arithmetic horizontal mean of "//&
-                "Kd from vertices to tracer points.  Less than 20250304 uses an older algorithm.", &
-                 default=20250303, do_not_log=just_read.or.(.not.CS%KS_at_vertex))
-  if ((CS%Kd_tracer_mean_answer_date<20250304).and.(CS%VS_ThicknessMean .or. CS%VS_GeometricMean)) then
-    call MOM_error(FATAL,"Cannot use VERTEX_SHEAR_THICKNESS_MEAN or VERTEX_SHEAR_GEOMETRIC_MEAN "//&
-                   "with VERTEX_SHEAR_KD_MEAN_ANSWER_DATE < 20250304")
-  endif
   call get_param(param_file, mdl, "RINO_CRIT", CS%RiNo_crit, &
                  "The critical Richardson number for shear mixing.", &
                  units="nondim", default=0.25, do_not_log=just_read)
@@ -2305,27 +2232,27 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
     CS%id_S2_init = register_diag_field('ocean_model','S2_shear_in', diag%axesBi, Time, &
          'Interface shear squared at horizontal vertices, as input to kappa-shear', 's-2', conversion=US%s_to_T**2)
     CS%id_N2_init = register_diag_field('ocean_model','N2_shear_in', diag%axesBi, Time, &
-         'Interface straitification at horizontal vertices, as input to kappa-shear', 's-2', conversion=US%s_to_T**2)
+         'Interface stratification at horizontal vertices, as input to kappa-shear', 's-2', conversion=US%s_to_T**2)
     CS%id_S2_mean = register_diag_field('ocean_model','S2_shear_mean', diag%axesBi, Time, &
          'Interface shear squared at horizontal vertices, averaged over timestep in kappa-shear', &
          's-2', conversion=US%s_to_T**2)
     CS%id_N2_mean = register_diag_field('ocean_model','N2_shear_mean', diag%axesBi, Time, &
-         'Interface straitification at horizontal vertices, averaged over timestep in kappa-shear', &
+         'Interface stratification at horizontal vertices, averaged over timestep in kappa-shear', &
          's-2', conversion=US%s_to_T**2)
   else
     CS%id_TKE = register_diag_field('ocean_model','TKE_shear', diag%axesTi, Time, &
-         'Shear-driven Turbulent Kinetic Energy at horizontal tracer points', 'm2 s-2', &
-         conversion=US%Z_to_m**2*US%s_to_T**2)
+         'Shear-driven Turbulent Kinetic Energy at horizontal tracer points', &
+         'm2 s-2', conversion=US%Z_to_m**2*US%s_to_T**2)
     CS%id_S2_init = register_diag_field('ocean_model','S2_shear_in', diag%axesTi, Time, &
          'Interface shear squared at horizontal tracer points, as input to kappa-shear', 's-2', conversion=US%s_to_T**2)
     CS%id_N2_init = register_diag_field('ocean_model','N2_shear_in', diag%axesTi, Time, &
-         'Interface straitification at horizontal tracer points, as input to kappa-shear', 's-2', &
-         conversion=US%s_to_T**2)
+         'Interface stratification at horizontal tracer points, as input to kappa-shear', &
+         's-2', conversion=US%s_to_T**2)
     CS%id_S2_mean = register_diag_field('ocean_model','S2_shear_mean', diag%axesTi, Time, &
          'Interface shear squared at horizontal tracer points, averaged over timestep in kappa-shear', &
          's-2', conversion=US%s_to_T**2)
     CS%id_N2_mean = register_diag_field('ocean_model','N2_shear_mean', diag%axesTi, Time, &
-         'Interface straitification at horizontal tracer points, averaged ove timestep in kappa-shear', &
+         'Interface stratification at horizontal tracer points, averaged ove timestep in kappa-shear', &
          's-2', conversion=US%s_to_T**2)
   endif
 
