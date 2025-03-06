@@ -128,9 +128,9 @@ function register_Kelvin_OBC(param_file, CS, US, OBC_Reg)
   call register_OBC(casename, param_file, OBC_Reg)
   register_Kelvin_OBC = .true.
 
-! if (CS%mode > 0) call MOM_error(WARNING, &
-!     "register_Kelvin_OBC: The Kelvin_initialization code is not yet working properly unless KELVIN_WAVE_MODE = 0.")
   ! TODO: Revisit and correct the internal Kelvin wave test case.
+  ! Specifically, using wave_speed() and investigating adding eta_anom
+  ! noted in the comments below.
 
 end function register_Kelvin_OBC
 
