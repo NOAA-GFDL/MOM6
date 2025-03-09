@@ -555,7 +555,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     uhbt0, &      ! The difference between the sum of the layer zonal thickness
                   ! fluxes and the barotropic thickness flux using the same
                   ! velocity [H L2 T-1 ~> m3 s-1 or kg s-1].
-    ubt_old, &    ! The starting value of ubt in a barotropic step [L T-1 ~> m s-1].
+    ubt_prev, &   ! The starting value of ubt in a barotropic step [L T-1 ~> m s-1].
     ubt_first, &  ! The starting value of ubt in a series of barotropic steps [L T-1 ~> m s-1].
     ubt_sum, &    ! The sum of ubt over the time steps [L T-1 ~> m s-1].
     ubt_int, &    ! The running time integral of ubt over the time steps [L ~> m].
@@ -590,7 +590,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     vhbt0, &      ! The difference between the sum of the layer meridional
                   ! thickness fluxes and the barotropic thickness flux using
                   ! the same velocities [H L2 T-1 ~> m3 s-1 or kg s-1].
-    vbt_old, &    ! The starting value of vbt in a barotropic step [L T-1 ~> m s-1].
+    vbt_prev, &   ! The starting value of vbt in a barotropic step [L T-1 ~> m s-1].
     vbt_first, &  ! The starting value of ubt in a series of barotropic steps [L T-1 ~> m s-1].
     vbt_sum, &    ! The sum of vbt over the time steps [L T-1 ~> m s-1].
     vbt_int, &    ! The running time integral of vbt over the time steps [L ~> m].
@@ -653,12 +653,12 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   ! End of wide-sized variables.
 
   real, dimension(SZIBW_(CS),SZJW_(CS)) :: &
-    ubt_prev, ubt_sum_prev, ubt_wtd_prev, & ! Previous velocities stored for OBCs [L T-1 ~> m s-1]
+    ubt_sum_prev, ubt_wtd_prev, & ! Previous velocities stored for OBCs [L T-1 ~> m s-1]
     uhbt_prev, uhbt_sum_prev, & ! Previous transports stored for OBCs [L2 H T-1 ~> m3 s-1]
     ubt_int_prev, & ! Previous value of time-integrated velocity stored for OBCs [L ~> m]
     uhbt_int_prev   ! Previous value of time-integrated transport stored for OBCs [L2 H ~> m3]
   real, dimension(SZIW_(CS),SZJBW_(CS)) :: &
-    vbt_prev, vbt_sum_prev, vbt_wtd_prev, & ! Previous velocities stored for OBCs [L T-1 ~> m s-1]
+    vbt_sum_prev, vbt_wtd_prev, & ! Previous velocities stored for OBCs [L T-1 ~> m s-1]
     vhbt_prev, vhbt_sum_prev, & ! Previous transports stored for OBCs [L2 H T-1 ~> m3 s-1]
     vbt_int_prev, & ! Previous value of time-integrated velocity stored for OBCs [L ~> m]
     vhbt_int_prev   ! Previous value of time-integrated transport stored for OBCs [L2 H ~> m3]
@@ -768,7 +768,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
 
   use_BT_cont = associated(BT_cont)
   integral_BT_cont = use_BT_cont .and. CS%integral_BT_cont
-  evolving_face_areas = (.not.use_BT_cont) .and. CS%Nonlinear_continuity .and. (CS%Nonlin_cont_update_period > 0)
+  evolving_face_areas = (.not.use_BT_cont) .and. CS%Nonlinear_continuity .and. &
+                        (CS%Nonlin_cont_update_period > 0)
 
   interp_eta_PF = associated(eta_PF_start)
 
@@ -1857,9 +1858,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       jsv = jsv+stencil ; jev = jev-stencil
     endif
 
-
-!### ONLY DO THIS IF OBCS ARE IN USE?
     if (integral_BT_cont) then
+      ! ubt_int_prev is only used with OBCs, but uhbt_int_prev is always used with integral_BT_cont.
       !$OMP parallel do default(shared)
       do j=jsv-1,jev+1 ; do I=isv-2,iev+1
         ubt_int_prev(I,j) = ubt_int(I,j) ; uhbt_int_prev(I,j) = uhbt_int(I,j)
@@ -1887,15 +1887,15 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       ioff = 0; joff = 1
     endif
 
-    if (apply_OBCs) then
-      ! Store various velocities and transports so that they can be reset where open boundary
-      ! conditions are being applied.
-      call btloop_setup_OBCs(apply_OBC_flather, apply_OBC_open, &
-                             ubt, vbt, uhbt, vhbt, ubt_old, vbt_old, ubt_sum, vbt_sum, ubt_wtd, vbt_wtd, &
-                             ubt_prev, vbt_prev, ubt_sum_prev, vbt_sum_prev, ubt_wtd_prev, vbt_wtd_prev, &
-                             uhbt_sum, vhbt_sum, uhbt_prev, vhbt_prev, uhbt_sum_prev, vhbt_sum_prev, &
-                             isv, iev, jsv, jev, G, GV, US, CS, OBC, ioff, joff)
-    endif
+    ! Store various velocities and transports so that they can be reset along open boundaries
+    if (CS%BT_OBC%apply_u_OBCs) &
+      call store_u_for_OBCs(ubt, uhbt, ubt_sum, ubt_wtd, uhbt_sum, &
+                            ubt_prev, uhbt_prev, ubt_sum_prev, ubt_wtd_prev, uhbt_sum_prev, &
+                            isv-1, iev, jsv-joff, jev+joff, CS)
+    if (CS%BT_OBC%apply_v_OBCs) &
+      call store_v_for_OBCs(vbt, vhbt, vbt_sum, vbt_wtd, vhbt_sum, &
+                            vbt_prev, vhbt_prev, vbt_sum_prev, vbt_wtd_prev, vhbt_sum_prev, &
+                            isv-ioff, iev+ioff, jsv-1, jev, CS)
 
     if (MOD(n+G%first_direction,2)==1) then
       ! On odd-steps, update v first.
@@ -2008,7 +2008,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
 
       !$OMP single
       call apply_velocity_OBCs(OBC, ubt, vbt, uhbt, vhbt, &
-             ubt_trans, vbt_trans, eta, SpV_col_avg, ubt_old, vbt_old, CS%BT_OBC, &
+             ubt_trans, vbt_trans, eta, SpV_col_avg, ubt_prev, vbt_prev, CS%BT_OBC, &
              G, MS, GV, US, CS, iev-ie, dtbt, bebt, use_BT_cont, integral_BT_cont, &
              n*dtbt, Datu, Datv, BTCL_u, BTCL_v, uhbt0, vhbt0, &
              ubt_int_prev, vbt_int_prev, uhbt_int_prev, vhbt_int_prev)
@@ -2699,72 +2699,69 @@ subroutine btloop_setup_eta(n, dtbt, ubt, vbt, eta, ubt_int, vbt_int, uhbt, vhbt
 
 end subroutine btloop_setup_eta
 
-!> Setup old or previous ubt, vbt, vbt, and vhbt for different OBC options before the next step in the
-!! btstep loop.
-subroutine btloop_setup_OBCs(apply_OBC_flather, apply_OBC_open, &
-                             ubt, vbt, uhbt, vhbt, ubt_old, vbt_old, ubt_sum, vbt_sum, ubt_wtd, vbt_wtd, &
-                             ubt_prev, vbt_prev, ubt_sum_prev, vbt_sum_prev, ubt_wtd_prev, vbt_wtd_prev, &
-                             uhbt_sum, vhbt_sum, uhbt_prev, vhbt_prev, uhbt_sum_prev, vhbt_sum_prev, &
-                             isv, iev, jsv, jev, G, GV, US, CS, OBC, ioff, joff)
-  type(ocean_OBC_type),    pointer    :: OBC     !< The open boundary condition structure.
-  type(ocean_grid_type),   intent(inout) :: G    !< The ocean's grid structure.
+!> Store the existing zonal velocities and trasports for use with open boundary conditions.
+subroutine store_u_for_OBCs(ubt, uhbt, ubt_sum, ubt_wtd, uhbt_sum, &
+                            ubt_prev, uhbt_prev, ubt_sum_prev, ubt_wtd_prev, uhbt_sum_prev, &
+                            Is_u, Ie_u, js_u, je_u, CS)
   type(barotropic_CS),     intent(inout) :: CS   !< Barotropic control structure
-  type(verticalGrid_type), intent(in)  :: GV     !< The ocean's vertical grid structure.
-  type(unit_scale_type),   intent(in)  :: US     !< A dimensional unit scaling type
-  integer, intent(in) :: ioff, joff !< offsets for loops that change with even or odd n.
-  logical, intent(in) :: apply_OBC_flather, apply_OBC_open !< Logicals for some OBC types.
-  integer, intent(in) :: isv, iev, jsv, jev !< The valid array size at the end of a step.
   real, dimension(SZIBW_(CS),SZJW_(CS)), intent(in) :: &
     ubt, &        !< The zonal barotropic velocity [L T-1 ~> m s-1].
     uhbt, &       !< The zonal barotropic thickness fluxes [H L2 T-1 ~> m3 s-1 or kg s-1].
     ubt_sum, &    !< The sum of ubt over the time steps [L T-1 ~> m s-1].
     uhbt_sum, &   !< The sum of uhbt over the time steps [H L2 T-1 ~> m3 s-1 or kg s-1].
     ubt_wtd       !< A weighted sum used to find the filtered final ubt [L T-1 ~> m s-1].
+  real, dimension(SZIBW_(CS),SZJW_(CS)), intent(inout) :: &
+    ubt_prev, &    !< The starting value of ubt in a barotropic step [L T-1 ~> m s-1].
+    ubt_sum_prev, ubt_wtd_prev, & !< Previous velocities stored for OBCs [L T-1 ~> m s-1]
+    uhbt_prev, uhbt_sum_prev !< Previous transports stored for OBCs [L2 H T-1 ~> m3 s-1]
+  integer, intent(in)  :: Is_u, Ie_u !< The range of u-point i-indices to store
+  integer, intent(in)  :: js_u, je_u !< The range of u-point j-indices to store
+
+  integer :: i, j
+
+  !$OMP do
+  do j=js_u,je_u ; do I=Is_u-1,Ie_u+1
+    ubt_prev(I,j) = ubt(I,j)
+  enddo ; enddo
+  !$OMP do
+  do j=js_u,je_u ; do I=Is_u,Ie_u
+    ubt_sum_prev(I,j) = ubt_sum(I,j) ; ubt_wtd_prev(I,j) = ubt_wtd(I,j)
+    uhbt_prev(I,j) = uhbt(I,j) ; uhbt_sum_prev(I,j) = uhbt_sum(I,j)
+  enddo ; enddo
+
+end subroutine store_u_for_OBCs
+
+!> Store the existing meridional velocities and trasports for use with open boundary conditions.
+subroutine store_v_for_OBCs(vbt, vhbt, vbt_sum, vbt_wtd, vhbt_sum, &
+                            vbt_prev, vhbt_prev, vbt_sum_prev, vbt_wtd_prev, vhbt_sum_prev, &
+                            is_v, ie_v, Js_v, Je_v, CS)
+  type(barotropic_CS),     intent(inout) :: CS   !< Barotropic control structure
   real, dimension(SZIW_(CS),SZJBW_(CS)), intent(in) :: &
     vbt, &        !< The zonal barotropic velocity [L T-1 ~> m s-1].
     vhbt, &       !< The meridional barotropic thickness fluxes [H L2 T-1 ~> m3 s-1 or kg s-1].
     vbt_sum, &    !< The sum of vbt over the time steps [L T-1 ~> m s-1].
     vhbt_sum, &   !< The sum of vhbt over the time steps [H L2 T-1 ~> m3 s-1 or kg s-1].
     vbt_wtd       !< A weighted sum used to find the filtered final vbt [L T-1 ~> m s-1].
-  real, dimension(SZIBW_(CS),SZJW_(CS)), intent(inout) :: &
-    ubt_old, &    !< The starting value of ubt in a barotropic step [L T-1 ~> m s-1].
-    ubt_prev, ubt_sum_prev, ubt_wtd_prev, & !< Previous velocities stored for OBCs [L T-1 ~> m s-1]
-    uhbt_prev, uhbt_sum_prev !< Previous transports stored for OBCs [L2 H T-1 ~> m3 s-1]
   real, dimension(SZIW_(CS),SZJBW_(CS)), intent(inout) :: &
-    vbt_old, &    !< The starting value of ubt in a barotropic step [L T-1 ~> m s-1].
-    vbt_prev, vbt_sum_prev, vbt_wtd_prev, & !< Previous velocities stored for OBCs [L T-1 ~> m s-1]
+    vbt_prev, &    !< The starting value of vbt in a barotropic step [L T-1 ~> m s-1].
+    vbt_sum_prev, vbt_wtd_prev, & !< Previous velocities stored for OBCs [L T-1 ~> m s-1]
     vhbt_prev, vhbt_sum_prev !< Previous transports stored for OBCs [L2 H T-1 ~> m3 s-1]
+  integer, intent(in)  :: is_v, ie_v !< The range of v-point i-indices to calculate
+  integer, intent(in)  :: Js_v, Je_v !< The range of v-point j-indices to calculate
 
-  integer :: i, j, k
+  integer :: i, j
 
-  if (apply_OBC_flather .or. apply_OBC_open) then
-    !$OMP do
-    do j=jsv,jev ; do I=isv-2,iev+1
-      ubt_old(I,j) = ubt(I,j)
-    enddo ; enddo
-    !$OMP do
-    do J=jsv-2,jev+1 ; do i=isv,iev
-      vbt_old(i,J) = vbt(i,J)
-    enddo ; enddo
-  endif
+  !$OMP do
+  do J=Js_v-1,Je_v+1 ; do i=is_v,ie_v
+    vbt_prev(i,J) = vbt(i,J)
+  enddo ; enddo
+  !$OMP do
+  do J=Js_v,Je_v ; do i=is_v,ie_v
+    vbt_sum_prev(i,J) = vbt_sum(i,J) ; vbt_wtd_prev(i,J) = vbt_wtd(i,J)
+    vhbt_prev(i,J) = vhbt(i,J) ; vhbt_sum_prev(i,J) = vhbt_sum(i,J)
+  enddo ; enddo
 
-  if (CS%BT_OBC%apply_u_OBCs) then  ! save the old value of ubt and uhbt
-    !$OMP do
-    do j=jsv-joff,jev+joff ; do I=isv-1,iev
-      ubt_prev(I,j) = ubt(I,j) ; uhbt_prev(I,j) = uhbt(I,j)
-      ubt_sum_prev(I,j) = ubt_sum(I,j) ; uhbt_sum_prev(I,j) = uhbt_sum(I,j) ; ubt_wtd_prev(I,j) = ubt_wtd(I,j)
-    enddo ; enddo
-  endif
-
-  if (CS%BT_OBC%apply_v_OBCs) then  ! save the old value of vbt and vhbt
-    !$OMP do
-    do J=jsv-1,jev ; do i=isv-ioff,iev+ioff
-      vbt_prev(i,J) = vbt(i,J) ; vhbt_prev(i,J) = vhbt(i,J)
-      vbt_sum_prev(i,J) = vbt_sum(i,J) ; vhbt_sum_prev(i,J) = vhbt_sum(i,J) ; vbt_wtd_prev(i,J) = vbt_wtd(i,J)
-    enddo ; enddo
-  endif
-
-end subroutine btloop_setup_OBCs
+end subroutine store_v_for_OBCs
 
 !> Update meridional velocity.
 subroutine btloop_update_v(n, dtbt, ubt, vbt, v_accel_bt, vhbt, vbt_int, vhbt_int, vbt_trans, &
