@@ -1871,7 +1871,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       if ((n>1) .and. (mod(n-1,CS%Nonlin_cont_update_period) == 0)) &
         call find_face_areas(Datu, Datv, G, GV, US, CS, MS, 1+iev-ie, eta)
     endif
-    call btloop_setup_eta(n, dtbt, ubt, vbt, eta, ubt_int, vbt_int, uhbt, vhbt, uhbt0, vhbt0, &
+    call btloop_eta_predictor(n, dtbt, ubt, vbt, eta, ubt_int, vbt_int, uhbt, vhbt, uhbt0, vhbt0, &
                         uhbt_int, vhbt_int, BTCL_u, BTCL_v, Datu, Datv, p_surf_dyn, dyn_coef_eta, &
                         eta_PF, eta_PF_1, eta_IC, eta_src, eta_pred, eta_sum, eta_PF_BT, d_eta_PF, &
                         wt_accel2(n), wt_end, isv, iev, jsv, jev, interp_eta_PF, project_velocity, &
@@ -2565,7 +2565,7 @@ end subroutine truncate_velocities
 
 
 !> A routine to set eta_pred and the running time integral of uhbt and vhbt.
-subroutine btloop_setup_eta(n, dtbt, ubt, vbt, eta, ubt_int, vbt_int, uhbt, vhbt, uhbt0, vhbt0, &
+subroutine btloop_eta_predictor(n, dtbt, ubt, vbt, eta, ubt_int, vbt_int, uhbt, vhbt, uhbt0, vhbt0, &
                         uhbt_int, vhbt_int, BTCL_u, BTCL_v, Datu, Datv, p_surf_dyn, dyn_coef_eta, &
                         eta_PF, eta_PF_1, eta_IC, eta_src, eta_pred, eta_sum, eta_PF_BT, d_eta_PF, &
                         wt_accel2_n, wt_end, isv, iev, jsv, jev, interp_eta_PF, project_velocity, &
@@ -2735,7 +2735,7 @@ subroutine btloop_setup_eta(n, dtbt, ubt, vbt, eta, ubt_int, vbt_int, uhbt, vhbt
   endif
   !$OMP end parallel
 
-end subroutine btloop_setup_eta
+end subroutine btloop_eta_predictor
 
 !> Store the existing zonal velocities and trasports for use with open boundary conditions.
 subroutine store_u_for_OBCs(ubt, uhbt, ubt_sum, ubt_wtd, uhbt_sum, &
