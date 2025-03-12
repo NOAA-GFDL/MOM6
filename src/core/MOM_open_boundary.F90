@@ -19,7 +19,7 @@ use MOM_grid,                 only : ocean_grid_type, hor_index_type
 use MOM_interface_heights,    only : thickness_to_dz
 use MOM_interpolate,          only : init_external_field, time_interp_external, time_interp_external_init
 use MOM_interpolate,          only : external_field
-use MOM_io,                   only : slasher, field_size, SINGLE_FILE
+use MOM_io,                   only : slasher, field_size, file_exists, SINGLE_FILE
 use MOM_io,                   only : vardesc, query_vardesc, var_desc
 use MOM_obsolete_params,      only : obsolete_logical, obsolete_int, obsolete_real, obsolete_char
 use MOM_regridding,           only : regridding_CS
@@ -913,12 +913,13 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
         fieldname = trim(fieldname)//trim(suffix)
         call field_size(filename,fieldname,siz,no_domain=.true.)
 !       if (siz(4) == 1) segment%values_needed = .false.
+        if (.not.file_exists(filename)) &
+          call MOM_error(FATAL," Unable to open OBC file " // trim(filename))
         if (segment%on_pe) then
           if (OBC%brushcutter_mode .and. (modulo(siz(1),2) == 0 .or. modulo(siz(2),2) == 0)) then
             write(mesg,'("Brushcutter mode sizes ", I6, I6)') siz(1), siz(2)
             call MOM_error(WARNING, mesg // " " // trim(filename) // " " // trim(fieldname))
-            call MOM_error(FATAL,'segment data are not on the supergrid. Your OBC file name may '//&
-                                 'not match the name in MOM_input or be missing.')
+            call MOM_error(FATAL,'segment data are not on the supergrid.')
           endif
           siz2(1) = 1
 
