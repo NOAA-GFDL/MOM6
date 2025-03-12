@@ -919,7 +919,7 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
           if (OBC%brushcutter_mode .and. (modulo(siz(1),2) == 0 .or. modulo(siz(2),2) == 0)) then
             write(mesg,'("Brushcutter mode sizes ", I6, I6)') siz(1), siz(2)
             call MOM_error(WARNING, mesg // " " // trim(filename) // " " // trim(fieldname))
-            call MOM_error(FATAL,'segment data are not on the supergrid.')
+            call MOM_error(FATAL,'segment data are not on the supergrid')
           endif
           siz2(1) = 1
 
