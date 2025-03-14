@@ -3411,7 +3411,7 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
     CS%id_Bdif_ePBL = register_diag_field('ocean_model',"Bflx_dia_diff_ePBL", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to ePBL", &
         "m2 s-3", conversion=GV%H_to_m**2*US%s_to_T**3)
-    CS%id_Bdif_ddiff_temp = register_diag_field('ocean_model',"Bflx_dia_diff_ddiff_temp", diag%axesTi, &
+    CS%id_Bdif_ddiff_temp = register_diag_field('ocean_model',"Bflx_dia_diff_ddiff_heat", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to double diffusion of heat", &
         "m2 s-3", conversion=GV%H_to_m**2*US%s_to_T**3)
     CS%id_Bdif_ddiff_salt = register_diag_field('ocean_model',"Bflx_dia_diff_ddiff_salt", diag%axesTi, &
@@ -3429,22 +3429,22 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
       CS%do_bflx_temp = .true.
     endif
     ! Layer integral buoyancy Fluxes
-    CS%id_Bdif_dz = register_diag_field('ocean_model',"Bflx_dz", diag%axesTl, &
+    CS%id_Bdif_dz = register_diag_field('ocean_model',"Bflx_dia_diff_dz", diag%axesTl, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux.", &
         "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
-    CS%id_Bdif_salt_dz = register_diag_field('ocean_model',"Bflx_salt_dz", diag%axesTl, &
+    CS%id_Bdif_salt_dz = register_diag_field('ocean_model',"Bflx_salt_dia_diff_dz", diag%axesTl, &
         Time, "Salinity contribution to layer integrated diffusive diapycnal buoyancy flux.", &
         "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
-    CS%id_Bdif_temp_dz = register_diag_field('ocean_model',"Bflx_temp_dz", diag%axesTl, &
+    CS%id_Bdif_temp_dz = register_diag_field('ocean_model',"Bflx_temp_dia_diff_dz", diag%axesTl, &
         Time, "Temperature contribution to layer integrated diffusive diapycnal buoyancy flux.", &
         "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
-    CS%id_Bdif_dz_ePBL = register_diag_field('ocean_model',"Bflx_dz_ePBL", diag%axesTl, &
+    CS%id_Bdif_dz_ePBL = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ePBL", diag%axesTl, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to ePBL.", &
         "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
-    CS%id_Bdif_dz_ddiff_temp = register_diag_field('ocean_model',"Bflx_dz_ddiff_temp", diag%axesTl, &
+    CS%id_Bdif_dz_ddiff_temp = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ddiff_heat", diag%axesTl, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to double diffusion of heat.", &
         "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
-    CS%id_Bdif_dz_ddiff_salt = register_diag_field('ocean_model',"Bflx_dz_ddiff_salt", diag%axesTl, &
+    CS%id_Bdif_dz_ddiff_salt = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ddiff_salt", diag%axesTl, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to double diffusion of salt.", &
         "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
     if (CS%id_Bdif_dz>0 .or. CS%id_Bdif_dz_ePBL>0) then
