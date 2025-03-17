@@ -3417,14 +3417,17 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
     CS%id_Bdif_ddiff_salt = register_diag_field('ocean_model',"Bflx_dia_diff_ddiff_salt", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to double diffusion of salt", &
         "m2 s-3", conversion=GV%H_to_m**2*US%s_to_T**3)
+    ! The following logic might be streamlined, but the repetitive calls should not do any harm
     if (CS%id_Bdif>0 .or. CS%id_Bdif_ePBL>0) then
       CS%Use_Kd_Work_or_N2_diag = .true.
       CS%do_bflx_salt = .true.
       CS%do_bflx_temp = .true.
-    elseif (CS%id_Bdif_salt>0 .or. CS%id_Bdif_ddiff_salt>0) then
+    endif
+    if (CS%id_Bdif_salt>0 .or. CS%id_Bdif_ddiff_salt>0) then
       CS%Use_Kd_Work_or_N2_diag = .true.
       CS%do_bflx_salt = .true.
-    elseif (CS%id_Bdif_temp>0 .or. CS%id_Bdif_ddiff_temp>0) then
+    endif
+    if (CS%id_Bdif_temp>0 .or. CS%id_Bdif_ddiff_temp>0) then
       CS%Use_Kd_Work_or_N2_diag = .true.
       CS%do_bflx_temp = .true.
     endif
@@ -3447,14 +3450,17 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
     CS%id_Bdif_dz_ddiff_salt = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ddiff_salt", diag%axesTl, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to double diffusion of salt.", &
         "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
+    ! The following logic might be streamlined, but the repetitive calls should not do any harm
     if (CS%id_Bdif_dz>0 .or. CS%id_Bdif_dz_ePBL>0) then
       CS%Use_Kd_Work_or_N2_diag = .true.
       CS%do_bflx_salt = .true.
       CS%do_bflx_temp = .true.
-    elseif (CS%id_Bdif_salt_dz>0 .or. CS%id_Bdif_dz_ddiff_salt>0) then
+    endif
+    if (CS%id_Bdif_salt_dz>0 .or. CS%id_Bdif_dz_ddiff_salt>0) then
       CS%Use_Kd_Work_or_N2_diag = .true.
       CS%do_bflx_salt = .true.
-    elseif (CS%id_Bdif_temp_dz>0 .or. CS%id_Bdif_dz_ddiff_temp>0) then
+    endif
+    if (CS%id_Bdif_temp_dz>0 .or. CS%id_Bdif_dz_ddiff_temp>0) then
       CS%Use_Kd_Work_or_N2_diag = .true.
       CS%do_bflx_temp = .true.
     endif
