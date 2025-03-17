@@ -27,7 +27,8 @@ contains
   type(verticalGrid_type), intent(in) :: GV    !< ocean vertical grid structure
   type(unit_scale_type),   intent(in) :: US    !< A dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
-       intent(in)                     :: N2, & !< Buoyancy frequency [T-2 ~> s-2]
+       intent(in)                     :: N2    !< Buoyancy frequency [T-2 ~> s-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
                                          Kd    !< Diffusivity [H2 T-1 ~> m2 s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
        intent(out)                    :: Bdif_flx !< Buoyancy flux [H2 T-3 ~> m2 s-3]
@@ -41,7 +42,7 @@ contains
   !$OMP parallel do default(shared)
   do j=G%jsc,G%jec ; do i=G%isc,G%iec
     Bdif_flx(i,j,1) = 0.0
-    Bdif_flx(i,j,GV%ke+1) = 0.0   
+    Bdif_flx(i,j,GV%ke+1) = 0.0
     do K=2,GV%ke
       Bdif_flx(i,j,K) = - N2(i,j,K) * Kd(i,j,K)
     enddo
@@ -57,7 +58,7 @@ contains
       enddo
     enddo; enddo
   endif
-  
+
 end subroutine diagnoseKdWork
 
 !> \namespace mom_diagnose_kdwork
