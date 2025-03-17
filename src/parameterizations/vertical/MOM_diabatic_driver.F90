@@ -1627,9 +1627,9 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
       allocate(bf%Bflx_salt(isd:ied,jsd:jed,nz+1), source=0.0)
     if (CS%do_bflx_temp) &
       allocate(bf%Bflx_temp(isd:ied,jsd:jed,nz+1), source=0.0)
-    if (CS%id_Bdif_dz>0 .or. CS%id_Bdif_salt_dz .or. CS%id_Bdif_dz_ePBL .or. CS%id_Bdif_dz_ddiff_salt) &
+    if (CS%id_Bdif_dz>0 .or. CS%id_Bdif_salt_dz>0 .or. CS%id_Bdif_dz_ePBL>0 .or. CS%id_Bdif_dz_ddiff_salt>0) &
       allocate(bf%Bflx_salt_dz(isd:ied,jsd:jed,nz), source=0.0)
-    if (CS%id_Bdif_dz>0 .or. CS%id_Bdif_temp_dz .or. CS%id_Bdif_dz_ePBL .or. CS%id_Bdif_dz_ddiff_temp) &
+    if (CS%id_Bdif_dz>0 .or. CS%id_Bdif_temp_dz>0 .or. CS%id_Bdif_dz_ePBL>0 .or. CS%id_Bdif_dz_ddiff_temp>0) &
       allocate(bf%Bflx_temp_dz(isd:ied,jsd:jed,nz), source=0.0)
 
     !Compute N2 and don't mask negatives here
@@ -1665,7 +1665,7 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
         call diagnoseKdWork(G, GV, US, bf%N2_salt, Kd_salt, bf%Bflx_salt, dz = dz, Bdif_flx_dz=bf%Bflx_salt_dz)
       if (CS%id_Bdif_temp_dz>0 .or. CS%id_Bdif_dz>0 .or. CS%id_Bdif_temp>0 .or. CS%id_Bdif>0) &
         call diagnoseKdWork(G, GV, US, bf%N2_temp, Kd_heat, bf%Bflx_temp, dz = dz, Bdif_flx_dz=bf%Bflx_temp_dz)
-    elseif (CS%id_Bdif>0 .or. CS%id_Bdif_salt .or. CS%id_Bdif_temp>0) then ! Not doing vertical integrals
+    elseif (CS%id_Bdif>0 .or. CS%id_Bdif_salt>0 .or. CS%id_Bdif_temp>0) then ! Not doing vertical integrals
       if (CS%id_Bdif_salt>0 .or. CS%id_Bdif>0) &
         call diagnoseKdWork(G, GV, US, bf%N2_salt, Kd_salt, bf%Bflx_salt)
       if (CS%id_Bdif_temp>0 .or. CS%id_Bdif>0) &
