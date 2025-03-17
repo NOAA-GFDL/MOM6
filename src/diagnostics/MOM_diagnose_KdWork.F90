@@ -48,10 +48,8 @@ contains
     enddo
   enddo; enddo
 
-  if (present(Bdif_flx_dz)) then
+  if (present(Bdif_flx_dz) .and. present(dz)) then
     !$OMP parallel do default(shared)
-    if (.not. present(dz)) &
-      call MOM_error(FATAL,'diagnoseKdWork called requesting integrated output but not passing dz')
     do j=G%jsc,G%jec ; do i=G%isc,G%iec
       do K=1,GV%ke
         Bdif_flx_dz(i,j,k) = (Bdif_flx(i,j,K)+Bdif_flx(i,j,K+1))*dz(i,j,k)
