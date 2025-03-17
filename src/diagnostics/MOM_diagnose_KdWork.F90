@@ -29,7 +29,7 @@ contains
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
        intent(in)                     :: N2    !< Buoyancy frequency [T-2 ~> s-2]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
-                                         Kd    !< Diffusivity [H2 T-1 ~> m2 s-1]
+       intent(in)                     :: Kd    !< Diffusivity [H2 T-1 ~> m2 s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
        intent(out)                    :: Bdif_flx !< Buoyancy flux [H2 T-3 ~> m2 s-3]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
