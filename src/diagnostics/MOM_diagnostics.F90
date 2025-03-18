@@ -1765,6 +1765,7 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
     CS%id_abssoga = register_scalar_field('ocean_model', 'abssoga', &
         Time, diag, 'Global Mean Ocean Absolute Salinity', units='g kg-1', conversion=US%S_to_ppt, &
         standard_name='sea_water_absolute_salinity')
+
     ! The CMIP convention is potential temperature, but not indicated in the CMIP long name.
     CS%id_tosga = register_scalar_field('ocean_model', 'sst_global', Time, diag, &
         long_name='Global Area Average Sea Surface Temperature', &
