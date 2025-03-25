@@ -6182,14 +6182,25 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
        call rotate_array(segment_in%grad_tan, turns, segment%grad_tan)
   if (allocated(segment_in%grad_gradient)) &
        call rotate_array(segment_in%grad_gradient, turns, segment%grad_gradient)
-  if (allocated(segment_in%rx_norm_rad)) &
-       call rotate_array(segment_in%rx_norm_rad, turns, segment%ry_norm_rad)
-  if (allocated(segment_in%ry_norm_rad)) &
-       call rotate_array(segment_in%ry_norm_rad, turns, segment%rx_norm_rad)
-  if (allocated(segment_in%rx_norm_obl)) &
-       call rotate_array(segment_in%rx_norm_obl, turns, segment%ry_norm_obl)
-  if (allocated(segment_in%ry_norm_obl)) &
-       call rotate_array(segment_in%ry_norm_obl, turns, segment%rx_norm_obl)
+  if (modulo(turns, 2) /= 0) then
+    if (allocated(segment_in%rx_norm_rad)) &
+         call rotate_array(segment_in%rx_norm_rad, turns, segment%ry_norm_rad)
+    if (allocated(segment_in%ry_norm_rad)) &
+         call rotate_array(segment_in%ry_norm_rad, turns, segment%rx_norm_rad)
+    if (allocated(segment_in%rx_norm_obl)) &
+         call rotate_array(segment_in%rx_norm_obl, turns, segment%ry_norm_obl)
+    if (allocated(segment_in%ry_norm_obl)) &
+         call rotate_array(segment_in%ry_norm_obl, turns, segment%rx_norm_obl)
+  else
+    if (allocated(segment_in%rx_norm_rad)) &
+         call rotate_array(segment_in%rx_norm_rad, turns, segment%rx_norm_rad)
+    if (allocated(segment_in%ry_norm_rad)) &
+         call rotate_array(segment_in%ry_norm_rad, turns, segment%ry_norm_rad)
+    if (allocated(segment_in%rx_norm_obl)) &
+         call rotate_array(segment_in%rx_norm_obl, turns, segment%rx_norm_obl)
+    if (allocated(segment_in%ry_norm_obl)) &
+         call rotate_array(segment_in%ry_norm_obl, turns, segment%ry_norm_obl)
+  endif
   if (allocated(segment_in%cff_normal)) &
        call rotate_array(segment_in%cff_normal, turns, segment%cff_normal)
   if (allocated(segment_in%nudged_normal_vel)) &
