@@ -151,7 +151,7 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
      stencil = max(stencil, stencil_local)
   enddo
 
-  if (min(is-isd,ied-ie,js-jsd,jed-je).lt.stencil) then
+  if (min(is-isd,ied-ie,js-jsd,jed-je) < stencil) then
     call MOM_error(FATAL, "MOM_tracer_advect: "//&
       "stencil is wider than the halo.")
   endif
@@ -417,12 +417,12 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
   ! diagnostic at the end of this subroutine.
   domore_u_initial = domore_u
 
+  usePLMslope = .false.
+  ! stencil for calculating slope values
+  stencil = 1
   do m = 1,ntr
-    usePLMslope = .false.
-    if(advect_schemes(m) == ADVECT_PLM .or. advect_schemes(m) == ADVECT_PPM) usePLMslope = .true.
-
-    ! stencil for calculating slope values
-    stencil = 1
+    if ((advect_schemes(m) == ADVECT_PLM) .or. (advect_schemes(m) == ADVECT_PPM)) &
+            usePLMslope = .true.
     if (advect_schemes(m) == ADVECT_PPM) stencil = 2
   enddo
 
@@ -543,7 +543,7 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
 
     do m=1,ntr
 
-      if (advect_schemes(m) == ADVECT_PPM .or. advect_schemes(m) == ADVECT_PPMH3) then
+      if ((advect_schemes(m) == ADVECT_PPM) .or. (advect_schemes(m) == ADVECT_PPMH3)) then
         do I=is-1,ie
           ! centre cell depending on upstream direction
           if (uhh(I) >= 0.0) then
@@ -809,12 +809,12 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
   type(OBC_segment_type), pointer :: segment=>NULL()
   logical :: domore_v_initial(SZJB_(G)) ! Initial state of domore_v
 
+  usePLMslope = .false.
+  ! stencil for calculating slope values
+  stencil = 1
   do m = 1,ntr
-    usePLMslope = .false.
-    if(advect_schemes(m) == ADVECT_PLM .or. advect_schemes(m) == ADVECT_PPM) usePLMslope = .true.
-
-    ! stencil for calculating slope values
-    stencil = 1
+    if ((advect_schemes(m) == ADVECT_PLM) .or. (advect_schemes(m) == ADVECT_PPM)) &
+            usePLMslope = .true.
     if (advect_schemes(m) == ADVECT_PPM) stencil = 2
   enddo
 
@@ -951,7 +951,7 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
 
     do m=1,ntr
 
-      if (advect_schemes(m) == ADVECT_PPM .or. advect_schemes(m) == ADVECT_PPMH3) then
+      if ((advect_schemes(m) == ADVECT_PPM) .or. (advect_schemes(m) == ADVECT_PPMH3)) then
         do i=is,ie
           ! centre cell depending on upstream direction
           if (vhh(i,J) >= 0.0) then
