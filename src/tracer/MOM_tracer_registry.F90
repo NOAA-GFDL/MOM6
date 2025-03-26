@@ -383,13 +383,10 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
     else
       Tr%id_adx = register_diag_field("ocean_model", trim(shortnm)//"_adx", &
           diag%axesCuL, Time, "Advective (by residual mean) Zonal Flux of "//trim(flux_longname), &
-          flux_units, v_extensive=.true., &
-          conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T, y_cell_method='sum')
+          flux_units, v_extensive=.true., conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T, y_cell_method='sum')
       Tr%id_ady = register_diag_field("ocean_model", trim(shortnm)//"_ady", &
-          diag%axesCvL, Time, &
-          "Advective (by residual mean) Meridional Flux of "//trim(flux_longname), &
-          flux_units, v_extensive=.true., &
-          conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T, x_cell_method='sum')
+          diag%axesCvL, Time, "Advective (by residual mean) Meridional Flux of "//trim(flux_longname), &
+          flux_units, v_extensive=.true., conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T, x_cell_method='sum')
       Tr%id_dfx = register_diag_field("ocean_model", trim(shortnm)//"_diffx", &
           diag%axesCuL, Time, "Diffusive Zonal Flux of "//trim(flux_longname), &
           flux_units, v_extensive=.true., conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T, &
@@ -435,16 +432,12 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
         flux_units, conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T, &
         x_cell_method='sum')
     Tr%id_hbd_dfx_2d = register_diag_field("ocean_model", trim(shortnm)//"_hbd_diffx_2d", &
-        diag%axesCu1, Time, &
-        "Vertically-integrated zonal diffusive flux from the horizontal boundary diffusion "//&
-        "scheme for "//trim(flux_longname), flux_units, &
-        conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T, &
+        diag%axesCu1, Time, "Vertically-integrated zonal diffusive flux from the horizontal boundary diffusion "//&
+        "scheme for "//trim(flux_longname), flux_units, conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T, &
         y_cell_method='sum')
     Tr%id_hbd_dfy_2d = register_diag_field("ocean_model", trim(shortnm)//"_hbd_diffy_2d", &
-        diag%axesCv1, Time, &
-        "Vertically-integrated meridional diffusive flux from the horizontal boundary diffusion "//&
-        "scheme for "//trim(flux_longname), flux_units, &
-        conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T, &
+        diag%axesCv1, Time, "Vertically-integrated meridional diffusive flux from the horizontal boundary diffusion "//&
+        "scheme for "//trim(flux_longname), flux_units, conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T, &
         x_cell_method='sum')
 
     if (Tr%id_adx_2d > 0) call safe_alloc_ptr(Tr%ad2d_x,IsdB,IedB,jsd,jed)
@@ -587,8 +580,7 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
       var_lname = "Vertical remapping tracer content tendency for "//trim(Reg%Tr(m)%flux_longname)
       Tr%id_remap_cont = register_diag_field('ocean_model', &
           trim(Tr%flux_nameroot)//'h_tendency_vert_remap', &
-          diag%axesTL, Time, var_lname, conv_units, &
-          v_extensive=.true., conversion=Tr%conv_scale*US%s_to_T)
+          diag%axesTL, Time, var_lname, conv_units, v_extensive=.true., conversion=Tr%conv_scale*US%s_to_T)
 
       var_lname = "Vertical sum of vertical remapping tracer content tendency for "//&
                   trim(Reg%Tr(m)%flux_longname)
@@ -621,14 +613,12 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
 
     ! KPP nonlocal term diagnostics
     if (use_KPP) then
-      Tr%id_net_surfflux = register_diag_field('ocean_model', Tr%net_surfflux_name, diag%axesT1, &
-          Time, Tr%net_surfflux_longname, trim(units)//' m s-1', &
-          conversion=Tr%conc_scale*GV%H_to_m*US%s_to_T)
+      Tr%id_net_surfflux = register_diag_field('ocean_model', Tr%net_surfflux_name, diag%axesT1, Time, &
+          Tr%net_surfflux_longname, trim(units)//' m s-1', conversion=Tr%conc_scale*GV%H_to_m*US%s_to_T)
       Tr%id_NLT_tendency = register_diag_field('ocean_model', "KPP_NLT_d"//trim(shortnm)//"dt", &
           diag%axesTL, Time, &
-          trim(longname)//' tendency due to non-local transport of '//&
-          trim(lowercase(flux_longname))//', as calculated by [CVMix] KPP', &
-          trim(units)//' s-1', conversion=Tr%conc_scale*US%s_to_T)
+          trim(longname)//' tendency due to non-local transport of '//trim(lowercase(flux_longname))//&
+          ', as calculated by [CVMix] KPP', trim(units)//' s-1', conversion=Tr%conc_scale*US%s_to_T)
       if (Tr%conv_scale == 0.001*GV%H_to_kg_m2) then
         conversion = GV%H_to_kg_m2
       else
