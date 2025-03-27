@@ -1303,10 +1303,8 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
                 !  instead of redoing the computation will change answers...
                   Kd(K) = (h_dz_int(K)*vstar) * CS%vonKar *  ((dz_tt*hbs_here)*vstar) / &
                         ((CS%Ekman_scale_coef * absf) * (dz_tt*hbs_here) + vstar)
-
-                  elseif (CS%eqdisc .eqv. .true.)  then  ! ML-eqdisc line2/2 
-                  Kd(K) = MixLen_shape(K) * CS%v0 * MLD_guess ! ML-eqdisc
-                        
+                elseif (CS%eqdisc)  then  ! ML-eqdisc line2/2 
+                  Kd(K) = MixLen_shape(K) * CS%v0 * MLD_guess ! ML-eqdisc  
                 else
                   Kd(K) = (h_dz_int(K)*vstar) * CS%vonKar * mixlen(K)
                 endif
