@@ -1689,6 +1689,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
     real :: ust_c    ! capped ustar [Z T-1 ~> m s-1]
     real :: absf_c   ! capped absf [T-1 ~> s-1]
     real :: p1, p2, p3, p4  ! nondimensional numbers [nondim]
+    real :: p_uf, p1_c11, I_p4, p_omega_I, p_u, p_c14, p_b    ! nondimensional numbers for inverse computation [nondim] 
     ! from Sane et al. 2024: 
     ! " p_1 &= \frac{a}{u_*} \sqrt{\frac{|B|}{f}}, \\ %= \sqrt{ \frac{L_{Ek}}{L_{MO}}}  \\
     !   p_2 &= \frac{f}{\Omega},
@@ -1720,24 +1721,36 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
     if (bflux_c >= 0.0) then ! surface heating and neutral conditions
     ! Equation 16 in Sane et al. 2024:
     ! \frac{v}{u_*} = \frac{-c_9}{p_1 + c_{10} + \frac{c_{11}^2}{p_1 - c_{11}} }
-      p1 =  -(1.0/ust_c) * sqrt(abs(bflux_c)/absf_c) 
-      p3 = (CS%c11**2.0) / (p1-CS%c11)
+
+      p_uf = ust_c * sqrt(absf_c)
+      p_uf = 1.0 / p_uf
+      p1 = -1.0 * ( p_uf * sqrt(abs(bflux_c)) )
+      p1_c11 = p1 - CS%c11
+      p1_c11 = 1.0 / p1_c11 
+      p3 = (CS%c11**2.0) * p1_c11
       p4 = (p1+CS%c10) + p3
-      v0_dummy = -CS%c9/p4
-      
+      I_p4 = 1.0 / p4
+      v0_dummy = -CS%c9 * I_p4
+
     else ! surface cooling
     ! Equation 17 in Sane et al. 2024:
     ! \frac{v}{u_*}=\frac{c_{12} p_1 \cdot \sqrt{p_2} }{1 +  ...
     ! \frac{(c_{13} e^{(-p_2/c_{14})} + c_{15}) }{p_1 ^2} }
     ! p1 is merged in p3
-      p2 = absf_c/(CS%omega)
-      p3 = (CS%c12/ust_c)*sqrt(abs(bflux_c)/(CS%omega)) ! 7.2921e-05/s is CS%Omega, Earth rotation
-      p4 = CS%c13 * exp(-p2/ CS%c14) + CS%c15
-      p4 =  1 + (absf_c * p4 * ust_c * ust_c)/abs(bflux_c) 
-      v0_dummy  = (p3 / p4 ) + CS%c16 
+
+      p_omega_I = 1.0 / CS%omega  !add p_omega_I, p_u, p_c14, p_b, p4_I
+      p2 = absf_c * p_omega_I
+      p_u = 1.0 / ust_c
+      p3 = CS%c12 * ( p_u * sqrt(abs(bflux_c) * p_omega_I) )
+      p_c14 = 1.0 / CS%c14
+      p4 = CS%c13 * exp(-p2 * p_c14) + CS%c15
+      p_b = 1.0 / abs(bflux_c)
+      p4 =  1 + (absf_c * p4 * ust_c**2.0) * p_b
+      I_p4 = 1.0 / p4
+      v0_dummy  = (p3 * I_p4 ) + CS%c16
     endif
     
-    v0_dummy = v0_dummy * ust_c ! v0_dummy = v/u*, so it is multiplied by ust_c to get v0
+    v0_dummy = v0_dummy * ust_c ! v0_dummy = v0/u*, so it is multiplied by ust_c to get v0
     v0_dummy = max(v0_dummy,CS%v0_lower_cap)  ! CS%v0_lower_cap
     v0_dummy = min(v0_dummy,0.1) ! kept for safety, but has never hit this cap. 
 
