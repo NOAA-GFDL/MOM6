@@ -14,9 +14,9 @@ integer, parameter :: ADVECT_PPM        = 2 !< PPM advection scheme
 
 !> Documentation for tracer advection schemes
 character(len=*), parameter :: TracerAdvectionSchemeDoc = &
-                 " PLM    - Piecewise Linear Method\n"//&
-                 " PPM:H3 - Piecewise Parabolic Method (Huyhn 3rd order)\n"// &
-                 " PPM    - Piecewise Parabolic Method (Colella-Woodward)"
+                 "  PLM    - Piecewise Linear Method\n"//&
+                 "  PPM:H3 - Piecewise Parabolic Method (Huyhn 3rd order)\n"// &
+                 "  PPM    - Piecewise Parabolic Method (Colella-Woodward)"
 
 contains
 
