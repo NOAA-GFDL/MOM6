@@ -994,18 +994,36 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
           MixLen_shape(K) = 1.0
         enddo ; endif
       else
+        ! Reduce the mixing length based on MLD, with a quadratic
+        ! expression that follows KPP.
+        I_MLD = 1.0 / MLD_guess
+        dz_rsum = 0.0
+        MixLen_shape(1) = 1.0
+        if (CS%eqdisc) then ! update Kd as per Machine Learning equation discovery
+          call kappa_eqdisc(MixLen_shape, CS, GV, h, absf, B_flux, u_star, MLD_guess)
+        else
+          do K=2,nz+1
+            dz_rsum = dz_rsum + dz(k-1)
+            if (CS%MixLenExponent==2.0) then
+              MixLen_shape(K) = CS%transLay_scale + (1.0 - CS%transLay_scale) * &
+                (max(0.0, (MLD_guess - dz_rsum)*I_MLD) )**2 ! CS%MixLenExponent
+            else
+              MixLen_shape(K) = CS%transLay_scale + (1.0 - CS%transLay_scale) * &
+                (max(0.0, (MLD_guess - dz_rsum)*I_MLD) )**CS%MixLenExponent
+            endif
+          enddo
+        endif
+      endif
 
-      call getshapefunction(CS,GV,h,absf,B_flux,u_star,MLD_guess,MixLen_shape) ! used for ML-eqdisc
-          v0_dummy = 0.0 ! a variable that gets passed on to subroutine get_eqdisc_v0
-          CS%v0 = 0.0
-          if (CS%eqdisc_v0 .eqv. .true.) then
-            call get_eqdisc_v0(CS,absf,B_flux,u_star,v0_dummy)
-            CS%v0 = v0_dummy
-          elseif (CS%eqdisc_v0h .eqv. .true.) then
-            call get_eqdisc_v0h(CS,B_flux,u_star,MLD_guess,v0_dummy)
-            CS%v0 = v0_dummy
-          else
-          endif
+      v0_dummy = 0.0 ! a variable that gets passed on to subroutine get_eqdisc_v0
+      CS%v0 = 0.0
+      if (CS%eqdisc_v0 .eqv. .true.) then
+        call get_eqdisc_v0(CS,absf,B_flux,u_star,v0_dummy)
+        CS%v0 = v0_dummy
+      elseif (CS%eqdisc_v0h .eqv. .true.) then
+        call get_eqdisc_v0h(CS,B_flux,u_star,MLD_guess,v0_dummy)
+        CS%v0 = v0_dummy
+      else
       endif
 
       Kd(1) = 0.0 ; Kddt_h(1) = 0.0
@@ -1580,49 +1598,6 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
 
 end subroutine ePBL_column
 
-subroutine getshapefunction(CS, GV, h, absf, B_flux, u_star, MLD_guess, MixLen_shape)
-! gives you shape function
-  type(verticalGrid_type), intent(in)    :: GV     !< The ocean's vertical grid structure.
-  type(energetic_PBL_CS),  intent(in) :: CS     !< Energetic PBL control struct
-  ! integer, intent(in) :: szkgv
-
-  real, dimension(SZK_(GV)), intent(in)  :: h      !< Layer thicknesses [H ~> m or kg m-2].
-  ! Local variables
-  real, dimension(SZK_(GV)+1) :: MixLen_shape !< A nondimensional shape factor for the mixing length that
-                                              !! gives it an appropriate asymptotic value at the bottom of
-                                              !! the boundary layer [nondim].
-  real, intent(in) :: absf      !< The absolute value of f [T-1 ~> s-1].
-  real, intent(in) :: u_star    !< The surface friction velocity [Z T-1 ~> m s-1].
-  real, intent(in) :: B_Flux    !< The surface buoyancy flux [Z2 T-3 ~> m2 s-3]
-  real, dimension(SZK_(GV)+1) :: hz !< depth variable, only used in this routine
-  real, intent(in) :: MLD_guess !< Mixing Layer depth guessed/found for iteration [Z ~> m].
-
-  ! Local variables for this subroutine
-  real :: I_MLD     ! The inverse of the current value of MLD [Z-1 ~> m-1].
-  real :: h_rsum    ! The running sum of h from the top [Z ~> m].
-  integer :: K  ! integer for loopping 
-  integer :: nz ! nz = GV%ke
-  
-  nz = GV%ke
-  I_MLD = 1.0 / MLD_guess
-  h_rsum = 0.0
-  MixLen_shape(1) = 1.0
-
-  if (CS%eqdisc) then ! update Kd as per Machine Learning equation discovery
-    call kappa_eqdisc(MixLen_shape, CS, GV, h, absf, B_flux, u_star, MLD_guess)
-  else
-  do K=2,nz+1
-    h_rsum = h_rsum + h(k-1)*GV%H_to_Z
-      if (CS%MixLenExponent==2.0) then
-        MixLen_shape(K) = CS%transLay_scale + (1.0 - CS%transLay_scale) * &
-          (max(0.0, (MLD_guess - h_rsum)*I_MLD) )**2 ! CS%MixLenExponent
-      else
-        MixLen_shape(K) = CS%transLay_scale + (1.0 - CS%transLay_scale) * &
-          (max(0.0, (MLD_guess - h_rsum)*I_MLD) )**CS%MixLenExponent
-      endif
-  enddo
-  endif
-end subroutine getshapefunction
 
 subroutine kappa_eqdisc(shape_func, CS, GV, h, absf, B_flux, u_star, MLD_guess)
 ! gives shape function from Sane et al. 2024.
