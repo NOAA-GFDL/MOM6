@@ -1599,15 +1599,15 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
 end subroutine ePBL_column
 
 
-subroutine kappa_eqdisc(shape_func, CS, GV, h, absf, B_flux, u_star, MLD_guess)
-! gives shape function from Sane et al. 2024.
+subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
+! gives shape function from Sane et al. 2025
   type(verticalGrid_type), intent(in)    :: GV     !< The ocean's vertical grid structure.
   type(energetic_PBL_CS),  intent(in) :: CS     !< Energetic PBL control struct
   real, dimension(SZK_(GV)+1), intent(inout) :: shape_func  !< shape function
   real, intent(in) :: absf      !< The absolute value of f [T-1 ~> s-1].
   real, intent(in) :: u_star    !< The surface friction velocity [Z T-1 ~> m s-1].
   real, intent(in) :: B_Flux    !< The surface buoyancy flux [Z2 T-3 ~> m2 s-3]
-  real, dimension(SZK_(GV)),intent(in) :: h   !<  The layer thickness [H ~> m or kg m-2].
+  real, dimension(SZK_(GV)), intent(in)  :: dz     !< The vertical distance across layers [Z ~> m].
   real, intent(in) :: MLD_guess !< Mixing Layer depth guessed/found for iteration [Z ~> m].
   real, dimension(SZK_(GV)+1) :: hz !< depth variable, only used in this routine [H ~> m]
 
@@ -1628,7 +1628,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, h, absf, B_flux, u_star, MLD_guess)
   nz = SZK_(GV)+1
   hz(1) = 0.0
   do K=2,nz
-    hz(K) = hz(K-1) + h(K-1)*GV%H_to_Z
+    hz(K) = hz(K-1) + dz(K-1)
   end do
   hbl = MLD_Guess ! hbl is boundary layer depth.
   shape_func(:) = 0.0  ! initializing the entire shape_function array
