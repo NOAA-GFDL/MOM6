@@ -1017,13 +1017,12 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
 
       v0_dummy = 0.0 ! a variable that gets passed on to subroutine get_eqdisc_v0
       CS%v0 = 0.0
-      if (CS%eqdisc_v0 .eqv. .true.) then
+      if (CS%eqdisc_v0) then
         call get_eqdisc_v0(CS,absf,B_flux,u_star,v0_dummy)
         CS%v0 = v0_dummy
-      elseif (CS%eqdisc_v0h .eqv. .true.) then
+      elseif (CS%eqdisc_v0h) then
         call get_eqdisc_v0h(CS,B_flux,u_star,MLD_guess,v0_dummy)
         CS%v0 = v0_dummy
-      else
       endif
 
       Kd(1) = 0.0 ; Kddt_h(1) = 0.0
@@ -1243,7 +1242,7 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
             if (.not.CS%Use_MLD_iteration) then
               Kd_guess0 = (h_dz_int(K)*vstar) * CS%vonKar * ((dz_tt*hbs_here)*vstar) / &
                 ((CS%Ekman_scale_coef * absf) * (dz_tt*hbs_here) + vstar)
-            elseif (CS%eqdisc .eqv. .true.)  then  ! ML-eqdisc line1/2 
+            elseif (CS%eqdisc) then  ! ML-eqdisc line1/2 
               Kd_guess0 = MixLen_shape(K) * CS%v0 * MLD_guess ! ML-eqdisc
             else
               Kd_guess0 = (h_dz_int(K)*vstar) * CS%vonKar * mixlen(K)
