@@ -1781,7 +1781,7 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
     ust_c_I = 1.0 / ust_c
 
     ! setting p1 here:
-    p1 =  abs(bflux_c * MLD_guess)**(1.0/3.0)
+    p1 = cuberoot(abs(bflux_c * MLD_guess))
     p1 = p1 * ust_c_I  
 
     ! setting v0_dummy here:
