@@ -146,11 +146,13 @@ type, public :: barotropic_CS ; private
   real ALLOCABLE_, dimension(NIMEMBW_,NJMEMW_) :: &
     D_u_Cor, &      !<   A simply averaged depth at u points recast as a thickness [H ~> m or kg m-2]
     dy_Cu, &        !<   A copy of G%dy_Cu with wide halos [L ~> m].
-    IdxCu           !<   A copy of G%IdxCu with wide halos [L-1 ~> m-1].
+    IdxCu, &        !<   A copy of G%IdxCu with wide halos [L-1 ~> m-1].
+    OBCmask_u       !< An array to multiplicatively mask out changes at OBC points, 0 or 1 [nondim]
   real ALLOCABLE_, dimension(NIMEMW_,NJMEMBW_) :: &
     D_v_Cor, &      !<   A simply averaged depth at v points recast as a thickness [H ~> m or kg m-2]
     dx_Cv, &        !<   A copy of G%dx_Cv with wide halos [L ~> m].
-    IdyCv           !<   A copy of G%IdyCv with wide halos [L-1 ~> m-1].
+    IdyCv, &        !<   A copy of G%IdyCv with wide halos [L-1 ~> m-1].
+    OBCmask_v       !< An array to multiplicatively mask out changes at OBC points, 0 or 1 [nondim]
   real ALLOCABLE_, dimension(NIMEMBW_,NJMEMBW_) :: &
     q_D             !< f / D at PV points [Z-1 T-1 ~> m-1 s-1].
 
@@ -571,7 +573,10 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     Cor_ref_u, &  ! The zonal barotropic Coriolis acceleration due
                   ! to the reference velocities [L T-2 ~> m s-2].
     PFu, &        ! The zonal pressure force acceleration [L T-2 ~> m s-2].
-    Rayleigh_u, & ! A Rayleigh drag timescale operating at u-points [T-1 ~> s-1].
+    Rayleigh_u, & ! A Rayleigh drag timescale operating at u-points for drag parameterizations
+                  ! that introduced directly into the barotropic solver rather than coming in via
+                  ! the visc_rem_u arrays from the layered equations [T-1 ~> s-1].
+                  ! This is nonzero mostly for a barotropic tidal body drag.
     DCor_u, &     ! An averaged total thickness at u points [H ~> m or kg m-2].
     Datu          ! Basin depth at u-velocity grid points times the y-grid
                   ! spacing [H L ~> m2 or kg m-1].
@@ -595,7 +600,10 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     Cor_ref_v, &  ! The meridional barotropic Coriolis acceleration due
                   ! to the reference velocities [L T-2 ~> m s-2].
     PFv, &        ! The meridional pressure force acceleration [L T-2 ~> m s-2].
-    Rayleigh_v, & ! A Rayleigh drag timescale operating at v-points [T-1 ~> s-1].
+    Rayleigh_v, & ! A Rayleigh drag timescale operating at v-points for drag parameterizations
+                  ! that introduced directly into the barotropic solver rather than coming
+                  ! in via the visc_rem_v arrays from the layered equations [T-1 ~> s-1].
+                  ! This is nonzero mostly for a barotropic tidal body drag.
     DCor_v, &     ! An averaged total thickness at v points [H ~> m or kg m-2].
     Datv          ! Basin depth at v-velocity grid points times the x-grid
                   ! spacing [H L ~> m2 or kg m-1].
@@ -826,15 +834,13 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   if (integral_BT_cont) &
     call create_group_pass(CS%pass_eta_bt_rem, eta_IC, CS%BT_Domain)
   call create_group_pass(CS%pass_eta_bt_rem, eta_src, CS%BT_Domain)
-  ! The following halo updates are not needed without wide halos.  RWH
-  ! We do need them after all.
-! if (ievf > ie) then
-    call create_group_pass(CS%pass_eta_bt_rem, bt_rem_u, bt_rem_v, &
-                      CS%BT_Domain, To_All+Scalar_Pair)
-    if (CS%linear_wave_drag) &
-      call create_group_pass(CS%pass_eta_bt_rem, Rayleigh_u, Rayleigh_v, &
-                      CS%BT_Domain, To_All+Scalar_Pair)
-! endif
+
+  call create_group_pass(CS%pass_eta_bt_rem, bt_rem_u, bt_rem_v, &
+                    CS%BT_Domain, To_All+Scalar_Pair)
+  if (CS%linear_wave_drag) &
+    call create_group_pass(CS%pass_eta_bt_rem, Rayleigh_u, Rayleigh_v, &
+                    CS%BT_Domain, To_All+Scalar_Pair)
+
   ! The following halo update is not needed without wide halos.  RWH
   if (((G%isd > CS%isdw) .or. (G%jsd > CS%jsdw)) .or. (Isq <= is-1) .or. (Jsq <= js-1)) &
     call create_group_pass(CS%pass_force_hbt0_Cor_ref, BT_force_u, BT_force_v, CS%BT_Domain)
@@ -1385,6 +1391,20 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     enddo ; enddo
   endif
 
+  ! Mask out the forcing at OBC points
+  if (CS%BT_OBC%apply_u_OBCs) then
+    !$OMP do
+    do j=js,je ; do I=is-1,ie
+      BT_force_u(I,j) = CS%OBCmask_u(I,j) * BT_force_u(I,j)
+    enddo ; enddo
+  endif
+  if (CS%BT_OBC%apply_v_OBCs) then
+    !$OMP do
+    do J=js-1,je ; do i=is,ie
+      BT_force_v(i,J) = CS%OBCmask_v(i,J) * BT_force_v(i,J)
+    enddo ; enddo
+  endif
+
   if ((Isq > is-1) .or. (Jsq > js-1)) then
     ! Non-symmetric memory is being used, so the edge values need to be
     ! filled in with a halo update of a non-symmetric array.
@@ -1517,6 +1537,20 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       bt_rem_v(i,J) = bt_rem_v(i,J) * (Htot / (Htot + CS%lin_drag_v(i,J) * dtbt))
 
       Rayleigh_v(i,J) = CS%lin_drag_v(i,J) / Htot
+    endif ; enddo ; enddo
+  endif
+
+  ! Avoid changing the velocities at OBC points due to non-OBC calculations.
+  if (CS%BT_OBC%apply_u_OBCs) then
+    !$OMP do
+    do j=js,je ; do I=is-1,ie ; if (OBC%segnum_u(I,j) /= OBC_NONE) then
+      bt_rem_u(I,j) = 1.0
+    endif ; enddo ; enddo
+  endif
+  if (CS%BT_OBC%apply_v_OBCs) then
+    !$OMP do
+    do J=js-1,je ; do i=is,ie ; if (OBC%segnum_v(i,J) /= OBC_NONE) then
+      bt_rem_v(i,J) = 1.0
     endif ; enddo ; enddo
   endif
 
@@ -2225,9 +2259,13 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
     Cor_ref_v     !< The meridional barotropic Coriolis acceleration due
                   !! to the reference velocities [L T-2 ~> m s-2].
   real, dimension(SZIBW_(CS),SZJW_(CS)), intent(in) :: &
-    Rayleigh_u    !< A Rayleigh drag timescale operating at v-points [T-1 ~> s-1]
+    Rayleigh_u    !< A Rayleigh drag timescale operating at u-points for drag parameterizations
+                  !! that introduced directly into the barotropic solver rather than coming
+                  !! in via the visc_rem_u arrays from the layered equations [T-1 ~> s-1]
   real, dimension(SZIW_(CS),SZJBW_(CS)), intent(in) :: &
-    Rayleigh_v    !< A Rayleigh drag timescale operating at v-points [T-1 ~> s-1]
+    Rayleigh_v    !< A Rayleigh drag timescale operating at v-points for drag parameterizations
+                  !! that introduced directly into the barotropic solver rather than coming
+                  !! in via the visc_rem_v arrays from the layered equations [T-1 ~> s-1]
   real, dimension(SZIW_(CS),SZJW_(CS)), intent(inout) :: &
     eta_PF        !< The 2-D eta field (either SSH anomaly or column mass anomaly) that was used to
                   !! calculate the input pressure gradient accelerations [H ~> m or kg m-2]
@@ -2504,14 +2542,14 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
                            isv-1, iev+1, jsv-1, jev, f_4_v, &
                            bt_rem_v, BT_force_v, vbt_prev, Cor_ref_v, Rayleigh_v, &
                            eta_PF_BT, eta_PF, gtot_S, gtot_N, p_surf_dyn, dgeo_de, &
-                           wt_accel(n), G, US, CS, OBC)
+                           wt_accel(n), G, US, CS)
 
       ! Now update the zonal velocity.
       call btloop_update_u(dtbt, ubt, vbt, u_accel_bt, Cor_u, PFu, &
                            isv-1, iev, jsv, jev, f_4_u, &
                            bt_rem_u, BT_force_u, ubt_prev, Cor_ref_u, Rayleigh_u, &
                            eta_PF_BT, eta_PF, gtot_E, gtot_W, p_surf_dyn, dgeo_de, &
-                           wt_accel(n), G, US, CS, OBC)
+                           wt_accel(n), G, US, CS)
 
     else
       ! On even steps, update u first.
@@ -2519,13 +2557,13 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
                            isv-1, iev, jsv-1, jev+1, f_4_u, &
                            bt_rem_u, BT_force_u, ubt_prev, Cor_ref_u, Rayleigh_u, &
                            eta_PF_BT, eta_PF, gtot_E, gtot_W, p_surf_dyn, dgeo_de, &
-                           wt_accel(n), G, US, CS, OBC)
+                           wt_accel(n), G, US, CS)
       ! Now update the meridional velocity.
       call btloop_update_v(dtbt, ubt, vbt, v_accel_bt, Cor_v, PFv, &
                            isv, iev, jsv-1, jev, f_4_v, &
                            bt_rem_v, BT_force_v, vbt_prev, Cor_ref_v, Rayleigh_v, &
                            eta_PF_BT, eta_PF, gtot_S, gtot_N, p_surf_dyn, dgeo_de, &
-                           wt_accel(n), G, US, CS, OBC, &
+                           wt_accel(n), G, US, CS, &
                            Cor_bracket_bug=CS%use_old_coriolis_bracket_bug)
     endif
 
@@ -2784,37 +2822,56 @@ subroutine btstep_find_Cor(q, DCor_u, DCor_v, f_4_u, f_4_v, isvf, ievf, jsvf, je
   integer, intent(in) :: jsvf  !< The starting j-index of the largest valid range for tracer points
   integer, intent(in) :: jevf  !< The ending j-index of the largest valid range for tracer points
 
+  real :: C1_3 ! One third [nondim]
   integer :: i, j
 
-  !$OMP parallel do default(shared)
-  do J=jsvf-1,jevf ; do i=isvf-1,ievf+1
-    if (CS%Sadourny) then
-      f_4_v(1,i,J) = DCor_u(I-1,j) * q(I-1,J)
-      f_4_v(2,i,J) = DCor_u(I,j) * q(I,J)
-      f_4_v(4,i,J) = DCor_u(I,j+1) * q(I,J)
-      f_4_v(3,i,J) = DCor_u(I-1,j+1) * q(I-1,J)
-    else
-      f_4_v(1,i,J) = DCor_u(I-1,j) * ((q(I,J) + q(I-1,J-1)) + q(I-1,J)) / 3.0
-      f_4_v(2,i,J) = DCor_u(I,j) * (q(I,J) + (q(I-1,J) + q(I,J-1))) / 3.0
-      f_4_v(4,i,J) = DCor_u(I,j+1) * (q(I,J) + (q(I-1,J) + q(I,J+1))) / 3.0
-      f_4_v(3,i,J) = DCor_u(I-1,j+1) * ((q(I,J) + q(I-1,J+1)) + q(I-1,J)) / 3.0
-    endif
-  enddo ; enddo
-
-  !$OMP parallel do default(shared)
-  do j=jsvf-1,jevf+1 ; do I=isvf-1,ievf
-    if (CS%Sadourny) then
-      f_4_u(4,I,j) = DCor_v(i+1,J) * q(I,J)
-      f_4_u(3,I,j) = DCor_v(i,J) * q(I,J)
-      f_4_u(1,I,j) = DCor_v(i,J-1) * q(I,J-1)
-      f_4_u(2,I,j) = DCor_v(i+1,J-1) * q(I,J-1)
-    else
-      f_4_u(4,I,j) = DCor_v(i+1,J) * (q(I,J) + (q(I+1,J) + q(I,J-1))) / 3.0
-      f_4_u(3,I,j) = DCor_v(i,J) * (q(I,J) + (q(I-1,J) + q(I,J-1))) / 3.0
-      f_4_u(1,I,j) = DCor_v(i,J-1) * ((q(I,J) + q(I-1,J-1)) + q(I,J-1)) / 3.0
-      f_4_u(2,I,j) = DCor_v(i+1,J-1) * ((q(I,J) + q(I+1,J-1)) + q(I,J-1)) / 3.0
-    endif
-  enddo ; enddo
+  if (CS%Sadourny) then
+    !$OMP parallel do default(shared)
+    do J=jsvf-1,jevf ; do i=isvf-1,ievf+1
+      f_4_v(1,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j) * q(I-1,J)
+      f_4_v(2,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j) * q(I,J)
+      f_4_v(4,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j+1) * q(I,J)
+      f_4_v(3,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j+1) * q(I-1,J)
+    enddo ; enddo
+    !$OMP parallel do default(shared)
+    do j=jsvf-1,jevf+1 ; do I=isvf-1,ievf
+      f_4_u(4,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J) * q(I,J)
+      f_4_u(3,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J) * q(I,J)
+      f_4_u(1,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J-1) * q(I,J-1)
+      f_4_u(2,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J-1) * q(I,J-1)
+    enddo ; enddo
+  else  !### if (CS%answer_date < 20250601) then  ! Uncomment this later.
+    !$OMP parallel do default(shared)
+    do J=jsvf-1,jevf ; do i=isvf-1,ievf+1
+      f_4_v(1,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j) * ((q(I,J) + q(I-1,J-1)) + q(I-1,J)) / 3.0
+      f_4_v(2,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j) * (q(I,J) + (q(I-1,J) + q(I,J-1))) / 3.0
+      f_4_v(4,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j+1) * (q(I,J) + (q(I-1,J) + q(I,J+1))) / 3.0
+      f_4_v(3,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j+1) * ((q(I,J) + q(I-1,J+1)) + q(I-1,J)) / 3.0
+    enddo ; enddo
+    !$OMP parallel do default(shared)
+    do j=jsvf-1,jevf+1 ; do I=isvf-1,ievf
+      f_4_u(4,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J) * (q(I,J) + (q(I+1,J) + q(I,J-1))) / 3.0
+      f_4_u(3,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J) * (q(I,J) + (q(I-1,J) + q(I,J-1))) / 3.0
+      f_4_u(1,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J-1) * ((q(I,J) + q(I-1,J-1)) + q(I,J-1)) / 3.0
+      f_4_u(2,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J-1) * ((q(I,J) + q(I+1,J-1)) + q(I,J-1)) / 3.0
+    enddo ; enddo
+  ! else
+  !   C1_3 = 1.0 / 3.0
+  !   !$OMP parallel do default(shared)
+  !   do J=jsvf-1,jevf ; do i=isvf-1,ievf+1
+  !     f_4_v(1,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j) * ((q(I,J) + q(I-1,J-1)) + q(I-1,J)) * C1_3
+  !     f_4_v(2,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j) * (q(I,J) + (q(I-1,J) + q(I,J-1))) * C1_3
+  !     f_4_v(4,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j+1) * (q(I,J) + (q(I-1,J) + q(I,J+1))) * C1_3
+  !     f_4_v(3,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j+1) * ((q(I,J) + q(I-1,J+1)) + q(I-1,J)) * C1_3
+  !   enddo ; enddo
+  !   !$OMP parallel do default(shared)
+  !   do j=jsvf-1,jevf+1 ; do I=isvf-1,ievf
+  !     f_4_u(4,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J) * (q(I,J) + (q(I+1,J) + q(I,J-1))) * C1_3
+  !     f_4_u(3,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J) * (q(I,J) + (q(I-1,J) + q(I,J-1))) * C1_3
+  !     f_4_u(1,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J-1) * ((q(I,J) + q(I-1,J-1)) + q(I,J-1)) * C1_3
+  !     f_4_u(2,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J-1) * ((q(I,J) + q(I+1,J-1)) + q(I,J-1)) * C1_3
+  !   enddo ; enddo
+  endif
 
 end subroutine btstep_find_Cor
 
@@ -3036,7 +3093,7 @@ subroutine btloop_update_v(dtbt, ubt, vbt, v_accel_bt, &
                            Cor_v, PFv, is_v, ie_v, Js_v, Je_v, f_4_v, &
                            bt_rem_v, BT_force_v, vbt_prev, Cor_ref_v, Rayleigh_v, &
                            eta_PF_BT, eta_PF, gtot_S, gtot_N, p_surf_dyn, dgeo_de, &
-                           wt_accel_n, G, US, CS, OBC, Cor_bracket_bug)
+                           wt_accel_n, G, US, CS, Cor_bracket_bug)
   type(ocean_grid_type),   intent(inout) :: G     !< The ocean's grid structure.
   type(barotropic_CS),     intent(inout) :: CS    !< Barotropic control structure
   real, dimension(SZIBW_(CS),SZJW_(CS)), intent(in) :: &
@@ -3050,8 +3107,6 @@ subroutine btloop_update_v(dtbt, ubt, vbt, v_accel_bt, &
     Cor_v         !< The meridional Coriolis acceleration [L T-2 ~> m s-2]
   real, dimension(SZIW_(CS),SZJBW_(CS)), intent(inout) :: &
     PFv           !< The meridional pressure force acceleration [L T-2 ~> m s-2].
-  logical, optional, intent(in) :: Cor_bracket_bug !< If present and true, use an order of operations that is
-                  !! not bitwise rotationally symmetric in the meridional Coriolis term
   real, dimension(4,SZIW_(CS),SZJBW_(CS)), intent(in) :: &
     f_4_v         !< The terms giving the contribution to the Coriolis acceleration at a meridional
                   !! velocity point from the neighboring meridional velocity anomalies [T-1 ~> s-1].
@@ -3076,7 +3131,9 @@ subroutine btloop_update_v(dtbt, ubt, vbt, v_accel_bt, &
     Cor_ref_v     !< The meridional barotropic Coriolis acceleration due
                   !! to the reference velocities [L T-2 ~> m s-2].
   real, dimension(SZIW_(CS),SZJBW_(CS)), intent(in) :: &
-    Rayleigh_v    !< A Rayleigh drag timescale operating at v-points [T-1 ~> s-1].
+    Rayleigh_v    !< A Rayleigh drag timescale operating at v-points for drag parameterizations
+                  !! that introduced directly into the barotropic solver rather than coming
+                  !! in via the visc_rem_v arrays from the layered equations [T-1 ~> s-1]
   real, dimension(:,:), pointer, intent(in) :: &
     eta_PF_BT     !< A pointer to the eta array (either eta or eta_pred) that
                   !! determines the barotropic pressure force [H ~> m or kg m-2]
@@ -3104,7 +3161,8 @@ subroutine btloop_update_v(dtbt, ubt, vbt, v_accel_bt, &
                   !! in determining the average accelerations [nondim]
   real,    intent(in) :: dtbt !< The barotropic time step [T ~> s].
   type(unit_scale_type),   intent(in)    :: US    !< A dimensional unit scaling type
-  type(ocean_OBC_type),    pointer       :: OBC   !< The open boundary condition structure.
+  logical, optional, intent(in) :: Cor_bracket_bug !< If present and true, use an order of operations that is
+                  !! not bitwise rotationally symmetric in the meridional Coriolis term
 
   ! Local variables
   logical :: use_bracket_bug
@@ -3144,6 +3202,7 @@ subroutine btloop_update_v(dtbt, ubt, vbt, v_accel_bt, &
   endif
 
   !$OMP do schedule(static)
+  ! This updates the v-velocity, except at OBC points.
   do J=Js_v,Je_v ; do i=is_v,ie_v
     vbt_prev(i,J) = vbt(i,J)
     vbt(i,J) = bt_rem_v(i,J) * (vbt(i,J) + &
@@ -3165,14 +3224,6 @@ subroutine btloop_update_v(dtbt, ubt, vbt, v_accel_bt, &
     enddo ; enddo
   endif
 
-  if (CS%BT_OBC%apply_v_OBCs) then  ! copy back the value for v-points on the boundary.
-    !$OMP do schedule(static)
-    do J=Js_v,Je_v ; do i=is_v,ie_v ; if (OBC%segnum_v(i,J) /= OBC_NONE) then
-      PFv(i,J) = 0.0
-      vbt(i,J) = vbt_prev(i,J)
-    endif ; enddo ; enddo
-  endif
-
 end subroutine btloop_update_v
 
 !> Update zonal velocity.
@@ -3180,7 +3231,7 @@ subroutine btloop_update_u(dtbt, ubt, vbt, u_accel_bt, &
                            Cor_u, PFu, Is_u, Ie_u, js_u, je_u, f_4_u, &
                            bt_rem_u, BT_force_u, ubt_prev, Cor_ref_u, Rayleigh_u, &
                            eta_PF_BT, eta_PF, gtot_E, gtot_W, p_surf_dyn, dgeo_de, &
-                           wt_accel_n, G, US, CS, OBC)
+                           wt_accel_n, G, US, CS)
   type(ocean_grid_type),   intent(inout) :: G     !< The ocean's grid structure.
   type(barotropic_CS),     intent(inout) :: CS    !< Barotropic control structure
   real,    intent(in) :: dtbt     !< The barotropic time step [T ~> s].
@@ -3219,7 +3270,9 @@ subroutine btloop_update_u(dtbt, ubt, vbt, u_accel_bt, &
     Cor_ref_u     !< The meridional barotropic Coriolis acceleration due
                   !! to the reference velocities [L T-2 ~> m s-2].
   real, dimension(SZIBW_(CS),SZJW_(CS)), intent(in) :: &
-    Rayleigh_u    !< A Rayleigh drag timescale operating at v-points [T-1 ~> s-1].
+    Rayleigh_u    !< A Rayleigh drag timescale operating at u-points for drag parameterizations
+                  !! that introduced directly into the barotropic solver rather than coming
+                  !! in via the visc_rem_u arrays from the layered equations [T-1 ~> s-1].
   real, dimension(:,:), pointer, intent(in) :: &
     eta_PF_BT     !< A pointer to the eta array (either eta or eta_pred) that
                   !! determines the barotropic pressure force [H ~> m or kg m-2]
@@ -3246,7 +3299,6 @@ subroutine btloop_update_u(dtbt, ubt, vbt, u_accel_bt, &
   real,    intent(in) :: wt_accel_n  !< The raw or relative weights of each of the barotropic timesteps
                                   !! in determining the average accelerations [nondim]
   type(unit_scale_type),   intent(in)  :: US      !< A dimensional unit scaling type
-  type(ocean_OBC_type),    pointer     :: OBC     !< The open boundary condition structure.
 
   ! Local variables
   real :: vel_prev    ! The previous velocity [L T-1 ~> m s-1].
@@ -3293,14 +3345,6 @@ subroutine btloop_update_u(dtbt, ubt, vbt, u_accel_bt, &
       u_accel_bt(I,j) = u_accel_bt(I,j) + wt_accel_n * (Cor_u(I,j) + PFu(I,j))
     enddo ; enddo
     !$OMP end do nowait
-  endif
-
-  if (CS%BT_OBC%apply_u_OBCs) then  ! copy back the value for u-points on the boundary.
-    !$OMP do schedule(static)
-    do j=js_u,je_u ; do I=Is_u,Ie_u ; if (OBC%segnum_u(I,j) /= OBC_NONE) then
-      PFu(I,j) = 0.0
-      ubt(I,j) = ubt_prev(I,j)
-    endif ; enddo ; enddo
   endif
 
 end subroutine btloop_update_u
@@ -5537,6 +5581,8 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   ALLOC_(CS%dy_Cu(CS%isdw-1:CS%iedw,CS%jsdw:CS%jedw)) ; CS%dy_Cu(:,:) = 0.0
   ALLOC_(CS%dx_Cv(CS%isdw:CS%iedw,CS%jsdw-1:CS%jedw)) ; CS%dx_Cv(:,:) = 0.0
   allocate(CS%IareaT_OBCmask(isdw:iedw,jsdw:jedw), source=0.0)
+  allocate(CS%OBCmask_u(CS%isdw-1:CS%iedw,CS%jsdw:CS%jedw), source=1.0)
+  allocate(CS%OBCmask_v(CS%isdw:CS%iedw,CS%jsdw-1:CS%jedw), source=1.0)
   do j=G%jsd,G%jed ; do i=G%isd,G%ied
     CS%IareaT(i,j) = G%IareaT(i,j)
     CS%bathyT(i,j) = G%bathyT(i,j)
@@ -5544,7 +5590,7 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   enddo ; enddo
 
   ! Update IareaT_OBCmask so that nothing changes outside of the OBC (problem for interior OBCs only)
-  if (associated(OBC) .and. (CS%exterior_OBC_bug .eqv. .false.)) then
+  if (associated(OBC) .and. (.not.CS%exterior_OBC_bug)) then
     if (OBC%specified_u_BCs_exist_globally .or. OBC%open_u_BCs_exist_globally) then
       do i=isd,ied
         do j=jsd,jed
@@ -5587,11 +5633,25 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   do J=G%JsdB,G%JedB ; do i=G%isd,G%ied
     CS%IdyCv(i,J) = G%IdyCv(i,J) ; CS%dx_Cv(i,J) = G%dx_Cv(i,J)
   enddo ; enddo
+  ! Set masks to avoid changing velocities at OBC points.
+  if (associated(OBC)) then
+    if (OBC%specified_u_BCs_exist_globally .or. OBC%open_u_BCs_exist_globally) then
+      do j=G%jsd,G%jed ; do I=G%IsdB,G%IedB ; if (OBC%segnum_u(I,j) /= OBC_NONE) then
+        CS%OBCmask_u(I,j) = 0.0 ; CS%IdxCu(I,j) = 0.0
+      endif ; enddo ; enddo
+    endif
+    if (OBC%specified_v_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) then
+      do J=G%JsdB,G%JedB ; do i=G%isd,G%ied ; if (OBC%segnum_v(i,J) /= OBC_NONE) then
+        CS%OBCmask_v(i,J) = 0.0 ; CS%IdyCv(i,J) = 0.0
+      endif ; enddo ; enddo
+    endif
+  endif
   call create_group_pass(pass_static_data, CS%IareaT, CS%BT_domain, To_All)
   call create_group_pass(pass_static_data, CS%bathyT, CS%BT_domain, To_All)
   call create_group_pass(pass_static_data, CS%IareaT_OBCmask, CS%BT_domain, To_All)
   call create_group_pass(pass_static_data, CS%IdxCu, CS%IdyCv, CS%BT_domain, To_All+Scalar_Pair)
   call create_group_pass(pass_static_data, CS%dy_Cu, CS%dx_Cv, CS%BT_domain, To_All+Scalar_Pair)
+  call create_group_pass(pass_static_data, CS%OBCmask_u, CS%OBCmask_v, CS%BT_domain, To_All+Scalar_Pair)
   call do_group_pass(pass_static_data, CS%BT_domain)
 
   if (CS%linearized_BT_PV) then
