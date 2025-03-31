@@ -29,13 +29,13 @@ contains
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
        intent(in)                     :: N2    !< Buoyancy frequency [T-2 ~> s-2]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
-       intent(in)                     :: Kd    !< Diffusivity [H2 T-1 ~> m2 s-1]
+       intent(in)                     :: Kd    !< Diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
-       intent(out)                    :: Bdif_flx !< Buoyancy flux [H2 T-3 ~> m2 s-3]
+       intent(out)                    :: Bdif_flx !< Buoyancy flux [H Z T-3 ~> m2 s-3 or kg m-1 s-3 = W m-3]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-       intent(in), optional           :: dz    !< Grid spacing [H ~> m]
+       intent(in), optional           :: dz    !< Grid spacing [Z ~> m]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-       intent(out), optional          :: Bdif_flx_dz !< Buoyancy flux over layer [H3 T-3 ~> m3 s-3]
+       intent(out), optional          :: Bdif_flx_dz !< Buoyancy flux over layer [H Z2 T-3 ~> m3 s-3 or kg s-3 = W m-2]
 
   integer :: i, j, k
 

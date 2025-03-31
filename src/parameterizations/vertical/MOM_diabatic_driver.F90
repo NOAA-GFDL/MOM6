@@ -34,7 +34,8 @@ use MOM_energetic_PBL,       only : energetic_PBL_end, energetic_PBL_CS
 use MOM_energetic_PBL,       only : energetic_PBL_get_MLD
 use MOM_entrain_diffusive,   only : entrainment_diffusive, entrain_diffusive_init
 use MOM_entrain_diffusive,   only : entrain_diffusive_CS
-use MOM_EOS,                 only : calculate_density, calculate_density_derivs, calculate_TFreeze, EOS_domain
+use MOM_EOS,                 only : calculate_density, calculate_density_derivs, calculate_TFreeze
+use MOM_EOS,                 only : calculate_specific_vol_derivs, EOS_domain
 use MOM_error_handler,       only : MOM_error, FATAL, WARNING, callTree_showQuery,MOM_mesg
 use MOM_error_handler,       only : callTree_enter, callTree_leave, callTree_waypoint
 use MOM_file_parser,         only : get_param, log_version, param_file_type, read_param
@@ -267,10 +268,14 @@ type bflx_diags
     Kd_int => NULL(), &  !< diapycnal diffusivity of interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     N2_salt => NULL(), & !< Salinity contribution to squared buoyancy frequency at interfaces [T-2 ~> s-2]
     N2_temp => NULL(), & !< Temperature contribution to squared buoyancy frequency at interfaces [T-2 ~> s-2]
-    Bflx_salt => NULL(), & !< Salinity contribution to buoyancy flux at interfaces [H2 T-3 ~> m2 s-3]
-    Bflx_temp => NULL(), & !< Temperature contribution to buoyancy flux at interfaces [H2 T-3 ~> m2 s-3]
-    Bflx_salt_dz => NULL(), & !< Salinity contribution to integral of buoyancy flux over layer [H3 T-3 ~> m3 s-3]
-    Bflx_temp_dz => NULL() !< Temperature contribution to integral of buoyancy flux over layer [H3 T-3 ~> m3 s-3]
+    Bflx_salt => NULL(), & !< Salinity contribution to buoyancy flux at interfaces
+                           !! [H Z T-3 ~> m2 s-3 or kg m-1 s-3 = W m-3]
+    Bflx_temp => NULL(), & !< Temperature contribution to buoyancy flux at interfaces
+                           !! [H Z T-3 ~> m2 s-3 or kg m-1 s-3 = W m-3]
+    Bflx_salt_dz => NULL(), & !< Salinity contribution to integral of buoyancy flux over layer
+                              !! [H Z2 T-3 ~> m3 s-3 or kg m-1 s-3 = W m-2]
+    Bflx_temp_dz => NULL() !< Temperature contribution to integral of buoyancy flux over layer
+                           !! [H Z2 T-3 ~> m3 s-3 or kg m-1 s-3 = W m-2]
 end type bflx_diags
 
 !>@{ clock ids
@@ -1220,21 +1225,28 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     T_i, &      ! Temperature at the interface [C ~> degC]
     S_i, &      ! Salinity at the interface [S ~> ppt]
     drhodS, &   ! Local change in density w.r.t. salinity using model EOS & state [R C-1 ~> kg m-3 ppt-1]
-    drhodT      ! Local change in density w.r.t. temperature using model EOS & state [R C-1 ~> kg m-3 degC-1]
+    drhodT, &   ! Local change in density w.r.t. temperature using model EOS & state [R C-1 ~> kg m-3 degC-1]
+    dSpV_dT, &  ! Partial derivative of specific volume with temperature [R-1 C-1 ~> m3 kg-1 degC-1]
+    dSpV_dS     ! Partial derivative of specific volume with salinity [R-1 S-1 ~> m3 kg-1 ppt-1]
 
   type(bflx_diags)  :: bf ! structure with arrays of available buoyancy flux diags
 
+  real :: h_neglect    ! A thickness that is so small it is usually lost
+                       ! in roundoff and can be neglected [H ~> m or kg m-2]
   real :: dz_neglect   ! A vertical distance that is so small it is usually lost
                        ! in roundoff and can be neglected [Z ~> m]
   real :: dz_neglect2  ! dz_neglect^2 [Z2 ~> m2]
   real :: add_ent      ! Entrainment that needs to be added when mixing tracers [H ~> m or kg m-2]
   real :: I_dzval      ! The inverse of the thicknesses averaged to interfaces [Z-1 ~> m-1]
+  real :: I_h          ! The inverse of the thicknesses averaged to interfaces [H-1 ~> m-1 or m2 kg-1]
   real :: Tr_ea_BBL    ! The diffusive tracer thickness in the BBL that is
                        ! coupled to the bottom within a timestep [H ~> m or kg m-2]
   real :: htot(SZIB_(G)) ! The summed thickness from the bottom [H ~> m or kg m-2].
   real :: Kd_add_here    ! An added diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
-  real :: Idt     ! The inverse time step [T-1 ~> s-1]
-  real :: g_Rho0       ! Gravity divided by the reference density for computing N2 [H S2 R-1 ~> m4 s-2 kg-1]
+  real :: Idt          ! The inverse time step [T-1 ~> s-1]
+  real :: g_Rho0       ! G_Earth/Rho0 [L2 T-2 H-1 R-1 ~> m4 s-2 kg-1 or m s-2].
+  real :: H_to_pres    ! A conversion factor from thicknesses to pressure [R L2 T-2 H-1 ~> Pa m-1 or Pa m2 kg-1]
+  logical :: nonBous   ! True if not using the Boussinesq approximation
 
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
 
@@ -1245,8 +1257,11 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
   isd  = G%isd  ; ied = G%ied  ; jsd = G%jsd  ; jed = G%jed
   Isq  = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
   dz_neglect = GV%dZ_subroundoff ; dz_neglect2 = dz_neglect*dz_neglect
+  h_neglect = GV%H_subroundoff
 
-  g_Rho0     = GV%H_to_Z * GV%g_Earth / GV%Rho0
+  nonBous = .not.(GV%Boussinesq .or. GV%semi_Boussinesq)
+  g_Rho0  = GV%g_Earth_Z_T2 / GV%H_to_RZ
+  H_to_pres = GV%H_to_RZ * GV%g_Earth
 
   Kd_heat(:,:,:) = 0.0 ; Kd_salt(:,:,:) = 0.0
   ent_s(:,:,:) = 0.0 ; ent_t(:,:,:) = 0.0
@@ -1634,27 +1649,51 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
 
     !Compute N2 and don't mask negatives here
     EOSdom(:) = EOS_domain(G%HI)
-    !$OMP parallel do default(shared)
-    do j=js,je
-      if (associated(tv%p_surf)) then
-        do i=is,ie ; p_i(i) = tv%p_surf(i,j) ; enddo
-      else
-        do i=is,ie ; p_i(i) = 0.0 ; enddo
-      endif
-      do K=2,nz
-        do i=is,ie
-          p_i(i) = p_i(i) + (GV%g_Earth * GV%H_to_RZ) * h(i,j,k-1)
-        enddo
-        T_i = 0.5*(tv%T(:,j,k-1)+tv%T(:,j,k))
-        S_i = 0.5*(tv%S(:,j,k-1)+tv%S(:,j,k))
-        call calculate_density_derivs(T_i, S_i, p_i, dRhodT, dRhodS, tv%eqn_of_state, EOSdom)
-        do i=is,ie
-          I_dzval = 1.0 / (dz_neglect + 0.5*(dz(i,j,k-1) + dz(i,j,k)))
-          bf%N2_salt(i,j,K) = -(tv%S(i,j,k-1) - tv%S(i,j,k))*g_rho0*dRhodS(i) * I_dzval
-          bf%N2_temp(i,j,K) = -(tv%T(i,j,k-1) - tv%T(i,j,k))*g_rho0*dRhodT(i) * I_dzval
+    if (nonBous) then
+      !$OMP parallel do default(shared)
+      do j=js,je
+        if (associated(tv%p_surf)) then
+          do i=is,ie ; p_i(i) = tv%p_surf(i,j) ; enddo
+        else
+          do i=is,ie ; p_i(i) = 0.0 ; enddo
+        endif
+        do K=2,nz
+          do i=is,ie
+            p_i(i) = p_i(i) + H_to_pres * h(i,j,k-1)
+          enddo
+          T_i = 0.5*(tv%T(:,j,k-1)+tv%T(:,j,k))
+          S_i = 0.5*(tv%S(:,j,k-1)+tv%S(:,j,k))
+          call calculate_specific_vol_derivs(T_i, S_i, p_i, dSpV_dT, dSpV_dS, tv%eqn_of_state, EOSdom)
+          do i=is,ie
+            I_h = 1.0 / (h_neglect + 0.5*(h(i,j,k-1) + h(i,j,k)))
+            bf%N2_salt(i,j,K) = (tv%S(i,j,k-1) - tv%S(i,j,k))*dSpv_dS(i) * H_to_pres * I_h
+            bf%N2_temp(i,j,K) = (tv%T(i,j,k-1) - tv%T(i,j,k))*dSpV_dT(i) * H_to_pres * I_h
+          enddo
         enddo
       enddo
-    enddo
+    else
+      !$OMP parallel do default(shared)
+      do j=js,je
+        if (associated(tv%p_surf)) then
+          do i=is,ie ; p_i(i) = tv%p_surf(i,j) ; enddo
+        else
+          do i=is,ie ; p_i(i) = 0.0 ; enddo
+        endif
+        do K=2,nz
+          do i=is,ie
+            p_i(i) = p_i(i) + H_to_pres* h(i,j,k-1)
+          enddo
+          T_i = 0.5*(tv%T(:,j,k-1)+tv%T(:,j,k))
+          S_i = 0.5*(tv%S(:,j,k-1)+tv%S(:,j,k))
+          call calculate_density_derivs(T_i, S_i, p_i, dRhodT, dRhodS, tv%eqn_of_state, EOSdom)
+          do i=is,ie
+            I_h = 1.0 / (h_neglect + 0.5*(h(i,j,k-1) + h(i,j,k)))
+            bf%N2_salt(i,j,K) = -(tv%S(i,j,k-1) - tv%S(i,j,k))*g_rho0*dRhodS(i) * I_h
+            bf%N2_temp(i,j,K) = -(tv%T(i,j,k-1) - tv%T(i,j,k))*g_rho0*dRhodT(i) * I_h
+          enddo
+        enddo
+      enddo
+    endif
     if (CS%id_N2_dd>0)      call post_data(CS%id_N2_dd, bf%N2_salt(:,:,:)+bf%N2_temp(:,:,:), CS%diag)
     if (CS%id_N2_salt_dd>0) call post_data(CS%id_N2_salt_dd, bf%N2_salt, CS%diag)
     if (CS%id_N2_temp_dd>0) call post_data(CS%id_N2_temp_dd, bf%N2_temp, CS%diag)
@@ -3401,22 +3440,22 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
     ! Buoyancy Fluxes
     CS%id_Bdif = register_diag_field('ocean_model',"Bflx_dia_diff", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces", &
-        "m2 s-3", conversion=GV%H_to_m**2*US%s_to_T**3)
+        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
     CS%id_Bdif_salt = register_diag_field('ocean_model',"Bflx_salt_dia_diff", diag%axesTi, &
         Time, "Salinity contribution to diffusive diapycnal buoyancy flux across interfaces", &
-        "m2 s-3", conversion=GV%H_to_m**2*US%s_to_T**3)
+        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
     CS%id_Bdif_temp = register_diag_field('ocean_model',"Bflx_temp_dia_diff", diag%axesTi, &
         Time, "Temperature contribution to diffusive diapycnal buoyancy flux across interfaces", &
-        "m2 s-3", conversion=GV%H_to_m**2*US%s_to_T**3)
+        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
     CS%id_Bdif_ePBL = register_diag_field('ocean_model',"Bflx_dia_diff_ePBL", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to ePBL", &
-        "m2 s-3", conversion=GV%H_to_m**2*US%s_to_T**3)
+        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
     CS%id_Bdif_ddiff_temp = register_diag_field('ocean_model',"Bflx_dia_diff_ddiff_heat", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to double diffusion of heat", &
-        "m2 s-3", conversion=GV%H_to_m**2*US%s_to_T**3)
+        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
     CS%id_Bdif_ddiff_salt = register_diag_field('ocean_model',"Bflx_dia_diff_ddiff_salt", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to double diffusion of salt", &
-        "m2 s-3", conversion=GV%H_to_m**2*US%s_to_T**3)
+        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
     ! The following logic might be streamlined, but the repetitive calls should not do any harm
     if (CS%id_Bdif>0 .or. CS%id_Bdif_ePBL>0) then
       CS%Use_Kd_Work_or_N2_diag = .true.
@@ -3434,22 +3473,22 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
     ! Layer integral buoyancy Fluxes
     CS%id_Bdif_dz = register_diag_field('ocean_model',"Bflx_dia_diff_dz", diag%axesTl, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux.", &
-        "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
+        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
     CS%id_Bdif_salt_dz = register_diag_field('ocean_model',"Bflx_salt_dia_diff_dz", diag%axesTl, &
         Time, "Salinity contribution to layer integrated diffusive diapycnal buoyancy flux.", &
-        "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
+        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
     CS%id_Bdif_temp_dz = register_diag_field('ocean_model',"Bflx_temp_dia_diff_dz", diag%axesTl, &
         Time, "Temperature contribution to layer integrated diffusive diapycnal buoyancy flux.", &
-        "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
+        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
     CS%id_Bdif_dz_ePBL = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ePBL", diag%axesTl, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to ePBL.", &
-        "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
+        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
     CS%id_Bdif_dz_ddiff_temp = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ddiff_heat", diag%axesTl, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to double diffusion of heat.", &
-        "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
+        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
     CS%id_Bdif_dz_ddiff_salt = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ddiff_salt", diag%axesTl, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to double diffusion of salt.", &
-        "m3 s-3", conversion=GV%H_to_m**3*US%s_to_T**3)
+        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
     ! The following logic might be streamlined, but the repetitive calls should not do any harm
     if (CS%id_Bdif_dz>0 .or. CS%id_Bdif_dz_ePBL>0) then
       CS%Use_Kd_Work_or_N2_diag = .true.
