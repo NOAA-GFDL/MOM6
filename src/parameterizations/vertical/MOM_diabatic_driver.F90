@@ -1244,8 +1244,9 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
   real :: htot(SZIB_(G)) ! The summed thickness from the bottom [H ~> m or kg m-2].
   real :: Kd_add_here    ! An added diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
   real :: Idt          ! The inverse time step [T-1 ~> s-1]
-  real :: g_Rho0       ! G_Earth/Rho0 [L2 T-2 H-1 R-1 ~> m4 s-2 kg-1 or m s-2].
+  real :: g_Rho0       ! G_Earth/Rho0 [H T-2 R-1 ~> m4 s-2 kg-1 or m s-2]
   real :: H_to_pres    ! A conversion factor from thicknesses to pressure [R L2 T-2 H-1 ~> Pa m-1 or Pa m2 kg-1]
+  real :: alt_H_to_pres! A conversion factor from thicknesses to pressure w/ alternative scaling [R Z T-2 ~> Pa m-1]
   logical :: nonBous   ! True if not using the Boussinesq approximation
 
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
@@ -1262,6 +1263,7 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
   nonBous = .not.(GV%Boussinesq .or. GV%semi_Boussinesq)
   g_Rho0  = GV%g_Earth_Z_T2 / GV%H_to_RZ
   H_to_pres = GV%H_to_RZ * GV%g_Earth
+  alt_H_to_pres = H_to_pres * US%L_to_Z**2 * GV%Z_to_H
 
   Kd_heat(:,:,:) = 0.0 ; Kd_salt(:,:,:) = 0.0
   ent_s(:,:,:) = 0.0 ; ent_t(:,:,:) = 0.0
@@ -1665,9 +1667,9 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
           S_i = 0.5*(tv%S(:,j,k-1)+tv%S(:,j,k))
           call calculate_specific_vol_derivs(T_i, S_i, p_i, dSpV_dT, dSpV_dS, tv%eqn_of_state, EOSdom)
           do i=is,ie
-            I_h = 1.0 / (h_neglect + 0.5*(h(i,j,k-1) + h(i,j,k)))
-            bf%N2_salt(i,j,K) = (tv%S(i,j,k-1) - tv%S(i,j,k))*dSpv_dS(i) * H_to_pres * I_h
-            bf%N2_temp(i,j,K) = (tv%T(i,j,k-1) - tv%T(i,j,k))*dSpV_dT(i) * H_to_pres * I_h
+            I_dzval = 1.0 / (dz_neglect + 0.5*(dz(i,j,k-1) + dz(i,j,k)))
+            bf%N2_salt(i,j,K) = (tv%S(i,j,k-1) - tv%S(i,j,k)) * (dSpv_dS(i) * (alt_H_to_pres * I_dzval))
+            bf%N2_temp(i,j,K) = (tv%T(i,j,k-1) - tv%T(i,j,k)) * (dSpV_dT(i) * (alt_H_to_pres * I_dzval))
           enddo
         enddo
       enddo
@@ -1688,8 +1690,8 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
           call calculate_density_derivs(T_i, S_i, p_i, dRhodT, dRhodS, tv%eqn_of_state, EOSdom)
           do i=is,ie
             I_h = 1.0 / (h_neglect + 0.5*(h(i,j,k-1) + h(i,j,k)))
-            bf%N2_salt(i,j,K) = -(tv%S(i,j,k-1) - tv%S(i,j,k))*g_rho0*dRhodS(i) * I_h
-            bf%N2_temp(i,j,K) = -(tv%T(i,j,k-1) - tv%T(i,j,k))*g_rho0*dRhodT(i) * I_h
+            bf%N2_salt(i,j,K) = -(tv%S(i,j,k-1) - tv%S(i,j,k)) * (dRhodS(i) * (g_rho0 * I_h))
+            bf%N2_temp(i,j,K) = -(tv%T(i,j,k-1) - tv%T(i,j,k)) * (dRhodT(i) * (g_rho0 * I_h))
           enddo
         enddo
       enddo
