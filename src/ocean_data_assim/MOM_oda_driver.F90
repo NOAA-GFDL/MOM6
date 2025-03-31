@@ -581,8 +581,8 @@ subroutine get_bias_correction_tracer(Time, US, CS)
   do i=1,fld_sz(1)
     do j=1,fld_sz(2)
       do k=1,fld_sz(3)
-        if (CS%answer_date < 20190101) then 
-          ! The following two lines are needed for backward compatibility for NMME answers (ANSWER_DATE< 20181231) 
+        if (CS%answer_date < 20190101) then
+          ! The following two lines are needed for backward compatibility for NMME answers (ANSWER_DATE< 20181231)
           if (T_bias(i,j,k) > 1.0E-3*US%degC_to_C) T_bias(i,j,k) = 0.0
           if (S_bias(i,j,k) > 1.0E-3*US%ppt_to_S) S_bias(i,j,k) = 0.0
         else
