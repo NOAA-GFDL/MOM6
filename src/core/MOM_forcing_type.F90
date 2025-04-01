@@ -595,21 +595,21 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
     ! net volume/mass of liquid and solid passing through surface boundary fluxes
     netMassInOut(i) = dt * (scale * &
                                    (((((( fluxes%lprec(i,j)        &
-                                        + fluxes%fprec(i,j)      )  &
-                                        + fluxes%evap(i,j)       )  &
-                                        + fluxes%lrunoff(i,j)    )  &
-                                        + fluxes%vprec(i,j)      )  &
-                                        + fluxes%seaice_melt(i,j))  &
-                                        + fluxes%frunoff(i,j)    ))
+                                         + fluxes%seaice_melt(i,j))  &
+                                         + fluxes%fprec(i,j)      )  &
+                                         + fluxes%evap(i,j)       )  &
+                                         + fluxes%lrunoff(i,j)    )  &
+                                         + fluxes%vprec(i,j)      )  &
+                                         + fluxes%frunoff(i,j)    ))
 
     if (do_NMIOr) then  ! Repeat the above code without multiplying by a timestep for legacy reasons
       netMassInOut_rate(i) = (scale * &
                                    (((((( fluxes%lprec(i,j)      &
+                                        + fluxes%seaice_melt(i,j))  &
                                         + fluxes%fprec(i,j)      )  &
                                         + fluxes%evap(i,j)       )  &
                                         + fluxes%lrunoff(i,j)    )  &
                                         + fluxes%vprec(i,j)      )  &
-                                        + fluxes%seaice_melt(i,j))  &
                                         + fluxes%frunoff(i,j)   ))
     endif
 
@@ -634,10 +634,9 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
     if (fluxes%evap(i,j) < 0.0) netMassOut(i) = netMassOut(i) + fluxes%evap(i,j)
   !   if (associated(fluxes%heat_content_cond)) fluxes%heat_content_cond(i,j) = 0.0 !??? --AJA
 
-    if (fluxes%lprec(i,j) < 0.0) netMassOut(i) = netMassOut(i) + fluxes%lprec(i,j)
-
+    ! hfd: we keep lprec and seaice_melt together to preserve answers from when they were combined in lprec
     ! seaice_melt < 0 means sea ice formation taking water from the ocean.
-    if (fluxes%seaice_melt(i,j) < 0.0) netMassOut(i) = netMassOut(i) + fluxes%seaice_melt(i,j)
+    if ((fluxes%lprec(i,j) + fluxes%seaice_melt(i,j)) < 0.0) netMassOut(i) = netMassOut(i) + (fluxes%lprec(i,j) + fluxes%seaice_melt(i,j))
 
     ! vprec < 0 means virtual evaporation arising from surface salinity restoring,
     ! in which case heat_content_vprec is computed in MOM_diabatic_driver.F90.
@@ -803,11 +802,12 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
         endif
       endif
 
-      ! When atmosphere does not provide heat of this precipitation, the ocean assumes
+      ! When atmosphere does not provide heat of this precipitation (which here
+      ! also includes sea ice melt for legacy reasons), the ocean assumes
       ! it enters the ocean at the SST.
       if (associated(fluxes%heat_content_lprec)) then
-        if (fluxes%lprec(i,j) > 0.0) then
-          fluxes%heat_content_lprec(i,j) = tv%C_p*fluxes%lprec(i,j)*T(i,1)
+        if ((fluxes%lprec(i,j) + fluxes%seaice_melt(i,j)) > 0.0) then
+          fluxes%heat_content_lprec(i,j) = tv%C_p*(fluxes%lprec(i,j) + fluxes%seaice_melt(i,j))*T(i,1)
         else
           fluxes%heat_content_lprec(i,j) = 0.0
         endif
@@ -1293,12 +1293,12 @@ subroutine MOM_forcing_chksum(mesg, fluxes, G, US, haloshift)
     call hchksum(fluxes%evap, mesg//" fluxes%evap", G%HI, haloshift=hshift, unscale=US%RZ_T_to_kg_m2s)
   if (associated(fluxes%lprec)) &
     call hchksum(fluxes%lprec, mesg//" fluxes%lprec", G%HI, haloshift=hshift, unscale=US%RZ_T_to_kg_m2s)
+  if (associated(fluxes%seaice_melt)) &
+    call hchksum(fluxes%seaice_melt, mesg//" fluxes%seaice_melt", G%HI, haloshift=hshift, unscale=US%RZ_T_to_kg_m2s)
   if (associated(fluxes%fprec)) &
     call hchksum(fluxes%fprec, mesg//" fluxes%fprec", G%HI, haloshift=hshift, unscale=US%RZ_T_to_kg_m2s)
   if (associated(fluxes%vprec)) &
     call hchksum(fluxes%vprec, mesg//" fluxes%vprec", G%HI, haloshift=hshift, unscale=US%RZ_T_to_kg_m2s)
-  if (associated(fluxes%seaice_melt)) &
-    call hchksum(fluxes%seaice_melt, mesg//" fluxes%seaice_melt", G%HI, haloshift=hshift, unscale=US%RZ_T_to_kg_m2s)
   if (associated(fluxes%seaice_melt_heat)) &
     call hchksum(fluxes%seaice_melt_heat, mesg//" fluxes%seaice_melt_heat", G%HI, &
                  haloshift=hshift, unscale=US%QRZ_T_to_W_m2)
@@ -1430,9 +1430,9 @@ subroutine forcing_SinglePointPrint(fluxes, G, i, j, mesg)
   call locMsg(fluxes%sens,'sens')
   call locMsg(fluxes%evap,'evap')
   call locMsg(fluxes%lprec,'lprec')
+  call locMsg(fluxes%seaice_melt,'seaice_melt')
   call locMsg(fluxes%fprec,'fprec')
   call locMsg(fluxes%vprec,'vprec')
-  call locMsg(fluxes%seaice_melt,'seaice_melt')
   call locMsg(fluxes%seaice_melt_heat,'seaice_melt_heat')
   call locMsg(fluxes%p_surf,'p_surf')
   call locMsg(fluxes%salt_flux,'salt_flux')
@@ -2273,11 +2273,11 @@ subroutine fluxes_accumulate(flux_tmp, fluxes, G, wt2, forces)
   do j=js,je ; do i=is,ie
     fluxes%evap(i,j) = wt1*fluxes%evap(i,j) + wt2*flux_tmp%evap(i,j)
     fluxes%lprec(i,j) = wt1*fluxes%lprec(i,j) + wt2*flux_tmp%lprec(i,j)
+    fluxes%seaice_melt(i,j) = wt1*fluxes%seaice_melt(i,j) + wt2*flux_tmp%seaice_melt(i,j)
     fluxes%fprec(i,j) = wt1*fluxes%fprec(i,j) + wt2*flux_tmp%fprec(i,j)
     fluxes%vprec(i,j) = wt1*fluxes%vprec(i,j) + wt2*flux_tmp%vprec(i,j)
     fluxes%lrunoff(i,j) = wt1*fluxes%lrunoff(i,j) + wt2*flux_tmp%lrunoff(i,j)
     fluxes%frunoff(i,j) = wt1*fluxes%frunoff(i,j) + wt2*flux_tmp%frunoff(i,j)
-    fluxes%seaice_melt(i,j) = wt1*fluxes%seaice_melt(i,j) + wt2*flux_tmp%seaice_melt(i,j)
     fluxes%sw(i,j) = wt1*fluxes%sw(i,j) + wt2*flux_tmp%sw(i,j)
     fluxes%sw_vis_dir(i,j) = wt1*fluxes%sw_vis_dir(i,j) + wt2*flux_tmp%sw_vis_dir(i,j)
     fluxes%sw_vis_dif(i,j) = wt1*fluxes%sw_vis_dif(i,j) + wt2*flux_tmp%sw_vis_dif(i,j)
@@ -2489,6 +2489,9 @@ subroutine get_net_mass_forcing(fluxes, G, US, net_mass_src)
   if (associated(fluxes%lprec)) then ; do j=js,je ; do i=is,ie
     net_mass_src(i,j) = net_mass_src(i,j) + fluxes%lprec(i,j)
   enddo ; enddo ; endif
+  if (associated(fluxes%seaice_melt)) then ; do j=js,je ; do i=is,ie
+    net_mass_src(i,j) = net_mass_src(i,j) + fluxes%seaice_melt(i,j)
+  enddo ; enddo ; endif
   if (associated(fluxes%fprec)) then ; do j=js,je ; do i=is,ie
     net_mass_src(i,j) = net_mass_src(i,j) + fluxes%fprec(i,j)
   enddo ; enddo ; endif
@@ -2503,9 +2506,6 @@ subroutine get_net_mass_forcing(fluxes, G, US, net_mass_src)
   enddo ; enddo ; endif
   if (associated(fluxes%evap)) then ; do j=js,je ; do i=is,ie
     net_mass_src(i,j) = net_mass_src(i,j) + fluxes%evap(i,j)
-  enddo ; enddo ; endif
-  if (associated(fluxes%seaice_melt)) then ; do j=js,je ; do i=is,ie
-    net_mass_src(i,j) = net_mass_src(i,j) + fluxes%seaice_melt(i,j)
   enddo ; enddo ; endif
 
 end subroutine get_net_mass_forcing
@@ -2657,13 +2657,13 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
       do j=js,je ; do i=is,ie
         res(i,j) = 0.0
         if (associated(fluxes%lprec))       res(i,j) = res(i,j) + fluxes%lprec(i,j)
+        if (associated(fluxes%seaice_melt)) res(i,j) = res(i,j) + fluxes%seaice_melt(i,j)
         if (associated(fluxes%fprec))       res(i,j) = res(i,j) + fluxes%fprec(i,j)
         ! fluxes%cond is not needed because it is derived from %evap > 0
         if (associated(fluxes%evap))        res(i,j) = res(i,j) + fluxes%evap(i,j)
         if (associated(fluxes%lrunoff))     res(i,j) = res(i,j) + fluxes%lrunoff(i,j)
         if (associated(fluxes%frunoff))     res(i,j) = res(i,j) + fluxes%frunoff(i,j)
         if (associated(fluxes%vprec))       res(i,j) = res(i,j) + fluxes%vprec(i,j)
-        if (associated(fluxes%seaice_melt)) res(i,j) = res(i,j) + fluxes%seaice_melt(i,j)
       enddo ; enddo
       if (handles%id_prcme > 0) call post_data(handles%id_prcme, res, diag)
       if (handles%id_total_prcme > 0) then
@@ -2682,14 +2682,14 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
         if (associated(fluxes%lprec)) then
           if (fluxes%lprec(i,j) < 0.0) res(i,j) = res(i,j) + fluxes%lprec(i,j)
         endif
+        if (associated(fluxes%seaice_melt)) then
+          if (fluxes%seaice_melt(i,j) < 0.0) res(i,j) = res(i,j) + fluxes%seaice_melt(i,j)
+        endif
         if (associated(fluxes%vprec)) then
           if (fluxes%vprec(i,j) < 0.0) res(i,j) = res(i,j) + fluxes%vprec(i,j)
         endif
         if (associated(fluxes%evap)) then
           if (fluxes%evap(i,j) < 0.0) res(i,j) = res(i,j) + fluxes%evap(i,j)
-        endif
-        if (associated(fluxes%seaice_melt)) then
-          if (fluxes%seaice_melt(i,j) < 0.0) res(i,j) = res(i,j) + fluxes%seaice_melt(i,j)
         endif
       enddo ; enddo
       if (handles%id_net_massout > 0) call post_data(handles%id_net_massout, res, diag)
@@ -2712,15 +2712,15 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
         if (associated(fluxes%lprec)) then
           if (fluxes%lprec(i,j) > 0.0) res(i,j) = res(i,j) + fluxes%lprec(i,j)
         endif
+        if (associated(fluxes%seaice_melt)) then
+          if (fluxes%seaice_melt(i,j) > 0.0) res(i,j) = res(i,j) + fluxes%seaice_melt(i,j)
+        endif
         if (associated(fluxes%vprec)) then
           if (fluxes%vprec(i,j) > 0.0) res(i,j) = res(i,j) + fluxes%vprec(i,j)
         endif
         ! fluxes%cond is not needed because it is derived from %evap > 0
         if (associated(fluxes%evap)) then
           if (fluxes%evap(i,j) > 0.0) res(i,j) = res(i,j) + fluxes%evap(i,j)
-        endif
-        if (associated(fluxes%seaice_melt)) then
-          if (fluxes%seaice_melt(i,j) > 0.0) res(i,j) = res(i,j) + fluxes%seaice_melt(i,j)
         endif
       enddo ; enddo
       if (handles%id_net_massin > 0) call post_data(handles%id_net_massin, res, diag)
@@ -2770,6 +2770,14 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
         call post_data(handles%id_lprec_ga, ave_mass_flux, diag)
       endif
     endif
+  
+    if (associated(fluxes%seaice_melt)) then
+      if (handles%id_seaice_melt > 0) call post_data(handles%id_seaice_melt, fluxes%seaice_melt, diag)
+      if (handles%id_total_seaice_melt > 0) then
+        total_mass_flux = global_area_integral(fluxes%seaice_melt, G, tmp_scale=US%RZ_T_to_kg_m2s)
+        call post_data(handles%id_total_seaice_melt, total_mass_flux, diag)
+      endif
+    endif
 
     if (associated(fluxes%fprec)) then
       if (handles%id_fprec > 0) call post_data(handles%id_fprec, fluxes%fprec, diag)
@@ -2808,14 +2816,6 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
       if (handles%id_total_frunoff > 0) then
         total_mass_flux = global_area_integral(fluxes%frunoff, G, tmp_scale=US%RZ_T_to_kg_m2s)
         call post_data(handles%id_total_frunoff, total_mass_flux, diag)
-      endif
-    endif
-
-    if (associated(fluxes%seaice_melt)) then
-      if (handles%id_seaice_melt > 0) call post_data(handles%id_seaice_melt, fluxes%seaice_melt, diag)
-      if (handles%id_total_seaice_melt > 0) then
-        total_mass_flux = global_area_integral(fluxes%seaice_melt, G, tmp_scale=US%RZ_T_to_kg_m2s)
-        call post_data(handles%id_total_seaice_melt, total_mass_flux, diag)
       endif
     endif
 
@@ -3260,11 +3260,11 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
 
   call myAlloc(fluxes%evap,isd,ied,jsd,jed, water)
   call myAlloc(fluxes%lprec,isd,ied,jsd,jed, water)
+  call myAlloc(fluxes%seaice_melt,isd,ied,jsd,jed, water)
   call myAlloc(fluxes%fprec,isd,ied,jsd,jed, water)
   call myAlloc(fluxes%vprec,isd,ied,jsd,jed, water)
   call myAlloc(fluxes%lrunoff,isd,ied,jsd,jed, water)
   call myAlloc(fluxes%frunoff,isd,ied,jsd,jed, water)
-  call myAlloc(fluxes%seaice_melt,isd,ied,jsd,jed, water)
   call myAlloc(fluxes%netMassOut,isd,ied,jsd,jed, water)
   call myAlloc(fluxes%netMassIn,isd,ied,jsd,jed, water)
   call myAlloc(fluxes%seaice_melt_heat,isd,ied,jsd,jed, heat)
@@ -3565,11 +3565,11 @@ subroutine deallocate_forcing_type(fluxes)
   if (associated(fluxes%heat_content_massin))  deallocate(fluxes%heat_content_massin)
   if (associated(fluxes%evap))                 deallocate(fluxes%evap)
   if (associated(fluxes%lprec))                deallocate(fluxes%lprec)
+  if (associated(fluxes%seaice_melt))          deallocate(fluxes%seaice_melt)
   if (associated(fluxes%fprec))                deallocate(fluxes%fprec)
   if (associated(fluxes%vprec))                deallocate(fluxes%vprec)
   if (associated(fluxes%lrunoff))              deallocate(fluxes%lrunoff)
   if (associated(fluxes%frunoff))              deallocate(fluxes%frunoff)
-  if (associated(fluxes%seaice_melt))          deallocate(fluxes%seaice_melt)
   if (associated(fluxes%netMassOut))           deallocate(fluxes%netMassOut)
   if (associated(fluxes%netMassIn))            deallocate(fluxes%netMassIn)
   if (associated(fluxes%salt_flux))            deallocate(fluxes%salt_flux)
@@ -3640,11 +3640,11 @@ subroutine rotate_forcing(fluxes_in, fluxes, turns)
   if (do_water) then
     call rotate_array(fluxes_in%evap, turns, fluxes%evap)
     call rotate_array(fluxes_in%lprec, turns, fluxes%lprec)
+    call rotate_array(fluxes_in%seaice_melt, turns, fluxes%seaice_melt)
     call rotate_array(fluxes_in%fprec, turns, fluxes%fprec)
     call rotate_array(fluxes_in%vprec, turns, fluxes%vprec)
     call rotate_array(fluxes_in%lrunoff, turns, fluxes%lrunoff)
     call rotate_array(fluxes_in%frunoff, turns, fluxes%frunoff)
-    call rotate_array(fluxes_in%seaice_melt, turns, fluxes%seaice_melt)
     call rotate_array(fluxes_in%netMassOut, turns, fluxes%netMassOut)
     call rotate_array(fluxes_in%netMassIn, turns, fluxes%netMassIn)
   endif
@@ -3914,11 +3914,11 @@ subroutine homogenize_forcing(fluxes, G, GV, US)
   if (do_water) then
     call homogenize_field_t(fluxes%evap, G, tmp_scale=US%RZ_T_to_kg_m2s)
     call homogenize_field_t(fluxes%lprec, G, tmp_scale=US%RZ_T_to_kg_m2s)
+    call homogenize_field_t(fluxes%seaice_melt, G, tmp_scale=US%RZ_T_to_kg_m2s)
     call homogenize_field_t(fluxes%fprec, G, tmp_scale=US%RZ_T_to_kg_m2s)
     call homogenize_field_t(fluxes%vprec, G, tmp_scale=US%RZ_T_to_kg_m2s)
     call homogenize_field_t(fluxes%lrunoff, G, tmp_scale=US%RZ_T_to_kg_m2s)
     call homogenize_field_t(fluxes%frunoff, G, tmp_scale=US%RZ_T_to_kg_m2s)
-    call homogenize_field_t(fluxes%seaice_melt, G, tmp_scale=US%RZ_T_to_kg_m2s)
     !  These two calls might not be needed.
     call homogenize_field_t(fluxes%netMassOut, G, tmp_scale=GV%H_to_mks)
     call homogenize_field_t(fluxes%netMassIn, G, tmp_scale=GV%H_to_mks)

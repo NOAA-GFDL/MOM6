@@ -424,6 +424,10 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     if (associated(IOB%lprec)) &
       fluxes%lprec(i,j) = kg_m2_s_conversion * IOB%lprec(i-i0,j-j0) * G%mask2dT(i,j)
 
+    ! water flux due to sea ice and snow melt [kg/m2/s]
+    if (associated(IOB%seaice_melt)) &
+      fluxes%seaice_melt(i,j) = kg_m2_s_conversion * IOB%seaice_melt(i-i0,j-j0) * G%mask2dT(i,j)
+
     ! frozen precipitation (snow)
     if (associated(IOB%fprec)) &
       fluxes%fprec(i,j) = kg_m2_s_conversion * IOB%fprec(i-i0,j-j0) * G%mask2dT(i,j)
@@ -476,10 +480,6 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     ! sea ice and snow melt heat flux [W/m2]
     if (associated(IOB%seaice_melt_heat)) &
       fluxes%seaice_melt_heat(i,j) = G%mask2dT(i,j) * US%W_m2_to_QRZ_T * IOB%seaice_melt_heat(i-i0,j-j0)
-
-    ! water flux due to sea ice and snow melt [kg/m2/s]
-    if (associated(IOB%seaice_melt)) &
-      fluxes%seaice_melt(i,j) = G%mask2dT(i,j) * kg_m2_s_conversion * IOB%seaice_melt(i-i0,j-j0)
 
     ! latent heat flux (W/m^2)
     fluxes%latent(i,j) = 0.0
@@ -550,7 +550,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     if (CS%use_net_FW_adjustment_sign_bug) sign_for_net_FW_bug = -1.
     do j=js,je ; do i=is,ie
       net_FW(i,j) = US%RZ_T_to_kg_m2s * &
-        (((fluxes%lprec(i,j)   + fluxes%fprec(i,j) + fluxes%seaice_melt(i,j)) + &
+        ((((fluxes%lprec(i,j) + fluxes%seaice_melt(i,j))   + fluxes%fprec(i,j)) + &
           (fluxes%lrunoff(i,j) + fluxes%frunoff(i,j))) + &
           (fluxes%evap(i,j)    + fluxes%vprec(i,j)) ) * US%L_to_m**2*G%areaT(i,j)
 

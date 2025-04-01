@@ -1150,8 +1150,8 @@ subroutine buoyancy_forcing_from_files(sfc_state, fluxes, day, dt, G, US, CS)
     do j=js,je ; do i=is,ie
       fluxes%evap(i,j)        = fluxes%evap(i,j)        * G%mask2dT(i,j)
       fluxes%lprec(i,j)       = fluxes%lprec(i,j)       * G%mask2dT(i,j)
-      fluxes%fprec(i,j)       = fluxes%fprec(i,j)       * G%mask2dT(i,j)
       fluxes%seaice_melt(i,j) = fluxes%seaice_melt(i,j) * G%mask2dT(i,j)
+      fluxes%fprec(i,j)       = fluxes%fprec(i,j)       * G%mask2dT(i,j)
       fluxes%lrunoff(i,j)     = fluxes%lrunoff(i,j)     * G%mask2dT(i,j)
       fluxes%frunoff(i,j)     = fluxes%frunoff(i,j)     * G%mask2dT(i,j)
       fluxes%lw(i,j)          = fluxes%lw(i,j)          * G%mask2dT(i,j)
@@ -1309,6 +1309,7 @@ subroutine buoyancy_forcing_from_data_override(sfc_state, fluxes, day, dt, G, US
 
   ! mask out land points and compute heat content of water fluxes
   ! assume liquid precip enters ocean at SST
+  ! assume sea ice melt enters ocean at SST
   ! assume frozen precip enters ocean at 0degC
   ! assume liquid runoff enters ocean at SST
   ! assume solid runoff (calving) enters ocean at 0degC
@@ -1316,8 +1317,8 @@ subroutine buoyancy_forcing_from_data_override(sfc_state, fluxes, day, dt, G, US
   do j=js,je ; do i=is,ie
     fluxes%evap(i,j)        = fluxes%evap(i,j)        * G%mask2dT(i,j)
     fluxes%lprec(i,j)       = fluxes%lprec(i,j)       * G%mask2dT(i,j)
-    fluxes%fprec(i,j)       = fluxes%fprec(i,j)       * G%mask2dT(i,j)
     fluxes%seaice_melt(i,j) = fluxes%seaice_melt(i,j) * G%mask2dT(i,j)
+    fluxes%fprec(i,j)       = fluxes%fprec(i,j)       * G%mask2dT(i,j)
     fluxes%lrunoff(i,j)     = fluxes%lrunoff(i,j)     * G%mask2dT(i,j)
     fluxes%frunoff(i,j)     = fluxes%frunoff(i,j)     * G%mask2dT(i,j)
     fluxes%lw(i,j)          = fluxes%lw(i,j)          * G%mask2dT(i,j)
@@ -1364,8 +1365,8 @@ subroutine buoyancy_forcing_zero(sfc_state, fluxes, day, dt, G, CS)
     do j=js,je ; do i=is,ie
       fluxes%evap(i,j)                 = 0.0
       fluxes%lprec(i,j)                = 0.0
-      fluxes%fprec(i,j)                = 0.0
       fluxes%seaice_melt(i,j)          = 0.0
+      fluxes%fprec(i,j)                = 0.0
       fluxes%vprec(i,j)                = 0.0
       fluxes%lrunoff(i,j)              = 0.0
       fluxes%frunoff(i,j)              = 0.0
@@ -1408,8 +1409,8 @@ subroutine buoyancy_forcing_const(sfc_state, fluxes, day, dt, G, US, CS)
     do j=js,je ; do i=is,ie
       fluxes%evap(i,j)                 = 0.0
       fluxes%lprec(i,j)                = 0.0
-      fluxes%fprec(i,j)                = 0.0
       fluxes%seaice_melt(i,j)          = 0.0
+      fluxes%fprec(i,j)                = 0.0
       fluxes%vprec(i,j)                = 0.0
       fluxes%lrunoff(i,j)              = 0.0
       fluxes%frunoff(i,j)              = 0.0
@@ -1457,8 +1458,8 @@ subroutine buoyancy_forcing_linear(sfc_state, fluxes, day, dt, G, US, CS)
     do j=js,je ; do i=is,ie
       fluxes%evap(i,j)                 = 0.0
       fluxes%lprec(i,j)                = 0.0
-      fluxes%fprec(i,j)                = 0.0
       fluxes%seaice_melt(i,j)          = 0.0
+      fluxes%fprec(i,j)                = 0.0
       fluxes%vprec(i,j)                = 0.0
       fluxes%lrunoff(i,j)              = 0.0
       fluxes%frunoff(i,j)              = 0.0

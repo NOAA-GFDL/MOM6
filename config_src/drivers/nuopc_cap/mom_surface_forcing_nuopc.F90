@@ -456,6 +456,10 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     if (associated(IOB%lprec)) &
       fluxes%lprec(i,j) =  kg_m2_s_conversion * IOB%lprec(i-i0,j-j0) * G%mask2dT(i,j)
 
+    ! water flux due to sea ice and snow melt [kg/m2/s]
+    if (associated(IOB%seaice_melt)) &
+      fluxes%seaice_melt(i,j) = kg_m2_s_conversion * G%mask2dT(i,j) * IOB%seaice_melt(i-i0,j-j0)
+
     if (associated(IOB%fprec)) &
       fluxes%fprec(i,j) = kg_m2_s_conversion * IOB%fprec(i-i0,j-j0) * G%mask2dT(i,j)
 
@@ -490,10 +494,6 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     ! sea ice and snow melt heat flux [Q R Z T-1 ~> W/m2]
     if (associated(IOB%seaice_melt_heat)) &
       fluxes%seaice_melt_heat(i,j) = US%W_m2_to_QRZ_T * G%mask2dT(i,j) * IOB%seaice_melt_heat(i-i0,j-j0)
-
-    ! water flux due to sea ice and snow melt [kg/m2/s]
-    if (associated(IOB%seaice_melt)) &
-      fluxes%seaice_melt(i,j) = kg_m2_s_conversion * G%mask2dT(i,j) * IOB%seaice_melt(i-i0,j-j0)
 
     fluxes%latent(i,j) = 0.0
     ! notice minus sign since fprec is positive into the ocean

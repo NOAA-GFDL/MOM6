@@ -964,6 +964,7 @@ subroutine change_thickness_using_melt(ISS, G, US, time_step, fluxes, density_ic
     if ((ISS%hmask(i,j) == 1) .or. (ISS%hmask(i,j) == 2)) then
       ! first, zero out fluxes applied during previous time step
       if (associated(fluxes%lprec)) fluxes%lprec(i,j) = 0.0
+      if (associated(fluxes%seaice_melt)) fluxes%seaice_melt(i,j) = 0.0
       if (associated(fluxes%sens)) fluxes%sens(i,j) = 0.0
       if (associated(fluxes%frac_shelf_h)) fluxes%frac_shelf_h(i,j) = 0.0
       if (associated(fluxes%salt_flux)) fluxes%salt_flux(i,j) = 0.0

@@ -1033,21 +1033,17 @@ subroutine accumulate_net_input(fluxes, sfc_state, tv, dt, G, US, CS)
 
   FW_in(:,:) = 0.0
   if (associated(fluxes%evap)) then
-    if (associated(fluxes%lprec) .and. associated(fluxes%fprec)) then
+    if (associated(fluxes%lprec) .and. associated(fluxes%seaice_melt) .and. associated(fluxes%fprec)) then
       do j=js,je ; do i=is,ie
         FW_in(i,j) = dt*G%areaT(i,j)*(fluxes%evap(i,j) + &
-            (((fluxes%lprec(i,j) + fluxes%vprec(i,j)) + fluxes%lrunoff(i,j)) + &
+            ((((fluxes%lprec(i,j) + fluxes%seaice_melt) + fluxes%vprec(i,j)) + fluxes%lrunoff(i,j)) + &
               (fluxes%fprec(i,j) + fluxes%frunoff(i,j))))
       enddo ; enddo
     else
       call MOM_error(WARNING, &
-        "accumulate_net_input called with associated evap field, but no precip field.")
+        "accumulate_net_input called with associated evap field, but no precip or sea ice melt fields.")
     endif
   endif
-
-  if (associated(fluxes%seaice_melt)) then ; do j=js,je ; do i=is,ie
-    FW_in(i,j) = FW_in(i,j) + dt * G%areaT(i,j) * fluxes%seaice_melt(i,j)
-  enddo ; enddo ; endif
 
   salt_in(:,:) = 0.0 ; heat_in(:,:) = 0.0
   if (CS%use_temperature) then

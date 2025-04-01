@@ -74,7 +74,7 @@ subroutine MESO_buoyancy_forcing(sfc_state, fluxes, day, dt, G, US, CS)
 !  can be simply set to zero.  The net fresh water flux should probably be
 !  set in fluxes%evap and fluxes%lprec, with any salinity restoring
 !  appearing in fluxes%vprec, and the other water flux components
-!  (fprec, lrunoff and frunoff) left as arrays full of zeros.
+!  (fprec, lrunoff and frunoff, seaice_melt) left as arrays full of zeros.
 !  Evap is usually negative and precip is usually positive.  All heat fluxes
 !  are in W m-2 and positive for heat going into the ocean.  All fresh water
 !  fluxes are in kg m-2 s-1 and positive for water moving into the ocean.
@@ -98,8 +98,8 @@ subroutine MESO_buoyancy_forcing(sfc_state, fluxes, day, dt, G, US, CS)
   if (CS%use_temperature) then
     call safe_alloc_ptr(fluxes%evap, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%lprec, isd, ied, jsd, jed)
-    call safe_alloc_ptr(fluxes%fprec, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%seaice_melt, isd, ied, jsd, jed)
+    call safe_alloc_ptr(fluxes%fprec, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%lrunoff, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%frunoff, isd, ied, jsd, jed)
     call safe_alloc_ptr(fluxes%vprec, isd, ied, jsd, jed)
