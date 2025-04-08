@@ -2813,7 +2813,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   hz(1) = 0.0
   do K=2,nz
     hz(K) = hz(K-1) + dz(K-1)
-  end do
+  enddo
   hbl = MLD_Guess ! hbl is boundary layer depth.
   shape_func(:) = 0.0  ! initializing the entire shape_function array
 
@@ -2859,7 +2859,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
       ! This value should be small such as 0.01, or 0.001, result is not sensitive. It should not be 0.0
 
     endif
-  end do
+  enddo
 
   end subroutine kappa_eqdisc
 
@@ -4167,6 +4167,10 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                        "Coefficient used for ML diffusivity,  ", units="nondim", default=0.976)
   call get_param(param_file, mdl, "c2", CS%c2, &
                        "Coefficient used for ML diffusivity,  ", units="nondim", default=1.743)
+  !
+  !call get_param(param_file, mdl, "c1,c2", (CS%c1,CS%c2), &
+  !                     "Coefficient used for ML diffusivity,  ", units="nondim", default=(0.976,1.743))   
+  !
   call get_param(param_file, mdl, "c3", CS%c3, &
                        "Coefficient used for ML diffusivity,  ", units="nondim", default=1.551)
   call get_param(param_file, mdl, "c4", CS%c4, &
