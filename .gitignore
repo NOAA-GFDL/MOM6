@@ -19,3 +19,4 @@ Makefile.mkmf
 .testing/tc4/Makefile
 # macOS system files
 .DS_Store
+.vscode/
