@@ -40,21 +40,17 @@ contains
   integer :: i, j, k
 
   !$OMP parallel do default(shared)
-  do j=G%jsc,G%jec ; do i=G%isc,G%iec
-    Bdif_flx(i,j,1) = 0.0
-    Bdif_flx(i,j,GV%ke+1) = 0.0
-    do K=2,GV%ke
-      Bdif_flx(i,j,K) = - N2(i,j,K) * Kd(i,j,K)
-    enddo
-  enddo; enddo
+  Bdif_flx(:,:,1) = 0.0
+  Bdif_flx(:,:,GV%ke+1) = 0.0
+  do K=2,GV%ke ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
+    Bdif_flx(i,j,K) = - N2(i,j,K) * Kd(i,j,K)
+  enddo ; enddo; enddo
 
   if (present(Bdif_flx_dz) .and. present(dz)) then
     !$OMP parallel do default(shared)
-    do j=G%jsc,G%jec ; do i=G%isc,G%iec
-      do K=1,GV%ke
-        Bdif_flx_dz(i,j,k) = (Bdif_flx(i,j,K)+Bdif_flx(i,j,K+1))*dz(i,j,k)
-      enddo
-    enddo; enddo
+    do K=1,GV%ke ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
+      Bdif_flx_dz(i,j,k) = (Bdif_flx(i,j,K)+Bdif_flx(i,j,K+1))*dz(i,j,k)
+    enddo ; enddo; enddo
   endif
 
 end subroutine diagnoseKdWork
