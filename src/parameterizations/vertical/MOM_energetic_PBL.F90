@@ -170,9 +170,8 @@ type, public :: energetic_PBL_CS ; private
   real :: bflux_lower_cap, bflux_upper_cap ! Lower and upper cap for capping blfux while setting v0. 
   real, allocatable, dimension(:) :: shape_function ! shape function used in machine learned diffusivity [nondim]
   !/ Coefficients used in Machine learned diffusivity, Equations 6,7,10,11 in Sane et al. 2024
-  real :: c1, c2, c3, c4, c5, c6, c7, c8, c9  ! Non-dimensional constants
-  real :: c10, c11, c12, c13, c14, c15, c16   ! used in getting v0 and shape function [nondim]
-  real :: c17, c18, c19, c20, c21, c22, c23, c24   ! used in getting v0 and shape function [nondim]
+
+  real :: ML_c(24) ! Array of non-dimensional constants used in machine learned (ML) diffusivity [nondim]
 
   !/ Bottom boundary layer mixing related options
   real :: ePBL_BBL_effic     !< The efficiency of bottom boundary layer mixing via ePBL driven by
@@ -2748,15 +2747,15 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   p2 = min(p2,  8.0) ! capping p2 to 8.0 if greater than 8.0
   ! Empirical model to predict sm:
   ! F1 is solely function of p2
-  F = exp( (-p2-CS%c6)/ CS%c7 ) ! originally, F=(CS%c4/(CS%c5+exp((-p2-CS%c6)/CS%c7)))+CS%c8
-  F = CS%c5 + F
-  F = CS%c4 / F
-  F = F + CS%c8
+  F = exp( (-p2-CS%ML_c(16))/ CS%ML_c(7) ) ! originally, F=(CS%c4/(CS%c5+exp((-p2-CS%c6)/CS%c7)))+CS%c8
+  F = CS%ML_c(5) + F
+  F = CS%ML_c(4) / F
+  F = F + CS%ML_c(8)
   Fp1 = F*p1
   Fp1 = max(Fp1, 1E-05) ! an arbitrary small value to cap Fp1, result insensitive below that value
   F_I = 1.0 / ( Fp1 )
-  sm = CS%c2 + (CS%c3 * F_I)
-  sm = CS%c1 / sm
+  sm = CS%ML_c(20) + (CS%ML_c(3) * F_I)
+  sm = CS%ML_c(1) / sm
   sm = min(sm,0.7) ! makes sure sm is less than 0.7, true sm range is from 0.2 to 0.60
   sm = max(sm,0.1) ! makes sure sm is more than 0.1
   sm= sm * hbl ! peak of shape function in model vertical coordinate z, or peak of shape function in z coordinate
@@ -2802,8 +2801,8 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
   !   p_2 &= \frac{f}{\Omega},
   !   Where $a = -1$ for $B \leq 0$ and $a = 1$ for $B > 0$ to distinguish between 
   !  surface heating and cooling conditions. " 
-  ! p_3 = (CS%c11**2.0) / (p1-CS%c11), used to simplify calculation
-  ! p4 = (p1+CS%c10) + p3 , used to simplify calculation
+  ! p_3 = (CS%ML_c(11)**2.0) / (p1-CS%ML_c(11)), used to simplify calculation
+  ! p4 = (p1+CS%ML_c(10)) + p3 , used to simplify calculation
 
 
   if (B_flux <= CS%bflux_lower_cap) then
@@ -2832,12 +2831,12 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
     p_uf = ust_c * sqrt(absf_c)
     p_uf = 1.0 / p_uf
     p1 = -1.0 * ( p_uf * sqrt(abs(bflux_c)) )
-    p1_c11 = p1 - CS%c11
+    p1_c11 = p1 - CS%ML_c(11)
     p1_c11 = 1.0 / p1_c11 
-    p3 = (CS%c11**2.0) * p1_c11
-    p4 = (p1+CS%c10) + p3
+    p3 = (CS%ML_c(11)**2.0) * p1_c11
+    p4 = (p1+CS%ML_c(10)) + p3
     I_p4 = 1.0 / p4
-    v0_dummy = -CS%c9 * I_p4
+    v0_dummy = -CS%ML_c(9) * I_p4
 
   else ! surface cooling
   ! Equation 17 in Sane et al. 2024:
@@ -2848,13 +2847,13 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
     p_omega_I = 1.0 / CS%omega  !add p_omega_I, p_u, p_c14, p_b, p4_I
     p2 = absf_c * p_omega_I
     p_u = 1.0 / ust_c
-    p3 = CS%c12 * ( p_u * sqrt(abs(bflux_c) * p_omega_I) )
-    p_c14 = 1.0 / CS%c14
-    p4 = CS%c13 * exp(-p2 * p_c14) + CS%c15
+    p3 = CS%ML_c(12) * ( p_u * sqrt(abs(bflux_c) * p_omega_I) )
+    p_c14 = 1.0 / CS%ML_c(14)
+    p4 = CS%ML_c(13) * exp(-p2 * p_c14) + CS%ML_c(15)
     p_b = 1.0 / abs(bflux_c)
     p4 =  1 + (absf_c * p4 * ust_c**2.0) * p_b
     I_p4 = 1.0 / p4
-    v0_dummy  = (p3 * I_p4 ) + CS%c16
+    v0_dummy  = (p3 * I_p4 ) + CS%ML_c(16)
   endif
   
   v0_dummy = v0_dummy * ust_c ! v0_dummy = v0/u*, so it is multiplied by ust_c to get v0
@@ -2909,12 +2908,12 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
   if (bflux_c >= 0.0) then ! surface heating and neutral conditions
   ! Equation 19 in Sane et al. 2024:
   ! \frac{v_0}{u_*} = \frac{c_{17}}{ c_{18} p_1^3 + c_{19} p_1^2  + c_{20} }
-    v0_dummy = CS%c17 / ( ( CS%c18 * (p1**3.0) +  CS%c19* (p1**2.0) ) + CS%c20 )
+    v0_dummy = CS%ML_c(17) / ( ( CS%ML_c(18) * (p1**3.0) +  CS%ML_c(19)* (p1**2.0) ) + CS%ML_c(20) )
     
   else ! surface cooling
   ! Equation 20 in Sane et al. 2024:
   ! \frac{v_0}{u_*} = \frac{c_{21} p_1}{c_{22} + \frac{c_{23}}{p_1 ^2}}  + c_{24}
-    v0_dummy  = (CS%c21*p1 / (CS%c22 + (CS%c23/ p1**2.0)  ))  +  CS%c24 
+    v0_dummy  = (CS%ML_c(21)*p1 / (CS%ML_c(22) + (CS%ML_c(23)/ p1**2.0)  ))  +  CS%ML_c(24) 
   endif
   
   v0_dummy = v0_dummy * ust_c ! v0_dummy = v/u*, so it is multiplied by ust_c to get v0
@@ -4146,63 +4145,16 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                        units="m2 s-3", default=7.0E-07, scale=(US%m_to_L**2)*(US%T_to_s**3))
 
   ! The coefficients used for machine learned diffusivity
-  ! c1 to c8 used for sigma_m,  
-  call get_param(param_file, mdl, "c1", CS%c1, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.976)
-  call get_param(param_file, mdl, "c2", CS%c2, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=1.743)
-  call get_param(param_file, mdl, "c3", CS%c3, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=1.551)
-  call get_param(param_file, mdl, "c4", CS%c4, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.943)
-  call get_param(param_file, mdl, "c5", CS%c5, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.016)
-  call get_param(param_file, mdl, "c6", CS%c6, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.693)
-  call get_param(param_file, mdl, "c7", CS%c7, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.379)
-  call get_param(param_file, mdl, "c8", CS%c8, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=2.194)
+  ! c1 to c8 used for sigma_m, 9 to 11 v_0 surface heating
+  ! 12 to 16 v_0 surface cooling
+  ! 17 to 20 v_0h surface heating, 21 to 24 v_0h surface cooling
   
-  ! coefficients related to surface heating v_0, obtained using Genetic Programming
-  call get_param(param_file, mdl, "c9", CS%c9, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.1426)
-  call get_param(param_file, mdl, "c10", CS%c10, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.0434)
-  call get_param(param_file, mdl, "c11", CS%c11, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=1.80)
-
-  ! coefficients related to surface cooling v_0, obtained by empirical fitting
-  call get_param(param_file, mdl, "c12", CS%c12, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.098)
-  call get_param(param_file, mdl, "c13", CS%c13, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=45.0)
-  call get_param(param_file, mdl, "c14", CS%c14, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.35)
-  call get_param(param_file, mdl, "c15", CS%c15, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=3.29)
-  call get_param(param_file, mdl, "c16", CS%c16, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.0764)
-
-    ! coefficients related to surface heating v_0h, obtained using Genetic Programming
-  call get_param(param_file, mdl, "c12", CS%c17, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.104)
-  call get_param(param_file, mdl, "c13", CS%c18, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.863)
-  call get_param(param_file, mdl, "c14", CS%c19, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.15)
-  call get_param(param_file, mdl, "c15", CS%c20, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=1.255)
-
-  ! coefficients related to surface cooling v_0h, obtained by empirical fitting
-  call get_param(param_file, mdl, "c16", CS%c21, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.047)
-  call get_param(param_file, mdl, "c14", CS%c22, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.285)
-  call get_param(param_file, mdl, "c15", CS%c23, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.787)
-  call get_param(param_file, mdl, "c16", CS%c24, &
-                       "Coefficient used for ML diffusivity,  ", units="nondim", default=0.08)
+  call get_param(param_file, mdl, "ML_diffusivity_coeffs", CS%ML_c, &
+                       "Coefficient used for ML diffusivity 1 to 24,  ", units="nondim", &
+                       defaults=(/0.976, 1.743, 1.551, 0.943, 0.016, 0.693, &
+                                  0.379, 2.194, 0.1426,0.0434, 1.80, 0.098, &
+                                  45.0,  0.35,  3.29,  0.0764, 0.104, 0.863, &
+                                  0.15,  1.255, 0.047, 0.285,  0.787, 0.08 /))
 
   !/ options end for Machine Learning Equation Discovery
 
