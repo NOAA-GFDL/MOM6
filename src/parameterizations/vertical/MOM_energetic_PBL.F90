@@ -171,6 +171,7 @@ type, public :: energetic_PBL_CS ; private
   real, allocatable, dimension(:) :: shape_function ! shape function used in machine learned diffusivity [nondim]
   !/ Coefficients used in Machine learned diffusivity, Equations 6,7,10,11 in Sane et al. 2024
 
+
   real :: ML_c(24) ! Array of non-dimensional constants used in machine learned (ML) diffusivity [nondim]
 
   !/ Bottom boundary layer mixing related options
@@ -2747,14 +2748,14 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   p2 = min(p2,  8.0) ! capping p2 to 8.0 if greater than 8.0
   ! Empirical model to predict sm:
   ! F1 is solely function of p2
-  F = exp( (-p2-CS%ML_c(16))/ CS%ML_c(7) ) ! originally, F=(CS%c4/(CS%c5+exp((-p2-CS%c6)/CS%c7)))+CS%c8
+  F = exp( (-p2-CS%ML_c(6))/ CS%ML_c(7) ) ! originally, F=(CS%c4/(CS%c5+exp((-p2-CS%c6)/CS%c7)))+CS%c8
   F = CS%ML_c(5) + F
   F = CS%ML_c(4) / F
   F = F + CS%ML_c(8)
   Fp1 = F*p1
   Fp1 = max(Fp1, 1E-05) ! an arbitrary small value to cap Fp1, result insensitive below that value
   F_I = 1.0 / ( Fp1 )
-  sm = CS%ML_c(20) + (CS%ML_c(3) * F_I)
+  sm = CS%ML_c(2) + (CS%ML_c(3) * F_I)
   sm = CS%ML_c(1) / sm
   sm = min(sm,0.7) ! makes sure sm is less than 0.7, true sm range is from 0.2 to 0.60
   sm = max(sm,0.1) ! makes sure sm is more than 0.1
