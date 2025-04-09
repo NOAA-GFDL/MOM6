@@ -4146,16 +4146,16 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                        units="m2 s-3", default=7.0E-07, scale=(US%m_to_L**2)*(US%T_to_s**3))
 
   ! The coefficients used for machine learned diffusivity
-  ! c1 to c8 used for sigma_m, 9 to 11 v_0 surface heating
+  ! c1 to c8 used for sigma_m, 
+  !  9 to 11 v_0 surface heating
   ! 12 to 16 v_0 surface cooling
   ! 17 to 20 v_0h surface heating, 21 to 24 v_0h surface cooling
-  
   call get_param(param_file, mdl, "ML_diffusivity_coeffs", CS%ML_c, &
                        "Coefficient used for ML diffusivity 1 to 24,  ", units="nondim", &
-                       defaults=(/0.976, 1.743, 1.551, 0.943, 0.016, 0.693, &
-                                  0.379, 2.194, 0.1426,0.0434, 1.80, 0.098, &
+                       defaults=(/0.976, 1.743, 1.551, 0.943 , 0.016, 0.693, &
+                                  0.379, 2.194, 0.1426,0.0434, 1.80,  0.098, &
                                   45.0,  0.35,  3.29,  0.0764, 0.104, 0.863, &
-                                  0.15,  1.255, 0.047, 0.285,  0.787, 0.08 /))
+                                  0.15,  1.255, 0.047, 0.285 , 0.787, 0.08 /))
 
   !/ options end for Machine Learning Equation Discovery
 
