@@ -63,7 +63,7 @@ type vbf_CS
   real :: Kd_add !< spatially uniform additional diapycnal diffusivity at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
                  !! a diagnostic for this diffusivity is not yet included, but this makes it straightforward to add
 
-  ! Diagnostic IDs{
+  !>@{ Diagnostic IDs
   integer :: id_Bdif     = -1, id_Bdif_salt  = -1, id_Bdif_temp  = -1
   integer :: id_Bdif_dz  = -1, id_Bdif_salt_dz  = -1, id_Bdif_temp_dz  = -1
   integer :: id_Bdif_idz  = -1, id_Bdif_salt_idz  = -1, id_Bdif_temp_idz  = -1
@@ -84,7 +84,7 @@ type vbf_CS
   integer :: id_Bdif_lowmode  = -1, id_Bdif_dz_lowmode  = -1, id_Bdif_idz_lowmode  = -1, id_Bdif_idV_lowmode  = -1
   integer :: id_Bdif_Niku  = -1, id_Bdif_dz_Niku  = -1, id_Bdif_idz_Niku  = -1, id_Bdif_idV_Niku  = -1
   integer :: id_Bdif_itides  = -1, id_Bdif_dz_itides  = -1, id_Bdif_idz_itides  = -1, id_Bdif_idV_itides  = -1
-  !}
+  !>@}
 
   logical :: do_bflx_salt = .false.  !< Logical flag to indicate if N2_salt should be computed
   logical :: do_bflx_temp = .false.  !< Logical flag to indicate if N2_temp should be computed

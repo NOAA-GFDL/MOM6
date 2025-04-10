@@ -56,40 +56,6 @@ public set_diffusivity_end
 ! their mks counterparts with notation like "a velocity [Z T-1 ~> m s-1]".  If the units
 ! vary with the Boussinesq approximation, the Boussinesq variant is given first.
 
-!> This structure has memory for used in calculating diagnostics of diffusivity
-type diffusivity_diags
-  real, pointer, dimension(:,:,:) :: &
-    N2_3d     => NULL(), & !< squared buoyancy frequency at interfaces [T-2 ~> s-2]
-    Kd_user   => NULL(), & !< user-added diffusivity at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    Kd_BBL    => NULL(), & !< BBL diffusivity at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    Kd_Work   => NULL(), & !< layer integrated work by diapycnal mixing [R Z3 T-3 ~> W m-2]
-    Kd_Work_added   => NULL(), & !< layer integrated work by added mixing [R Z3 T-3 ~> W m-2]
-    maxTKE    => NULL(), & !< energy required to entrain to h_max [H Z2 T-3 ~> m3 s-3 or W m-2]
-    Kd_bkgnd  => NULL(), & !< Background diffusivity at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    Kv_bkgnd  => NULL(), & !< Viscosity from background diffusivity at interfaces [H Z T-1 ~> m2 s-1 or Pa s]
-    KT_extra  => NULL(), & !< Double diffusion diffusivity for temperature [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    KS_extra  => NULL(), & !< Double diffusion diffusivity for salinity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    drho_rat  => NULL(), & !< The density difference ratio used in double diffusion [nondim].
-    Kd_leak   => NULL(), & !< internal tides leakage diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    Kd_quad   => NULL(), & !< internal tides bottom drag diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    Kd_itidal => NULL(), & !< internal tides wave drag diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    Kd_Froude => NULL(), & !< internal tides high Froude diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    Kd_slope  => NULL(), & !< internal tides critical slopes diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    prof_leak   => NULL(), & !< vertical profile for leakage [H-1 ~> m-1 or m2 kg-1]
-    prof_quad   => NULL(), & !< vertical profile for bottom drag [H-1 ~> m-1 or m2 kg-1]
-    prof_itidal => NULL(), & !< vertical profile for wave drag [H-1 ~> m-1 or m2 kg-1]
-    prof_Froude => NULL(), & !< vertical profile for Froude drag [H-1 ~> m-1 or m2 kg-1]
-    prof_slope  => NULL()    !< vertical profile for critical slopes [H-1 ~> m-1 or m2 kg-1]
-  real, pointer, dimension(:,:) ::  bbl_thick => NULL(), & !< bottom boundary layer thickness [H ~> m or kg m-2]
-                                    kbbl => NULL() !< top of bottom boundary layer
-
-  real, pointer, dimension(:,:,:) :: TKE_to_Kd => NULL()
-                          !< conversion rate (~1.0 / (G_Earth + dRho_lay)) between TKE
-                          !! dissipated within a layer and Kd in that layer
-                          !! [H Z T-1 / H Z2 T-3 = T2 Z-1 ~> s2 m-1]
-
-end type diffusivity_diags
-
 !> This control structure contains parameters for MOM_set_diffusivity.
 type, public :: set_diffusivity_CS ; private
   logical :: initialized = .false. !< True if this control structure has been initialized.
@@ -231,6 +197,40 @@ type, public :: set_diffusivity_CS ; private
   !>@}
 
 end type set_diffusivity_CS
+
+!> This structure has memory for used in calculating diagnostics of diffusivity
+type diffusivity_diags
+  real, pointer, dimension(:,:,:) :: &
+    N2_3d     => NULL(), & !< squared buoyancy frequency at interfaces [T-2 ~> s-2]
+    Kd_user   => NULL(), & !< user-added diffusivity at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    Kd_BBL    => NULL(), & !< BBL diffusivity at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    Kd_Work   => NULL(), & !< layer integrated work by diapycnal mixing [R Z3 T-3 ~> W m-2]
+    Kd_Work_added   => NULL(), & !< layer integrated work by added mixing [R Z3 T-3 ~> W m-2]
+    maxTKE    => NULL(), & !< energy required to entrain to h_max [H Z2 T-3 ~> m3 s-3 or W m-2]
+    Kd_bkgnd  => NULL(), & !< Background diffusivity at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    Kv_bkgnd  => NULL(), & !< Viscosity from background diffusivity at interfaces [H Z T-1 ~> m2 s-1 or Pa s]
+    KT_extra  => NULL(), & !< Double diffusion diffusivity for temperature [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    KS_extra  => NULL(), & !< Double diffusion diffusivity for salinity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    drho_rat  => NULL(), & !< The density difference ratio used in double diffusion [nondim].
+    Kd_leak   => NULL(), & !< internal tides leakage diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    Kd_quad   => NULL(), & !< internal tides bottom drag diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    Kd_itidal => NULL(), & !< internal tides wave drag diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    Kd_Froude => NULL(), & !< internal tides high Froude diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    Kd_slope  => NULL(), & !< internal tides critical slopes diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+    prof_leak   => NULL(), & !< vertical profile for leakage [H-1 ~> m-1 or m2 kg-1]
+    prof_quad   => NULL(), & !< vertical profile for bottom drag [H-1 ~> m-1 or m2 kg-1]
+    prof_itidal => NULL(), & !< vertical profile for wave drag [H-1 ~> m-1 or m2 kg-1]
+    prof_Froude => NULL(), & !< vertical profile for Froude drag [H-1 ~> m-1 or m2 kg-1]
+    prof_slope  => NULL()    !< vertical profile for critical slopes [H-1 ~> m-1 or m2 kg-1]
+  real, pointer, dimension(:,:) ::  bbl_thick => NULL(), & !< bottom boundary layer thickness [H ~> m or kg m-2]
+                                    kbbl => NULL() !< top of bottom boundary layer
+
+  real, pointer, dimension(:,:,:) :: TKE_to_Kd => NULL()
+                          !< conversion rate (~1.0 / (G_Earth + dRho_lay)) between TKE
+                          !! dissipated within a layer and Kd in that layer
+                          !! [H Z T-1 / H Z2 T-3 = T2 Z-1 ~> s2 m-1]
+
+end type diffusivity_diags
 
 !>@{ CPU time clocks
 integer :: id_clock_kappaShear, id_clock_CVMix_ddiff
