@@ -22,7 +22,8 @@ use MOM_diag_mediator,       only : diag_grid_storage, diag_grid_storage_init, d
 use MOM_diag_mediator,       only : diag_copy_diag_to_storage, diag_copy_storage_to_diag
 use MOM_diag_mediator,       only : diag_save_grids, diag_restore_grids
 use MOM_diagnose_mld,        only : diagnoseMLDbyDensityDifference, diagnoseMLDbyEnergy
-use MOM_diagnose_kdwork,     only : diagnoseKdWork
+use MOM_diagnose_kdwork,     only : vbf_CS, KdWork_register_diags, kdwork_diagnostics
+use MOM_diagnose_kdwork,     only : Allocate_VBF_CS, Deallocate_VBF_CS
 use MOM_diapyc_energy_req,   only : diapyc_energy_req_init, diapyc_energy_req_end
 use MOM_diapyc_energy_req,   only : diapyc_energy_req_calc, diapyc_energy_req_test, diapyc_energy_req_CS
 use MOM_CVMix_conv,          only : CVMix_conv_init, CVMix_conv_cs
@@ -179,20 +180,14 @@ type, public :: diabatic_CS ; private
   real    :: MLD_En_vals(3)          !< Energy values for energy mixed layer diagnostics [R Z3 T-2 ~> J m-2]
   real    :: ref_h_mld = 0.0         !< The depth of the "surface"  density used in a difference mixed based
                                      !! MLD calculation [Z ~> m].
-  logical :: Use_Kd_Work_or_N2_diag = .false.  !< Logical flag to indicate if any N2 or Kd_work diagnostics are on.
-  logical :: do_bflx_salt = .false.  !< Logical flag to indicate if N2_salt should be computed
-  logical :: do_bflx_temp = .false.  !< Logical flag to indicate if N2_temp should be computed
+  logical :: Use_KdWork_diag = .false.  !< Logical flag to indicate if any Kd_work diagnostics are on.
+  logical :: Use_N2_diag = .false.   !< Logical flag to indicate if any N2 diagnostics are on.
 
   !>@{ Diagnostic IDs
   integer :: id_ea       = -1, id_eb       = -1 ! used by layer diabatic
   integer :: id_ea_t     = -1, id_eb_t     = -1, id_ea_s   = -1, id_eb_s     = -1
   integer :: id_Kd_heat  = -1, id_Kd_salt  = -1, id_Kd_int = -1, id_Kd_ePBL  = -1
   integer :: id_Tdif     = -1, id_Sdif     = -1, id_Tadv   = -1, id_Sadv     = -1
-  integer :: id_Bdif     = -1, id_Bdif_salt  = -1, id_Bdif_temp  = -1
-  integer :: id_Bdif_dz  = -1, id_Bdif_salt_dz  = -1, id_Bdif_temp_dz  = -1
-  integer :: id_Bdif_ePBL  = -1, id_Bdif_dz_ePBL  = -1
-  integer :: id_Bdif_ddiff_temp  = -1, id_Bdif_ddiff_salt  = -1
-  integer :: id_Bdif_dz_ddiff_temp  = -1, id_Bdif_dz_ddiff_salt  = -1
   integer :: id_N2_dd    = -1, id_N2_salt_dd = -1, id_N2_temp_dd
   ! These are handles to diagnostics related to the mixed layer properties.
   integer :: id_MLD_003 = -1, id_MLD_0125 = -1, id_MLD_user = -1, id_mlotstsq = -1
@@ -247,6 +242,8 @@ type, public :: diabatic_CS ; private
   type(diapyc_energy_req_CS),   pointer :: diapyc_en_rec_CSp     => NULL() !< Control structure for a child module
   type(oda_incupd_CS),          pointer :: oda_incupd_CSp        => NULL() !< Control structure for a child module
   type(int_tide_CS),            pointer :: int_tide_CSp          => NULL() !< Control structure for a child module
+  type(vbf_CS),                 pointer :: VBF                   => NULL() !< Control structure for a child module
+
 
   type(bulkmixedlayer_CS) :: bulkmixedlayer         !< Bulk mixed layer control structure
   type(CVMix_conv_CS) :: CVMix_conv                 !< CVMix convection control structure
@@ -261,22 +258,6 @@ type, public :: diabatic_CS ; private
 
   type(time_type), pointer :: Time !< Pointer to model time (needed for sponges)
 end type diabatic_CS
-
-!> This structure has memory for used in calculating diagnostics of diffusivity
-type bflx_diags
-  real, pointer, dimension(:,:,:) :: &
-    Kd_int => NULL(), &  !< diapycnal diffusivity of interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    N2_salt => NULL(), & !< Salinity contribution to squared buoyancy frequency at interfaces [T-2 ~> s-2]
-    N2_temp => NULL(), & !< Temperature contribution to squared buoyancy frequency at interfaces [T-2 ~> s-2]
-    Bflx_salt => NULL(), & !< Salinity contribution to buoyancy flux at interfaces
-                           !! [H Z T-3 ~> m2 s-3 or kg m-1 s-3 = W m-3]
-    Bflx_temp => NULL(), & !< Temperature contribution to buoyancy flux at interfaces
-                           !! [H Z T-3 ~> m2 s-3 or kg m-1 s-3 = W m-3]
-    Bflx_salt_dz => NULL(), & !< Salinity contribution to integral of buoyancy flux over layer
-                              !! [H Z2 T-3 ~> m3 s-3 or kg m-1 s-3 = W m-2]
-    Bflx_temp_dz => NULL() !< Temperature contribution to integral of buoyancy flux over layer
-                           !! [H Z2 T-3 ~> m3 s-3 or kg m-1 s-3 = W m-2]
-end type bflx_diags
 
 !>@{ clock ids
 integer :: id_clock_entrain, id_clock_mixedlayer, id_clock_set_diffusivity
@@ -668,10 +649,10 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     call MOM_state_chksum("before set_diffusivity", u, v, h, G, GV, US, haloshift=CS%halo_TS_diff)
   if (CS%double_diffuse) then
     call set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, CS%optics, visc, dt, Kd_int, G, GV, US, &
-                         CS%set_diff_CSp, Kd_extra_T=Kd_extra_T, Kd_extra_S=Kd_extra_S)
+                         CS%set_diff_CSp, CS%VBF, Kd_extra_T=Kd_extra_T, Kd_extra_S=Kd_extra_S)
   else
     call set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, CS%optics, visc, dt, Kd_int, G, GV, US, &
-                         CS%set_diff_CSp)
+                         CS%set_diff_CSp, CS%VBF)
   endif
   call cpu_clock_end(id_clock_set_diffusivity)
   if (showCallTree) call callTree_waypoint("done with set_diffusivity (diabatic)")
@@ -893,6 +874,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     if (associated(visc%h_ML)) call convert_MLD_to_ML_thickness(BLD, h, visc%h_ML, tv, G, GV)
     if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
     if (associated(visc%sfc_buoy_flx)) visc%sfc_buoy_flx(:,:) = SkinBuoyFlux(:,:)
+    if (associated(CS%VBF%Kd_ePBL)) CS%VBF%Kd_ePBL(:,:,:) = Kd_ePBL(:,:,:)
 
     ! Find the vertical distances across layers, which may have been modified by the net surface flux
     call thickness_to_dz(h, tv, dz, G, GV, US)
@@ -1206,7 +1188,9 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     KPP_NLTscalar, & ! KPP non-local transport for scalars [nondim]
     KPP_buoy_flux, & ! KPP forcing buoyancy flux [L2 T-3 ~> m2 s-3]
     Tdif_flx, & ! diffusive diapycnal heat flux across interfaces [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
-    Sdif_flx    ! diffusive diapycnal salt flux across interfaces [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
+    Sdif_flx, & ! diffusive diapycnal salt flux across interfaces [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
+    N2_salt, &  !< Salinity contribution to squared buoyancy frequency at interfaces [T-2 ~> s-2]
+    N2_temp     !< Temperature contribution to squared buoyancy frequency at interfaces [T-2 ~> s-2]
 
   real, dimension(SZI_(G),SZJ_(G)) :: &
     U_star, &    ! The friction velocity [Z T-1 ~> m s-1].
@@ -1228,8 +1212,6 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     drhodT, &   ! Local change in density w.r.t. temperature using model EOS & state [R C-1 ~> kg m-3 degC-1]
     dSpV_dT, &  ! Partial derivative of specific volume with temperature [R-1 C-1 ~> m3 kg-1 degC-1]
     dSpV_dS     ! Partial derivative of specific volume with salinity [R-1 S-1 ~> m3 kg-1 ppt-1]
-
-  type(bflx_diags)  :: bf ! structure with arrays of available buoyancy flux diags
 
   real :: h_neglect    ! A thickness that is so small it is usually lost
                        ! in roundoff and can be neglected [H ~> m or kg m-2]
@@ -1277,6 +1259,9 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
   ! For all other diabatic subroutines, the averaging window should be the entire diabatic timestep
   call enable_averages(dt, Time_end, CS%diag)
 
+  ! BGR
+  call Allocate_VBF_CS(G, GV, CS%VBF)
+
   if (CS%use_geothermal) then
     call cpu_clock_begin(id_clock_geothermal)
     call geothermal_in_place(h, tv, dt, G, GV, US, CS%geothermal, halo=CS%halo_TS_diff)
@@ -1313,10 +1298,10 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     call MOM_state_chksum("before set_diffusivity", u, v, h, G, GV, US, haloshift=CS%halo_TS_diff)
   if (CS%double_diffuse) then
     call set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, CS%optics, visc, dt, Kd_heat, G, GV, US, &
-                         CS%set_diff_CSp, Kd_extra_T=Kd_extra_T, Kd_extra_S=Kd_extra_S)
+                         CS%set_diff_CSp, CS%VBF, Kd_extra_T=Kd_extra_T, Kd_extra_S=Kd_extra_S)
   else
     call set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, CS%optics, visc, dt, Kd_heat, G, GV, US, &
-                         CS%set_diff_CSp)
+                         CS%set_diff_CSp, CS%VBF)
   endif
   call cpu_clock_end(id_clock_set_diffusivity)
   if (showCallTree) call callTree_waypoint("done with set_diffusivity (diabatic)")
@@ -1591,19 +1576,23 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
   ! target grids for vertical remapping may need to be regenerated.
   call diag_update_remap_grids(CS%diag)
 
+  ! Set diffusivities for VBF diagnostics if enabled
+  if (associated(CS%VBF%Kd_ePBL)) CS%VBF%Kd_ePbl = Kd_ePBL
+  if (associated(CS%VBF%Kd_salt)) CS%VBF%Kd_temp = Kd_heat
+  if (associated(CS%VBF%Kd_temp)) CS%VBF%Kd_salt = Kd_salt
+
   ! Diagnose the diapycnal diffusivities and other related quantities.
   if (CS%id_Kd_heat > 0) call post_data(CS%id_Kd_heat, Kd_heat, CS%diag)
   if (CS%id_Kd_salt > 0) call post_data(CS%id_Kd_salt, Kd_salt, CS%diag)
   if (CS%id_Kd_ePBL > 0) call post_data(CS%id_Kd_ePBL, Kd_ePBL, CS%diag)
   if (CS%id_Kd_int > 0) then
-    allocate(bf%Kd_int(isd:ied,jsd:jed,nz+1), source=0.0)
     if (CS%double_diffuse .or. CS%useKPP) then
+      ! Using this as a work array might cause confusion.
       do K=1,nz ; do j=js,je ; do i=is,ie
-        bf%Kd_int(i,j,k) = min(Kd_heat(i,j,k), Kd_salt(i,j,k))
+        Kd_heat(i,j,k) = min(Kd_heat(i,j,k), Kd_salt(i,j,k))
       enddo ; enddo ; enddo
     endif
-    call post_data(CS%id_Kd_int, bf%Kd_int, CS%diag)
-    if (associated(bf%Kd_int)) deallocate(bf%Kd_int) !Unnecessary if?
+    call post_data(CS%id_Kd_int, Kd_heat, CS%diag)
   endif
 
   if (CS%id_ea_t > 0) call post_data(CS%id_ea_t, ent_t(:,:,1:nz), CS%diag)
@@ -1633,22 +1622,9 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     if (CS%id_Sdif > 0) call post_data(CS%id_Sdif, Sdif_flx, CS%diag)
   endif
 
-  if (CS%Use_Kd_Work_or_N2_diag) then
-
-     ! We could be more selective about allocating both of these, but the logic gets messy
-    allocate(bf%N2_salt(isd:ied,jsd:jed,nz+1), source=0.0)
-    allocate(bf%N2_temp(isd:ied,jsd:jed,nz+1), source=0.0)
-
-    ! Only allocate these as necessary
-    if (CS%do_bflx_salt) &
-      allocate(bf%Bflx_salt(isd:ied,jsd:jed,nz+1), source=0.0)
-    if (CS%do_bflx_temp) &
-      allocate(bf%Bflx_temp(isd:ied,jsd:jed,nz+1), source=0.0)
-    if (CS%id_Bdif_dz>0 .or. CS%id_Bdif_salt_dz>0 .or. CS%id_Bdif_dz_ePBL>0 .or. CS%id_Bdif_dz_ddiff_salt>0) &
-      allocate(bf%Bflx_salt_dz(isd:ied,jsd:jed,nz), source=0.0)
-    if (CS%id_Bdif_dz>0 .or. CS%id_Bdif_temp_dz>0 .or. CS%id_Bdif_dz_ePBL>0 .or. CS%id_Bdif_dz_ddiff_temp>0) &
-      allocate(bf%Bflx_temp_dz(isd:ied,jsd:jed,nz), source=0.0)
-
+  if (CS%Use_KdWork_diag .or. CS%Use_N2_diag) then
+    N2_salt(:,:,:) = 0.0
+    N2_temp(:,:,:) = 0.0
     !Compute N2 and don't mask negatives here
     EOSdom(:) = EOS_domain(G%HI)
     if (nonBous) then
@@ -1668,8 +1644,8 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
           call calculate_specific_vol_derivs(T_i, S_i, p_i, dSpV_dT, dSpV_dS, tv%eqn_of_state, EOSdom)
           do i=is,ie
             I_dzval = 1.0 / (dz_neglect + 0.5*(dz(i,j,k-1) + dz(i,j,k)))
-            bf%N2_salt(i,j,K) = (tv%S(i,j,k-1) - tv%S(i,j,k)) * (dSpv_dS(i) * (alt_H_to_pres * I_dzval))
-            bf%N2_temp(i,j,K) = (tv%T(i,j,k-1) - tv%T(i,j,k)) * (dSpV_dT(i) * (alt_H_to_pres * I_dzval))
+            N2_salt(i,j,K) = (tv%S(i,j,k-1) - tv%S(i,j,k)) * (dSpv_dS(i) * (alt_H_to_pres * I_dzval))
+            N2_temp(i,j,K) = (tv%T(i,j,k-1) - tv%T(i,j,k)) * (dSpV_dT(i) * (alt_H_to_pres * I_dzval))
           enddo
         enddo
       enddo
@@ -1690,72 +1666,21 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
           call calculate_density_derivs(T_i, S_i, p_i, dRhodT, dRhodS, tv%eqn_of_state, EOSdom)
           do i=is,ie
             I_h = 1.0 / (h_neglect + 0.5*(h(i,j,k-1) + h(i,j,k)))
-            bf%N2_salt(i,j,K) = -(tv%S(i,j,k-1) - tv%S(i,j,k)) * (dRhodS(i) * (g_rho0 * I_h))
-            bf%N2_temp(i,j,K) = -(tv%T(i,j,k-1) - tv%T(i,j,k)) * (dRhodT(i) * (g_rho0 * I_h))
+            N2_salt(i,j,K) = -(tv%S(i,j,k-1) - tv%S(i,j,k)) * (dRhodS(i) * (g_rho0 * I_h))
+            N2_temp(i,j,K) = -(tv%T(i,j,k-1) - tv%T(i,j,k)) * (dRhodT(i) * (g_rho0 * I_h))
           enddo
         enddo
       enddo
     endif
-    if (CS%id_N2_dd>0)      call post_data(CS%id_N2_dd, bf%N2_salt(:,:,:)+bf%N2_temp(:,:,:), CS%diag)
-    if (CS%id_N2_salt_dd>0) call post_data(CS%id_N2_salt_dd, bf%N2_salt, CS%diag)
-    if (CS%id_N2_temp_dd>0) call post_data(CS%id_N2_temp_dd, bf%N2_temp, CS%diag)
+    if (CS%id_N2_dd>0)      call post_data(CS%id_N2_dd, N2_salt(:,:,:)+N2_temp(:,:,:), CS%diag)
+    if (CS%id_N2_salt_dd>0) call post_data(CS%id_N2_salt_dd, N2_salt, CS%diag)
+    if (CS%id_N2_temp_dd>0) call post_data(CS%id_N2_temp_dd, N2_temp, CS%diag)
 
-    ! Compute total fluxes
-    if (CS%id_Bdif_dz>0 .or. CS%id_Bdif_salt_dz>0 .or. CS%id_Bdif_temp_dz>0) then ! Doing vertical integrals
-      if (CS%id_Bdif_salt_dz>0 .or. CS%id_Bdif_dz>0 .or. CS%id_Bdif_salt>0 .or. CS%id_Bdif>0) &
-        call diagnoseKdWork(G, GV, US, bf%N2_salt, Kd_salt, bf%Bflx_salt, dz = dz, Bdif_flx_dz=bf%Bflx_salt_dz)
-      if (CS%id_Bdif_temp_dz>0 .or. CS%id_Bdif_dz>0 .or. CS%id_Bdif_temp>0 .or. CS%id_Bdif>0) &
-        call diagnoseKdWork(G, GV, US, bf%N2_temp, Kd_heat, bf%Bflx_temp, dz = dz, Bdif_flx_dz=bf%Bflx_temp_dz)
-    elseif (CS%id_Bdif>0 .or. CS%id_Bdif_salt>0 .or. CS%id_Bdif_temp>0) then ! Not doing vertical integrals
-      if (CS%id_Bdif_salt>0 .or. CS%id_Bdif>0) &
-        call diagnoseKdWork(G, GV, US, bf%N2_salt, Kd_salt, bf%Bflx_salt)
-      if (CS%id_Bdif_temp>0 .or. CS%id_Bdif>0) &
-        call diagnoseKdWork(G, GV, US, bf%N2_temp, Kd_heat, bf%Bflx_temp)
+    if (CS%Use_KdWork_diag) then
+       call KdWork_Diagnostics(G,GV,US,CS%diag,CS%VBF,N2_salt,N2_temp,dz)
     endif
-    ! Post total fluxes
-    if (CS%id_Bdif_salt>0) call post_data(CS%id_Bdif_salt, bf%Bflx_salt, CS%diag)
-    if (CS%id_Bdif_temp>0) call post_data(CS%id_Bdif_temp, bf%Bflx_temp, CS%diag)
-    if (CS%id_Bdif>0) call post_data(CS%id_Bdif, bf%Bflx_temp(:,:,:)+bf%Bflx_salt(:,:,:), CS%diag)
-    if (CS%id_Bdif_salt_dz>0) call post_data(CS%id_Bdif_salt_dz, bf%Bflx_salt_dz, CS%diag)
-    if (CS%id_Bdif_temp_dz>0) call post_data(CS%id_Bdif_temp_dz, bf%Bflx_temp_dz, CS%diag)
-    if (CS%id_Bdif_dz>0) call post_data(CS%id_Bdif_dz, bf%Bflx_temp_dz(:,:,:)+bf%Bflx_salt_dz(:,:,:), CS%diag)
 
-    ! Compute ePBL fluxes
-    if (CS%id_Bdif_dz_ePBL>0) then
-      call diagnoseKdWork(G, GV, US, bf%N2_salt, Kd_ePBL, bf%Bflx_salt, dz = dz, Bdif_flx_dz=bf%Bflx_salt_dz)
-      call diagnoseKdWork(G, GV, US, bf%N2_temp, Kd_ePBL, bf%Bflx_temp, dz = dz, Bdif_flx_dz=bf%Bflx_temp_dz)
-    elseif (CS%id_Bdif_ePBL>0) then
-      call diagnoseKdWork(G, GV, US, bf%N2_salt, Kd_ePBL, bf%Bflx_salt)
-      call diagnoseKdWork(G, GV, US, bf%N2_temp, Kd_ePBL, bf%Bflx_temp)
-    endif
-    ! Post ePBL fluxes
-    if (CS%id_Bdif_ePBL>0) call post_data(CS%id_Bdif_ePBL, bf%Bflx_temp(:,:,:)+bf%Bflx_salt(:,:,:), CS%diag)
-    if (CS%id_Bdif_dz_ePBL>0) call post_data(CS%id_Bdif_dz_ePBL, bf%Bflx_temp_dz(:,:,:)+bf%Bflx_salt_dz(:,:,:), CS%diag)
-
-    ! Compute double diffusion fluxes
-    if (CS%id_Bdif_dz_ddiff_temp>0) then
-      call diagnoseKdWork(G, GV, US, bf%N2_temp, Kd_extra_T, bf%Bflx_temp, dz = dz, Bdif_flx_dz=bf%Bflx_temp_dz)
-    elseif (CS%id_Bdif_ddiff_temp>0) then
-      call diagnoseKdWork(G, GV, US, bf%N2_temp, Kd_extra_T, bf%Bflx_temp)
-    endif
-    if (CS%id_Bdif_dz_ddiff_salt>0) then
-      call diagnoseKdWork(G, GV, US, bf%N2_salt, Kd_extra_S, bf%Bflx_salt, dz = dz, Bdif_flx_dz=bf%Bflx_salt_dz)
-    elseif (CS%id_Bdif_ddiff_salt>0) then
-      call diagnoseKdWork(G, GV, US, bf%N2_salt, Kd_extra_S, bf%Bflx_salt)
-    endif
-    ! Post double diffusion fluxes
-    if (CS%id_Bdif_ddiff_temp>0) call post_data(CS%id_Bdif_ddiff_temp, bf%Bflx_temp, CS%diag)
-    if (CS%id_Bdif_dz_ddiff_temp>0) call post_data(CS%id_Bdif_dz_ddiff_temp, bf%Bflx_temp_dz, CS%diag)
-    if (CS%id_Bdif_ddiff_salt>0) call post_data(CS%id_Bdif_ddiff_salt, bf%Bflx_salt, CS%diag)
-    if (CS%id_Bdif_dz_ddiff_salt>0) call post_data(CS%id_Bdif_dz_ddiff_salt, bf%Bflx_salt_dz, CS%diag)
-
-    if (associated(bf%N2_salt)) deallocate(bf%N2_salt)
-    if (associated(bf%N2_temp)) deallocate(bf%N2_temp)
-    if (associated(bf%Bflx_salt)) deallocate(bf%Bflx_salt)
-    if (associated(bf%Bflx_temp)) deallocate(bf%Bflx_temp)
-    if (associated(bf%Bflx_salt_dz)) deallocate(bf%Bflx_salt_dz)
-    if (associated(bf%Bflx_temp_dz)) deallocate(bf%Bflx_temp_dz)
-    !call diagnoseKdWork_Set_Diffusivity(G, GV, US, N2_salt, N2_temp, DiffusivityCS)
+    call deallocate_VBF_CS(CS%VBF)
 
   endif
 
@@ -2077,10 +2002,10 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
     call MOM_state_chksum("before set_diffusivity", u, v, h, G, GV, US, haloshift=CS%halo_TS_diff)
   if (CS%double_diffuse) then
     call set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, CS%optics, visc, dt, Kd_int, G, GV, US, &
-                         CS%set_diff_CSp, Kd_lay=Kd_lay, Kd_extra_T=Kd_extra_T, Kd_extra_S=Kd_extra_S)
+                         CS%set_diff_CSp, CS%VBF, Kd_lay=Kd_lay, Kd_extra_T=Kd_extra_T, Kd_extra_S=Kd_extra_S)
   else
     call set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, CS%optics, visc, dt, Kd_int, G, GV, US, &
-                         CS%set_diff_CSp, Kd_lay=Kd_lay)
+                         CS%set_diff_CSp, CS%VBF, Kd_lay=Kd_lay)
   endif
   call cpu_clock_end(id_clock_set_diffusivity)
   if (showCallTree) call callTree_waypoint("done with set_diffusivity (diabatic)")
@@ -3428,6 +3353,7 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
           Time, "Advective diapycnal salnity flux across interfaces", &
           units="psu m s-1", conversion=US%S_to_ppt*GV%H_to_m*US%s_to_T)
     endif
+
     !! Lots of diagnostics related to computing buoyancy fluxes due to diffusion and isolating the processes.
     CS%id_N2_dd = register_diag_field('ocean_model',"N2_diabatic", diag%axesTi, &
         Time, "Squared buoyancy frequency diagnosed after diffusion applied in thermodynamic timestep.", &
@@ -3438,74 +3364,11 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
     CS%id_N2_salt_dd = register_diag_field('ocean_model',"N2_salt_diabatic", diag%axesTi, &
          Time, "Squared buoyancy frequency due to salinity stratification diagnosed after diffusion applied "//&
          "in thermodynamic timestep.", "s-2", conversion=US%s_to_T**2)
-    if (CS%id_N2_dd>0 .or. CS%id_N2_temp_dd>0 .or. CS%id_N2_salt_dd>0) CS%Use_Kd_Work_or_N2_diag = .true.
-    ! Buoyancy Fluxes
-    CS%id_Bdif = register_diag_field('ocean_model',"Bflx_dia_diff", diag%axesTi, &
-        Time, "Diffusive diapycnal buoyancy flux across interfaces", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-    CS%id_Bdif_salt = register_diag_field('ocean_model',"Bflx_salt_dia_diff", diag%axesTi, &
-        Time, "Salinity contribution to diffusive diapycnal buoyancy flux across interfaces", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-    CS%id_Bdif_temp = register_diag_field('ocean_model',"Bflx_temp_dia_diff", diag%axesTi, &
-        Time, "Temperature contribution to diffusive diapycnal buoyancy flux across interfaces", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-    CS%id_Bdif_ePBL = register_diag_field('ocean_model',"Bflx_dia_diff_ePBL", diag%axesTi, &
-        Time, "Diffusive diapycnal buoyancy flux across interfaces due to ePBL", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-    CS%id_Bdif_ddiff_temp = register_diag_field('ocean_model',"Bflx_dia_diff_ddiff_heat", diag%axesTi, &
-        Time, "Diffusive diapycnal buoyancy flux across interfaces due to double diffusion of heat", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-    CS%id_Bdif_ddiff_salt = register_diag_field('ocean_model',"Bflx_dia_diff_ddiff_salt", diag%axesTi, &
-        Time, "Diffusive diapycnal buoyancy flux across interfaces due to double diffusion of salt", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-    ! The following logic might be streamlined, but the repetitive calls should not do any harm
-    if (CS%id_Bdif>0 .or. CS%id_Bdif_ePBL>0) then
-      CS%Use_Kd_Work_or_N2_diag = .true.
-      CS%do_bflx_salt = .true.
-      CS%do_bflx_temp = .true.
-    endif
-    if (CS%id_Bdif_salt>0 .or. CS%id_Bdif_ddiff_salt>0) then
-      CS%Use_Kd_Work_or_N2_diag = .true.
-      CS%do_bflx_salt = .true.
-    endif
-    if (CS%id_Bdif_temp>0 .or. CS%id_Bdif_ddiff_temp>0) then
-      CS%Use_Kd_Work_or_N2_diag = .true.
-      CS%do_bflx_temp = .true.
-    endif
-    ! Layer integral buoyancy Fluxes
-    CS%id_Bdif_dz = register_diag_field('ocean_model',"Bflx_dia_diff_dz", diag%axesTl, &
-        Time, "Layer integrated diffusive diapycnal buoyancy flux.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-    CS%id_Bdif_salt_dz = register_diag_field('ocean_model',"Bflx_salt_dia_diff_dz", diag%axesTl, &
-        Time, "Salinity contribution to layer integrated diffusive diapycnal buoyancy flux.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-    CS%id_Bdif_temp_dz = register_diag_field('ocean_model',"Bflx_temp_dia_diff_dz", diag%axesTl, &
-        Time, "Temperature contribution to layer integrated diffusive diapycnal buoyancy flux.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-    CS%id_Bdif_dz_ePBL = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ePBL", diag%axesTl, &
-        Time, "Layer integrated diffusive diapycnal buoyancy flux due to ePBL.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-    CS%id_Bdif_dz_ddiff_temp = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ddiff_heat", diag%axesTl, &
-        Time, "Layer integrated diffusive diapycnal buoyancy flux due to double diffusion of heat.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-    CS%id_Bdif_dz_ddiff_salt = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ddiff_salt", diag%axesTl, &
-        Time, "Layer integrated diffusive diapycnal buoyancy flux due to double diffusion of salt.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-    ! The following logic might be streamlined, but the repetitive calls should not do any harm
-    if (CS%id_Bdif_dz>0 .or. CS%id_Bdif_dz_ePBL>0) then
-      CS%Use_Kd_Work_or_N2_diag = .true.
-      CS%do_bflx_salt = .true.
-      CS%do_bflx_temp = .true.
-    endif
-    if (CS%id_Bdif_salt_dz>0 .or. CS%id_Bdif_dz_ddiff_salt>0) then
-      CS%Use_Kd_Work_or_N2_diag = .true.
-      CS%do_bflx_salt = .true.
-    endif
-    if (CS%id_Bdif_temp_dz>0 .or. CS%id_Bdif_dz_ddiff_temp>0) then
-      CS%Use_Kd_Work_or_N2_diag = .true.
-      CS%do_bflx_temp = .true.
-    endif
+    if (CS%id_N2_dd>0 .or. CS%id_N2_temp_dd>0 .or. CS%id_N2_salt_dd>0) CS%Use_N2_diag = .true.
+
+    call KdWork_register_diags(Time, G,GV,US,diag,CS%VBF,CS%Use_KdWork_diag)
     !!end diagnostics related to computing buoyancy fluxes due to diffusion and isolating the processes.
+
     CS%id_MLD_003 = register_diag_field('ocean_model', 'MLD_003', diag%axesT1, Time, &
         'Mixed layer depth (delta rho = 0.03)', units='m', conversion=US%Z_to_m, &
         cmor_field_name='mlotst', cmor_long_name='Ocean Mixed Layer Thickness Defined by Sigma T', &
