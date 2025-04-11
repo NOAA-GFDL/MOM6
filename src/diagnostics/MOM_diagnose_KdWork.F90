@@ -288,7 +288,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   endif
   ! Post bkgnd fluxes
   if (VBF%id_Bdif_bkgnd>0) call post_data(VBF%id_Bdif_bkgnd, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_bkgnd>0) call post_data(VBF%id_Bdif_dz_bkgnd, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_dz_bkgnd>0) &
+     call post_data(VBF%id_Bdif_dz_bkgnd, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
   if (VBF%id_Bdif_idz_bkgnd>0) call post_data(VBF%id_Bdif_idz_bkgnd, work2d, diag)
   if (VBF%id_Bdif_idV_bkgnd>0) call post_data(VBF%id_Bdif_idV_bkgnd, work, diag)
 
@@ -416,7 +417,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   endif
   ! Post Kd_itidal fluxes
   if (VBF%id_Bdif_itidal>0) call post_data(VBF%id_Bdif_itidal, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_itidal>0) call post_data(VBF%id_Bdif_dz_itidal, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_dz_itidal>0) &
+    call post_data(VBF%id_Bdif_dz_itidal, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
   if (VBF%id_Bdif_idz_itidal>0) call post_data(VBF%id_Bdif_idz_itidal, work2d, diag)
   if (VBF%id_Bdif_idV_itidal>0) call post_data(VBF%id_Bdif_idV_itidal, work, diag)
 
@@ -443,7 +445,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   endif
   ! Post Kd_Froude fluxes
   if (VBF%id_Bdif_Froude>0) call post_data(VBF%id_Bdif_Froude, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_Froude>0) call post_data(VBF%id_Bdif_dz_Froude, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_dz_Froude>0) &
+    call post_data(VBF%id_Bdif_dz_Froude, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
   if (VBF%id_Bdif_idz_Froude>0) call post_data(VBF%id_Bdif_idz_Froude, work2d, diag)
   if (VBF%id_Bdif_idV_Froude>0) call post_data(VBF%id_Bdif_idV_Froude, work, diag)
 
@@ -470,7 +473,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   endif
   ! Post Kd_slope fluxes
   if (VBF%id_Bdif_slope>0) call post_data(VBF%id_Bdif_slope, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_slope>0) call post_data(VBF%id_Bdif_dz_slope, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_dz_slope>0) &
+    call post_data(VBF%id_Bdif_dz_slope, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
   if (VBF%id_Bdif_idz_slope>0) call post_data(VBF%id_Bdif_idz_slope, work2d, diag)
   if (VBF%id_Bdif_idV_slope>0) call post_data(VBF%id_Bdif_idV_slope, work, diag)
 
@@ -497,7 +501,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   endif
   ! Post Kd_lowmode fluxes
   if (VBF%id_Bdif_lowmode>0) call post_data(VBF%id_Bdif_lowmode, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_lowmode>0) call post_data(VBF%id_Bdif_dz_lowmode, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_dz_lowmode>0) &
+    call post_data(VBF%id_Bdif_dz_lowmode, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
   if (VBF%id_Bdif_idz_lowmode>0) call post_data(VBF%id_Bdif_idz_lowmode, work2d, diag)
   if (VBF%id_Bdif_idV_lowmode>0) call post_data(VBF%id_Bdif_idV_lowmode, work, diag)
 
@@ -551,7 +556,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   endif
   ! Post Kd_itides fluxes
   if (VBF%id_Bdif_itides>0) call post_data(VBF%id_Bdif_itides, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_itides>0) call post_data(VBF%id_Bdif_dz_itides, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_dz_itides>0) &
+    call post_data(VBF%id_Bdif_dz_itides, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
   if (VBF%id_Bdif_idz_itides>0) call post_data(VBF%id_Bdif_idz_itides, work2d, diag)
   if (VBF%id_Bdif_idV_itides>0) call post_data(VBF%id_Bdif_idV_itides, work, diag)
 
@@ -944,7 +950,6 @@ subroutine KdWork_init(Time, G,GV,US,diag,VBF,Use_KdWork_diag)
       VBF%id_Bdif_idz_ddiff_salt>0 .or. VBF%id_Bdif_idz_leak>0 .or. VBF%id_Bdif_idz_quad>0 .or. &
       VBF%id_Bdif_idz_itidal>0 .or. VBF%id_Bdif_idz_Froude>0 .or. VBF%id_Bdif_idz_slope>0 .or. &
       VBF%id_Bdif_idz_lowmode>0 .or. VBF%id_Bdif_idz_Niku>0 .or. VBF%id_Bdif_idz_itides>0 ) then
-    print*,'yes...',VBF%id_Bdif_dz,VBF%id_Bdif_salt_dz,VBF%id_Bdif_dz_BBL,VBF%id_Bdif_dz_ePBL
     VBF%do_bflx_salt_dz = .true.
   endif
   if (VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_temp_dz>0 .or. VBF%id_Bdif_dz_BBL>0 .or. &
@@ -980,7 +985,6 @@ subroutine KdWork_init(Time, G,GV,US,diag,VBF,Use_KdWork_diag)
       VBF%do_bflx_temp_dz) then
     VBF%do_bflx_temp = .true.
   endif
-
 
   Use_KdWork_diag = (VBF%do_bflx_salt .or. VBF%do_bflx_temp .or. VBF%do_bflx_salt_dz .or. VBF%do_bflx_temp_dz)
 
