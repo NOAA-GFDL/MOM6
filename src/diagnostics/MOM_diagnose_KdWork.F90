@@ -590,7 +590,7 @@ subroutine diagnoseKdWork(G, GV, N2, Kd, Bdif_flx, dz, Bdif_flx_dz)
   if (present(Bdif_flx_dz) .and. present(dz)) then
     !$OMP parallel do default(shared)
     do K=1,GV%ke ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
-      Bdif_flx_dz(i,j,k) = (Bdif_flx(i,j,K)+Bdif_flx(i,j,K+1))*dz(i,j,k)
+      Bdif_flx_dz(i,j,k) = 0.5*(Bdif_flx(i,j,K)+Bdif_flx(i,j,K+1))*dz(i,j,k)
     enddo ; enddo; enddo
   endif
 
