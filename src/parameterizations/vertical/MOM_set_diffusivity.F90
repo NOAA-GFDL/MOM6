@@ -644,7 +644,7 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
       enddo ; enddo ; endif
       if (associated (VBF%Kd_slope)) then ; do K=1,nz+1 ; do i=is,ie
         VBF%Kd_slope(i,j,K) = Kd_slope_2d(i,K)
-      enddo ; enddo ; endif         
+      enddo ; enddo ; endif
 
       if (CS%id_prof_leak > 0) then ; do k=1,nz; do i=is,ie
         dd%prof_leak(i,j,k) = prof_leak_2d(i,k)

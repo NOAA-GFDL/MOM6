@@ -625,6 +625,12 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
   is   = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec ; nz = GV%ke
   Isq  = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
   dz_neglect = GV%dZ_subroundoff ; dz_neglect2 = dz_neglect*dz_neglect
+  h_neglect = GV%H_subroundoff
+
+  nonBous = .not.(GV%Boussinesq .or. GV%semi_Boussinesq)
+  g_Rho0  = GV%g_Earth_Z_T2 / GV%H_to_RZ
+  H_to_pres = GV%H_to_RZ * GV%g_Earth
+  alt_H_to_pres = H_to_pres * US%L_to_Z**2 * GV%Z_to_H
 
   Kd_heat(:,:,:) = 0.0 ; Kd_salt(:,:,:) = 0.0
 
