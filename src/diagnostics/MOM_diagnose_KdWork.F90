@@ -20,7 +20,8 @@ public vbf_CS
 public kdwork_diagnostics
 public Allocate_VBF_CS
 public Deallocate_VBF_CS
-public KdWork_register_diags
+public KdWork_init
+public KdWork_end
 
 !> This structure has memory for used in calculating diagnostics of diffusivity
 !! many of the diffusivity diagnostics are copies of other 3d arrays.  It could
@@ -691,7 +692,7 @@ subroutine Deallocate_VBF_CS(VBF)
 end subroutine Deallocate_VBF_CS
 
 !> Handles all KdWork diagnostics and flags which calculations should be done.
-subroutine KdWork_register_diags(Time, G,GV,US,diag,VBF,Use_KdWork_diag)
+subroutine KdWork_init(Time, G,GV,US,diag,VBF,Use_KdWork_diag)
   type(time_type), target                :: Time             !< model time
   type(ocean_grid_type),   intent(in)    :: G        !< ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV       !< ocean vertical grid structure
@@ -943,6 +944,7 @@ subroutine KdWork_register_diags(Time, G,GV,US,diag,VBF,Use_KdWork_diag)
       VBF%id_Bdif_idz_ddiff_salt>0 .or. VBF%id_Bdif_idz_leak>0 .or. VBF%id_Bdif_idz_quad>0 .or. &
       VBF%id_Bdif_idz_itidal>0 .or. VBF%id_Bdif_idz_Froude>0 .or. VBF%id_Bdif_idz_slope>0 .or. &
       VBF%id_Bdif_idz_lowmode>0 .or. VBF%id_Bdif_idz_Niku>0 .or. VBF%id_Bdif_idz_itides>0 ) then
+    print*,'yes...',VBF%id_Bdif_dz,VBF%id_Bdif_salt_dz,VBF%id_Bdif_dz_BBL,VBF%id_Bdif_dz_ePBL
     VBF%do_bflx_salt_dz = .true.
   endif
   if (VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_temp_dz>0 .or. VBF%id_Bdif_dz_BBL>0 .or. &
@@ -982,7 +984,15 @@ subroutine KdWork_register_diags(Time, G,GV,US,diag,VBF,Use_KdWork_diag)
 
   Use_KdWork_diag = (VBF%do_bflx_salt .or. VBF%do_bflx_temp .or. VBF%do_bflx_salt_dz .or. VBF%do_bflx_temp_dz)
 
-end subroutine KdWork_register_diags
+end subroutine KdWork_init
+
+!> Deallocates control structrue
+subroutine KdWork_end(VBF)
+  type (vbf_CS), pointer,  intent(inout) :: VBF      !< Vertical buoyancy flux structure
+
+  if (associated(VBF)) deallocate(VBF)
+
+end subroutine KdWork_end
 
 !> \namespace mom_diagnose_kdwork
 !!

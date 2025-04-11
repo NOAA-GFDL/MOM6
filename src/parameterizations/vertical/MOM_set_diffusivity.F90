@@ -384,7 +384,7 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
   if ((CS%double_diffusion) .and. (CS%id_KS_extra > 0)) &
     allocate(dd%KS_extra(isd:ied,jsd:jed,nz+1), source=0.0)
   if (CS%id_R_rho > 0) allocate(dd%drho_rat(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (CS%id_Kd_BBL > 0 .or. VBF%id_Bdif_dz_BBL>0 .or. VBF%id_Bdif_BBL>0) &
+  if (CS%id_Kd_BBL > 0 .or. associated(VBF%Kd_BBL)) &
     allocate(dd%Kd_BBL(isd:ied,jsd:jed,nz+1), source=0.0)
 
   if (CS%id_Kd_bkgnd > 0) allocate(dd%Kd_bkgnd(isd:ied,jsd:jed,nz+1), source=0.)
