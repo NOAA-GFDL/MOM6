@@ -27,7 +27,7 @@ implicit none ; private
 type, public :: VarMix_CS
   logical :: initialized = .false. !< True if this control structure has been initialized.
   logical :: use_variable_mixing  !< If true, use the variable mixing.
-  logical :: use_gradient_model   !< If true, use the gradient (Khani) model (Khani & Dawson, 2023).
+  logical :: use_gradient_model   !< If true, use the gradient (Khani) model (Khani & Dawson, JAMES 2023).
   logical :: Resoln_scaling_used  !< If true, a resolution function is used somewhere to scale
                                   !! away one of the viscosities or diffusivities when the
                                   !! deformation radius is well resolved.
@@ -841,7 +841,7 @@ end subroutine calc_Eady_growth_rate_2D
 
 !> The original calc_slope_function() that calculated slopes using
 !! interface positions only, not accounting for density variations.
-!! Computes UH_grad and VH_grad for gradient (Khani) model (Khani & Dawson, 2023)
+!! Computes UH_grad and VH_grad for gradient (Khani) model (Khani & Dawson, JAMES 2023)
 subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh)
   type(ocean_grid_type),                       intent(inout) :: G  !< Ocean grid structure
   type(verticalGrid_type),                     intent(in)    :: GV !< Vertical grid structure
@@ -924,7 +924,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh)
     ! enddo
   endif
 
-  ! To set length scale for gradient model (Khani & Dawson, 2023)
+  ! To set length scale for gradient (Khani) model (Khani & Dawson, JAMES 2023)
   ! To set the length scale based on the deformation radius, use wave_speed to
   ! calculate the first-mode gravity wave speed and then blend the equatorial
   ! and midlatitude deformation radii, using calc_resoln_function as a template.
