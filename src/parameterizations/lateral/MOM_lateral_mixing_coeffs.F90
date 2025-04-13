@@ -988,7 +988,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh)
       Hup = 2.*h(i+1,j,k)*h(i+1,j,k-1) / (h(i+1,j,k) + h(i+1,j,k-1) + h_neglect)
       H_geom = sqrt(Hdn*Hup)
       !N2 = GV%g_prime(k) / (GV%H_to_Z * max(Hdn, Hup, CS%h_min_N2))
-      S2N2_u_local(I,j,k) = (H_geom * S2) * (GV%g_prime(k) / max(Hdn, Hup, CS%h_min_N2)
+      S2N2_u_local(I,j,k) = (H_geom * S2) * (GV%g_prime(k) / max(Hdn, Hup, CS%h_min_N2) )
       gradUH = U_xH_x(I,j) + 0.25*(U_yH_y(I,j)+U_yH_y(I,j-1)+U_yH_y(I+1,j)+U_yH_y(I+1,j-1))
     enddo ; enddo
     do J=js-1,je ; do i=is,ie
