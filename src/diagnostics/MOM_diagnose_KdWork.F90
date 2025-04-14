@@ -191,7 +191,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz, work3d_l, diag)
   endif
@@ -235,7 +235,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_ePBL>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_ePBL, work3d_l, diag)
   endif
@@ -275,7 +275,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_BBL>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_BBL, work3d_l, diag)
   endif
@@ -315,7 +315,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_KS>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_KS, work3d_l, diag)
   endif
@@ -355,7 +355,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_bkgnd>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_bkgnd, work3d_l, diag)
   endif
@@ -442,7 +442,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_leak>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_leak, work3d_l, diag)
   endif
@@ -482,7 +482,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_quad>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_quad, work3d_l, diag)
   endif
@@ -522,7 +522,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_itidal>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k)+VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k)+VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_itidal, work3d_l, diag)
   endif
@@ -562,7 +562,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_Froude>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_Froude, work3d_l, diag)
   endif
@@ -602,7 +602,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_slope>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_slope, work3d_l, diag)
   endif
@@ -642,7 +642,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_lowmode>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_lowmode, work3d_l, diag)
   endif
@@ -682,7 +682,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_Niku>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_Niku, work3d_l, diag)
   endif
@@ -722,7 +722,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   if (VBF%id_Bdif_dz_itides>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_itides, work3d_l, diag)
   endif
