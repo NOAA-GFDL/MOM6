@@ -130,11 +130,11 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     ! Do Salt
     if (VBF%id_Bdif_salt_dz>0 .or. VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_salt>0 .or. VBF%id_Bdif>0 .or. &
         VBF%id_Bdif_idz>0 .or. VBF%id_Bdif_salt_idz>0 .or. VBF%id_Bdif_idV>0 .or. VBF%id_Bdif_salt_idV>0) &
-      call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_salt, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+      call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_salt, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
     ! Do Temp
     if (VBF%id_Bdif_temp_dz>0 .or. VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_temp>0 .or. VBF%id_Bdif>0 .or. &
         VBF%id_Bdif_idz>0 .or. VBF%id_Bdif_temp_idz>0 .or. VBF%id_Bdif_idV>0 .or. VBF%id_Bdif_temp_idV>0) &
-       call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_temp, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+       call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_temp, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_temp_idz>0 .or. VBF%id_Bdif_idz>0) then
       work2d_temp(:,:) = 0.0
       do k = 1,nz
@@ -145,7 +145,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work_temp = 0.0
       do k = 1,nz
         work_temp = work_temp + global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
     if (VBF%id_Bdif_salt_idz>0 .or. VBF%id_Bdif_idz>0) then
@@ -158,7 +158,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work_salt = 0.0
       do k = 1,nz
         work_salt = work_salt + global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
     work = work_temp + work_salt
@@ -186,8 +186,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute ePBL fluxes
   if (VBF%id_Bdif_dz_ePBL>0.or.VBF%id_Bdif_idz_ePBL>0.or.VBF%id_Bdif_idV_ePBL>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ePBL, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ePBL, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ePBL, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ePBL, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_ePBL>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -198,7 +198,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_ePBL>0) then
@@ -213,8 +213,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute BBL fluxes
   if (VBF%id_Bdif_dz_BBL>0.or.VBF%id_Bdif_idz_BBL>0.or.VBF%id_Bdif_idV_BBL>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_BBL, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_BBL, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_BBL, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_BBL, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_BBL>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -225,7 +225,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_BBL>0) then
@@ -240,8 +240,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute Kappa Shear fluxes
   if (VBF%id_Bdif_dz_KS>0.or.VBF%id_Bdif_idz_KS>0.or.VBF%id_Bdif_idV_KS>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_KS, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_KS, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_KS, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_KS, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_KS>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -252,7 +252,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_KS>0) then
@@ -267,8 +267,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute bkgnd fluxes
   if (VBF%id_Bdif_dz_bkgnd>0.or.VBF%id_Bdif_idz_bkgnd>0.or.VBF%id_Bdif_idV_bkgnd>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_bkgnd, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_bkgnd, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_bkgnd, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_bkgnd, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_bkgnd>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -279,7 +279,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_ePBL>0) then
@@ -295,7 +295,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute double diffusion fluxes
   if (VBF%id_Bdif_dz_ddiff_temp>0.or.VBF%id_Bdif_idz_ddiff_temp>0.or.VBF%id_Bdif_idV_ddiff_temp>0) then
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ddiff_T, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ddiff_T, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_ddiff_temp>0) then
       work2d_temp(:,:) = 0.0
       do k = 1,nz
@@ -306,14 +306,14 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work_temp = 0.0
       do k = 1,nz
         work_temp = work_temp + global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_ddiff_temp>0) then
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ddiff_T, VBF%Bflx_temp)
   endif
   if (VBF%id_Bdif_dz_ddiff_salt>0.or.VBF%id_Bdif_idz_ddiff_salt>0.or.VBF%id_Bdif_idV_ddiff_salt>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ddiff_S, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ddiff_S, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
     if (VBF%id_Bdif_idz_ddiff_salt>0) then
       work2d_salt(:,:) = 0.0
       do k = 1,nz
@@ -324,7 +324,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work_salt = 0.0
       do k = 1,nz
         work_salt = work_salt + global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_ddiff_salt>0) then
@@ -342,8 +342,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute Kd_leak fluxes
   if (VBF%id_Bdif_dz_leak>0.or.VBF%id_Bdif_idz_leak>0.or.VBF%id_Bdif_idV_leak>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_leak, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_leak, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_leak, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_leak, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_leak>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -354,7 +354,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_leak>0) then
@@ -369,8 +369,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute Kd_quad fluxes
   if (VBF%id_Bdif_dz_quad>0.or.VBF%id_Bdif_idz_quad>0.or.VBF%id_Bdif_idV_quad>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_quad, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_quad, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_quad, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_quad, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_quad>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -381,7 +381,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_quad>0) then
@@ -396,8 +396,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute Kd_itidal fluxes
   if (VBF%id_Bdif_dz_itidal>0.or.VBF%id_Bdif_idz_itidal>0.or.VBF%id_Bdif_idV_itidal>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itidal, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itidal, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itidal, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itidal, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_itidal>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -408,7 +408,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_itidal>0) then
@@ -424,8 +424,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute Kd_Froude fluxes
   if (VBF%id_Bdif_dz_Froude>0.or.VBF%id_Bdif_idz_Froude>0.or.VBF%id_Bdif_idV_Froude>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Froude, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Froude, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Froude, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Froude, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_Froude>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -436,7 +436,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_Froude>0) then
@@ -452,8 +452,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute Kd_slope fluxes
   if (VBF%id_Bdif_dz_slope>0.or.VBF%id_Bdif_idz_slope>0.or.VBF%id_Bdif_idV_slope>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_slope, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_slope, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_slope, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_slope, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_slope>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -464,7 +464,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_slope>0) then
@@ -480,8 +480,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute Kd_lowmode fluxes
   if (VBF%id_Bdif_dz_lowmode>0.or.VBF%id_Bdif_idz_lowmode>0.or.VBF%id_Bdif_idV_lowmode>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_lowmode, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_lowmode, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_lowmode, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_lowmode, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_lowmode>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -492,7 +492,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_lowmode>0) then
@@ -508,8 +508,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute Kd_Niku fluxes
   if (VBF%id_Bdif_dz_Niku>0 .or. VBF%id_Bdif_idz_Niku>0 .or. VBF%id_Bdif_idV_Niku>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Niku, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Niku, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Niku, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Niku, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_Niku>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -520,7 +520,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_Niku>0) then
@@ -535,8 +535,8 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   ! Compute Kd_itides fluxes
   if (VBF%id_Bdif_dz_itides>0 .or. VBF%id_Bdif_idz_itides>0 .or. VBF%id_Bdif_idV_itides>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itides, VBF%Bflx_salt, dz = dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itides, VBF%Bflx_temp, dz = dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itides, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itides, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_itides>0) then
       work2d(:,:) = 0.0
       do k = 1,nz
@@ -547,7 +547,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       work = 0.0
       do k = 1,nz
         work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
       enddo
     endif
   elseif (VBF%id_Bdif_itides>0) then
