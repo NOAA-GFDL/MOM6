@@ -2883,7 +2883,7 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
   real :: ust_c    ! capped ustar [Z T-1 ~> m s-1]
   real :: ust_c_I    ! Inverse of capped ustar [Z-1 T ~> m-1 s]
 
-  real :: p1 p_a, p_a_I ! nondimensional numbers [nondim]
+  real :: p1, p_a, p_a_I ! nondimensional numbers [nondim]
   ! from Sane et al. 2024: 
   ! " p_1 &= \frac{a}{u_*} \frac{|Bh|^(1/3)}
   !   Where $a = -1$ for $B \leq 0$ and $a = 1$ for $B > 0$ to distinguish between 
