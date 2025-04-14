@@ -3384,6 +3384,7 @@ subroutine energetic_PBL_get_MLD(CS, MLD, G, US, m_to_MLD_units)
 
   scale = 1.0 ; if (present(m_to_MLD_units)) scale = US%Z_to_m * m_to_MLD_units
 
+  MLD(:,:) = 0.0  ! This ensures that the halos have appropriate values for land.
   do j=G%jsc,G%jec ; do i=G%isc,G%iec
     MLD(i,j) = scale*CS%ML_depth(i,j)
   enddo ; enddo
