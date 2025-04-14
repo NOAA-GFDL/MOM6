@@ -2858,7 +2858,7 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
   endif
   
   v0_dummy = v0_dummy * ust_c ! v0_dummy = v0/u*, so it is multiplied by ust_c to get v0
-  v0_dummy = max(v0_dummy,CS%v0_lower_cap)  ! CS%v0_lower_cap
+  v0_dummy = max(v0_dummy,CS%v0_lower_cap)  
   v0_dummy = min(v0_dummy,0.1) ! kept for safety, but has never hit this cap. 
 
   ! v0_lower_cap has been set to 0.0001 as data below that values does not exist in the training
@@ -2883,7 +2883,7 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
   real :: ust_c    ! capped ustar [Z T-1 ~> m s-1]
   real :: ust_c_I    ! Inverse of capped ustar [Z-1 T ~> m-1 s]
 
-  real :: p1 ! nondimensional numbers [nondim]
+  real :: p1 p_a, p_a_I ! nondimensional numbers [nondim]
   ! from Sane et al. 2024: 
   ! " p_1 &= \frac{a}{u_*} \frac{|Bh|^(1/3)}
   !   Where $a = -1$ for $B \leq 0$ and $a = 1$ for $B > 0$ to distinguish between 
@@ -2907,19 +2907,24 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
   ! setting v0_dummy here:
 
   if (bflux_c >= 0.0) then ! surface heating and neutral conditions
-  ! Equation 19 in Sane et al. 2024:
-  ! \frac{v_0}{u_*} = \frac{c_{17}}{ c_{18} p_1^3 + c_{19} p_1^2  + c_{20} }
-    v0_dummy = CS%ML_c(17) / ( ( CS%ML_c(18) * (p1**3.0) +  CS%ML_c(19)* (p1**2.0) ) + CS%ML_c(20) )
-    
+    ! Equation 19 in Sane et al. 2024:
+    ! \frac{v_0}{u_*} = \frac{c_{17}}{ c_{18} p_1^3 + c_{19} p_1^2  + c_{20} }
+    p_a = ( CS%ML_c(18) * (p1**3.0) +  CS%ML_c(19)* (p1**2.0) ) + CS%ML_c(20)
+    p_a_I = 1.0 / p_a
+    v0_dummy = CS%ML_c(17) * p_a_I
+
   else ! surface cooling
-  ! Equation 20 in Sane et al. 2024:
-  ! \frac{v_0}{u_*} = \frac{c_{21} p_1}{c_{22} + \frac{c_{23}}{p_1 ^2}}  + c_{24}
-    v0_dummy  = (CS%ML_c(21)*p1 / (CS%ML_c(22) + (CS%ML_c(23)/ p1**2.0)  ))  +  CS%ML_c(24) 
+    ! Equation 20 in Sane et al. 2024:
+    ! \frac{v_0}{u_*} = \frac{c_{21} p_1}{c_{22} + \frac{c_{23}}{p_1 ^2}}  + c_{24}
+    p_a = 1.0 / p1
+    p_a = CS%ML_c(22) + (CS%ML_c(23) * (p_a**2.0))
+    p_a_I = 1.0 / p_a 
+    v0_dummy  = (CS%ML_c(21)*p1 * p_a_I )  +  CS%ML_c(24)
   endif
   
   v0_dummy = v0_dummy * ust_c ! v0_dummy = v/u*, so it is multiplied by ust_c to get v0
-  v0_dummy = max(v0_dummy,CS%v0_lower_cap)  ! CS%v0_lower_cap
-  v0_dummy = min(v0_dummy,0.1) ! kept for safety, but has never hit this cap. 
+  v0_dummy = max(v0_dummy,CS%v0_lower_cap)  
+  v0_dummy = min(v0_dummy,0.1) ! kept for safety, but never hits this cap. 
 
   ! v0_lower_cap has been set to 0.0001 as data below that values does not exist in the training
   ! solution was tested for lower cap of 0.00001 and was found to be insensitive. 
