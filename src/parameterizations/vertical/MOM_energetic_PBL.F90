@@ -4120,15 +4120,16 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
   ! flag for using shape function from equation discovery - machine learning
 
    call get_param(param_file, mdl, "Equation_Discovery_shape", CS%eqdisc, &
-                 "flag for activating equation discovery for sf", &
+                 "flag for activating equation for shape function" // &
+                 "that uses forcing to change its structure."
                  units="nondim", default=.false.)
 
    call get_param(param_file, mdl, "Equation_Discovery_velocity", CS%eqdisc_v0, &
-                   "flag for activating equation discovery for velocity scale", &
+                   "flag for activating Machine Learned equation discovery for velocity scale", &
                    units="nondim", default=.false.)
    
    call get_param(param_file, mdl, "Equation_Discovery_velocity_h", CS%eqdisc_v0h, &
-                   "flag for activating equation discovery for velocity scale with h as input", &
+                   "flag for activating Machine Learned equation discovery for velocity scale with h as input", &
                    units="nondim", default=.false.)
 
   ! sets a  lower cap for abs_f (Coriolis parameter) required in equation for v_0. 
