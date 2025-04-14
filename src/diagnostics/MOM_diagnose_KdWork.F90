@@ -116,10 +116,14 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
                               intent(in)    :: dz      !< Grid spacing [Z ~> m]
 
   ! Work arrays for computing buoyancy flux integrals
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: work3d_i
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: work3d_l
   real, dimension(SZI_(G),SZJ_(G)) :: work2d, work2d_salt, work2d_temp
   real :: work, work_salt, work_temp
 
-  integer :: k, nz
+  integer :: i, j, k, nz, isc, iec, jsc, jec
+
+  isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec ;
 
   nz = GV%ke
 
@@ -137,9 +141,9 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
        call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_temp, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_temp_idz>0 .or. VBF%id_Bdif_idz>0) then
       work2d_temp(:,:) = 0.0
-      do k = 1,nz
-        work2d_temp(:,:) = work2d_temp(:,:) + VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d_temp(i,j) = work2d_temp(i,j) + VBF%Bflx_temp_dz(i,j,k)
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_temp_idV>0 .or. VBF%id_Bdif_idV>0) then
       work_temp = 0.0
@@ -150,9 +154,9 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     endif
     if (VBF%id_Bdif_salt_idz>0 .or. VBF%id_Bdif_idz>0) then
       work2d_salt(:,:) = 0.0
-      do k = 1,nz
-        work2d_salt(:,:) = work2d_salt(:,:) + VBF%Bflx_salt_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d_salt(i,j) = work2d_salt(i,j) + VBF%Bflx_salt_dz(i,j,k)
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_salt_idV>0 .or. VBF%id_Bdif_idV>0) then
       work_salt = 0.0
@@ -162,7 +166,9 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
       enddo
     endif
     work = work_temp + work_salt
-    work2d = work2d_temp(:,:) + work2d_salt(:,:)
+    do j = jsc,jec ; do i = isc,iec
+      work2d(i,j) = work2d_temp(i,j) + work2d_salt(i,j)
+    enddo ; enddo
   elseif (VBF%id_Bdif>0 .or. VBF%id_Bdif_salt>0 .or. VBF%id_Bdif_temp>0) then ! Not doing vertical integrals
     ! Do Salt
     if (VBF%id_Bdif_salt>0 .or. VBF%id_Bdif>0) &
@@ -173,10 +179,22 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   ! Post total fluxes
   if (VBF%id_Bdif_salt>0) call post_data(VBF%id_Bdif_salt, VBF%Bflx_salt, diag)
   if (VBF%id_Bdif_temp>0) call post_data(VBF%id_Bdif_temp, VBF%Bflx_temp, diag)
-  if (VBF%id_Bdif>0) call post_data(VBF%id_Bdif, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
+  if (VBF%id_Bdif>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif, work3d_i, diag)
+  endif
   if (VBF%id_Bdif_salt_dz>0) call post_data(VBF%id_Bdif_salt_dz, VBF%Bflx_salt_dz, diag)
   if (VBF%id_Bdif_temp_dz>0) call post_data(VBF%id_Bdif_temp_dz, VBF%Bflx_temp_dz, diag)
-  if (VBF%id_Bdif_dz>0) call post_data(VBF%id_Bdif_dz, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_dz>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_salt_idz>0) call post_data(VBF%id_Bdif_salt_idz, work2d_salt, diag)
   if (VBF%id_Bdif_temp_idz>0) call post_data(VBF%id_Bdif_temp_idz, work2d_temp, diag)
   if (VBF%id_Bdif_idz>0) call post_data(VBF%id_Bdif_idz, work2d, diag)
@@ -190,15 +208,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ePBL, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_ePBL>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_ePBL>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_ePBL>0) then
@@ -206,8 +225,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ePBL, VBF%Bflx_temp)
   endif
   ! Post ePBL fluxes
-  if (VBF%id_Bdif_ePBL>0) call post_data(VBF%id_Bdif_ePBL, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_ePBL>0) call post_data(VBF%id_Bdif_dz_ePBL, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_ePBL>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_ePBL, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_ePBL>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_ePBL, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_ePBL>0) call post_data(VBF%id_Bdif_idz_ePBL, work2d, diag)
   if (VBF%id_Bdif_idV_ePBL>0) call post_data(VBF%id_Bdif_idV_ePBL, work, diag)
 
@@ -217,15 +248,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_BBL, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_BBL>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_BBL>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_BBL>0) then
@@ -233,8 +265,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_BBL, VBF%Bflx_temp)
   endif
   ! Post BBL fluxes
-  if (VBF%id_Bdif_BBL>0) call post_data(VBF%id_Bdif_BBL, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_BBL>0) call post_data(VBF%id_Bdif_dz_BBL, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_BBL>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_BBL, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_BBL>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_BBL, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_BBL>0) call post_data(VBF%id_Bdif_idz_BBL, work2d, diag)
   if (VBF%id_Bdif_idV_BBL>0) call post_data(VBF%id_Bdif_idV_BBL, work, diag)
 
@@ -244,15 +288,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_KS, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_KS>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_KS>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_KS>0) then
@@ -260,8 +305,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_KS, VBF%Bflx_temp)
   endif
   ! Post Kappa Shear fluxes
-  if (VBF%id_Bdif_KS>0) call post_data(VBF%id_Bdif_KS, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_KS>0) call post_data(VBF%id_Bdif_dz_KS, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_KS>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_KS, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_KS>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_KS, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_KS>0) call post_data(VBF%id_Bdif_idz_KS, work2d, diag)
   if (VBF%id_Bdif_idV_KS>0) call post_data(VBF%id_Bdif_idV_KS, work, diag)
 
@@ -271,15 +328,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_bkgnd, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_bkgnd>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_bkgnd>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_ePBL>0) then
@@ -287,9 +345,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_bkgnd, VBF%Bflx_temp)
   endif
   ! Post bkgnd fluxes
-  if (VBF%id_Bdif_bkgnd>0) call post_data(VBF%id_Bdif_bkgnd, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_bkgnd>0) &
-     call post_data(VBF%id_Bdif_dz_bkgnd, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_bkgnd>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_bkgnd, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_bkgnd>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_bkgnd, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_bkgnd>0) call post_data(VBF%id_Bdif_idz_bkgnd, work2d, diag)
   if (VBF%id_Bdif_idV_bkgnd>0) call post_data(VBF%id_Bdif_idV_bkgnd, work, diag)
 
@@ -298,9 +367,9 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ddiff_T, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_ddiff_temp>0) then
       work2d_temp(:,:) = 0.0
-      do k = 1,nz
-        work2d_temp(:,:) = work2d_temp(:,:) + VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d_temp(i,j) = work2d_temp(i,j) + VBF%Bflx_temp_dz(i,j,k)
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_ddiff_temp>0) then
       work_temp = 0.0
@@ -316,9 +385,9 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ddiff_S, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
     if (VBF%id_Bdif_idz_ddiff_salt>0) then
       work2d_salt(:,:) = 0.0
-      do k = 1,nz
-        work2d_salt(:,:) = work2d_salt(:,:) + VBF%Bflx_salt_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d_salt(i,j) = work2d_salt(i,j) + VBF%Bflx_salt_dz(i,j,k)
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_ddiff_salt>0) then
       work_salt = 0.0
@@ -346,15 +415,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_leak, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_leak>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_leak>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_leak>0) then
@@ -362,8 +432,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_leak, VBF%Bflx_temp)
   endif
   ! Post Kd_leak fluxes
-  if (VBF%id_Bdif_leak>0) call post_data(VBF%id_Bdif_leak, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_leak>0) call post_data(VBF%id_Bdif_dz_leak, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_leak>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_leak, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_leak>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_leak, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_leak>0) call post_data(VBF%id_Bdif_idz_leak, work2d, diag)
   if (VBF%id_Bdif_idV_leak>0) call post_data(VBF%id_Bdif_idV_leak, work, diag)
 
@@ -373,15 +455,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_quad, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_quad>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_quad>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_quad>0) then
@@ -389,8 +472,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_quad, VBF%Bflx_temp)
   endif
   ! Post Kd_quad fluxes
-  if (VBF%id_Bdif_quad>0) call post_data(VBF%id_Bdif_quad, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_quad>0) call post_data(VBF%id_Bdif_dz_quad, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_quad>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_quad, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_quad>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_quad, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_quad>0) call post_data(VBF%id_Bdif_idz_quad, work2d, diag)
   if (VBF%id_Bdif_idV_quad>0) call post_data(VBF%id_Bdif_idV_quad, work, diag)
 
@@ -400,15 +495,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itidal, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_itidal>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_itidal>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_itidal>0) then
@@ -416,9 +512,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itidal, VBF%Bflx_temp)
   endif
   ! Post Kd_itidal fluxes
-  if (VBF%id_Bdif_itidal>0) call post_data(VBF%id_Bdif_itidal, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_itidal>0) &
-    call post_data(VBF%id_Bdif_dz_itidal, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_itidal>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_itidal, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_itidal>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k)+VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_itidal, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_itidal>0) call post_data(VBF%id_Bdif_idz_itidal, work2d, diag)
   if (VBF%id_Bdif_idV_itidal>0) call post_data(VBF%id_Bdif_idV_itidal, work, diag)
 
@@ -428,15 +535,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Froude, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_Froude>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_Froude>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_Froude>0) then
@@ -444,9 +552,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Froude, VBF%Bflx_temp)
   endif
   ! Post Kd_Froude fluxes
-  if (VBF%id_Bdif_Froude>0) call post_data(VBF%id_Bdif_Froude, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_Froude>0) &
-    call post_data(VBF%id_Bdif_dz_Froude, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_Froude>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_Froude, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_Froude>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_Froude, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_Froude>0) call post_data(VBF%id_Bdif_idz_Froude, work2d, diag)
   if (VBF%id_Bdif_idV_Froude>0) call post_data(VBF%id_Bdif_idV_Froude, work, diag)
 
@@ -456,15 +575,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_slope, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_slope>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_slope>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_slope>0) then
@@ -472,9 +592,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_slope, VBF%Bflx_temp)
   endif
   ! Post Kd_slope fluxes
-  if (VBF%id_Bdif_slope>0) call post_data(VBF%id_Bdif_slope, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_slope>0) &
-    call post_data(VBF%id_Bdif_dz_slope, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_slope>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_slope, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_slope>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_slope, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_slope>0) call post_data(VBF%id_Bdif_idz_slope, work2d, diag)
   if (VBF%id_Bdif_idV_slope>0) call post_data(VBF%id_Bdif_idV_slope, work, diag)
 
@@ -484,15 +615,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_lowmode, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_lowmode>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_lowmode>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_lowmode>0) then
@@ -500,9 +632,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_lowmode, VBF%Bflx_temp)
   endif
   ! Post Kd_lowmode fluxes
-  if (VBF%id_Bdif_lowmode>0) call post_data(VBF%id_Bdif_lowmode, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_lowmode>0) &
-    call post_data(VBF%id_Bdif_dz_lowmode, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_lowmode>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_lowmode, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_lowmode>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_lowmode, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_lowmode>0) call post_data(VBF%id_Bdif_idz_lowmode, work2d, diag)
   if (VBF%id_Bdif_idV_lowmode>0) call post_data(VBF%id_Bdif_idV_lowmode, work, diag)
 
@@ -512,15 +655,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Niku, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_Niku>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_Niku>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_Niku>0) then
@@ -528,8 +672,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Niku, VBF%Bflx_temp)
   endif
   ! Post Kd_Niku fluxes
-  if (VBF%id_Bdif_Niku>0) call post_data(VBF%id_Bdif_Niku, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_Niku>0) call post_data(VBF%id_Bdif_dz_Niku, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_Niku>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_lowmode, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_Niku>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_Niku, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_Niku>0) call post_data(VBF%id_Bdif_idz_Niku, work2d, diag)
   if (VBF%id_Bdif_idV_Niku>0) call post_data(VBF%id_Bdif_idV_Niku, work, diag)
 
@@ -539,15 +695,16 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itides, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_idz_itides>0) then
       work2d(:,:) = 0.0
-      do k = 1,nz
-        work2d(:,:) = work2d(:,:) + VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k)
-      enddo
+      do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+      enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_itides>0) then
       work = 0.0
       do k = 1,nz
-        work = work + global_area_integral(VBF%Bflx_salt_dz(:,:,k)+VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work = work + &
+               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
+                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
   elseif (VBF%id_Bdif_itides>0) then
@@ -555,9 +712,20 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itides, VBF%Bflx_temp)
   endif
   ! Post Kd_itides fluxes
-  if (VBF%id_Bdif_itides>0) call post_data(VBF%id_Bdif_itides, VBF%Bflx_temp(:,:,:)+VBF%Bflx_salt(:,:,:), diag)
-  if (VBF%id_Bdif_dz_itides>0) &
-    call post_data(VBF%id_Bdif_dz_itides, VBF%Bflx_temp_dz(:,:,:)+VBF%Bflx_salt_dz(:,:,:), diag)
+  if (VBF%id_Bdif_itides>0) then
+    work3d_i(:,:,:) = 0.0
+    do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
+      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_itides, work3d_i, diag)
+  endif
+  if (VBF%id_Bdif_dz_itides>0) then
+    work3d_l(:,:,:) = 0.0
+    do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
+      work3d_l(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+    enddo ; enddo ; enddo
+    call post_data(VBF%id_Bdif_dz_itides, work3d_l, diag)
+  endif
   if (VBF%id_Bdif_idz_itides>0) call post_data(VBF%id_Bdif_idz_itides, work2d, diag)
   if (VBF%id_Bdif_idV_itides>0) call post_data(VBF%id_Bdif_idV_itides, work, diag)
 
