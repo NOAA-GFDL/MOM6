@@ -6079,6 +6079,7 @@ subroutine rotate_OBC_init(OBC_in, G, GV, US, param_file, tv, restart_CS, OBC)
     call rotate_OBC_segment_data(OBC_in%segment(l), OBC%segment(l), G%HI%turns)
   enddo
 
+  call setup_OBC_tracer_reservoirs(G, GV, OBC)
   call open_boundary_init(G, GV, US, param_file, OBC, restart_CS)
 end subroutine rotate_OBC_init
 
@@ -6119,7 +6120,6 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
           segment%field(n)%name = 'Vphase'
         case ('V')
           segment%field(n)%name = 'U'
-          segment%field(n)%buffer_dst(:,:,:) = -segment%field(n)%buffer_dst(:,:,:)
         case ('Vamp')
           segment%field(n)%name = 'Uamp'
         case ('Vphase')
@@ -6211,11 +6211,46 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
        call rotate_array(segment_in%nudged_tangential_grad, turns, segment%nudged_tangential_grad)
   if (associated(segment_in%tr_Reg)) then
     do n = 1, segment_in%tr_Reg%ntseg
+      call rotate_array(segment_in%tr_Reg%tr(n)%t, turns, segment%tr_Reg%tr(n)%t)
       call rotate_array(segment_in%tr_Reg%tr(n)%tres, turns, segment%tr_Reg%tr(n)%tres)
       ! Testing this to see if it works for contant tres values. Probably wrong otherwise.
       segment%tr_Reg%Tr(n)%is_initialized=.true.
     enddo
   endif
+
+  do n = 1, num_fields
+    if ((segment%field(n)%name == 'U' .or. segment%field(n)%name == 'Uamp') .and. &
+         modulo(turns, 2) /= 0) then
+      segment%field(n)%buffer_dst(:,:,:) = -segment%field(n)%buffer_dst(:,:,:)
+      if (segment%is_E_or_W) then
+        segment%normal_trans(:,:,:) = -segment%normal_trans(:,:,:)
+        segment%normal_vel(:,:,:) = -segment%normal_vel(:,:,:)
+        segment%normal_vel_bt(:,:) = -segment%normal_vel_bt(:,:)
+        if (allocated(segment%nudged_normal_vel)) &
+            segment%nudged_normal_vel(:,:,:) = -segment%nudged_normal_vel(:,:,:)
+      else
+        if (allocated(segment%tangential_vel)) &
+            segment%tangential_vel(:,:,:) = -segment%tangential_vel(:,:,:)
+        if (allocated(segment%nudged_tangential_vel)) &
+            segment%nudged_tangential_vel(:,:,:) = -segment%nudged_tangential_vel(:,:,:)
+      endif
+    elseif ((segment%field(n)%name == 'V' .or. segment%field(n)%name == 'Vamp') .and. &
+         modulo(turns, 4) == 3) then
+      segment%field(n)%buffer_dst(:,:,:) = -segment%field(n)%buffer_dst(:,:,:)
+      if (segment%is_N_or_S) then
+        segment%normal_trans(:,:,:) = -segment%normal_trans(:,:,:)
+        segment%normal_vel(:,:,:) = -segment%normal_vel(:,:,:)
+        segment%normal_vel_bt(:,:) = -segment%normal_vel_bt(:,:)
+        if (allocated(segment%nudged_normal_vel)) &
+            segment%nudged_normal_vel(:,:,:) = -segment%nudged_normal_vel(:,:,:)
+      else
+        if (allocated(segment%tangential_vel)) &
+            segment%tangential_vel(:,:,:) = -segment%tangential_vel(:,:,:)
+        if (allocated(segment%nudged_tangential_vel)) &
+            segment%nudged_tangential_vel(:,:,:) = -segment%nudged_tangential_vel(:,:,:)
+      endif
+    endif
+  enddo
 
   segment%temp_segment_data_exists = segment_in%temp_segment_data_exists
   segment%salt_segment_data_exists = segment_in%salt_segment_data_exists
