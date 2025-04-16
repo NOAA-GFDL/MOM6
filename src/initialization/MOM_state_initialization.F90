@@ -26,7 +26,7 @@ use MOM_open_boundary, only : open_boundary_query
 use MOM_open_boundary, only : set_tracer_data, initialize_segment_data
 use MOM_open_boundary, only : open_boundary_test_extern_h
 use MOM_open_boundary, only : fill_temp_salt_segments
-use MOM_open_boundary, only : update_OBC_segment_data, setup_OBC_tracer_reservoirs
+use MOM_open_boundary, only : update_OBC_segment_data
 !use MOM_open_boundary, only : set_3D_OBC_data
 use MOM_grid_initialize, only : initialize_masks, set_grid_metrics
 use MOM_restart, only : restore_state, is_new_run, copy_restart_var, copy_restart_vector
@@ -628,7 +628,6 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
     if (OBC%some_need_no_IO_for_data) then
       call calc_derived_thermo(tv, h, G, GV, US)
       call update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
-      call setup_OBC_tracer_reservoirs(G, GV, OBC)
     endif
 
     call get_param(PF, mdl, "OBC_USER_CONFIG", config, &
