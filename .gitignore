@@ -12,3 +12,13 @@ config.status
 configure
 /Makefile
 Makefile.mkmf
+
+
+# ignoring testing directories that might add machine specific files:
+.testing/tc4/*.dSYM/Contents/Info.plist
+.testing/tc4/Makefile
+# macOS system files
+.DS_Store
+
+# ignore vscode settings folder
+.vscode/
