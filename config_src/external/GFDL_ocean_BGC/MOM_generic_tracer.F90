@@ -14,47 +14,22 @@ module MOM_generic_tracer
 #endif
 
 ! ### These imports should not reach into FMS directly ###
-use field_manager_mod, only: fm_string_len
 
-use generic_tracer, only: generic_tracer_register, generic_tracer_get_diag_list
-use generic_tracer, only: generic_tracer_init, generic_tracer_source, generic_tracer_register_diag
-use generic_tracer, only: generic_tracer_coupler_get, generic_tracer_coupler_set
-use generic_tracer, only: generic_tracer_end, generic_tracer_get_list, do_generic_tracer
-use generic_tracer, only: generic_tracer_update_from_bottom,generic_tracer_vertdiff_G
-use generic_tracer, only: generic_tracer_coupler_accumulate
-
-use g_tracer_utils,   only: g_tracer_get_name,g_tracer_set_values,g_tracer_set_common,g_tracer_get_common
-use g_tracer_utils,   only: g_tracer_get_next,g_tracer_type,g_tracer_is_prog,g_tracer_flux_init
-use g_tracer_utils,   only: g_tracer_send_diag,g_tracer_get_values
-use g_tracer_utils,   only: g_tracer_get_pointer,g_tracer_get_alias,g_tracer_set_csdiag
-use g_tracer_utils,   only: g_tracer_get_obc_segment_props
-
-use MOM_ALE_sponge, only : set_up_ALE_sponge_field, ALE_sponge_CS
-use MOM_coms, only : EFP_type, max_across_PEs, min_across_PEs, PE_here
-use MOM_diag_mediator, only : post_data, register_diag_field, safe_alloc_ptr
-use MOM_diag_mediator, only : diag_ctrl, get_diag_time_end
-use MOM_error_handler, only : MOM_error, FATAL, WARNING, NOTE, is_root_pe
-use MOM_file_parser, only : get_param, log_param, log_version, param_file_type
+use MOM_ALE_sponge, only : ALE_sponge_CS
+use MOM_coms, only : EFP_type
+use MOM_diag_mediator, only : diag_ctrl
+use MOM_file_parser, only : param_file_type
 use MOM_forcing_type, only : forcing, optics_type
 use MOM_grid, only : ocean_grid_type
 use MOM_hor_index, only : hor_index_type
-use MOM_interface_heights, only : thickness_to_dz
-use MOM_io, only : file_exists, MOM_read_data, slasher
 use MOM_open_boundary, only : ocean_OBC_type
-use MOM_open_boundary, only : register_obgc_segments, fill_obgc_segments
-use MOM_open_boundary, only : set_obgc_segments_props
-use MOM_restart, only : register_restart_field, query_initialized, set_initialized, MOM_restart_CS
-use MOM_spatial_means, only : global_area_mean, global_mass_int_EFP, array_global_min_max
-use MOM_sponge, only : set_up_sponge_field, sponge_CS
-use MOM_time_manager, only : time_type, set_time
-use MOM_tracer_diabatic, only : tracer_vertdiff, applyTracerBoundaryFluxesInOut
-use MOM_tracer_registry, only : register_tracer, tracer_registry_type
-use MOM_tracer_Z_init, only : tracer_Z_init
-use MOM_tracer_initialization_from_Z, only : MOM_initialize_tracer_from_Z
+use MOM_restart, only : MOM_restart_CS
+use MOM_sponge, only : sponge_CS
+use MOM_time_manager, only : time_type
+use MOM_tracer_registry, only : tracer_registry_type
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : surface, thermo_var_ptrs
 use MOM_verticalGrid, only : verticalGrid_type
-
 
 implicit none ; private
 
@@ -88,7 +63,7 @@ type, public :: MOM_generic_tracer_CS ; private
   type(MOM_restart_CS), pointer :: restart_CSp => NULL() !< Restart control structure
   type(ocean_OBC_type), pointer :: OBC => NULL() !<open boundary condition type
   !> Pointer to the first element of the linked list of generic tracers.
-  type(g_tracer_type), pointer :: g_tracer_list => NULL()
+  !type(g_tracer_type), pointer :: g_tracer_list => NULL()
 
 end type MOM_generic_tracer_CS
 
