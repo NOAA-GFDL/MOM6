@@ -1510,7 +1510,7 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
           ! change the answers.  Therefore, skipping that.
           if (.not.CS%Use_MLD_iteration) then
             Kd_guess0 = (h_dz_int(K)*vstar) * CS%vonKar * ((dz_tt*hbs_here)*vstar) / &
-                          ((CS%Ekman_scale_coef * absf) * (dz_tt*hbs_here) + vstar)
+              ((CS%Ekman_scale_coef * absf) * (dz_tt*hbs_here) + vstar)
           elseif (CS%eqdisc) then  ! ML-eqdisc line1/2 
             Kd_guess0 = MixLen_shape(K) * v0_ML_turb_vel_scale * MLD_guess ! ML-eqdisc
           else
