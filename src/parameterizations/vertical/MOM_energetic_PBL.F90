@@ -165,9 +165,9 @@ type, public :: energetic_PBL_CS ; private
   !/ Machine learned equation discovery model paramters ! eqdisc
   logical :: eqdisc, eqdisc_v0, eqdisc_v0h  ! Machine Learned Equation discovery - shape function and velocity-scale
   real :: v0_lower_cap ! Lower cap to prevent v0 from attaining anomlously low values [Z T-1 ~> m s-1]
-  real :: f_lower ! Lower cap of |f| i.e. absolute of Coriolis parameter.
+  real :: f_lower ! Lower cap of |f| i.e. absolute of Coriolis parameter. [T-1 ~> s-1]
                   ! Used in v0 subroutines. Default at 0.1deg Lat
-  real :: bflux_lower_cap, bflux_upper_cap ! Lower and upper cap for capping blfux while setting v0. 
+  real :: bflux_lower_cap, bflux_upper_cap ! Lower and upper cap for capping blfux. [Z2 T-3 ~> m2 s-3]
   real, allocatable, dimension(:) :: shape_function ! shape function used in machine learned diffusivity [nondim]
   !/ Coefficients used in Machine learned diffusivity, Equations 6,7,10,11 in Sane et al. 2024
 
