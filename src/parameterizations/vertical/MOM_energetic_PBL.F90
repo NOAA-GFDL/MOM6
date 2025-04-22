@@ -1287,7 +1287,7 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
       endif
     endif
 
-    v0_ML_turb_vel_scale = 0.0 ! a variable that gets passed on to subroutine get_eqdisc_v0
+    v0_ML_turb_vel_scale = 0.0 ! a variable that gets passed on to get_eqdisc_v0 & get_eqdisc_v0h
     if (CS%eqdisc_v0) then
       call get_eqdisc_v0(CS,absf,B_flux,u_star,v0_ML_turb_vel_scale)
     elseif (CS%eqdisc_v0h) then
