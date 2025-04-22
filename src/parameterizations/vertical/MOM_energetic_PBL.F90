@@ -2707,7 +2707,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
 ! gives shape function from Sane et al. 2025
   type(verticalGrid_type), intent(in)    :: GV     !< The ocean's vertical grid structure.
   type(energetic_PBL_CS),  intent(in) :: CS     !< Energetic PBL control struct
-  real, dimension(SZK_(GV)+1), intent(inout) :: shape_func  !< shape function
+  real, dimension(SZK_(GV)+1), intent(inout) :: shape_func  !< shape function, [nondim]
   real, intent(in) :: absf      !< The absolute value of f [T-1 ~> s-1].
   real, intent(in) :: u_star    !< The surface friction velocity [Z T-1 ~> m s-1].
   real, intent(in) :: B_Flux    !< The surface buoyancy flux [Z2 T-3 ~> m2 s-3]
