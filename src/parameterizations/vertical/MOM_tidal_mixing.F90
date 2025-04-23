@@ -1305,7 +1305,7 @@ subroutine add_int_tide_diffusivity(dz, j, N2_bot, Rho_bot, N2_lay, TKE_to_Kd, m
       endif
 
       ! diagnostics
-      if (allocated(CS%dd%Kd_itidal).or.(associated(VBF%Kd_itidal))) then
+      if (allocated(CS%dd%Kd_itidal).or.(associated(VBF%Kd_itides))) then
         ! If at layers, CS%dd%Kd_itidal is just TKE_to_Kd(i,k) * TKE_itide_lay
         ! The following sets the interface diagnostics.
         Kd_add = TKE_to_Kd(i,k) * TKE_itide_lay
