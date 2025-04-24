@@ -114,7 +114,8 @@ type, public :: sum_output_CS ; private
   real    :: timeunit           !< The length of the units for the time axis and certain input parameters
                                 !! including ENERGYSAVEDAYS [s].
 
-  logical :: date_stamped_output !< If true, use dates (not times) in messages to stdout.
+  logical :: date_ISO_stamped_output !< If true, use ISO formatted dates in messages to stdout.
+  logical :: date_stamped_output     !< If true, use dates (not times) in messages to stdout.
   type(time_type) :: Start_time !< The start time of the simulation.
                                 ! Start_time is set in MOM_initialization.F90
   integer, pointer :: ntrunc => NULL() !< The number of times the velocity has been
@@ -235,6 +236,9 @@ subroutine MOM_sum_output_init(G, GV, US, param_file, directory, ntrnc, &
   CS%energyfile = trim(CS%energyfile)//"."//trim(adjustl(STATSLABEL))
 #endif
 
+  call get_param(param_file, mdl, "DATE_ISO_STAMPED_STDOUT", CS%date_ISO_stamped_output, &
+                 "If true, use ISO formatted dates in messages to stdout", &
+                 default=.false.)
   call get_param(param_file, mdl, "DATE_STAMPED_STDOUT", CS%date_stamped_output, &
                  "If true, use dates (not times) in messages to stdout", &
                  default=.true.)
@@ -869,6 +873,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
   En_mass = toten / mass_tot
 
   call get_time(day, start_of_day, num_days)
+  date_stamped = (CS%date_stamped_output .and. (get_calendar_type() /= NO_CALENDAR))
   if (date_stamped) &
     call get_date(day, iyear, imonth, iday, ihour, iminute, isecond, itick)
   if (abs(CS%timeunit - 86400.0) < 1.0) then
