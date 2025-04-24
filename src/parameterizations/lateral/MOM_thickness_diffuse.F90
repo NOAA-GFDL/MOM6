@@ -38,7 +38,7 @@ type, public :: thickness_diffuse_CS ; private
   logical :: initialized = .false. !< True if this control structure has been initialized.
   real    :: Khth                !< Background isopycnal depth diffusivity [L2 T-1 ~> m2 s-1]
   real    :: Khth_Slope_Cff      !< Slope dependence coefficient of Khth [nondim]
-  real    :: Grad_L_Scale        !< Gradient model coefficient [nondim]
+  real    :: Grad_Khani_Scale        !< Gradient model coefficient [nondim]
   real    :: max_Khth_CFL        !< Maximum value of the diffusive CFL for isopycnal height diffusion [nondim]
   real    :: Khth_Min            !< Minimum value of Khth [L2 T-1 ~> m2 s-1]
   real    :: Khth_Max            !< Maximum value of Khth [L2 T-1 ~> m2 s-1], or 0 for no max
@@ -203,7 +203,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
   Depth_scaled = .false.
 
   if (VarMix%use_variable_mixing) then
-    use_VarMix = VarMix%use_variable_mixing .and. (CS%KHTH_Slope_Cff > 0.) .or. (CS%Grad_L_Scale > 0.)
+    use_VarMix = VarMix%use_variable_mixing .and. (CS%KHTH_Slope_Cff > 0.) .or. (CS%Grad_Khani_Scale > 0.)
     Resoln_scaled = VarMix%Resoln_scaled_KhTh
     Depth_scaled = VarMix%Depth_scaled_KhTh
     use_stored_slopes = VarMix%use_stored_slopes
@@ -323,11 +323,11 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
 
   if (use_VarMix) then
     if (use_gradient_model) then  !< Gradient model (Khani & Dawson, 2023)
-!!    if (CS%Grad_L_Scale > 0.0) then
+!!    if (CS%Grad_Khani_Scale > 0.0) then
       !$OMP do
       do k=1,nz ; do j=js,je ; do I=is-1,ie
-        KH_u(I,j,k) = 1.0*CS%Grad_L_Scale*VarMix%L2grad_u(I,j)*VarMix%UH_grad(I,j,k)
-!!        print*, "KH_u=", KH_u(I,j,k)
+        KH_u(I,j,k) = 1.0*CS%Grad_Khani_Scale*VarMix%L2grad_u(I,j)*VarMix%UH_grad(I,j,k)
+!!        print*, "KH_u=  ", KH_u(I,j,k)
       enddo ; enddo ; enddo
     endif
   endif
@@ -431,10 +431,10 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
 
   if (use_VarMix) then
     if (use_gradient_model) then      !< Gradient model (Khani & Dawson, 2023)
-!!    if (CS%Grad_L_Scale > 0.0) then
+!!    if (CS%Grad_Khani_Scale > 0.0) then
       !$OMP do
       do k=1,nz ; do J=js-1,je ; do i=is,ie
-        KH_v(i,J,k) = 1.0*CS%Grad_L_Scale*VarMix%L2grad_v(i,J)*VarMix%VH_grad(i,J,k)
+        KH_v(i,J,k) = 1.0*CS%Grad_Khani_Scale*VarMix%L2grad_v(i,J)*VarMix%VH_grad(i,J,k)
 !!        print*, "KH_v=", KH_v(i,J,k)
       enddo ; enddo ; enddo
     endif
@@ -2195,7 +2195,7 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
   call get_param(param_file, mdl, "KHTH_SLOPE_CFF", CS%KHTH_Slope_Cff, &
                  "The nondimensional coefficient in the Visbeck formula for "//&
                  "the interface depth diffusivity", units="nondim", default=0.0)
-  call get_param(param_file, mdl, "GRAD_L_SCALE", CS%GRAD_L_Scale, &
+  call get_param(param_file, mdl, "GRAD_Khani_SCALE", CS%GRAD_Khani_Scale, &
                  "The nondimensional coefficient in the Gradient model for "//&
                  "the thickness depth diffusivity", units="nondim", default=1.0)
   call get_param(param_file, mdl, "KHTH_MIN", CS%KHTH_Min, &
