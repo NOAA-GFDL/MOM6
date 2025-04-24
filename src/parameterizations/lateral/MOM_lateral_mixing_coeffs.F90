@@ -138,7 +138,7 @@ type, public :: VarMix_CS
   logical :: use_Visbeck  !< Use Visbeck formulation for thickness diffusivity
   integer :: VarMix_Ktop  !< Top layer to start downward integrals
   real :: Visbeck_L_scale !< Fixed length scale in Visbeck formula [L ~> m], or if negative a scaling
-  real :: grad_L_scale   !< Fixed length scale in Gradient formula [non-dimension]
+  real :: grad_Khani_scale  !< Fixed length scale in Gradient formula [non-dimension]
                           !! factor [nondim] relating this length scale squared to the cell area
   real :: Eady_GR_D_scale !< Depth over which to average SN [Z ~> m]
   real :: Res_coef_khth   !< A coefficient [nondim] that determines the function
@@ -959,10 +959,10 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh)
     ! Calculate the gradient slopes U_xH_x, V_xH_x, U_yH_y, V_yH_y on u- and v-points respectively
     do j=js-1,je+1 ; do I=is-1,ie
       U_xH_x(I,j) =1.0*(G%IdxCu(I+1,j)*G%IdyCu(I+1,j)*uh(I+1,j,K) - G%IdxCu(I,j)*G%IdyCu(I,j)*uh(I,j,k))*( &
-                   G%IareaT(I+1,j) + G%IareaT(I,j)) * G%dyCu(I,j) * (1.0*(h(I+1,j,K) - h(I,j,K))/( &
+                   G%IareaT(I+1,j) + G%IareaT(I,j)) * G%dyT(I,j) * (1.0*(h(I+1,j,K) - h(I,j,K))/( &
                    h(I+1,j,K) + h(I,j,K) + h_neglect))
       V_xH_x(I,j) =1.0*(G%IdxCv(I+1,j)*G%IdxCv(I+1,j)*vh(I+1,j,K) - G%IdxCv(I,j)*G%IdxCv(I,j)*vh(I,j,k))*( &
-                   G%IareaT(I+1,j) + G%IareaT(I,j)) * G%dyCu(I,j) * (1.0*(h(I+1,j,K) - h(I,j,K))/( &
+                   G%IareaT(I+1,j) + G%IareaT(I,j)) * G%dyT(I,j) * (1.0*(h(I+1,j,K) - h(I,j,K))/( &
                    h(I+1,j,K) + h(I,j,K) + h_neglect))
       ! Mask slopes where interface intersects topography
       if (min(h(I,j,k),h(I+1,j,k)) < H_cutoff) U_xH_x(I,j) = 0.
@@ -970,10 +970,10 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh)
     enddo ; enddo
     do J=js-1,je ; do i=is-1,ie+1
       U_yH_y(i,J) =1.0*(G%IdyCu(i,J+1)*G%IdyCu(i,J+1)*uh(i,J+1,K) - G%IdyCu(i,J)*G%IdyCu(i,J)*uh(i,J,k))*( &
-                   G%IareaT(i,J+1) + G%IareaT(i,J)) * G%dxCu(i,J) * (1.0*(h(i,J+1,K) - h(i,J,K))/( &
+                   G%IareaT(i,J+1) + G%IareaT(i,J)) * G%dxT(i,J) * (1.0*(h(i,J+1,K) - h(i,J,K))/( &
                    h(i,J+1,K) + h(i,J,K) + h_neglect))
       V_yH_y(i,J) =1.0*(G%IdyCv(i,J+1)*G%IdxCv(i,J+1)*vh(i,J,K) - G%IdyCv(i,J)*G%IdxCv(i,J)*vh(i,J,k))*( &
-                   G%IareaT(i,J+1) + G%IareaT(i,J)) * G%dxCv(I,j) * (1.0*(h(i,J+1,K) - h(i,J,K))/( &
+                   G%IareaT(i,J+1) + G%IareaT(i,J)) * G%dxT(I,j) * (1.0*(h(i,J+1,K) - h(i,J,K))/( &
                    h(i,J+1,K) + h(i,J,K) + h_neglect))
       ! Mask slopes where interface intersects topography
       if (min(h(i,J,k),h(i,J+1,k)) < H_cutoff) U_yH_y(I,j) = 0.
@@ -992,6 +992,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh)
       !N2 = GV%g_prime(k) / (GV%H_to_Z * max(Hdn, Hup, CS%h_min_N2))
       S2N2_u_local(I,j,k) = (H_geom * S2) * (GV%g_prime(k) / max(Hdn, Hup, CS%h_min_N2) )
       gradUH = U_xH_x(I,j) + 0.25*(U_yH_y(I,j)+U_yH_y(I,j-1)+U_yH_y(I+1,j)+U_yH_y(I+1,j-1))
+      UH_grad_local(I,j,k) = gradUH
     enddo ; enddo
     do J=js-1,je ; do i=is,ie
       S2 = ( E_y(i,J)**2  + 0.25*( &
@@ -1004,6 +1005,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh)
       !N2 = GV%g_prime(k) / (GV%H_to_Z * max(Hdn, Hup, CS%h_min_N2))
       S2N2_v_local(i,J,k) = (H_geom * S2) * (GV%g_prime(k) / (max(Hdn, Hup, CS%h_min_N2)))
       gradVH = 0.25*(V_xH_x(i,J)+V_xH_x(i-1,J)+V_xH_x(i,J+1)+V_xH_x(i-1,J+1))+V_yH_y(i,J)
+      VH_grad_local(i,J,k) = gradVH
     enddo ; enddo
 
   enddo ! k
@@ -1013,7 +1015,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh)
     do k=nz,CS%VarMix_Ktop,-1 ; do I=is-1,ie
       CS%SN_u(I,j) = CS%SN_u(I,j) + S2N2_u_local(I,j,k)
       CS%UH_grad(I,j,k) = UH_grad_local(I,j,k)
-!!      print*, "UH_grad=", CS%UH_grad(I,j,k)
+!!      print*, "UH_grad=  ", CS%UH_grad(I,j,k)
     enddo ; enddo
     ! SN above contains S^2*N^2*H, convert to vertical average of S*N
     if (use_dztot) then
@@ -1042,7 +1044,7 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh)
     do k=nz,CS%VarMix_Ktop,-1 ; do i=is,ie
       CS%SN_v(i,J) = CS%SN_v(i,J) + S2N2_v_local(i,J,k)
       CS%VH_grad(i,J,k) = VH_grad_local(i,J,k)
-!!      print*, "VH_grad=", CS%VH_grad(I,j,k)
+!!      print*, "VH_grad=  ", CS%VH_grad(I,j,k)
     enddo ; enddo
     if (use_dztot) then
       do i=is,ie
@@ -1250,7 +1252,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                          ! for the epipycnal tracer diffusivity [nondim]
   real :: KhTh_Slope_Cff ! The nondimensional coefficient in the Visbeck formula
                          ! for the interface depth diffusivity [nondim]
-  real :: Grad_L_Scale ! The nondimensional coefficient in the gradient formula
+  real :: Grad_Khani_Scale ! The nondimensional coefficient in the gradient formula
                          ! for the  depth diffusivity [nondim]
   real :: oneOrTwo ! A variable that may be 1 or 2, depending on which form
                    ! of the equatorial deformation radius us used [nondim]
@@ -1311,7 +1313,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "USE_GRADIENT_MODEL", CS%use_gradient_model,&
                  "If true, use the gradient model formula for eddy diffusivity.  This "//&
                  "allows diagnostics to be created even if the scheme is "//&
-                 "not used.  If Grad_L_Scale>0, this is set to true regardless of what "//&
+                 "not used.  If Grad_Khani_Scale>0, this is set to true regardless of what "//&
                  "is in the parameter file.", default=.false.)
   call get_param(param_file, mdl, "USE_VISBECK", CS%use_Visbeck,&
                  "If true, use the Visbeck et al. (1997) formulation for \n"//&
@@ -1507,7 +1509,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
 
   if (CS%use_gradient_model) then
     in_use = .true.
-    call get_param(param_file, mdl, "GRAD_L_SCALE", CS%grad_L_scale, &
+    call get_param(param_file, mdl, "GRAD_Khani_SCALE", CS%grad_Khani_scale, &
                  "The fixed length scale in the gradient formula.", units="m", &
                  default=1.0)
     allocate(CS%UH_grad(IsdB:IedB,jsd:jed,GV%ke), source=0.0)
