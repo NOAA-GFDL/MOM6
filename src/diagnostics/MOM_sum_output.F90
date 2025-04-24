@@ -422,7 +422,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
   character(len=240) :: energypath_nc
   character(len=200) :: mesg
   character(len=32)  :: mesg_intro, time_units, day_str, n_str, date_str, date_str_ISO
-  logical :: date_stamped
+  logical :: date_stamped, date_ISO_stamped
   type(time_type) :: dt_force ! A time_type version of the forcing timestep.
 
   real :: S_min   ! The global minimum unmasked value of the salinity [ppt]
@@ -478,6 +478,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
   type(vardesc) :: vars(NUM_FIELDS+MAX_FIELDS_)
 
   date_stamped = (CS%date_stamped_output .and. (get_calendar_type() /= NO_CALENDAR))
+  date_ISO_stamped = (CS%date_ISO_stamped_output .and. (get_calendar_type() /= NO_CALENDAR))
 
   ! write_energy_time is the next integral multiple of energysavedays.
   dt_force = set_time(seconds=2) ; if (present(dt_forcing)) dt_force = dt_forcing
@@ -622,7 +623,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
         call open_ASCII_file(CS%fileenergy_ascii, trim(CS%energyfile), action=WRITEONLY_FILE)
         if (abs(CS%timeunit - 86400.0) < 1.0) then
           if (CS%use_temperature) then
-           if (date_stamped) then
+           if (date_ISO_stamped) then
              write(CS%fileenergy_ascii,'("  Step,",5x,"Date,  Truncs,      &
                  &Energy/Mass,      Maximum CFL,  Mean Sea Level,  Total Mass,  Mean Salin, &
                  &Mean Temp, Frac Mass Err,   Salin Err,    Temp Err")')
@@ -636,7 +637,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
                  &"[kg]",9x,"[PSU]",6x,"[degC]",7x,"[Nondim]",8x,"[PSU]",8x,"[degC]")')
            endif
           else
-           if (date_stamped) then
+           if (date_ISO_stamped) then
              write(CS%fileenergy_ascii,'("  Step,",5x,"Date,  Truncs,      &
                 &Energy/Mass,      Maximum CFL,  Mean sea level,   Total Mass,    Frac Mass Err")')
              write(CS%fileenergy_ascii,'(10x,"[ISO]",17x,"[m2 s-2]",11x,"[Nondim]",8x,"[m]",13x,&
@@ -662,7 +663,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
           endif
 
           if (CS%use_temperature) then
-           if (date_stamped) then
+           if (date_ISO_stamped) then
              write(CS%fileenergy_ascii,'("  Step,",7x,"Time, Truncs,      &
                  &Energy/Mass,      Maximum CFL,  Mean Sea Level,  Total Mass,  Mean Salin, &
                  &Mean Temp, Frac Mass Err,   Salin Err,    Temp Err")')
@@ -678,7 +679,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
                  &"[degC]")') time_units
            endif
           else
-           if (date_stamped) then
+           if (date_ISO_stamped) then
             write(CS%fileenergy_ascii,'("  Step,",7x,"Time, Truncs,      &
                 &Energy/Mass,      Maximum CFL,  Mean sea level,   Total Mass,    Frac Mass Err")')
             write(CS%fileenergy_ascii,'(A25,10x,"[m2 s-2]",11x,"[Nondim]",8x,"[m]",13x,&
@@ -873,8 +874,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
   En_mass = toten / mass_tot
 
   call get_time(day, start_of_day, num_days)
-  date_stamped = (CS%date_stamped_output .and. (get_calendar_type() /= NO_CALENDAR))
-  if (date_stamped) &
+  if (date_stamped .or. date_ISO_stamped) &
     call get_date(day, iyear, imonth, iday, ihour, iminute, isecond, itick)
   if (abs(CS%timeunit - 86400.0) < 1.0) then
     reday = REAL(num_days)+ (REAL(start_of_day)/86400.0)
@@ -893,7 +893,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
   elseif (n < 100000000) then ; write(n_str, '(I8)')  n
   else                        ; write(n_str, '(I10)') n ; endif
 
-  if (date_stamped) then
+  if (date_stamped .or. date_ISO_stamped) then
     write(date_str,'("MOM Date",i7,2("/",i2.2)," ",i2.2,2(":",i2.2))') &
        iyear, imonth, iday, ihour, iminute, isecond
     write(date_str_ISO,'(i7.4,2(i2.2),"T",i2.2,2(i2.2))') &
@@ -914,7 +914,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
     endif
 
     if (CS%use_temperature) then
-      if (date_stamped) then
+      if (date_ISO_stamped) then
         write(CS%fileenergy_ascii,'(A,",",A,",", I6,", En ",ES22.16, &
                                &", CFL ", F8.5, ", SL ",&
                                &es11.4,", M ",ES11.5,", S",f8.4,", T",f8.4,&
@@ -932,7 +932,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
             temp_anom
       endif
     else
-      if (date_stamped) then
+      if (date_ISO_stamped) then
         write(CS%fileenergy_ascii,'(A,",",A,",", I6,", En ",ES22.16, &
                                 &", CFL ", F8.5, ", SL ",&
                                   &ES11.4,", Mass ",ES11.5,", Me ",ES9.2)') &
