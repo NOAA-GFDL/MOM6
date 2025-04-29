@@ -6157,58 +6157,58 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
   enddo
 
   if (allocated(segment_in%SSH)) &
-        call rotate_array(segment_in%SSH, turns, segment%SSH)
+      call rotate_array(segment_in%SSH, turns, segment%SSH)
   if (allocated(segment_in%cg)) &
-       call rotate_array(segment_in%cg, turns, segment%cg)
+      call rotate_array(segment_in%cg, turns, segment%cg)
   if (allocated(segment_in%htot)) &
-       call rotate_array(segment_in%htot, turns, segment%htot)
+      call rotate_array(segment_in%htot, turns, segment%htot)
   if (allocated(segment_in%dztot)) &
-       call rotate_array(segment_in%dztot, turns, segment%dztot)
+      call rotate_array(segment_in%dztot, turns, segment%dztot)
   if (allocated(segment_in%h)) &
-       call rotate_array(segment_in%h, turns, segment%h)
+      call rotate_array(segment_in%h, turns, segment%h)
   if (allocated(segment_in%normal_vel)) &
-       call rotate_array(segment_in%normal_vel, turns, segment%normal_vel)
+      call rotate_array(segment_in%normal_vel, turns, segment%normal_vel)
   if (allocated(segment_in%normal_trans)) &
-       call rotate_array(segment_in%normal_trans, turns, segment%normal_trans)
+      call rotate_array(segment_in%normal_trans, turns, segment%normal_trans)
   if (allocated(segment_in%normal_vel_bt)) &
-       call rotate_array(segment_in%normal_vel_bt, turns, segment%normal_vel_bt)
+      call rotate_array(segment_in%normal_vel_bt, turns, segment%normal_vel_bt)
   if (allocated(segment_in%tangential_vel)) &
-       call rotate_array(segment_in%tangential_vel, turns, segment%tangential_vel)
+      call rotate_array(segment_in%tangential_vel, turns, segment%tangential_vel)
   if (allocated(segment_in%tangential_grad)) &
-       call rotate_array(segment_in%tangential_grad, turns, segment%tangential_grad)
+      call rotate_array(segment_in%tangential_grad, turns, segment%tangential_grad)
   if (allocated(segment_in%grad_normal)) &
-       call rotate_array(segment_in%grad_normal, turns, segment%grad_normal)
+      call rotate_array(segment_in%grad_normal, turns, segment%grad_normal)
   if (allocated(segment_in%grad_tan)) &
-       call rotate_array(segment_in%grad_tan, turns, segment%grad_tan)
+      call rotate_array(segment_in%grad_tan, turns, segment%grad_tan)
   if (allocated(segment_in%grad_gradient)) &
-       call rotate_array(segment_in%grad_gradient, turns, segment%grad_gradient)
+      call rotate_array(segment_in%grad_gradient, turns, segment%grad_gradient)
   if (modulo(turns, 2) /= 0) then
     if (allocated(segment_in%rx_norm_rad)) &
-         call rotate_array(segment_in%rx_norm_rad, turns, segment%ry_norm_rad)
+        call rotate_array(segment_in%rx_norm_rad, turns, segment%ry_norm_rad)
     if (allocated(segment_in%ry_norm_rad)) &
-         call rotate_array(segment_in%ry_norm_rad, turns, segment%rx_norm_rad)
+        call rotate_array(segment_in%ry_norm_rad, turns, segment%rx_norm_rad)
     if (allocated(segment_in%rx_norm_obl)) &
-         call rotate_array(segment_in%rx_norm_obl, turns, segment%ry_norm_obl)
+        call rotate_array(segment_in%rx_norm_obl, turns, segment%ry_norm_obl)
     if (allocated(segment_in%ry_norm_obl)) &
-         call rotate_array(segment_in%ry_norm_obl, turns, segment%rx_norm_obl)
+        call rotate_array(segment_in%ry_norm_obl, turns, segment%rx_norm_obl)
   else
     if (allocated(segment_in%rx_norm_rad)) &
-         call rotate_array(segment_in%rx_norm_rad, turns, segment%rx_norm_rad)
+        call rotate_array(segment_in%rx_norm_rad, turns, segment%rx_norm_rad)
     if (allocated(segment_in%ry_norm_rad)) &
-         call rotate_array(segment_in%ry_norm_rad, turns, segment%ry_norm_rad)
+        call rotate_array(segment_in%ry_norm_rad, turns, segment%ry_norm_rad)
     if (allocated(segment_in%rx_norm_obl)) &
-         call rotate_array(segment_in%rx_norm_obl, turns, segment%rx_norm_obl)
+        call rotate_array(segment_in%rx_norm_obl, turns, segment%rx_norm_obl)
     if (allocated(segment_in%ry_norm_obl)) &
-         call rotate_array(segment_in%ry_norm_obl, turns, segment%ry_norm_obl)
+        call rotate_array(segment_in%ry_norm_obl, turns, segment%ry_norm_obl)
   endif
   if (allocated(segment_in%cff_normal)) &
-       call rotate_array(segment_in%cff_normal, turns, segment%cff_normal)
+      call rotate_array(segment_in%cff_normal, turns, segment%cff_normal)
   if (allocated(segment_in%nudged_normal_vel)) &
-       call rotate_array(segment_in%nudged_normal_vel, turns, segment%nudged_normal_vel)
+      call rotate_array(segment_in%nudged_normal_vel, turns, segment%nudged_normal_vel)
   if (allocated(segment_in%nudged_tangential_vel)) &
-       call rotate_array(segment_in%nudged_tangential_vel, turns, segment%nudged_tangential_vel)
+      call rotate_array(segment_in%nudged_tangential_vel, turns, segment%nudged_tangential_vel)
   if (allocated(segment_in%nudged_tangential_grad)) &
-       call rotate_array(segment_in%nudged_tangential_grad, turns, segment%nudged_tangential_grad)
+      call rotate_array(segment_in%nudged_tangential_grad, turns, segment%nudged_tangential_grad)
   if (associated(segment_in%tr_Reg)) then
     do n = 1, segment_in%tr_Reg%ntseg
       call rotate_array(segment_in%tr_Reg%tr(n)%t, turns, segment%tr_Reg%tr(n)%t)
@@ -6220,7 +6220,7 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
 
   do n = 1, num_fields
     if ((segment%field(n)%name == 'U' .or. segment%field(n)%name == 'Uamp') .and. &
-         modulo(turns, 2) /= 0) then
+         (modulo(turns, 4) == 1 .or. modulo(turns, 4) == 2)) then
       segment%field(n)%buffer_dst(:,:,:) = -segment%field(n)%buffer_dst(:,:,:)
       if (segment%is_E_or_W) then
         segment%normal_trans(:,:,:) = -segment%normal_trans(:,:,:)
@@ -6235,7 +6235,7 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
             segment%nudged_tangential_vel(:,:,:) = -segment%nudged_tangential_vel(:,:,:)
       endif
     elseif ((segment%field(n)%name == 'V' .or. segment%field(n)%name == 'Vamp') .and. &
-         modulo(turns, 4) == 3) then
+         (modulo(turns, 4) == 3 .or. modulo(turns, 4) == 2)) then
       segment%field(n)%buffer_dst(:,:,:) = -segment%field(n)%buffer_dst(:,:,:)
       if (segment%is_N_or_S) then
         segment%normal_trans(:,:,:) = -segment%normal_trans(:,:,:)
