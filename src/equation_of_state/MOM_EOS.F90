@@ -1602,7 +1602,7 @@ subroutine EOS_init(param_file, EOS, US)
   if ((EOS%form_of_EOS == EOS_TEOS10 .or. EOS%form_of_EOS == EOS_ROQUET_RHO .or. &
        EOS%form_of_EOS == EOS_ROQUET_SPV) .and. &
       .not.((EOS%form_of_TFreeze == TFREEZE_TEOS10) .or. (EOS%form_of_TFreeze == TFREEZE_TEOSPOLY)) ) then
-    call MOM_error(FATAL, "interpret_eos_selection:  EOS_TEOS10 or EOS_ROQUET_RHO or EOS_ROQUET_SPV "//&
+    call MOM_error(WARNING, "interpret_eos_selection:  EOS_TEOS10 or EOS_ROQUET_RHO or EOS_ROQUET_SPV "//&
                    "should only be used along with TFREEZE_FORM = TFREEZE_TEOS10 or TFREEZE_TEOSPOLY.")
   endif
 
