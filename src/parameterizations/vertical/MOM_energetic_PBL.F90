@@ -2820,15 +2820,7 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
   real :: f_u2     ! Coriolis X ustar^2 [Z2 T-3 ~> m2 s-3]
   real :: den      ! denominator, units iof buuyancy flux [Z2 T-3 ~> m2 s-3]
   real :: root_B_by_Omega ! sqrt( B / Omega )   [Z T-1 ~> m s-1]
-
-  ! from Sane et al. 2024: 
-  ! " p_1 &= \frac{a}{u_*} \sqrt{\frac{|B|}{f}}, \\ %= \sqrt{ \frac{L_{Ek}}{L_{MO}}}  \\
-  !   p_2 &= \frac{f}{\Omega},
-  !   Where $a = -1$ for $B \leq 0$ and $a = 1$ for $B > 0$ to distinguish between 
-  !  surface heating and cooling conditions. " 
-  ! p_3 = (CS%ML_c(11)**2.0) / (p1-CS%ML_c(11)), used to simplify calculation
-  ! p4 = (p1+CS%ML_c(10)) + p3 , used to simplify calculation
-
+  real :: f_prime  ! Coriolis divided by Earth's rotation [nondim]
 
   if (B_flux <= CS%bflux_lower_cap) then
     bflux_c = CS%bflux_lower_cap
@@ -2844,17 +2836,18 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
     absf_c = absf
   endif
 
+  f_u2 = absf_c * (u_star * u_star) ! pre-computing 
+
   ! setting v0_dummy here:
 
   if (bflux_c >= 0.0) then ! surface heating and neutral conditions
   ! Equation 16 in Sane et al. 2025:
   ! \frac{v}{u_*} = \frac{-c_9}{p_1 + c_{10} + \frac{c_{11}^2}{p_1 - c_{11}} }
 
-    root_b_f = sqrt( abs(bflux_c)  * absf_c)
-    f_u2 = absf_c * u_star * u_star
-    den = ( abs(bflux_c) - (c9 - c8)*u_star*root_b_f ) - c9*(1.0+c8)*f_u2
+    root_b_f = sqrt( bflux_c  * absf_c)
+    den = ( bflux_c - (CS%ML_c(9) - CS%ML_c(8)) *u_star*root_b_f ) - CS%ML_c(9)*(1.0+CS%ML_c(8))*f_u2
 
-    v0_dummy = c7*u_star*(root_b_f - c9*f_u2) / den
+    v0_dummy = CS%ML_c(7)*u_star*(root_b_f - CS%ML_c(9)*f_u2) / den
 
   else ! surface cooling
   ! Equation 17 in Sane et al. 2024:
@@ -2862,15 +2855,14 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
   ! \frac{(c_{13} e^{(-p_2/c_{14})} + c_{15}) }{p_1 ^2} }
     
     f_prime = absf_c * CS%omega_I  ! Coriolis divided by Earth's rotation
-    root_B_by_Omega = sqrt( abs(bflux_c) * CS%omega_I  )
-    f_u2 = absf_c * u_star * u_star
-    den = ( abs(bflux_c) + c11 * f_u2 * exp(-f_prime * c12) ) + c13*f_u2 
-    v0_dummy = ( c10 * f_u2 * root_B_by_Omega / den  ) + ( c14 * u_star )
+    root_B_by_Omega = sqrt( -bflux_c * CS%omega_I  )
+    den = ( -bflux_c + CS%ML_c(11) * f_u2 * exp(-f_prime * CS%ML_c(12) ) ) + CS%ML_c(13)*f_u2 
+    v0_dummy = ( CS%ML_c(10) * f_u2 * root_B_by_Omega / den  ) + ( CS%ML_c(14) * u_star )
 
   endif
   
-  v0_dummy = max(v0_dummy,CS%v0_lower_cap)  
-  v0_dummy = min(v0_dummy,CS%v0_upper_cap) ! kept for safety, but has never hit this cap. 
+  v0_dummy = min( max(v0_dummy, CS%v0_lower_cap), CS%v0_upper_cap )  
+  ! upper cap kept for safety, but has never hit this cap. 
 
   ! v0_lower_cap has been set to 0.0001 as data below that values does not exist in the training
   ! solution was tested for lower cap of 0.00001 and was found to be insensitive. 
@@ -2892,9 +2884,11 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
   ! local variables for this subroutine
   real :: bflux_c  ! capped bflux [Z2 T-3 ~> m2 s-3]
 
-  real :: p1 ! nondimensional numbers [nondim]
   real :: B_h, den ! Surface buoyancy flux multiplied by boundary layer depth, den is a denominator [Z3 T-3 ~> m3 s-3]
   real :: B_h_power1by3 ! cuberoot of (Surface buoyancy flux multiplied by boundary layer depth) [Z T-1 ~> m s-1]
+  real :: u_star_2      ! u_star squared, [Z2 T-2 ~> m2 s-2]
+
+  u_star_2 = u_star * u_star ! pre-multiplying u* 
 
   if (B_flux <= CS%bflux_lower_cap) then
     bflux_c = CS%bflux_lower_cap
@@ -2907,25 +2901,25 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
   ! setting v0_dummy here:
 
   if (bflux_c >= 0.0) then ! surface heating and neutral conditions
-    ! Equation 19 in Sane et al. 2024:
-    ! \frac{v_0}{u_*} = \frac{c_{17}}{ c_{18} p_1^3 + c_{19} p_1^2  + c_{20} }
+    ! Equation 19 in Sane et al. 2025:
+    ! \frac{v_0}{u_*} = \frac{c_{17}}{ c_{18} (Bh)/u^3 + c_{19} ((Bh)^(1/3)/u)^2  + c_{20} }
 
     B_h = abs(bflux_c) * MLD_guess
-    den = ( c15 * B_h + c16* u_star*cuberoot(B_h)**(2.0) ) + c17* u**(3.0) 
-    v0_dummy = u_star**(4.0) / den 
+    den = ( CS%ML_c(15) * B_h + CS%ML_c(16)* u_star*cuberoot(B_h)**(2.0) ) + CS%ML_c(17)* (u_star*u_star_2)
+    v0_dummy = (u_star_2 * u_star_2) / den 
 
   else ! surface cooling
-    ! Equation 20 in Sane et al. 2024:
+    ! Equation 20 in Sane et al. 2025:
     ! \frac{v_0}{u_*} = \frac{c_{21} p_1}{c_{22} + \frac{c_{23}}{p_1 ^2}}  + c_{24}
 
     B_h_power1by3 = cuberoot(abs(bflux_c) * MLD_guess)
-    den = c18 * B_h_power1by3**(2.0) + c19 * u_star**(2.0)
+    den = CS%ML_c(18) * B_h_power1by3**(2.0) + CS%ML_c(19) * u_star_2
 
-    v0_dummy = (u_star**(2.0) * B_h_power1by3  / den ) + c20
+    v0_dummy = (u_star_2 * B_h_power1by3  / den ) + CS%ML_c(20)
   endif
 
-  v0_dummy = max(v0_dummy,CS%v0_lower_cap)  
-  v0_dummy = min(v0_dummy,CS%v0_upper_cap) ! kept for safety, but never hits this cap. 
+  v0_dummy = min( max(v0_dummy, CS%v0_lower_cap), CS%v0_upper_cap )  
+  ! upper cap kept for safety, but has never hit this cap. 
 
   ! v0_lower_cap has been set to 0.0001 as data below that values does not exist in the training
   ! solution was tested for lower cap of 0.00001 and was found to be insensitive. 
