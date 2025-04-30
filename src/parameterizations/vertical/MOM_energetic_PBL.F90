@@ -44,6 +44,7 @@ type, public :: energetic_PBL_CS ; private
   real    :: omega_frac      !< When setting the decay scale for turbulence, use this fraction of
                              !! the absolute rotation rate blended with the local value of f, as
                              !! sqrt((1-omega_frac)*f^2 + omega_frac*4*omega^2) [nondim].
+  real    :: omega_I           !< Inverse of the Earth's rotation rate [T ~> s].
 
   !/ Convection related terms
   real    :: nstar           !< The fraction of the TKE input to the mixed layer available to drive
@@ -164,7 +165,7 @@ type, public :: energetic_PBL_CS ; private
 
   !/ Machine learned equation discovery model paramters ! eqdisc
   logical :: eqdisc, eqdisc_v0, eqdisc_v0h  ! Machine Learned Equation discovery - shape function and velocity-scale
-  real :: v0_lower_cap ! Lower cap to prevent v0 from attaining anomlously low values [Z T-1 ~> m s-1]
+  real :: v0_lower_cap, v0_upper_cap ! Lower / upper cap to prevent v0 from attaining anomlously low /high values [Z T-1 ~> m s-1]
   real :: f_lower ! Lower cap of |f| i.e. absolute of Coriolis parameter. [T-1 ~> s-1]
                   ! Used in v0 subroutines. Default at 0.1deg Lat
   real :: bflux_lower_cap, bflux_upper_cap ! Lower and upper cap for capping blfux. [Z2 T-3 ~> m2 s-3]
@@ -172,7 +173,7 @@ type, public :: energetic_PBL_CS ; private
   !/ Coefficients used in Machine learned diffusivity, Equations 6,7,10,11 in Sane et al. 2024
 
 
-  real :: ML_c(24) ! Array of non-dimensional constants used in machine learned (ML) diffusivity [nondim]
+  real :: ML_c(20) ! Array of non-dimensional constants used in machine learned (ML) diffusivity [nondim]
 
   !/ Bottom boundary layer mixing related options
   real :: ePBL_BBL_effic     !< The efficiency of bottom boundary layer mixing via ePBL driven by
@@ -2708,26 +2709,29 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   type(verticalGrid_type), intent(in)    :: GV     !< The ocean's vertical grid structure.
   type(energetic_PBL_CS),  intent(in) :: CS     !< Energetic PBL control struct
   real, dimension(SZK_(GV)+1), intent(inout) :: shape_func  !< shape function, [nondim]
-  real, intent(in) :: absf      !< The absolute value of f [T-1 ~> s-1].
-  real, intent(in) :: u_star    !< The surface friction velocity [Z T-1 ~> m s-1].
+  real, intent(in) :: absf      !< The absolute value of f [T-1 ~> s-1]
+  real, intent(in) :: u_star    !< The surface friction velocity [Z T-1 ~> m s-1]
   real, intent(in) :: B_Flux    !< The surface buoyancy flux [Z2 T-3 ~> m2 s-3]
-  real, dimension(SZK_(GV)), intent(in)  :: dz     !< The vertical distance across layers [Z ~> m].
+  real, dimension(SZK_(GV)), intent(in)  :: dz     !< The vertical distance across layers [Z ~> m]
   real, intent(in) :: MLD_guess !< Mixing Layer depth guessed/found for iteration [Z ~> m].
   real, dimension(SZK_(GV)+1) :: hz !< depth variable, only used in this routine [H ~> m]
 
   ! local variables for this subroutine
   integer :: nz
-  integer :: K ! integer for looping
-  integer :: i,j,n ! integer for looping, local only
-  real :: p1 ! ((B_flux * h))/(u_star^3), boundary layer depth by M-O depth, [nondim]
-  real :: p2 ! ((h f)/u_star ),  boundary layer depth by Ekman depth, [nondim]
+  integer :: K, n ! integers for looping
+  real :: Lh ! ((B_flux * h))/(u_star^3), boundary layer depth by M-O depth, [nondim]
+  real :: Eh ! ((h f)/u_star ),  boundary layer depth by Ekman depth, [nondim]
   real :: sm ! sigma_max: location of maximum of shape function in sigma coordinate [nondim]
-  real :: sm_I ! inverse of sm,[nondim]
-  real :: sm_I2 ! An inverse variable given by 1.0/(1.0 - sm), [nondim]
   real :: hbl ! Boundary layer depth, same as MLD_guess [Z ~> m]
   real :: F ! function, used in asymptotic model for sm, Equation 7 in Sane et al. 2024 [nondim]
-  real :: F_I ! Inverse of F, [nondim]
-  real :: Fp1 ! = F*p1, [nondim]
+  real :: F_Eh ! F multiplied by Eh [nondim]
+  real :: ustar_I  ! inverse of u_star [Z-1 T ~> m-1 s]
+
+  ! variables used for optimizing the shape function loop:
+  real :: sm_h ! sigma_max multiplied by boundary layer depth [Z ~> m]
+  real :: sm_h_I ! inverse of sm_h,[Z-1 ~> m-1]
+  real :: sm_h_I2 ! An inverse variable given by 1.0/(h - sm_h), [Z-1 ~> m-1]
+
 
   nz = SZK_(GV)+1
   hz(1) = 0.0
@@ -2735,49 +2739,66 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
     hz(K) = hz(K-1) + dz(K-1)
   end do
   hbl = MLD_Guess ! hbl is boundary layer depth.
-  shape_func(:) = 0.0  ! initializing the entire shape_function array
 
-  p1 = (hbl * absf)/(u_star)   ! Boundary layer depth divided by Ekman depth
-  p2 = ((-B_flux * hbl))/(u_star**3) ! Boundary layer depth divided by Monin-Obukhov depth
-  ! B_flux given negative sign to follow convention used in Sane et al. 2023,2024
-  ! p2 < 0 --> surface stabilizing i.e. heating, and p2 > 0 --> surface destabilizing i.e. cooling
-  p2 = p2 * 2.4390 ! dividing by von-Karman constant 0.41 i.e. multiply by 2.4390
+  u_star_I = 1.0/u_star
+  Lh = ((-B_flux * hbl) * (u_star_I * u_star_I)) * u_star_I ! Boundary layer depth divided by Monin-Obukhov depth
+  Eh = (hbl * absf) * u_star_I   ! Boundary layer depth divided by Ekman depth
+
+  ! B_flux given negative sign to follow convention used in Sane et al. 2023
+  ! Lh < 0 --> surface stabilizing i.e. heating, and Lh > 0 --> surface destabilizing i.e. cooling
   ! This capping does not matter because these equations have asymptotes. Not sensitive beyond the caps.
-  p1 = min(p1, 2.0) ! capping p1 to less than 2.0. It is always >0.0.
-  p2 = max(p2, -8.0) ! capping p2 to -8.0 if less than -8.0
-  p2 = min(p2,  8.0) ! capping p2 to 8.0 if greater than 8.0
+  Eh = min(Eh, 2.0) ! capping p1 to less than 2.0. It is always >0.0.
+  Lh = min( max(Lh, -8.0), 8.0 ) ! capping Lh between -8 and 8
+
   ! Empirical model to predict sm:
-  ! F1 is solely function of p2
-  F = exp( (-p2-CS%ML_c(6))/ CS%ML_c(7) ) ! originally, F=(CS%c4/(CS%c5+exp((-p2-CS%c6)/CS%c7)))+CS%c8
-  F = CS%ML_c(5) + F
-  F = CS%ML_c(4) / F
-  F = F + CS%ML_c(8)
-  Fp1 = F*p1
-  Fp1 = max(Fp1, 1E-05) ! an arbitrary small value to cap Fp1, result insensitive below that value
-  F_I = 1.0 / ( Fp1 )
-  sm = CS%ML_c(2) + (CS%ML_c(3) * F_I)
-  sm = CS%ML_c(1) / sm
-  sm = min(sm,0.7) ! makes sure sm is less than 0.7, true sm range is from 0.2 to 0.60
+  ! F is Equation 16 in Sane et al. 2025, and needs to be computed before sigma_m:
+  ! \mathcal{F} = \frac{1}{c_3 + c_4 \cdot e^{-\left(  {c_5} \cdot {{L_h}^3} \right)}} + c_6
+  ! Equation 15 in Sane et al. 2025:
+  ! \sigma_{m} = \frac{1}{c_1 + \frac{c_2}{\mathcal{F} \cdot E_h}}
+  ! Note: Lh over here is {L_h}^3 in Sane et al. 2025.
+
+  F = (1.0/ ( CS%ML_c(3) + CS%ML_c(4) * exp(-CS%ML_c(5) * Lh) ) ) + CS%ML_c(6)
+  F_Eh = F * Eh
+  sm = F_Eh / (CS%ML_c(1)*F_Eh +CS%ML_c(2))
+
+  sm = min(sm,0.7) ! makes sure sm is less than 0.7, true sm range is from (approx) 0.2 to 0.60
   sm = max(sm,0.1) ! makes sure sm is more than 0.1
-  sm= sm * hbl ! peak of shape function in model vertical coordinate z, or peak of shape function in z coordinate
-  sm_I = 1.0/sm ! inverse of sm x hbl
-  sm_I2 = 1.0/(hbl-sm)  ! inverse of (hbl-sm), as 0.1<sm<0.7, hbl>sm, hence (hbl-sm) always >0.0
+
+  sm_h = sm * hbl  
+  sm_h_I = 1.0/sm_h               ! inverse of (sm x hbl)
+  h_minus_smh_I  = 1.0/(hbl-sm_h)  ! inverse of (hbl-sm_h), as 0.1<sm<0.7, hbl>sm, hence (hbl-sm) always >0.0
+  h_minus_smh_I2 = h_minus_smh_I * h_minus_smh_I    !  (1/(hbl - sm*hbl))^2
+  h_minus_smh_I3 = 1.99 * h_minus_smh_I2 * h_minus_smh_I   !  (1/(hbl - sm*hbl))^3
+
+  ! the coefficients 1.99 and 2.98 are dependent on the below value of 0.01.
+  ! They smoothly make the cubic go towards 0.01 below hbl.
+  coef_c2 = 2.98 * h_minus_smh_I2 ! 
+  coef_c3 = 1.99 * h_minus_smh_I3 !  
   
-  ! gives the shape, quadratic above sm, cubic below sm.
-  ! see Equation 8 in Sane et al. 2024
-  ! interpolates a quadratic function from z=0 to z=sm*hbl, and then a cubic from z=sm*hbl to z=hbl
-  shape_func(:) = 0.0
+
+  ! gives the shape, quadratic above sm, cubic below sm in sigma coordinate
+  ! see Equation 3 in Sane et al. 2024
+  ! interpolates a quadratic function from z=0 to z=sm_h, and then a cubic from z=sm_h to z=hbl
+  shape_func(1) = 0.0  ! initializing the entire shape_function array
   do n = 2,nz
-    if  (hz(n) <= sm) then
-      shape_func(n) = -(hz(n) * sm_I)**2.0 + 2.0*(hz(n)*sm_I)
-    elseif  ((hz(n) > sm) .and. (hz(n) <= hbl)) then
-      shape_func(n) =  ( (1.99 * ((hz(n)-sm)*sm_I2)**3.0) - ( 2.98 *((hz(n)-sm)*sm_I2)**2.0 ) ) + 1.0
-      ! the coefficients 1.99 and 2.98 are dependent on the below value of 0.01.
-      ! They smoothly make the cubic go towards 0.01 below hbl.
+    hz_n = hz(n) ! calls hz(n) once to avoid calling it multiple times below
+
+    if  (hz_n <= sm_h) then
+      ! -(\frac{z}{\sigma_m \cdot h})^2+2(\frac{z}{\sigma_m h}) : Eq. (3) in Sane et al. 2025
+      z_sm_h_I = hz_n * sm_h_I ! pre multiplying
+      shape_func(n) = -z_sm_h_I*z_sm_h_I + 2.0 * z_sm_h_I 
+                                                
+    elseif  (hz_n <= hbl) then
+      
+      z_minus_sm_h  = (hz_n - sm_h)
+      z_minus_sm_h2 = (hz_n - sm_h) * (hz_n - sm_h)
+      z_minus_sm_h3 = (hz_n - sm_h) * z_minus_sm_h2
+
+      shape_func(n) = coef_c3 * z_minus_sm_h3 - coef_c2 * z_minus_sm_h2 + 1.0
+
     elseif ((hz(n) > hbl)) then
       shape_func(n) = 0.01 ! we set an arbitrary low value to 0.01
       ! This value should be small such as 0.01, or 0.001, result is not sensitive. It should not be 0.0
-
     endif
   end do
 
@@ -2793,10 +2814,13 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
 
   ! local variables for this subroutine
   real :: bflux_c  ! capped bflux [Z2 T-3 ~> m2 s-3]
-  real :: ust_c    ! capped ustar [Z T-1 ~> m s-1]
   real :: absf_c   ! capped absf [T-1 ~> s-1]
-  real :: p1, p2, p3, p4  ! nondimensional numbers [nondim]
-  real :: p_uf, p1_c11, I_p4, p_omega_I, p_u, p_c14, p_b    ! nondimensional numbers for inverse computation [nondim] 
+
+  real :: root_b_f ! square root of (abs(B_flux) * Coriolis) [Z T-2 ~> m s-2]
+  real :: f_u2     ! Coriolis X ustar^2 [Z2 T-3 ~> m2 s-3]
+  real :: den      ! denominator, units iof buuyancy flux [Z2 T-3 ~> m2 s-3]
+  real :: root_B_by_Omega ! sqrt( B / Omega )   [Z T-1 ~> m s-1]
+
   ! from Sane et al. 2024: 
   ! " p_1 &= \frac{a}{u_*} \sqrt{\frac{|B|}{f}}, \\ %= \sqrt{ \frac{L_{Ek}}{L_{MO}}}  \\
   !   p_2 &= \frac{f}{\Omega},
@@ -2813,12 +2837,9 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
   else
     bflux_c = B_flux
   endif
-  
-  ust_c = u_star
 
   if (absf <= CS%f_lower) then   ! 
-    absf_c = CS%f_lower    ! 0.1 deg Latitude, cap avoids zero coriolis, 
-                            ! solution is not sensitive below 0.1 Degrees
+    absf_c = CS%f_lower    ! 0.1 deg Latitude, cap avoids zero coriolis, solution insensitive below 0.1 deg.
   else
     absf_c = absf
   endif
@@ -2826,40 +2847,30 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
   ! setting v0_dummy here:
 
   if (bflux_c >= 0.0) then ! surface heating and neutral conditions
-  ! Equation 16 in Sane et al. 2024:
+  ! Equation 16 in Sane et al. 2025:
   ! \frac{v}{u_*} = \frac{-c_9}{p_1 + c_{10} + \frac{c_{11}^2}{p_1 - c_{11}} }
 
-    p_uf = ust_c * sqrt(absf_c)
-    p_uf = 1.0 / p_uf
-    p1 = -1.0 * ( p_uf * sqrt(abs(bflux_c)) )
-    p1_c11 = p1 - CS%ML_c(11)
-    p1_c11 = 1.0 / p1_c11 
-    p3 = (CS%ML_c(11)**2.0) * p1_c11
-    p4 = (p1+CS%ML_c(10)) + p3
-    I_p4 = 1.0 / p4
-    v0_dummy = -CS%ML_c(9) * I_p4
+    root_b_f = sqrt( abs(bflux_c)  * absf_c)
+    f_u2 = absf_c * u_star * u_star
+    den = ( abs(bflux_c) - (c9 - c8)*u_star*root_b_f ) - c9*(1.0+c8)*f_u2
+
+    v0_dummy = c7*u_star*(root_b_f - c9*f_u2) / den
 
   else ! surface cooling
   ! Equation 17 in Sane et al. 2024:
   ! \frac{v}{u_*}=\frac{c_{12} p_1 \cdot \sqrt{p_2} }{1 +  ...
   ! \frac{(c_{13} e^{(-p_2/c_{14})} + c_{15}) }{p_1 ^2} }
-  ! p1 is merged in p3
+    
+    f_prime = absf_c * CS%omega_I  ! Coriolis divided by Earth's rotation
+    root_B_by_Omega = sqrt( abs(bflux_c) * CS%omega_I  )
+    f_u2 = absf_c * u_star * u_star
+    den = ( abs(bflux_c) + c11 * f_u2 * exp(-f_prime * c12) ) + c13*f_u2 
+    v0_dummy = ( c10 * f_u2 * root_B_by_Omega / den  ) + ( c14 * u_star )
 
-    p_omega_I = 1.0 / CS%omega  !add p_omega_I, p_u, p_c14, p_b, p4_I
-    p2 = absf_c * p_omega_I
-    p_u = 1.0 / ust_c
-    p3 = CS%ML_c(12) * ( p_u * sqrt(abs(bflux_c) * p_omega_I) )
-    p_c14 = 1.0 / CS%ML_c(14)
-    p4 = CS%ML_c(13) * exp(-p2 * p_c14) + CS%ML_c(15)
-    p_b = 1.0 / abs(bflux_c)
-    p4 =  1 + (absf_c * p4 * ust_c**2.0) * p_b
-    I_p4 = 1.0 / p4
-    v0_dummy  = (p3 * I_p4 ) + CS%ML_c(16)
   endif
   
-  v0_dummy = v0_dummy * ust_c ! v0_dummy = v0/u*, so it is multiplied by ust_c to get v0
   v0_dummy = max(v0_dummy,CS%v0_lower_cap)  
-  v0_dummy = min(v0_dummy,0.1) ! kept for safety, but has never hit this cap. 
+  v0_dummy = min(v0_dummy,CS%v0_upper_cap) ! kept for safety, but has never hit this cap. 
 
   ! v0_lower_cap has been set to 0.0001 as data below that values does not exist in the training
   ! solution was tested for lower cap of 0.00001 and was found to be insensitive. 
@@ -2880,14 +2891,10 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
 
   ! local variables for this subroutine
   real :: bflux_c  ! capped bflux [Z2 T-3 ~> m2 s-3]
-  real :: ust_c    ! capped ustar [Z T-1 ~> m s-1]
-  real :: ust_c_I    ! Inverse of capped ustar [Z-1 T ~> m-1 s]
 
   real :: p1 ! nondimensional numbers [nondim]
-  ! from Sane et al. 2024: 
-  ! " p_1 &= \frac{a}{u_*} \frac{|Bh|^(1/3)}
-  !   Where $a = -1$ for $B \leq 0$ and $a = 1$ for $B > 0$ to distinguish between 
-  !  surface heating and cooling conditions. " 
+  real :: B_h, den ! Surface buoyancy flux multiplied by boundary layer depth, den is a denominator [Z3 T-3 ~> m3 s-3]
+  real :: B_h_power1by3 ! cuberoot of (Surface buoyancy flux multiplied by boundary layer depth) [Z T-1 ~> m s-1]
 
   if (B_flux <= CS%bflux_lower_cap) then
     bflux_c = CS%bflux_lower_cap
@@ -2896,31 +2903,29 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
   else
     bflux_c = B_flux
   endif
-  
-  ust_c = u_star
-  ust_c_I = 1.0 / ust_c
-
-  ! setting p1 here:
-  p1 = cuberoot(abs(bflux_c * MLD_guess))
-  p1 = p1 * ust_c_I  
 
   ! setting v0_dummy here:
 
   if (bflux_c >= 0.0) then ! surface heating and neutral conditions
     ! Equation 19 in Sane et al. 2024:
     ! \frac{v_0}{u_*} = \frac{c_{17}}{ c_{18} p_1^3 + c_{19} p_1^2  + c_{20} }
-    v0_dummy = CS%ML_c(17) / ( ( CS%ML_c(18) * (p1**3.0) +  CS%ML_c(19)* (p1**2.0) ) + CS%ML_c(20) )
+
+    B_h = abs(bflux_c) * MLD_guess
+    den = ( c15 * B_h + c16* u_star*cuberoot(B_h)**(2.0) ) + c17* u**(3.0) 
+    v0_dummy = u_star**(4.0) / den 
 
   else ! surface cooling
     ! Equation 20 in Sane et al. 2024:
     ! \frac{v_0}{u_*} = \frac{c_{21} p_1}{c_{22} + \frac{c_{23}}{p_1 ^2}}  + c_{24}
-    v0_dummy =  CS%ML_c(24) + ( CS%ML_c(21) * p1**3 / ( p1**2 * CS%ML_c(22) + CS%ML_c(23) ) )
 
+    B_h_power1by3 = cuberoot(abs(bflux_c) * MLD_guess)
+    den = c18 * B_h_power1by3**(2.0) + c19 * u_star**(2.0)
+
+    v0_dummy = (u_star**(2.0) * B_h_power1by3  / den ) + c20
   endif
-  
-  v0_dummy = v0_dummy * ust_c ! v0_dummy = v/u*, so it is multiplied by ust_c to get v0
+
   v0_dummy = max(v0_dummy,CS%v0_lower_cap)  
-  v0_dummy = min(v0_dummy,0.1) ! kept for safety, but never hits this cap. 
+  v0_dummy = min(v0_dummy,CS%v0_upper_cap) ! kept for safety, but never hits this cap. 
 
   ! v0_lower_cap has been set to 0.0001 as data below that values does not exist in the training
   ! solution was tested for lower cap of 0.00001 and was found to be insensitive. 
@@ -3690,6 +3695,9 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "OMEGA", CS%omega, &
                  "The rotation rate of the earth.", &
                  units="s-1", default=7.2921e-5, scale=US%T_to_S)
+  call get_param(param_file, mdl, "OMEGA_I", CS%omega_I, &
+                 "The rotation rate of the earth.", &
+                 units="s", default=13713.470742310172, scale=US%T_to_S)
   call get_param(param_file, mdl, "ML_USE_OMEGA", use_omega, &
                  "If true, use the absolute rotation rate instead of the "//&
                  "vertical component of rotation when setting the decay "//&
@@ -4139,6 +4147,10 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                        "value of lower limit cap for Coriolis in v0", & 
                        units="m s-1", default=0.0001, scale=US%m_to_Z*US%T_to_s)
 
+  call get_param(param_file, mdl, "v0_upper_cap", CS%v0_upper_cap, &
+                       "value of upper limit cap for Coriolis in v0", & 
+                       units="m s-1", default=0.1, scale=US%m_to_Z*US%T_to_s)
+
   call get_param(param_file, mdl, "bflux_lower_cap", CS%bflux_lower_cap, &
                        "value of lower limit cap for Bflux used in setting in v0", & 
                        units="m2 s-3", default=-7.0E-07, scale=(US%m_to_L**2)*(US%T_to_s**3))
@@ -4148,16 +4160,13 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                        units="m2 s-3", default=7.0E-07, scale=(US%m_to_L**2)*(US%T_to_s**3))
 
   ! The coefficients used for machine learned diffusivity
-  ! c1 to c8 used for sigma_m, 
-  !  9 to 11 v_0 surface heating
-  ! 12 to 16 v_0 surface cooling
-  ! 17 to 20 v_0h surface heating, 21 to 24 v_0h surface cooling
+  ! c1 to c6 used for sigma_m, 
+  !  7 to 9 v_0 surface heating, 10 to 14 v_0 surface cooling (ML velocity scale without h as input)
+  ! 15 to 17 v_0h surface heating, 18 to 20 v_0h surface cooling (ML velocity scale with h as input)
   call get_param(param_file, mdl, "ML_diffusivity_coeffs", CS%ML_c, &
-                       "Coefficient used for ML diffusivity 1 to 24,  ", units="nondim", &
-                       defaults=(/0.976, 1.743, 1.551, 0.943 , 0.016, 0.693, &
-                                  0.379, 2.194, 0.1426,0.0434, 1.80,  0.098, &
-                                  45.0,  0.35,  3.29,  0.0764, 0.104, 0.863, &
-                                  0.15,  1.255, 0.047, 0.285 , 0.787, 0.08 /))
+                 "Coefficient used for ML diffusivity 1 to 24,  ", units="nondim", &
+                  defaults=(/1.7908 , 0.6904, 0.0712, 0.4380, 2.6821, 1.5845, 0.1550,  1.1120,  0.8616, 0.0984 &
+                             45.0,    2.8570, 3.290,  0.0764, 8.2854, 1.2026, 12.7677, 6.0277, 15.7292, 0.0785 /))
 
   !/ options end for Machine Learning Equation Discovery
 
