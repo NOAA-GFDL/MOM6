@@ -2725,12 +2725,23 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   real :: hbl ! Boundary layer depth, same as MLD_guess [Z ~> m]
   real :: F ! function, used in asymptotic model for sm, Equation 7 in Sane et al. 2024 [nondim]
   real :: F_Eh ! F multiplied by Eh [nondim]
-  real :: ustar_I  ! inverse of u_star [Z-1 T ~> m-1 s]
+  real :: u_star_I  ! inverse of u_star [Z-1 T ~> m-1 s]
 
   ! variables used for optimizing the shape function loop:
-  real :: sm_h ! sigma_max multiplied by boundary layer depth [Z ~> m]
-  real :: sm_h_I ! inverse of sm_h,[Z-1 ~> m-1]
-  real :: sm_h_I2 ! An inverse variable given by 1.0/(h - sm_h), [Z-1 ~> m-1]
+  real :: sm_h     ! sigma_max multiplied by boundary layer depth [Z ~> m]
+  real :: sm_h_I   ! inverse of sm_h,[Z-1 ~> m-1]
+  real :: sm_h_I2  ! An inverse variable given by 1.0/(h - sm_h), [Z-1 ~> m-1]
+  real :: hz_n     ! z depth to avoid calling hz multiple times [Z ~> m]
+  real :: z_minus_sm_h  ! depth z minus \sigma_m * MLD_Guess [Z ~> m]
+  real :: z_minus_sm_h2 ! (depth z minus \sigma_m * MLD_Guess)^2 [Z2 ~> m2]
+  real :: z_minus_sm_h3 ! (depth z minus \sigma_m * MLD_Guess)^3 [Z3 ~> m3]
+  real :: h_minus_smh_I ! inverse of (MLD_Guess - \sigma_m * MLD_Guess)  [Z-1 ~> m-1]
+  real :: h_minus_smh_I2 ! inverse of (MLD_Guess - \sigma_m * MLD_Guess) ^ 2 [Z-2 ~> m-2]
+  real :: h_minus_smh_I3 ! inverse of (MLD_Guess - \sigma_m * MLD_Guess) ^ 3 [Z-3 ~> m-3]
+  real :: z_sm_h_I      ! depth divided by (\sigma_m * MLD_Guess) [nondim]
+  real :: coef_c2       ! = 2.98 * h_minus_smh_I2 !  [Z-2 ~> m-2]
+  real :: coef_c3       ! = 2.98 * h_minus_smh_I2 !  [Z-3 ~> m-3]
+
 
 
   nz = SZK_(GV)+1
@@ -2911,13 +2922,8 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
     den = ( CS%ML_c(15) * B_h + CS%ML_c(16)* u_star*(B_h_power1by3*B_h_power1by3)) &
            + CS%ML_c(17)* (u_star*u_star_2)
     v0_dummy = (u_star_2 * u_star_2) / den 
-
-  else ! surface cooling
-    ! Equation 20 in Sane et al. 2025:
-    ! \frac{v_0}{u_*} = \frac{c_{21} p_1}{c_{22} + \frac{c_{23}}{p_1 ^2}}  + c_{24}
-
+  else
     den = CS%ML_c(18) * (B_h_power1by3*B_h_power1by3) + CS%ML_c(19) * u_star_2
-
     v0_dummy = (B_h / den ) + CS%ML_c(20)
   endif
 
@@ -4121,8 +4127,8 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
   ! flag for using shape function from equation discovery - machine learning
 
    call get_param(param_file, mdl, "Equation_Discovery_shape", CS%eqdisc, &
-                 "flag for activating equation for shape function" // &
-                 "that uses forcing to change its structure."
+                 "flag for activating equation for shape function "// &
+                 "that uses forcing to change its structure.", &
                  units="nondim", default=.false.)
 
    call get_param(param_file, mdl, "Equation_Discovery_velocity", CS%eqdisc_v0, &
@@ -4162,7 +4168,7 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
   ! 15 to 17 v_0h surface heating, 18 to 20 v_0h surface cooling (ML velocity scale with h as input)
   call get_param(param_file, mdl, "ML_diffusivity_coeffs", CS%ML_c, &
                  "Coefficient used for ML diffusivity 1 to 24,  ", units="nondim", &
-                  defaults=(/1.7908 , 0.6904, 0.0712, 0.4380, 2.6821, 1.5845, 0.1550,  1.1120,  0.8616, 0.0984 &
+                  defaults=(/1.7908 , 0.6904, 0.0712, 0.4380, 2.6821, 1.5845, 0.1550,  1.1120,  0.8616, 0.0984, &
                              45.0,    2.8570, 3.290,  0.0764, 8.2854, 1.2026, 12.7677, 6.0277, 15.7292, 0.0785 /))
 
   !/ options end for Machine Learning Equation Discovery
