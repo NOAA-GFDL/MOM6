@@ -2779,7 +2779,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   sm_h_I = 1.0/sm_h               ! inverse of (sm x hbl)
   h_minus_smh_I  = 1.0/(hbl-sm_h)  ! inverse of (hbl-sm_h), as 0.1<sm<0.7, hbl>sm, hence (hbl-sm) always >0.0
   h_minus_smh_I2 = h_minus_smh_I * h_minus_smh_I    !  (1/(hbl - sm*hbl))^2
-  h_minus_smh_I3 = 1.99 * h_minus_smh_I2 * h_minus_smh_I   !  (1/(hbl - sm*hbl))^3
+  h_minus_smh_I3 = h_minus_smh_I2 * h_minus_smh_I   !  (1/(hbl - sm*hbl))^3
 
   ! the coefficients 1.99 and 2.98 are dependent on the below value of 0.01.
   ! They smoothly make the cubic go towards 0.01 below hbl.
@@ -2856,9 +2856,10 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
   ! \frac{v}{u_*} = \frac{-c_9}{p_1 + c_{10} + \frac{c_{11}^2}{p_1 - c_{11}} }
 
     root_b_f = sqrt( bflux_c  * absf_c)
-    den = ( bflux_c - (CS%ML_c(9) - CS%ML_c(8)) *u_star*root_b_f ) - CS%ML_c(9)*(1.0+CS%ML_c(8))*f_u2
+    den = ( bflux_c + (CS%ML_c(8) + CS%ML_c(9)) * u_star * root_b_f  + &
+          (CS%ML_c(8) * CS%ML_c(9) + CS%ML_c(9)**2) * f_u2)
 
-    v0_dummy = CS%ML_c(7)*u_star*(root_b_f - CS%ML_c(9)*f_u2) / den
+    v0_dummy = ( ( CS%ML_c(7)*( (u_star * root_b_f) + (CS%ML_c(9)*f_u2) ) ) * u_star) / den
 
   else ! surface cooling
   ! Equation 17 in Sane et al. 2024:
@@ -2868,7 +2869,7 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
     f_prime = absf_c * CS%omega_I  ! Coriolis divided by Earth's rotation
     root_B_by_Omega = sqrt( -bflux_c * CS%omega_I  )
     den = ( -bflux_c + CS%ML_c(11) * f_u2 * exp(-f_prime * CS%ML_c(12) ) ) + CS%ML_c(13)*f_u2 
-    v0_dummy = ( CS%ML_c(10) * f_u2 * root_B_by_Omega / den  ) + ( CS%ML_c(14) * u_star )
+    v0_dummy = ( CS%ML_c(10) * -bflux_c * root_B_by_Omega / den  ) + ( CS%ML_c(14) * u_star )
 
   endif
   
@@ -2924,7 +2925,7 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
     v0_dummy = (u_star_2 * u_star_2) / den 
   else
     den = CS%ML_c(18) * (B_h_power1by3*B_h_power1by3) + CS%ML_c(19) * u_star_2
-    v0_dummy = (B_h / den ) + CS%ML_c(20)
+    v0_dummy = (B_h / den ) + CS%ML_c(20) * u_star
   endif
 
   v0_dummy = min( max(v0_dummy, CS%v0_lower_cap), CS%v0_upper_cap )  
