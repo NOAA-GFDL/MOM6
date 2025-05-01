@@ -2883,12 +2883,13 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
 
   ! local variables for this subroutine
   real :: bflux_c  ! capped bflux [Z2 T-3 ~> m2 s-3]
-
   real :: B_h, den ! Surface buoyancy flux multiplied by boundary layer depth, den is a denominator [Z3 T-3 ~> m3 s-3]
   real :: B_h_power1by3 ! cuberoot of (Surface buoyancy flux multiplied by boundary layer depth) [Z T-1 ~> m s-1]
   real :: u_star_2      ! u_star squared, [Z2 T-2 ~> m2 s-2]
+  real :: u_star_3      ! u_star cubed,   [Z3 T-3 ~> m3 s-3]
 
   u_star_2 = u_star * u_star ! pre-multiplying u* 
+  u_star_3 = u_star_2 * u_star ! obtained u_star ^ 3.0
 
   if (B_flux <= CS%bflux_lower_cap) then
     bflux_c = CS%bflux_lower_cap
@@ -2898,24 +2899,26 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
     bflux_c = B_flux
   endif
 
+  B_h = abs(bflux_c) * MLD_guess 
+  B_h_power1by3 = cuberoot(B_h)
+
   ! setting v0_dummy here:
 
   if (bflux_c >= 0.0) then ! surface heating and neutral conditions
     ! Equation 19 in Sane et al. 2025:
     ! \frac{v_0}{u_*} = \frac{c_{17}}{ c_{18} (Bh)/u^3 + c_{19} ((Bh)^(1/3)/u)^2  + c_{20} }
 
-    B_h = abs(bflux_c) * MLD_guess
-    den = ( CS%ML_c(15) * B_h + CS%ML_c(16)* u_star*cuberoot(B_h)**(2.0) ) + CS%ML_c(17)* (u_star*u_star_2)
+    den = ( CS%ML_c(15) * B_h + CS%ML_c(16)* u_star*(B_h_power1by3*B_h_power1by3)) &
+           + CS%ML_c(17)* (u_star*u_star_2)
     v0_dummy = (u_star_2 * u_star_2) / den 
 
   else ! surface cooling
     ! Equation 20 in Sane et al. 2025:
     ! \frac{v_0}{u_*} = \frac{c_{21} p_1}{c_{22} + \frac{c_{23}}{p_1 ^2}}  + c_{24}
 
-    B_h_power1by3 = cuberoot(abs(bflux_c) * MLD_guess)
-    den = CS%ML_c(18) * B_h_power1by3**(2.0) + CS%ML_c(19) * u_star_2
+    den = CS%ML_c(18) * (B_h_power1by3*B_h_power1by3) + CS%ML_c(19) * u_star_2
 
-    v0_dummy = (u_star_2 * B_h_power1by3  / den ) + CS%ML_c(20)
+    v0_dummy = (B_h / den ) + CS%ML_c(20)
   endif
 
   v0_dummy = min( max(v0_dummy, CS%v0_lower_cap), CS%v0_upper_cap )  
