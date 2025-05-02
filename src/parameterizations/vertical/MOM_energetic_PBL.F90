@@ -171,9 +171,8 @@ type, public :: energetic_PBL_CS ; private
   real :: bflux_lower_cap, bflux_upper_cap ! Lower and upper cap for capping blfux. [Z2 T-3 ~> m2 s-3]
   real, allocatable, dimension(:) :: shape_function ! shape function used in machine learned diffusivity [nondim]
   !/ Coefficients used in Machine learned diffusivity, Equations 6,7,10,11 in Sane et al. 2024
-
-
   real :: ML_c(20) ! Array of non-dimensional constants used in machine learned (ML) diffusivity [nondim]
+  real :: shape_function_epsilon ! An arbitrary small value of shape_function below the boundary layer depth
 
   !/ Bottom boundary layer mixing related options
   real :: ePBL_BBL_effic     !< The efficiency of bottom boundary layer mixing via ePBL driven by
@@ -2781,37 +2780,44 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   h_minus_smh_I2 = h_minus_smh_I * h_minus_smh_I    !  (1/(hbl - sm*hbl))^2
   h_minus_smh_I3 = h_minus_smh_I2 * h_minus_smh_I   !  (1/(hbl - sm*hbl))^3
 
-  ! the coefficients 1.99 and 2.98 are dependent on the below value of 0.01.
-  ! They smoothly make the cubic go towards 0.01 below hbl.
-  coef_c2 = 2.98 * h_minus_smh_I2 ! 
-  coef_c3 = 1.99 * h_minus_smh_I3 !  
-  
+  ! The coefficients coef_c3 and coef_c2 are dependent on CS%shape_function_epsilon.
+  ! Above depth sm_h, shape_func is quadratic, and below sm_h, it is cubic. 
+  ! For iterative ePBL solver, shape_func should not be zero below hbl, so that it has been set to a small value
+  ! set by CS%shape_function_epsilon. To make the cubic part of shapefunc behave smoothly, the below two coefficients 
+  ! are used that depend on CS%shape_function_epsilon. 
 
+  coef_c3 = ( 2.0 * ( 1.0 - CS%shape_function_epsilon ) ) * h_minus_smh_I3
+  coef_c2 = ( 3.0 * ( CS%shape_function_epsilon - 1.0 ) ) * h_minus_smh_I2
+  
   ! gives the shape, quadratic above sm, cubic below sm in sigma coordinate
   ! see Equation 3 in Sane et al. 2024
   ! interpolates a quadratic function from z=0 to z=sm_h, and then a cubic from z=sm_h to z=hbl
-  shape_func(1) = 0.0  ! initializing the entire shape_function array
+
+  shape_func(1) = 0.0  ! initializing the first element of shape function array
   do n = 2,nz
     hz_n = hz(n) ! calls hz(n) once to avoid calling it multiple times below
 
     if  (hz_n <= sm_h) then
       ! -(\frac{z}{\sigma_m \cdot h})^2+2(\frac{z}{\sigma_m h}) : Eq. (3) in Sane et al. 2025
+
       z_sm_h_I = hz_n * sm_h_I ! pre multiplying
       shape_func(n) = -z_sm_h_I*z_sm_h_I + 2.0 * z_sm_h_I 
                                                 
     elseif  (hz_n <= hbl) then
       
-      z_minus_sm_h  = (hz_n - sm_h)
-      z_minus_sm_h2 = (hz_n - sm_h) * (hz_n - sm_h)
-      z_minus_sm_h3 = (hz_n - sm_h) * z_minus_sm_h2
+      z_minus_sm_h  = (hz_n - sm_h) 
+      z_minus_sm_h2 =((hz_n - sm_h) * (hz_n - sm_h)) 
+      z_minus_sm_h3 = (hz_n - sm_h) * z_minus_sm_h2 
 
-      shape_func(n) = coef_c3 * z_minus_sm_h3 - coef_c2 * z_minus_sm_h2 + 1.0
+      shape_func(n) = (coef_c3 * z_minus_sm_h3 + coef_c2 * z_minus_sm_h2) + 1.0
 
     elseif ((hz(n) > hbl)) then
-      shape_func(n) = 0.01 ! we set an arbitrary low value to 0.01
-      ! This value should be small such as 0.01, or 0.001, result is not sensitive. It should not be 0.0
+      shape_func(n) = CS%shape_function_epsilon ! set an arbitrary low constant value below hbl, default 0.01
+      ! This value should be small such as 0.01, but cannot be zero.
     endif
   end do
+
+  !print *, 'Shape function is > ', shape_func
 
 end subroutine kappa_eqdisc
 
@@ -4168,9 +4174,12 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
   !  7 to 9 v_0 surface heating, 10 to 14 v_0 surface cooling (ML velocity scale without h as input)
   ! 15 to 17 v_0h surface heating, 18 to 20 v_0h surface cooling (ML velocity scale with h as input)
   call get_param(param_file, mdl, "ML_diffusivity_coeffs", CS%ML_c, &
-                 "Coefficient used for ML diffusivity 1 to 24,  ", units="nondim", &
+                 "Coefficient used for ML diffusivity 1 to 24 ", units="nondim", &
                   defaults=(/1.7908 , 0.6904, 0.0712, 0.4380, 2.6821, 1.5845, 0.1550,  1.1120,  0.8616, 0.0984, &
                              45.0,    2.8570, 3.290,  0.0764, 8.2854, 1.2026, 12.7677, 6.0277, 15.7292, 0.0785 /))
+
+  call get_param(param_file, mdl, "Shape_Function_Epsilon", CS%shape_function_epsilon, &
+                 "Constant value of OSBL shape function below the boundary layer", units="nondim", default=0.01 )
 
   !/ options end for Machine Learning Equation Discovery
 
