@@ -2817,8 +2817,6 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
     endif
   end do
 
-  !print *, 'Shape function is > ', shape_func
-
 end subroutine kappa_eqdisc
 
 subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
