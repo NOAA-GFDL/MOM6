@@ -121,12 +121,12 @@ type, public :: EOS_type ; private
   real :: dTFr_dS   !< The derivative of freezing point with salinity [degC ppt-1]
   real :: dTFr_dp   !< The derivative of freezing point with pressure [degC Pa-1]
 ! The following are logicals pertaining to definitions of the thermodynamic state variables
-  logical :: use_conT_absS !< True if the model internal temperature is the conservative temperature and
+  logical :: use_conT_absS =.false. !< True if the model internal temperature is the conservative temperature and
                            !! the salinity is absolute salinity.  These could be separated into two flags,
                            !! but right now it is controlled by one input parameter and there is no known
                            !! need to have one True and one False.
-  logical :: TFreeze_S_is_pracS !< True if the freezing point expression is formulated from practical salinity
-  logical :: TFreeze_T_is_potT !< True if the freezing point expression yields a potential temperature
+  logical :: TFreeze_S_is_pracS =.true. !< True if the freezing point expression is formulated from practical salinity
+  logical :: TFreeze_T_is_potT = .true. !< True if the freezing point expression yields a potential temperature
 
   logical :: use_Wright_2nd_deriv_bug = .false.  !< If true, use a separate subroutine that
                            !! retains a buggy version of the calculations of the second
