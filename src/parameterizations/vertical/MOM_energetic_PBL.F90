@@ -171,7 +171,7 @@ type, public :: energetic_PBL_CS ; private
   real :: bflux_lower_cap, bflux_upper_cap ! Lower and upper cap for capping blfux. [Z2 T-3 ~> m2 s-3]
   real, allocatable, dimension(:) :: shape_function ! shape function used in machine learned diffusivity [nondim]
   !/ Coefficients used in Machine learned diffusivity, Equations 6,7,10,11 in Sane et al. 2024
-  real :: ML_c(20) ! Array of non-dimensional constants used in machine learned (ML) diffusivity [nondim]
+  real :: ML_c(18) ! Array of non-dimensional constants used in machine learned (ML) diffusivity [nondim]
   real :: shape_function_epsilon ! An arbitrary small value of shape_function below the boundary layer depth
 
   !/ Bottom boundary layer mixing related options
@@ -2924,11 +2924,12 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
     ! \frac{v_0}{u_*} = \frac{c_{17}}{ c_{18} (Bh)/u^3 + c_{19} ((Bh)^(1/3)/u)^2  + c_{20} }
 
     den = ( CS%ML_c(15) * B_h + CS%ML_c(16)* u_star*(B_h_power1by3*B_h_power1by3)) &
-           + CS%ML_c(17)* (u_star*u_star_2)
-    v0_dummy = (u_star_2 * u_star_2) / den 
+           + (u_star*u_star_2)
+    v0_dummy = ( CS%ML_c(14) * (u_star_2 * u_star_2)) / den 
+
   else
-    den = CS%ML_c(18) * (B_h_power1by3*B_h_power1by3) + CS%ML_c(19) * u_star_2
-    v0_dummy = (B_h / den ) + CS%ML_c(20) * u_star
+    den = CS%ML_c(17) * (B_h_power1by3*B_h_power1by3) + CS%ML_c(18) * u_star_2
+    v0_dummy = (B_h / den ) + CS%ML_c(14) * u_star
   endif
 
   v0_dummy = min( max(v0_dummy, CS%v0_lower_cap), CS%v0_upper_cap )  
@@ -4166,14 +4167,15 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
                        "value of upper limit cap for Bflux used in setting in v0", & 
                        units="m2 s-3", default=7.0E-07, scale=(US%m_to_L**2)*(US%T_to_s**3))
 
+
   ! The coefficients used for machine learned diffusivity
   ! c1 to c6 used for sigma_m, 
   !  7 to 9 v_0 surface heating, 10 to 14 v_0 surface cooling (ML velocity scale without h as input)
-  ! 15 to 17 v_0h surface heating, 18 to 20 v_0h surface cooling (ML velocity scale with h as input)
+  ! 14, 15, & 16 for v_0h surface heating, 17, 18, & 14 for v_0h surface cooling (ML velocity scale with h as input)
   call get_param(param_file, mdl, "ML_diffusivity_coeffs", CS%ML_c, &
-                 "Coefficient used for ML diffusivity 1 to 20 ", units="nondim", &
+                 "Coefficient used for ML diffusivity 1 to 18 ", units="nondim", &
                   defaults=(/1.7908 , 0.6904, 0.0712, 0.4380, 2.6821, 1.5845, 0.1550,  1.1120,  0.8616, 0.0984, &
-                             45.0,    2.8570, 3.290,  0.0785, 8.2854, 1.2026, 12.7388, 6.0277, 15.7292, 0.0785 /))
+                             45.0,    2.8570, 3.290,  0.0785, 0.650,  0.0944, 6.0277, 15.7292 /))
 
   call get_param(param_file, mdl, "Shape_Function_Epsilon", CS%shape_function_epsilon, &
                  "Constant value of OSBL shape function below the boundary layer", units="nondim", default=0.01 )
