@@ -165,14 +165,15 @@ type, public :: energetic_PBL_CS ; private
 
   !/ Machine learned equation discovery model paramters ! eqdisc
   logical :: eqdisc, eqdisc_v0, eqdisc_v0h  ! Machine Learned Equation discovery - shape function and velocity-scale
-  real :: v0_lower_cap, v0_upper_cap ! Lower / upper cap to prevent v0 from attaining anomlously low /high values [Z T-1 ~> m s-1]
-  real :: f_lower ! Lower cap of |f| i.e. absolute of Coriolis parameter. [T-1 ~> s-1]
-                  ! Used in v0 subroutines. Default at 0.1deg Lat
-  real :: bflux_lower_cap, bflux_upper_cap ! Lower and upper cap for capping blfux. [Z2 T-3 ~> m2 s-3]
+  real :: v0_lower_cap, v0_upper_cap ! Lower / upper cap to prevent v0 from attaining anomlously [Z T-1 ~> m s-1]
+                                     ! low /high values
+  real :: f_lower ! Lower cap of |f| i.e. absolute of Coriolis parameter [T-1 ~> s-1]
+                  ! Used in v0 subroutines. Default is 0.1deg Lat
+  real :: bflux_lower_cap, bflux_upper_cap ! Lower and upper cap for capping blfux [Z2 T-3 ~> m2 s-3]
   real, allocatable, dimension(:) :: shape_function ! shape function used in machine learned diffusivity [nondim]
   !/ Coefficients used in Machine learned diffusivity, Equations 6,7,10,11 in Sane et al. 2024
-  real :: ML_c(20) ! Array of non-dimensional constants used in machine learned (ML) diffusivity [nondim]
-  real :: shape_function_epsilon ! An arbitrary small value of shape_function below the boundary layer depth
+  real :: ML_c(18) ! Array of non-dimensional constants used in machine learned (ML) diffusivity [nondim]
+  real :: shape_function_epsilon ! An small value of shape_function below the boundary layer depth [nondim]
 
   !/ Bottom boundary layer mixing related options
   real :: ePBL_BBL_effic     !< The efficiency of bottom boundary layer mixing via ePBL driven by
@@ -1511,7 +1512,7 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
           if (.not.CS%Use_MLD_iteration) then
             Kd_guess0 = (h_dz_int(K)*vstar) * CS%vonKar * ((dz_tt*hbs_here)*vstar) / &
               ((CS%Ekman_scale_coef * absf) * (dz_tt*hbs_here) + vstar)
-          elseif (CS%eqdisc) then  ! ML-eqdisc line1/2 
+          elseif (CS%eqdisc) then  ! ML-eqdisc line1/2
             Kd_guess0 = MixLen_shape(K) * v0_ML_turb_vel_scale * MLD_guess ! ML-eqdisc
           else
             Kd_guess0 = (h_dz_int(K)*vstar) * CS%vonKar * mixlen(K)
@@ -1586,7 +1587,7 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
               !  instead of redoing the computation will change answers...
                 Kd(K) = (h_dz_int(K)*vstar) * CS%vonKar *  ((dz_tt*hbs_here)*vstar) / &
                       ((CS%Ekman_scale_coef * absf) * (dz_tt*hbs_here) + vstar)
-              elseif (CS%eqdisc)  then  ! ML-eqdisc line2/2 
+              elseif (CS%eqdisc)  then  ! ML-eqdisc line2/2
                 Kd(K) = MixLen_shape(K) * v0_ML_turb_vel_scale * MLD_guess ! ML-eqdisc
               else
                 Kd(K) = (h_dz_int(K)*vstar) * CS%vonKar * mixlen(K)
@@ -2726,7 +2727,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   real :: F_Eh ! F multiplied by Eh [nondim]
   real :: u_star_I  ! inverse of u_star [Z-1 T ~> m-1 s]
 
-  ! variables used for optimizing the shape function loop:
+  ! variables used for optimizing computations:
   real :: sm_h     ! sigma_max multiplied by boundary layer depth [Z ~> m]
   real :: sm_h_I   ! inverse of sm_h,[Z-1 ~> m-1]
   real :: sm_h_I2  ! An inverse variable given by 1.0/(h - sm_h), [Z-1 ~> m-1]
@@ -2741,8 +2742,6 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   real :: coef_c2       ! = 2.98 * h_minus_smh_I2 !  [Z-2 ~> m-2]
   real :: coef_c3       ! = 2.98 * h_minus_smh_I2 !  [Z-3 ~> m-3]
 
-
-
   nz = SZK_(GV)+1
   hz(1) = 0.0
   do K=2,nz
@@ -2751,7 +2750,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   hbl = MLD_Guess ! hbl is boundary layer depth.
 
   u_star_I = 1.0/u_star
-  Lh = ((-B_flux * hbl) * (u_star_I * u_star_I)) * u_star_I ! Boundary layer depth divided by Monin-Obukhov depth
+  Lh = (-B_flux * hbl) * ((u_star_I * u_star_I) * u_star_I) ! Boundary layer depth divided by Monin-Obukhov depth
   Eh = (hbl * absf) * u_star_I   ! Boundary layer depth divided by Ekman depth
 
   ! B_flux given negative sign to follow convention used in Sane et al. 2023
@@ -2761,33 +2760,33 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   Lh = min(max(Lh, -8.0), 8.0) ! capping Lh between -8 and 8
 
   ! Empirical model to predict sm:
-  ! F is Equation 16 in Sane et al. 2025, and needs to be computed before sigma_m:
-  ! \mathcal{F} = \frac{1}{c_3 + c_4 \cdot e^{-\left(  {c_5} \cdot {{L_h}^3} \right)}} + c_6
-  ! Equation 15 in Sane et al. 2025:
+  ! F is Equation (6) in Sane et al. 2025, and needs to be computed before sigma_m:
+  ! \mathcal{F} = \frac{1}{c_3 + c_4 \cdot e^{-\left( \text{sgn}(B) \cdot {c_5} \cdot {{L_h}^3} \right)}} + c_6
+  ! Equation (5) in Sane et al. 2025:
   ! \sigma_{m} = \frac{1}{c_1 + \frac{c_2}{\mathcal{F} \cdot E_h}}
-  ! Note: Lh over here is {L_h}^3 in Sane et al. 2025.
+  ! Note: Lh over here is ((Bh)/ustar^3), whereas in Sane et al. 2025, L_h = (((Bh)^{1/3})/(ustar))
 
   F = (1.0/ ( CS%ML_c(3) + CS%ML_c(4) * exp(-CS%ML_c(5) * Lh) ) ) + CS%ML_c(6)
   F_Eh = F * Eh
   sm = F_Eh / (CS%ML_c(1)*F_Eh +CS%ML_c(2))
-
   sm = min(max(sm,0.1),0.7) ! makes sure 0.1<sm<0.7, true sm range is (approx) 0.2 to 0.60
 
-  sm_h = sm * hbl  
-  sm_h_I = 1.0/sm_h               ! inverse of (sm x hbl)
-  h_minus_smh_I  = 1.0/(hbl-sm_h)  ! inverse of (hbl-sm_h), as 0.1<sm<0.7, hbl>sm, hence (hbl-sm) always >0.0
-  h_minus_smh_I2 = h_minus_smh_I * h_minus_smh_I    !  (1/(hbl - sm*hbl))^2
-  h_minus_smh_I3 = h_minus_smh_I2 * h_minus_smh_I   !  (1/(hbl - sm*hbl))^3
+  sm_h = sm * hbl
+  sm_h_I = 1.0/sm_h                                 ! 1.0 /  (sm x hbl)
+  h_minus_smh_I  = 1.0/(hbl-sm_h)                   ! 1.0 /  (hbl-sm_h)
+  h_minus_smh_I2 = h_minus_smh_I * h_minus_smh_I    !  (1.0 / (hbl - sm*hbl))^2
+  h_minus_smh_I3 = h_minus_smh_I2 * h_minus_smh_I   !  (1.0 / (hbl - sm*hbl))^3
 
   ! The coefficients coef_c3 and coef_c2 are dependent on CS%shape_function_epsilon.
-  ! Above depth sm_h, shape_func is quadratic, and below sm_h, it is cubic. 
+  ! Above depth sm_h, shape_func is quadratic, and below sm_h, it is cubic.
   ! For iterative ePBL solver, shape_func should not be zero below hbl, so that it has been set to a small value
-  ! set by CS%shape_function_epsilon. To make the cubic part of shapefunc behave smoothly, the below two coefficients 
-  ! are used that depend on CS%shape_function_epsilon. 
+  ! set by CS%shape_function_epsilon. To make the cubic part of shapefunc behave smoothly, the below two coefficients
+  ! are used that depend on CS%shape_function_epsilon. The numbers 1.0, 2.0, 3.0 below are constants,
+  ! and should not be changed.
 
   coef_c3 = ( 2.0 * ( 1.0 - CS%shape_function_epsilon ) ) * h_minus_smh_I3
   coef_c2 = ( 3.0 * ( CS%shape_function_epsilon - 1.0 ) ) * h_minus_smh_I2
-  
+
   ! gives the shape, quadratic above sm, cubic below sm in sigma coordinate
   ! see Equation 3 in Sane et al. 2024
   ! interpolates a quadratic function from z=0 to z=sm_h, and then a cubic from z=sm_h to z=hbl
@@ -2797,25 +2796,25 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
     hz_n = hz(n) ! calls hz(n) once to avoid calling it multiple times below
 
     if  (hz_n <= sm_h) then
-      ! -(\frac{z}{\sigma_m \cdot h})^2+2(\frac{z}{\sigma_m h}) : Eq. (3) in Sane et al. 2025
+      ! Eq.3a in Sane et al. 2025: -(\frac{z}{\sigma_m \cdot h})^2+2(\frac{z}{\sigma_m h}) : Eq. (3) in Sane et al. 2025
 
       z_sm_h_I = hz_n * sm_h_I ! pre multiplying
-      shape_func(n) = -z_sm_h_I*z_sm_h_I + 2.0 * z_sm_h_I 
-                                                
+      shape_func(n) = -z_sm_h_I*z_sm_h_I + 2.0 * z_sm_h_I
+
     elseif  (hz_n <= hbl) then
-      
-      z_minus_sm_h  = (hz_n - sm_h) 
-      z_minus_sm_h2 = z_minus_sm_h * z_minus_sm_h 
-      z_minus_sm_h3 = z_minus_sm_h * z_minus_sm_h2 
+      ! Eq.3b in Sane et al. 2025: 2\left(\frac{\s - \sm}{1 - \sm} \right)^3 -
+      ! 3\left(\frac{\s - \sm}{1 - \sm} \right)^2 + 1
+
+      z_minus_sm_h  = (hz_n - sm_h)
+      z_minus_sm_h2 = z_minus_sm_h * z_minus_sm_h
+      z_minus_sm_h3 = z_minus_sm_h * z_minus_sm_h2
 
       shape_func(n) = (coef_c3 * z_minus_sm_h3 + coef_c2 * z_minus_sm_h2) + 1.0
 
-    elseif ((hz(n) > hbl)) then
+    elseif (hz(n) > hbl) then
       shape_func(n) = CS%shape_function_epsilon ! set an arbitrary low constant value below hbl, default 0.01
-      ! This value should be small such as 0.01, but cannot be zero.
     endif
   end do
-
 end subroutine kappa_eqdisc
 
 subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
@@ -2844,46 +2843,46 @@ subroutine get_eqdisc_v0(CS, absf, B_flux, u_star, v0_dummy)
     bflux_c = B_flux
   endif
 
-  if (absf <= CS%f_lower) then   ! 
+  if (absf <= CS%f_lower) then   !
     absf_c = CS%f_lower    ! 0.1 deg Latitude, cap avoids zero coriolis, solution insensitive below 0.1 deg.
   else
     absf_c = absf
   endif
 
-  f_u2 = absf_c * (u_star * u_star) ! pre-computing 
+  f_u2 = absf_c * (u_star * u_star) ! pre-computing
 
   ! setting v0_dummy here:
+  ! \lambda = (1/ustar) \sqrt(bflux_c/absf_c)
 
   if (bflux_c >= 0.0) then ! surface heating and neutral conditions
-  ! Equation 16 in Sane et al. 2025:
-  ! \frac{v}{u_*} = \frac{-c_9}{p_1 + c_{10} + \frac{c_{11}^2}{p_1 - c_{11}} }
+  ! Equation 7 in Sane et al. 2025:
+  ! \frac{v_0}{u_*} = \frac{c_{7}}{\lambda + c_{8} + \frac{c_{9}^2}{\lambda + c_{9}} }
 
     root_b_f = sqrt( bflux_c  * absf_c)
-    den = ( bflux_c + (CS%ML_c(8) + CS%ML_c(9)) * u_star * root_b_f  + &
-          (CS%ML_c(8) * CS%ML_c(9) + CS%ML_c(9)**2) * f_u2)
-
+    den = bflux_c + (CS%ML_c(8) + CS%ML_c(9)) * u_star * root_b_f  + &
+          (CS%ML_c(8) * CS%ML_c(9) + CS%ML_c(9)**2) * f_u2
     v0_dummy = ( ( CS%ML_c(7)*( (u_star * root_b_f) + (CS%ML_c(9)*f_u2) ) ) * u_star) / den
 
   else ! surface cooling
-  ! Equation 17 in Sane et al. 2024:
-  ! \frac{v}{u_*}=\frac{c_{12} p_1 \cdot \sqrt{p_2} }{1 +  ...
-  ! \frac{(c_{13} e^{(-p_2/c_{14})} + c_{15}) }{p_1 ^2} }
-    
+  ! Equation 8 in Sane et al. 2025:
+  ! \frac{v_0}{u_*}=\frac{c_{10} \cdot \lambda \cdot \sqrt{f'} }{1 +
+  ! \frac{(c_{11} e^{(-c_{12} \cdot f')} + c_{13}) }{\lambda ^2} } + c_{14}
+
     f_prime = absf_c * CS%omega_I  ! Coriolis divided by Earth's rotation
     root_B_by_Omega = sqrt( -bflux_c * CS%omega_I  )
-    den = ( -bflux_c + CS%ML_c(11) * f_u2 * exp(-f_prime * CS%ML_c(12) ) ) + CS%ML_c(13)*f_u2 
-    v0_dummy = ( CS%ML_c(10) * -bflux_c * root_B_by_Omega / den  ) + ( CS%ML_c(14) * u_star )
+    den = ( -bflux_c + CS%ML_c(11) * f_u2 * exp(-f_prime * CS%ML_c(12) ) ) + CS%ML_c(13)*f_u2
+    v0_dummy = ( CS%ML_c(10) * (-bflux_c * root_B_by_Omega) / den  ) + ( CS%ML_c(14) * u_star )
 
   endif
-  
-  v0_dummy = min( max(v0_dummy, CS%v0_lower_cap), CS%v0_upper_cap )  
-  ! upper cap kept for safety, but has never hit this cap. 
+
+  v0_dummy = min( max(v0_dummy, CS%v0_lower_cap), CS%v0_upper_cap )
+  ! upper cap kept for safety, but has never hit this cap.
 
   ! v0_lower_cap has been set to 0.0001 as data below that values does not exist in the training
-  ! solution was tested for lower cap of 0.00001 and was found to be insensitive. 
-  ! sensitivity arises when lower cap is 0.0. That is when diffusivity attains extremely low values and 
-  ! they go near molecular diffusivity. Boundary layers might become "sub-grid" i.e. < 1 metre 
-  ! some cause issues such as anomlous surface warming. 
+  ! solution was tested for lower cap of 0.00001 and was found to be insensitive.
+  ! sensitivity arises when lower cap is 0.0. That is when diffusivity attains extremely low values and
+  ! they go near molecular diffusivity. Boundary layers might become "sub-grid" i.e. < 1 metre
+  ! some cause issues such as anomlous surface warming.
   ! this needs further investigation, our choices are motivated by practicallity for now.
 end subroutine get_eqdisc_v0
 
@@ -2914,31 +2913,34 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
     bflux_c = B_flux
   endif
 
-  B_h = abs(bflux_c) * MLD_guess 
+  B_h = abs(bflux_c) * MLD_guess
   B_h_power1by3 = cuberoot(B_h)
 
   ! setting v0_dummy here:
 
   if (bflux_c >= 0.0) then ! surface heating and neutral conditions
-    ! Equation 19 in Sane et al. 2025:
-    ! \frac{v_0}{u_*} = \frac{c_{17}}{ c_{18} (Bh)/u^3 + c_{19} ((Bh)^(1/3)/u)^2  + c_{20} }
+    ! Equation 9 in Sane et al. 2025:
+    ! \frac{v_0^h}{u_*} = \frac{C_{14}}{ c_{15} L_h^3 + c_{16} L_h^2  + 1 }
 
     den = ( CS%ML_c(15) * B_h + CS%ML_c(16)* u_star*(B_h_power1by3*B_h_power1by3)) &
-           + CS%ML_c(17)* (u_star*u_star_2)
-    v0_dummy = (u_star_2 * u_star_2) / den 
+           + (u_star*u_star_2)
+    v0_dummy = ( CS%ML_c(14) * (u_star_2 * u_star_2)) / den
+
   else
-    den = CS%ML_c(18) * (B_h_power1by3*B_h_power1by3) + CS%ML_c(19) * u_star_2
-    v0_dummy = (B_h / den ) + CS%ML_c(20) * u_star
+    ! Equation 10 in Sane et al. 2025:
+    ! \frac{v_0^h}{u_*} = \frac{L_h}{c_{17} + \frac{c_{18}}{L_h ^2}}  + c_{14}
+    den = CS%ML_c(17) * (B_h_power1by3*B_h_power1by3) + CS%ML_c(18) * u_star_2
+    v0_dummy = (B_h / den ) + CS%ML_c(14) * u_star
   endif
 
-  v0_dummy = min( max(v0_dummy, CS%v0_lower_cap), CS%v0_upper_cap )  
-  ! upper cap kept for safety, but has never hit this cap. 
+  v0_dummy = min( max(v0_dummy, CS%v0_lower_cap), CS%v0_upper_cap )
+  ! upper cap kept for safety, but has never hit this cap.
 
   ! v0_lower_cap has been set to 0.0001 as data below that values does not exist in the training
-  ! solution was tested for lower cap of 0.00001 and was found to be insensitive. 
-  ! sensitivity arises when lower cap is 0.0. That is when diffusivity attains extremely low values and 
-  ! they go near molecular diffusivity. Boundary layers might become "sub-grid" i.e. < 1 metre 
-  ! some cause issues such as anomlous surface warming. 
+  ! solution was tested for lower cap of 0.00001 and was found to be insensitive.
+  ! sensitivity arises when lower cap is 0.0. That is when diffusivity attains extremely low values and
+  ! they go near molecular diffusivity. Boundary layers might become "sub-grid" i.e. < 1 metre
+  ! some cause issues such as anomlous surface warming.
   ! this needs further investigation, our choices are motivated by practicallity for now.
 end subroutine get_eqdisc_v0h
 
@@ -4138,42 +4140,43 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
    call get_param(param_file, mdl, "Equation_Discovery_velocity", CS%eqdisc_v0, &
                    "flag for activating Machine Learned equation discovery for velocity scale", &
                    units="nondim", default=.false.)
-   
+
    call get_param(param_file, mdl, "Equation_Discovery_velocity_h", CS%eqdisc_v0h, &
                    "flag for activating Machine Learned equation discovery for velocity scale with h as input", &
                    units="nondim", default=.false.)
 
-  ! sets a  lower cap for abs_f (Coriolis parameter) required in equation for v_0. 
+  ! sets a  lower cap for abs_f (Coriolis parameter) required in equation for v_0.
   ! Small value, solution not sensitive below 1 deg Latitute
-  ! Default value of 2.5384E-07 corresponds to 0.1 deg. 
+  ! Default value of 2.5384E-07 corresponds to 0.1 deg.
   call get_param(param_file, mdl, "f_lower", CS%f_lower, &
-                       "value of lower limit cap for v0, default is for 0.1 deg, insensitive , & 
-                       below 1deg", units="s-1", default=2.5384E-07, scale=US%T_to_S) 
-  
+                       "value of lower limit cap for v0, default is for 0.1 deg, insensitive , &
+                       below 1deg", units="s-1", default=2.5384E-07, scale=US%T_to_S)
+
   call get_param(param_file, mdl, "v0_lower_cap", CS%v0_lower_cap, &
-                       "value of lower limit cap for Coriolis in v0", & 
+                       "value of lower limit cap for Coriolis in v0", &
                        units="m s-1", default=0.0001, scale=US%m_to_Z*US%T_to_s)
 
   call get_param(param_file, mdl, "v0_upper_cap", CS%v0_upper_cap, &
-                       "value of upper limit cap for Coriolis in v0", & 
+                       "value of upper limit cap for Coriolis in v0", &
                        units="m s-1", default=0.1, scale=US%m_to_Z*US%T_to_s)
 
   call get_param(param_file, mdl, "bflux_lower_cap", CS%bflux_lower_cap, &
-                       "value of lower limit cap for Bflux used in setting in v0", & 
+                       "value of lower limit cap for Bflux used in setting in v0", &
                        units="m2 s-3", default=-7.0E-07, scale=(US%m_to_L**2)*(US%T_to_s**3))
-  
+
   call get_param(param_file, mdl, "bflux_upper_cap", CS%bflux_upper_cap, &
-                       "value of upper limit cap for Bflux used in setting in v0", & 
+                       "value of upper limit cap for Bflux used in setting in v0", &
                        units="m2 s-3", default=7.0E-07, scale=(US%m_to_L**2)*(US%T_to_s**3))
 
+
   ! The coefficients used for machine learned diffusivity
-  ! c1 to c6 used for sigma_m, 
+  ! c1 to c6 used for sigma_m,
   !  7 to 9 v_0 surface heating, 10 to 14 v_0 surface cooling (ML velocity scale without h as input)
-  ! 15 to 17 v_0h surface heating, 18 to 20 v_0h surface cooling (ML velocity scale with h as input)
+  ! 14, 15, & 16 for v_0h surface heating, 17, 18, & 14 for v_0h surface cooling (ML velocity scale with h as input)
   call get_param(param_file, mdl, "ML_diffusivity_coeffs", CS%ML_c, &
-                 "Coefficient used for ML diffusivity 1 to 20 ", units="nondim", &
+                 "Coefficient used for ML diffusivity 1 to 18 ", units="nondim", &
                   defaults=(/1.7908 , 0.6904, 0.0712, 0.4380, 2.6821, 1.5845, 0.1550,  1.1120,  0.8616, 0.0984, &
-                             45.0,    2.8570, 3.290,  0.0785, 8.2854, 1.2026, 12.7388, 6.0277, 15.7292, 0.0785 /))
+                             45.0,    2.8570, 3.290,  0.0785, 0.650,  0.0944, 6.0277, 15.7292 /))
 
   call get_param(param_file, mdl, "Shape_Function_Epsilon", CS%shape_function_epsilon, &
                  "Constant value of OSBL shape function below the boundary layer", units="nondim", default=0.01 )
