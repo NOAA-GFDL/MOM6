@@ -4171,7 +4171,7 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
   !  7 to 9 v_0 surface heating, 10 to 14 v_0 surface cooling (ML velocity scale without h as input)
   ! 15 to 17 v_0h surface heating, 18 to 20 v_0h surface cooling (ML velocity scale with h as input)
   call get_param(param_file, mdl, "ML_diffusivity_coeffs", CS%ML_c, &
-                 "Coefficient used for ML diffusivity 1 to 24 ", units="nondim", &
+                 "Coefficient used for ML diffusivity 1 to 20 ", units="nondim", &
                   defaults=(/1.7908 , 0.6904, 0.0712, 0.4380, 2.6821, 1.5845, 0.1550,  1.1120,  0.8616, 0.0984, &
                              45.0,    2.8570, 3.290,  0.0785, 8.2854, 1.2026, 12.7388, 6.0277, 15.7292, 0.0785 /))
 
