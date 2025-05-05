@@ -353,26 +353,26 @@ type, public :: ocean_OBC_type
   type(remapping_CS),      pointer :: remap_h_CS=> NULL() !< ALE remapping control structure for
                                                           !! thickness-based fields on segments
   type(OBC_registry_type), pointer :: OBC_Reg => NULL()  !< Registry type for boundaries
-  real, pointer :: rx_normal(:,:,:)  !< Array storage for normal phase speed for EW radiation OBCs in units of
-                                         !! grid points per timestep [nondim]
-  real, pointer :: ry_normal(:,:,:)  !< Array storage for normal phase speed for NS radiation OBCs in units of
-                                         !! grid points per timestep [nondim]
-  real, pointer :: rx_oblique_u(:,:,:) !< X-direction oblique boundary condition radiation speeds squared
-                                           !! at u points for restarts [L2 T-2 ~> m2 s-2]
-  real, pointer :: ry_oblique_u(:,:,:) !< Y-direction oblique boundary condition radiation speeds squared
-                                           !! at u points for restarts [L2 T-2 ~> m2 s-2]
-  real, pointer :: rx_oblique_v(:,:,:) !< X-direction oblique boundary condition radiation speeds squared
-                                           !! at v points for restarts [L2 T-2 ~> m2 s-2]
-  real, pointer :: ry_oblique_v(:,:,:) !< Y-direction oblique boundary condition radiation speeds squared
-                                           !! at v points for restarts [L2 T-2 ~> m2 s-2]
-  real, pointer :: cff_normal_u(:,:,:) !< Denominator for normalizing EW oblique boundary condition radiation
-                                           !! rates at u points for restarts [L2 T-2 ~> m2 s-2]
-  real, pointer :: cff_normal_v(:,:,:) !< Denominator for normalizing NS oblique boundary condition radiation
-                                           !! rates at v points for restarts [L2 T-2 ~> m2 s-2]
-  real, pointer :: tres_x(:,:,:,:) => Null() !< Array storage of tracer reservoirs for restarts,
-                                           !! in unscaled units [conc]
-  real, pointer :: tres_y(:,:,:,:) => Null() !< Array storage of tracer reservoirs for restarts,
-                                           !! in unscaled units [conc]
+  real, pointer :: rx_normal(:,:,:) => Null()  !< Array storage for normal phase speed for EW radiation OBCs
+                                               !! in units of grid points per timestep [nondim]
+  real, pointer :: ry_normal(:,:,:) => Null()  !< Array storage for normal phase speed for NS radiation OBCs
+                                               !! in units of grid points per timestep [nondim]
+  real, pointer :: rx_oblique_u(:,:,:) => Null() !< X-direction oblique boundary condition radiation speeds
+                                                 !! squared at u points for restarts [L2 T-2 ~> m2 s-2]
+  real, pointer :: ry_oblique_u(:,:,:) => Null() !< Y-direction oblique boundary condition radiation speeds
+                                                 !! squared at u points for restarts [L2 T-2 ~> m2 s-2]
+  real, pointer :: rx_oblique_v(:,:,:) => Null() !< X-direction oblique boundary condition radiation speeds
+                                                 !! squared at v points for restarts [L2 T-2 ~> m2 s-2]
+  real, pointer :: ry_oblique_v(:,:,:) => Null() !< Y-direction oblique boundary condition radiation speeds
+                                                 !! squared at v points for restarts [L2 T-2 ~> m2 s-2]
+  real, pointer :: cff_normal_u(:,:,:) => Null() !< Denominator for normalizing EW oblique boundary condition
+                                                 !! radiation rates at u points for restarts [L2 T-2 ~> m2 s-2]
+  real, pointer :: cff_normal_v(:,:,:) => Null() !< Denominator for normalizing NS oblique boundary condition
+                                                 !! radiation rates at v points for restarts [L2 T-2 ~> m2 s-2]
+  real, pointer :: tres_x(:,:,:,:) => Null()     !< Array storage of tracer reservoirs for restarts,
+                                                 !! in unscaled units [conc]
+  real, pointer :: tres_y(:,:,:,:) => Null()     !< Array storage of tracer reservoirs for restarts,
+                                                 !! in unscaled units [conc]
   logical :: debug                         !< If true, write verbose checksums for debugging purposes.
   real :: silly_h  !< A silly value of thickness outside of the domain that can be used to test
                    !! the independence of the OBCs to this external data [Z ~> m].
@@ -2018,6 +2018,17 @@ subroutine open_boundary_dealloc(OBC)
   if (allocated(OBC%segment)) deallocate(OBC%segment)
   if (allocated(OBC%segnum_u)) deallocate(OBC%segnum_u)
   if (allocated(OBC%segnum_v)) deallocate(OBC%segnum_v)
+  if (associated(OBC%rx_normal)) deallocate(OBC%rx_normal)
+  if (associated(OBC%ry_normal)) deallocate(OBC%ry_normal)
+  if (associated(OBC%rx_oblique_u)) deallocate(OBC%rx_oblique_u)
+  if (associated(OBC%ry_oblique_u)) deallocate(OBC%ry_oblique_u)
+  if (associated(OBC%rx_oblique_v)) deallocate(OBC%rx_oblique_v)
+  if (associated(OBC%ry_oblique_v)) deallocate(OBC%ry_oblique_v)
+  if (associated(OBC%cff_normal_u)) deallocate(OBC%cff_normal_u)
+  if (associated(OBC%cff_normal_v)) deallocate(OBC%cff_normal_v)
+  if (associated(OBC%tres_x)) deallocate(OBC%tres_x)
+  if (associated(OBC%tres_y)) deallocate(OBC%tres_y)
+
   if (associated(OBC%rx_normal)) nullify(OBC%rx_normal)
   if (associated(OBC%ry_normal)) nullify(OBC%ry_normal)
   if (associated(OBC%rx_oblique_u)) nullify(OBC%rx_oblique_u)
