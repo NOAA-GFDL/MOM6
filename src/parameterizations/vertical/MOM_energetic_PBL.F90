@@ -2758,7 +2758,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   ! Lh < 0 --> surface stabilizing i.e. heating, and Lh > 0 --> surface destabilizing i.e. cooling
   ! This capping does not matter because these equations have asymptotes. Not sensitive beyond the caps.
   Eh = min(Eh, 2.0) ! capping p1 to less than 2.0. It is always >0.0.
-  Lh = min( max(Lh, -8.0), 8.0 ) ! capping Lh between -8 and 8
+  Lh = min(max(Lh, -8.0), 8.0) ! capping Lh between -8 and 8
 
   ! Empirical model to predict sm:
   ! F is Equation 16 in Sane et al. 2025, and needs to be computed before sigma_m:
@@ -2771,8 +2771,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   F_Eh = F * Eh
   sm = F_Eh / (CS%ML_c(1)*F_Eh +CS%ML_c(2))
 
-  sm = min(sm,0.7) ! makes sure sm is less than 0.7, true sm range is from (approx) 0.2 to 0.60
-  sm = max(sm,0.1) ! makes sure sm is more than 0.1
+  sm = min(max(sm,0.1),0.7) ! makes sure 0.1<sm<0.7, true sm range is (approx) 0.2 to 0.60
 
   sm_h = sm * hbl  
   sm_h_I = 1.0/sm_h               ! inverse of (sm x hbl)
@@ -2806,8 +2805,8 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
     elseif  (hz_n <= hbl) then
       
       z_minus_sm_h  = (hz_n - sm_h) 
-      z_minus_sm_h2 =((hz_n - sm_h) * (hz_n - sm_h)) 
-      z_minus_sm_h3 = (hz_n - sm_h) * z_minus_sm_h2 
+      z_minus_sm_h2 = z_minus_sm_h * z_minus_sm_h 
+      z_minus_sm_h3 = z_minus_sm_h * z_minus_sm_h2 
 
       shape_func(n) = (coef_c3 * z_minus_sm_h3 + coef_c2 * z_minus_sm_h2) + 1.0
 
@@ -2904,8 +2903,8 @@ subroutine get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_dummy)
   real :: u_star_2      ! u_star squared, [Z2 T-2 ~> m2 s-2]
   real :: u_star_3      ! u_star cubed,   [Z3 T-3 ~> m3 s-3]
 
-  u_star_2 = u_star * u_star ! pre-multiplying u* 
-  u_star_3 = u_star_2 * u_star ! obtained u_star ^ 3.0
+  u_star_2 = u_star * u_star ! pre-multiplying to get ustar ^ 2
+  u_star_3 = u_star_2 * u_star ! ustar ^ 3.0
 
   if (B_flux <= CS%bflux_lower_cap) then
     bflux_c = CS%bflux_lower_cap
@@ -4174,7 +4173,7 @@ subroutine energetic_PBL_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "ML_diffusivity_coeffs", CS%ML_c, &
                  "Coefficient used for ML diffusivity 1 to 24 ", units="nondim", &
                   defaults=(/1.7908 , 0.6904, 0.0712, 0.4380, 2.6821, 1.5845, 0.1550,  1.1120,  0.8616, 0.0984, &
-                             45.0,    2.8570, 3.290,  0.0764, 8.2854, 1.2026, 12.7677, 6.0277, 15.7292, 0.0785 /))
+                             45.0,    2.8570, 3.290,  0.0785, 8.2854, 1.2026, 12.7388, 6.0277, 15.7292, 0.0785 /))
 
   call get_param(param_file, mdl, "Shape_Function_Epsilon", CS%shape_function_epsilon, &
                  "Constant value of OSBL shape function below the boundary layer", units="nondim", default=0.01 )
