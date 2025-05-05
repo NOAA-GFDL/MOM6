@@ -1692,7 +1692,7 @@ subroutine EOS_init(param_file, EOS, US, use_conT_absS)
                "When True, the model will check if the model internal temperature is "//&
                "potential temperature.  If the model uses conservative temperature, a "//&
                "conversion will be applied.", default=EOS_TS_default)
-  
+
   if ((EOS%form_of_EOS == EOS_TEOS10 .or. EOS%form_of_EOS == EOS_ROQUET_RHO .or. &
        EOS%form_of_EOS == EOS_ROQUET_SPV) .and. &
       .not.((EOS%form_of_TFreeze == TFREEZE_TEOS10) .or. (EOS%form_of_TFreeze == TFREEZE_TEOSPOLY)) ) then
