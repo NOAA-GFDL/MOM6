@@ -2751,7 +2751,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   hbl = MLD_Guess ! hbl is boundary layer depth.
 
   u_star_I = 1.0/u_star
-  Lh = ((-B_flux * hbl) * (u_star_I * u_star_I)) * u_star_I ! Boundary layer depth divided by Monin-Obukhov depth
+  Lh = (-B_flux * hbl) * ((u_star_I * u_star_I) * u_star_I) ! Boundary layer depth divided by Monin-Obukhov depth
   Eh = (hbl * absf) * u_star_I   ! Boundary layer depth divided by Ekman depth
 
   ! B_flux given negative sign to follow convention used in Sane et al. 2023
@@ -2774,16 +2774,17 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   sm = min(max(sm,0.1),0.7) ! makes sure 0.1<sm<0.7, true sm range is (approx) 0.2 to 0.60
 
   sm_h = sm * hbl  
-  sm_h_I = 1.0/sm_h               ! inverse of (sm x hbl)
-  h_minus_smh_I  = 1.0/(hbl-sm_h)  ! inverse of (hbl-sm_h), as 0.1<sm<0.7, hbl>sm, hence (hbl-sm) always >0.0
-  h_minus_smh_I2 = h_minus_smh_I * h_minus_smh_I    !  (1/(hbl - sm*hbl))^2
-  h_minus_smh_I3 = h_minus_smh_I2 * h_minus_smh_I   !  (1/(hbl - sm*hbl))^3
+  sm_h_I = 1.0/sm_h                                 ! 1.0 /  (sm x hbl)
+  h_minus_smh_I  = 1.0/(hbl-sm_h)                   ! 1.0 /  (hbl-sm_h)
+  h_minus_smh_I2 = h_minus_smh_I * h_minus_smh_I    !  (1.0 / (hbl - sm*hbl))^2
+  h_minus_smh_I3 = h_minus_smh_I2 * h_minus_smh_I   !  (1.0 / (hbl - sm*hbl))^3
 
   ! The coefficients coef_c3 and coef_c2 are dependent on CS%shape_function_epsilon.
   ! Above depth sm_h, shape_func is quadratic, and below sm_h, it is cubic. 
   ! For iterative ePBL solver, shape_func should not be zero below hbl, so that it has been set to a small value
   ! set by CS%shape_function_epsilon. To make the cubic part of shapefunc behave smoothly, the below two coefficients 
-  ! are used that depend on CS%shape_function_epsilon. 
+  ! are used that depend on CS%shape_function_epsilon. The numbers 1.0, 2.0, 3.0 below are constants, 
+  ! and should not be changed.
 
   coef_c3 = ( 2.0 * ( 1.0 - CS%shape_function_epsilon ) ) * h_minus_smh_I3
   coef_c2 = ( 3.0 * ( CS%shape_function_epsilon - 1.0 ) ) * h_minus_smh_I2
@@ -2810,9 +2811,8 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
 
       shape_func(n) = (coef_c3 * z_minus_sm_h3 + coef_c2 * z_minus_sm_h2) + 1.0
 
-    elseif ((hz(n) > hbl)) then
+    elseif (hz(n) > hbl) then
       shape_func(n) = CS%shape_function_epsilon ! set an arbitrary low constant value below hbl, default 0.01
-      ! This value should be small such as 0.01, but cannot be zero.
     endif
   end do
 
