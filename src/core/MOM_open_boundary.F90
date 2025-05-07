@@ -72,6 +72,7 @@ public update_OBC_ramp
 public remap_OBC_fields
 public rotate_OBC_config
 public rotate_OBC_init
+public rotate_OBC_segment_direction
 public write_OBC_info
 public initialize_segment_data
 public flood_fill
@@ -6145,30 +6146,7 @@ subroutine rotate_OBC_segment_config(segment_in, G_in, segment, G, turns)
   endif
 
   ! Reconfigure the directional flags
-  if (qturns == 0) then
-    segment%direction = segment_in%direction
-  else
-    select case (segment_in%direction)
-      case (OBC_DIRECTION_N)
-        if (qturns == 1) segment%direction = OBC_DIRECTION_W
-        if (qturns == 2) segment%direction = OBC_DIRECTION_S
-        if (qturns == 3) segment%direction = OBC_DIRECTION_E
-      case (OBC_DIRECTION_W)
-        if (qturns == 1) segment%direction = OBC_DIRECTION_S
-        if (qturns == 2) segment%direction = OBC_DIRECTION_E
-        if (qturns == 3) segment%direction = OBC_DIRECTION_N
-      case (OBC_DIRECTION_S)
-        if (qturns == 1) segment%direction = OBC_DIRECTION_E
-        if (qturns == 2) segment%direction = OBC_DIRECTION_N
-        if (qturns == 3) segment%direction = OBC_DIRECTION_W
-      case (OBC_DIRECTION_E)
-        if (qturns == 1) segment%direction = OBC_DIRECTION_N
-        if (qturns == 2) segment%direction = OBC_DIRECTION_W
-        if (qturns == 3) segment%direction = OBC_DIRECTION_S
-      case (OBC_NONE)
-        segment%direction = OBC_NONE
-    end select
-  endif
+  segment%direction = rotate_OBC_segment_direction(segment_in%direction, turns)
 
   segment%is_E_or_W_2 = ((segment%direction == OBC_DIRECTION_E) .or. &
                          (segment%direction == OBC_DIRECTION_W))
@@ -6181,6 +6159,51 @@ subroutine rotate_OBC_segment_config(segment_in, G_in, segment, G, turns)
   segment%Tr_InvLscale_in = segment_in%Tr_InvLscale_in
   segment%Tr_InvLscale_out = segment_in%Tr_InvLscale_out
 end subroutine rotate_OBC_segment_config
+
+
+!> Return the direction of an OBC segment on after rotation to the new grid.  Note that
+!! rotate_OBC_seg_direction(rotate_OBC_seg_direction(direction, turns), -turns) = direction.
+function rotate_OBC_segment_direction(direction, turns) result(rotated_dir)
+  integer, intent(in) :: direction  !< The orientation of an OBC segment on the original grid
+  integer, intent(in) :: turns      !< Number of quarter turns
+  integer :: rotated_dir  !< An integer encoding the new rotated segment direction
+
+  integer :: qturns ! The number of quarter turns in the range of 0 to 3
+
+  qturns = modulo(turns, 4)
+
+  if ((qturns == 0) .or. (direction == OBC_NONE)) then
+    rotated_dir = direction
+  else  ! Determine the segment direction on a rotated grid
+    select case (direction)
+      case (OBC_DIRECTION_N)
+        if (qturns == 0) rotated_dir = OBC_DIRECTION_N
+        if (qturns == 1) rotated_dir = OBC_DIRECTION_W
+        if (qturns == 2) rotated_dir = OBC_DIRECTION_S
+        if (qturns == 3) rotated_dir = OBC_DIRECTION_E
+      case (OBC_DIRECTION_W)
+        if (qturns == 0) rotated_dir = OBC_DIRECTION_W
+        if (qturns == 1) rotated_dir = OBC_DIRECTION_S
+        if (qturns == 2) rotated_dir = OBC_DIRECTION_E
+        if (qturns == 3) rotated_dir = OBC_DIRECTION_N
+      case (OBC_DIRECTION_S)
+        if (qturns == 0) rotated_dir = OBC_DIRECTION_S
+        if (qturns == 1) rotated_dir = OBC_DIRECTION_E
+        if (qturns == 2) rotated_dir = OBC_DIRECTION_N
+        if (qturns == 3) rotated_dir = OBC_DIRECTION_W
+      case (OBC_DIRECTION_E)
+        if (qturns == 0) rotated_dir = OBC_DIRECTION_E
+        if (qturns == 1) rotated_dir = OBC_DIRECTION_N
+        if (qturns == 2) rotated_dir = OBC_DIRECTION_W
+        if (qturns == 3) rotated_dir = OBC_DIRECTION_S
+      case (OBC_NONE)
+        rotated_dir = OBC_NONE
+      case default ! This should never happen.
+        rotated_dir = direction
+    end select
+  endif
+
+end function rotate_OBC_segment_direction
 
 
 !> Initialize the segments and field-related data of a rotated OBC.
