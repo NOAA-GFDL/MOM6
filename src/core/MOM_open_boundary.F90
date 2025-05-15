@@ -187,10 +187,10 @@ type, public :: OBC_segment_type
   logical :: is_E_or_W_2    !< True if the OB is facing East or West anywhere.
   type(OBC_segment_data_type), pointer :: field(:) => NULL()  !< OBC data
   integer :: num_fields     !< number of OBC data fields (e.g. u_normal,u_parallel and eta for Flather)
-  integer :: Is_obc         !< i-indices of boundary segment.
-  integer :: Ie_obc         !< i-indices of boundary segment.
-  integer :: Js_obc         !< j-indices of boundary segment.
-  integer :: Je_obc         !< j-indices of boundary segment.
+  integer :: Is_obc         !< Starting local i-index of boundary segment, this may be outside of the local PE.
+  integer :: Ie_obc         !< Ending local i-index of boundary segment, this may be outside of the local PE.
+  integer :: Js_obc         !< Starting local j-index of boundary segment, this may be outside of the local PE.
+  integer :: Je_obc         !< Ending local j-index of boundary segment, this may be outside of the local PE.
   integer :: uamp_index     !< Save where uamp is in segment%field.
   integer :: uphase_index   !< Save where uphase is in segment%field.
   integer :: vamp_index     !< Save where vamp is in segment%field.
@@ -205,8 +205,8 @@ type, public :: OBC_segment_type
   real, allocatable :: Cg(:,:)  !< The external gravity wave speed [L T-1 ~> m s-1]
                                 !! at OBC-points.
   real, allocatable :: Htot(:,:)  !< The total column thickness [H ~> m or kg m-2] at OBC-points.
-  real, allocatable :: dZtot(:,:) !< The total column vertical extent [Z ~> m] at OBC-points.
-  real, allocatable :: h(:,:,:)   !< The cell thickness [H ~> m or kg m-2] at OBC-points.
+  real, allocatable :: dZtot(:,:) !< The total column vertical extent [Z ~> m] at OBC segment faces.
+  real, allocatable :: h(:,:,:)   !< The cell thickness [H ~> m or kg m-2] at OBC segment faces
   real, allocatable :: normal_vel(:,:,:)      !< The layer velocity normal to the OB
                                               !! segment [L T-1 ~> m s-1].
   real, allocatable :: tangential_vel(:,:,:)  !< The layer velocity tangential to the OB segment
@@ -396,7 +396,8 @@ type, public :: ocean_OBC_type
   logical :: om4_remap_via_sub_cells !< If true, use the OM4 remapping algorithm
   character(40) :: remappingScheme !< String selecting the vertical remapping scheme
   type(group_pass_type) :: pass_oblique  !< Structure for group halo pass
-  logical :: exterior_OBC_bug      !< If true, use incorrect form of tracers exterior to OBCs.
+  logical :: exterior_OBC_bug   !< If true, use incorrect form of tracers exterior to OBCs.
+  logical :: hor_index_bug      !< If true, recover set of a horizontal indexing bugs in the OBC code.
 end type ocean_OBC_type
 
 !> Control structure for open boundaries that read from files.
@@ -574,6 +575,9 @@ subroutine open_boundary_config(G, US, param_file, OBC)
     call get_param(param_file, mdl, "EXTERIOR_OBC_BUG", OBC%exterior_OBC_bug, &
                  "If true, recover a bug in barotropic solver and other routines when "//&
                  "boundary contitions interior to the domain are used.", &
+                 default=.true.)
+    call get_param(param_file, mdl, "OBC_HOR_INDEXING_BUG", OBC%hor_index_bug, &
+                 "If true, recover set of a horizontal indexing bugs in the OBC code.", &
                  default=.true.)
     reentrant_x = .false.
     call get_param(param_file, mdl, "REENTRANT_X", reentrant_x, default=.true.)
@@ -804,7 +808,7 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
   character(len=128) :: inputdir
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
   character(len=256) :: mesg    ! Message for error messages.
-  integer, dimension(4) :: siz,siz2
+  integer, dimension(4) :: siz, siz2
   integer :: is, ie, js, je
   integer :: isd, ied, jsd, jed
   integer :: IsdB, IedB, JsdB, JedB
@@ -1283,7 +1287,7 @@ subroutine setup_segment_indices(G, seg, Is_obc, Ie_obc, Js_obc, Je_obc)
   integer, intent(in) :: Js_obc !< Q-point global j-index of start of segment
   integer, intent(in) :: Je_obc !< Q-point global j-index of end of segment
   ! Local variables
-  integer :: IsgB, IegB, JsgB, JegB
+  integer :: IsgB, IegB, JsgB, JegB  ! Global corner point indices at the ends of the OBC segments
   integer :: isg, ieg, jsg, jeg
 
   ! Isg, Ieg will be I*_obc in global space
@@ -1424,7 +1428,7 @@ subroutine setup_u_point_obc(OBC, G, US, segment_str, l_seg, PF, reentrant_y)
     OBC%segment(l_seg)%direction = OBC_DIRECTION_E
   elseif (Je_obc<Js_obc) then
     OBC%segment(l_seg)%direction = OBC_DIRECTION_W
-    j=js_obc;js_obc=je_obc;je_obc=j
+    j = js_obc ; js_obc = je_obc ; je_obc = j
   endif
 
   OBC%segment(l_seg)%on_pe = .false.
@@ -3407,7 +3411,7 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
     do m=1,OBC%ntr
       write(var_num,'(I3.3)') m
       call uvchksum("radiation_OBCs: OBC%tres_[xy]_"//var_num, OBC%tres_x(:,:,:,m), OBC%tres_y(:,:,:,m), G%HI, &
-                    haloshift=0, symmetric=sym, unscale=1.0)
+                    haloshift=0, symmetric=sym, scalar_pair=.true., unscale=1.0)
     enddo
   endif
 
@@ -3716,7 +3720,9 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     ! If these are just Flather, change update_OBC_segment_data accordingly
     allocate(segment%Cg(IsdB:IedB,jsd:jed), source=0.0)
     allocate(segment%Htot(IsdB:IedB,jsd:jed), source=0.0)
-    allocate(segment%dZtot(IsdB:IedB,jsd:jed), source=0.0)
+    ! Allocate dZtot with extra values at the end to avoid segmentation faults in cases where
+    ! it is interpolated to OBC vorticity points.
+    allocate(segment%dZtot(IsdB:IedB,jsd-1:jed+1), source=0.0)
     allocate(segment%h(IsdB:IedB,jsd:jed,OBC%ke), source=0.0)
     allocate(segment%SSH(IsdB:IedB,jsd:jed), source=0.0)
     if (segment%radiation) &
@@ -3752,7 +3758,9 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     ! If these are just Flather, change update_OBC_segment_data accordingly
     allocate(segment%Cg(isd:ied,JsdB:JedB), source=0.0)
     allocate(segment%Htot(isd:ied,JsdB:JedB), source=0.0)
-    allocate(segment%dZtot(isd:ied,JsdB:JedB), source=0.0)
+    ! Allocate dZtot with extra values at the end to avoid segmentation faults in cases where
+    ! it is interpolated to OBC vorticity points.
+    allocate(segment%dZtot(isd-1:ied+1,JsdB:JedB), source=0.0)
     allocate(segment%h(isd:ied,JsdB:JedB,OBC%ke), source=0.0)
     allocate(segment%SSH(isd:ied,JsdB:JedB), source=0.0)
     if (segment%radiation) &
@@ -3933,7 +3941,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   real, dimension(:,:,:), allocatable, target :: tmp_buffer ! A buffer for input data [various units]
   real, dimension(:), allocatable :: dz_stack  ! Distance between the interfaces at corner points [Z ~> m]
   integer :: is_obc2, js_obc2
-  integer :: i_seg_offset, j_seg_offset
+  integer :: i_seg_offset, j_seg_offset, bug_offset
   real :: net_dz_src  ! Total vertical extent of the incoming flow in the source field [Z ~> m]
   real :: net_dz_int  ! Total vertical extent of the incoming flow in the model [Z ~> m]
   real :: scl_fac     ! A scaling factor to compensate for differences in total thicknesses [nondim]
@@ -3956,6 +3964,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   if (OBC%add_tide_constituents) time_delta = US%s_to_T * time_type_to_real(Time - OBC%time_ref)
 
   if (OBC%number_of_segments >= 1) then
+    dz(:,:,:) = 0.0
     call thickness_to_dz(h, tv, dz, G, GV, US)
     call pass_var(dz, G%Domain)
   endif
@@ -3965,7 +3974,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
     if (.not. segment%on_pe) cycle ! continue to next segment if not in computational domain
 
-    ! NOTE: These are in segment%HI, but defined slightly differently
+    ! NOTE: segment%is_obc and segment%ie_obc are range of indices for the full segment.
+    !  The other data set here are in segment%HI, but here they defined slightly differently.
     ni_seg = segment%ie_obc-segment%is_obc+1
     nj_seg = segment%je_obc-segment%js_obc+1
     is_obc = max(segment%is_obc,isd-1)
@@ -3984,34 +3994,38 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 ! i2 has to start at Is_obc+1 and end at Ie_obc.
 ! j2 is J_obc and jshift has to be +1 at both the north and south.
 
-     ! calculate auxiliary fields at staggered locations
-    ishift=0;jshift=0
+    ! calculate auxiliary fields at staggered locations
+    ishift = 0 ; jshift = 0
+    segment%Htot(:,:) = 0.0
+    segment%dZtot(:,:) = 0.0
     if (segment%is_E_or_W) then
       allocate(normal_trans_bt(segment%HI%IsdB:segment%HI%IedB,segment%HI%jsd:segment%HI%jed), source=0.0)
       if (segment%direction == OBC_DIRECTION_W) ishift=1
       I=segment%HI%IsdB
+      ! dZtot may extend one point past the end of the segment on the current PE for use at vorticity points
+      do k=1,GV%ke ; do j = max(segment%HI%jsd-1,G%jsd), min(segment%HI%jed+1,G%jed)
+        segment%dZtot(I,j) = segment%dZtot(I,j) + dz(i+ishift,j,k)
+      enddo ; enddo
+      do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
+        segment%h(I,j,k) = h(i+ishift,j,k)
+        segment%Htot(I,j) = segment%Htot(I,j) + segment%h(I,j,k)
+      enddo ; enddo
       do j=segment%HI%jsd,segment%HI%jed
-        segment%Htot(I,j) = 0.0
-        segment%dZtot(I,j) = 0.0
-        do k=1,GV%ke
-          segment%h(I,j,k) = h(i+ishift,j,k)
-          segment%Htot(I,j) = segment%Htot(I,j) + segment%h(I,j,k)
-          segment%dZtot(I,j) = segment%dZtot(I,j) + dz(i+ishift,j,k)
-        enddo
         segment%Cg(I,j) = sqrt(GV%g_prime(1) * max(0.0, segment%dZtot(I,j)))
       enddo
-    else! (segment%direction == OBC_DIRECTION_N .or. segment%direction == OBC_DIRECTION_S)
+    else ! (segment%direction == OBC_DIRECTION_N .or. segment%direction == OBC_DIRECTION_S)
       allocate(normal_trans_bt(segment%HI%isd:segment%HI%ied,segment%HI%JsdB:segment%HI%JedB), source=0.0)
       if (segment%direction == OBC_DIRECTION_S) jshift=1
       J=segment%HI%JsdB
+      ! dZtot may extend one point past the end of the segment on the current PE for use at vorticity points
+      do k=1,GV%ke ; do i = max(segment%HI%isd-1,G%isd), min(segment%HI%ied+1,G%ied)
+        segment%dZtot(i,J) = segment%dZtot(i,J) + dz(i,j+jshift,k)
+      enddo ; enddo
+      do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
+        segment%h(i,J,k) = h(i,j+jshift,k)
+        segment%Htot(i,J) = segment%Htot(i,J) + segment%h(i,J,k)
+      enddo ; enddo
       do i=segment%HI%isd,segment%HI%ied
-        segment%Htot(i,J) = 0.0
-        segment%dZtot(i,J) = 0.0
-        do k=1,GV%ke
-          segment%h(i,J,k) = h(i,j+jshift,k)
-          segment%Htot(i,J) = segment%Htot(i,J) + segment%h(i,J,k)
-          segment%dZtot(i,J) = segment%dZtot(i,J) + dz(i,j+jshift,k)
-        enddo
         segment%Cg(i,J) = sqrt(GV%g_prime(1) * max(0.0, segment%dZtot(i,J)))
       enddo
     endif
@@ -4104,10 +4118,12 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
         ! This is where the data values are actually read in.
         call time_interp_external(segment%field(m)%handle, Time, tmp_buffer_in, scale=segment%field(m)%scale)
 
-        ! NOTE: Rotation of face-points require that we skip the final value
+        ! NOTE: Rotation of face-points require that we skip the final value when not in brushcutter mode.
         if (turns /= 0) then
           flip_buffer = ((turns==1) .or. (turns==3))
-          if ((flip_buffer .and. segment%is_E_or_W) .and. &
+          if (OBC%brushcutter_mode .or. (.not.flip_buffer)) then
+            call rotate_array(tmp_buffer_in, turns, tmp_buffer)
+          elseif ((flip_buffer .and. segment%is_E_or_W) .and. &
               (.not. (segment%field(m)%name == 'V' .or. segment%field(m)%name == 'Vamp' &
                   .or. segment%field(m)%name == 'Vphase' .or. segment%field(m)%name == 'DVDX') )) then
             nj_buf = size(tmp_buffer, 2) - 1
@@ -4132,23 +4148,28 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
         endif
 
         if (OBC%brushcutter_mode) then
+          ! In brushcutter mode, the input data includes vales at both the vorticity point nodes and
+          ! the velocity point faces of the OBC segments.  The vorticity node values are at the odd
+          ! posiitons in tmp_buffer, while the faces are at the even points.  The bug that is being
+          ! corrected here is the use of the odd indexed points for both the corners and the faces.
+          bug_offset = 0 ; if (OBC%hor_index_bug) bug_offset = -1
           if (segment%is_E_or_W) then
             if (segment%field(m)%name == 'V' .or. segment%field(m)%name == 'DVDX' .or. &
                 segment%field(m)%name == 'Vamp' .or. segment%field(m)%name == 'Vphase') then
               segment%field(m)%buffer_src(is_obc,:,:) = &
-                  tmp_buffer(1,2*(js_obc+j_seg_offset)+1:2*(je_obc+j_seg_offset)+1:2,:)
+                  tmp_buffer(1, 2*(js_obc+j_seg_offset+1)-1:2*(je_obc+j_seg_offset)+1:2, :)
             else
               segment%field(m)%buffer_src(is_obc,:,:) = &
-                  tmp_buffer(1,2*(js_obc+j_seg_offset)+1:2*(je_obc+j_seg_offset):2,:)
+                  tmp_buffer(1, 2*(js_obc+j_seg_offset+1)+bug_offset:2*(je_obc+j_seg_offset):2, :)
             endif
           else
             if (segment%field(m)%name == 'U' .or. segment%field(m)%name == 'DUDY' .or. &
                 segment%field(m)%name == 'Uamp' .or. segment%field(m)%name == 'Uphase') then
               segment%field(m)%buffer_src(:,js_obc,:) = &
-                  tmp_buffer(2*(is_obc+i_seg_offset)+1:2*(ie_obc+i_seg_offset)+1:2,1,:)
+                  tmp_buffer(2*(is_obc+i_seg_offset+1)-1:2*(ie_obc+i_seg_offset)+1:2, 1, :)
             else
               segment%field(m)%buffer_src(:,js_obc,:) = &
-                  tmp_buffer(2*(is_obc+i_seg_offset)+1:2*(ie_obc+i_seg_offset):2,1,:)
+                  tmp_buffer(2*(is_obc+i_seg_offset+1)+bug_offset:2*(ie_obc+i_seg_offset):2, 1, :)
             endif
           endif
         else  ! Not brushcutter_mode.
@@ -4176,7 +4197,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
         ! no dz for tidal variables
         if (segment%field(m)%nk_src > 1 .and.&
             (index(segment%field(m)%name, 'phase') <= 0 .and. index(segment%field(m)%name, 'amp') <= 0)) then
-          ! This is where the 2-d tidal data values are actually read in.
+          ! This is where the 2-d tidal data values (apart from phase and amp) are actually read in.
           call time_interp_external(segment%field(m)%dz_handle, Time, tmp_buffer_in, scale=US%m_to_Z)
 
           if (turns /= 0) then
@@ -4195,21 +4216,22 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
           endif ! End of rotation
 
           if (OBC%brushcutter_mode) then
+            bug_offset = 0 ; if (OBC%hor_index_bug) bug_offset = -1
             if (segment%is_E_or_W) then
               if (segment%field(m)%name == 'V' .or. segment%field(m)%name == 'DVDX') then
                 segment%field(m)%dz_src(is_obc,:,:) = &
-                    tmp_buffer(1,2*(js_obc+j_seg_offset)+1:2*(je_obc+j_seg_offset)+1:2,:)
+                    tmp_buffer(1, 2*(js_obc+j_seg_offset+1)-1:2*(je_obc+j_seg_offset)+1:2, :)
               else
                 segment%field(m)%dz_src(is_obc,:,:) = &
-                    tmp_buffer(1,2*(js_obc+j_seg_offset)+1:2*(je_obc+j_seg_offset):2,:)
+                    tmp_buffer(1, 2*(js_obc+j_seg_offset+1)+bug_offset:2*(je_obc+j_seg_offset):2, :)
               endif
             else
               if (segment%field(m)%name == 'U' .or. segment%field(m)%name == 'DUDY') then
                 segment%field(m)%dz_src(:,js_obc,:) = &
-                    tmp_buffer(2*(is_obc+i_seg_offset)+1:2*(ie_obc+i_seg_offset)+1:2,1,:)
+                    tmp_buffer(2*(is_obc+i_seg_offset+1)-1:2*(ie_obc+i_seg_offset)+1:2, 1, :)
               else
                 segment%field(m)%dz_src(:,js_obc,:) = &
-                    tmp_buffer(2*(is_obc+i_seg_offset)+1:2*(ie_obc+i_seg_offset):2,1,:)
+                    tmp_buffer(2*(is_obc+i_seg_offset+1)+bug_offset:2*(ie_obc+i_seg_offset):2, 1, :)
               endif
             endif
           else  ! Not brushcutter_mode.
@@ -4232,8 +4254,14 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
             endif
           endif
 
-          ! The units of ...%dz_src are no longer changed from [Z ~> m] to [H ~> m or kg m-2] here.
-          call adjustSegmentEtaToFitBathymetry(G,GV,US,segment,m)
+          if ((((segment%field(m)%name == 'V' .or. segment%field(m)%name == 'DVDX') .and. segment%is_E_or_W) .or. &
+               ((segment%field(m)%name == 'U' .or. segment%field(m)%name == 'DUDY') .and. segment%is_N_or_S)) .and. &
+             (.not.OBC%hor_index_bug)) then
+            ! This point is at the OBC vorticity point nodes, rather than the OBC velocity point faces.
+            call adjustSegmentEtaToFitBathymetry(G, GV, US, segment, m, at_node=.true.)
+          else
+            call adjustSegmentEtaToFitBathymetry(G, GV, US, segment, m, at_node=.false.)
+          endif
 
           if (segment%is_E_or_W) then
             ishift=1
@@ -4244,6 +4272,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
               do J=max(js_obc,jsd),min(je_obc,jed-1)
                 ! Using the h remapping approach
                 ! Pretty sure we need to check for source/target grid consistency here
+                !### For a concave corner between OBC segments, there are 3 thicknesses we might
+                ! consider using.
                 segment%field(m)%buffer_dst(I,J,:) = 0.0  ! initialize remap destination buffer
                 if (G%mask2dCu(I,j)>0. .and. G%mask2dCu(I,j+1)>0.) then
                   dz_stack(:) = 0.5*(dz(i+ishift,j,:) + dz(i+ishift,j+1,:))
@@ -5363,14 +5393,14 @@ subroutine open_boundary_register_restarts(HI, GV, US, OBC, Reg, param_file, res
 
     vd(1) = var_desc("rx_normal", "gridpoint timestep-1", "Normal Phase Speed for EW radiation OBCs", 'u', 'L')
     vd(2) = var_desc("ry_normal", "gridpoint timestep-1", "Normal Phase Speed for NS radiation OBCs", 'v', 'L')
-    call register_restart_pair(OBC%rx_normal, OBC%ry_normal, vd(1), vd(2), .false., restart_CS)
+    call register_restart_pair(OBC%rx_normal, OBC%ry_normal, vd(1), vd(2), .false., restart_CS, scalar_pair=.true.)
     ! The rx_normal and ry_normal arrays used with radiation OBCs are currently in units of grid
     ! points per timestep, but if this were to be corrected to [L T-1 ~> m s-1] or [T-1 ~> s-1] to
     ! permit timesteps to change between calls to the OBC code, the following would be needed instead:
     ! vd(1) = var_desc("rx_normal", "m s-1", "Normal Phase Speed for EW radiation OBCs", 'u', 'L')
     ! vd(2) = var_desc("ry_normal", "m s-1", "Normal Phase Speed for NS radiation OBCs", 'v', 'L')
     ! call register_restart_pair(OBC%rx_normal, OBC%ry_normal, vd(1), vd(2), .false., restart_CS, &
-    !                            conversion=US%L_T_to_m_s)
+    !                            conversion=US%L_T_to_m_s, scalar_pair=.true.)
   endif
 
   if (OBC%oblique_BCs_exist_globally) then
@@ -5769,15 +5799,17 @@ end subroutine remap_OBC_fields
 !! is dilated (expanded) to fill the void.
 !!   @remark{There is a (hard-wired) "tolerance" parameter such that the
 !! criteria for adjustment must equal or exceed 10cm.}
-subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
+subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment, fld, at_node)
   type(ocean_grid_type),   intent(in)    :: G   !< The ocean's grid structure
   type(verticalGrid_type), intent(in)    :: GV  !< The ocean's vertical grid structure
   type(unit_scale_type),   intent(in)    :: US  !< A dimensional unit scaling type
   type(OBC_segment_type),  intent(inout) :: segment !< OBC segment
   integer,                 intent(in)    :: fld  !< field index to adjust thickness
+  logical,                 intent(in)    :: at_node !< True this point is at the OBC nodes rather than the faces
 
   integer :: i, j, k, is, ie, js, je, nz, contractions, dilations
   real, allocatable, dimension(:,:,:) :: eta ! Segment source data interface heights [Z ~> m]
+  real, allocatable, dimension(:,:)   :: dz_tot ! Segment total thicknesses [Z ~> m]
   real :: hTolerance = 0.1 !<  Tolerance to exceed adjustment criteria [Z ~> m]
   ! real :: dilate      ! A factor by which to dilate the water column [nondim]
   !character(len=100) :: mesg
@@ -5787,15 +5819,51 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
   nz = size(segment%field(fld)%dz_src,3)
 
   if (segment%is_E_or_W) then
-    ! segment thicknesses are defined at cell face centers.
-    is = segment%HI%isdB ; ie = segment%HI%iedB
-    js = segment%HI%jsd ; je = segment%HI%jed
-  else
-    is = segment%HI%isd ; ie = segment%HI%ied
+    is = segment%HI%IsdB ; ie = segment%HI%IedB
+    if (at_node) then   ! This point is at the OBC nodes, rather than the cell face centers.
+      Js = max(segment%Js_obc, G%jsd)
+      Je = min(segment%Je_obc, G%jed-1)
+    else   ! Segment thicknesses are defined at cell face centers.
+      js = segment%HI%jsd ; je = segment%HI%jed
+    endif
+  else ! segment%is_N_or_S
     js = segment%HI%jsdB ; je = segment%HI%jedB
+    if (at_node) then  ! This point is at the OBC nodes, rather than the cell face centers.
+      is = max(segment%HI%IsdB, G%isd)
+      ie = min(segment%HI%IedB, G%ied-1)
+    else   ! Segment thicknesses are defined at cell face centers.
+      is = segment%HI%isd ; ie = segment%HI%ied
+    endif
   endif
   allocate(eta(is:ie,js:je,nz+1))
-  contractions=0; dilations=0
+  allocate(dz_tot(is:ie,js:je), source=0.0)
+
+  if (at_node) then
+    if (segment%is_E_or_W) then
+      I = Is
+      do J=Js,Je
+        dz_tot(I,J) = 0.5*(segment%dZtot(I,j) + segment%dZtot(I,j+1))
+      enddo
+      ! Do not extrapolate past the end of a global segment.
+      ! ### For a concave corner between segments, perhaps we should do something more sophisticated.
+      if (Js == segment%Js_obc) dz_tot(I,Js) = segment%dZtot(I,js+1)
+      if (Je == segment%Js_obc) dz_tot(I,Je) = segment%dZtot(I,je)
+    else
+      J = Js
+      do I=Is,Ie
+        dz_tot(I,J) = 0.5*(segment%dZtot(i,J) + segment%dZtot(i+1,J))
+      enddo
+      ! Do not extrapolate past the end of a global segment.
+      if (Is == segment%Is_obc) dz_tot(Is,J) = segment%dZtot(is+1,J)
+      if (Ie == segment%Is_obc) dz_tot(Ie,J) = segment%dZtot(ie,J)
+    endif
+  else
+    do j=js,je ; do i=is,ie
+      dz_tot(i,j) = segment%dZtot(i,j)
+    enddo ; enddo
+  endif
+
+  contractions = 0 ; dilations = 0
   do j=js,je ; do i=is,ie
     eta(i,j,1) = 0.0  ! segment data are assumed to be located on a static grid
     ! For remapping calls, the entire column will be dilated
@@ -5809,8 +5877,8 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
     ! The normal slope at the boundary is zero by a
     ! previous call to open_boundary_impose_normal_slope
     do k=nz+1,1,-1
-      if (-eta(i,j,k) > segment%dZtot(i,j) + hTolerance) then
-        eta(i,j,k) = -segment%dZtot(i,j)
+      if (-eta(i,j,k) > dz_tot(i,j) + hTolerance) then
+        eta(i,j,k) = -dz_tot(i,j)
         contractions = contractions + 1
       endif
     enddo
@@ -5828,10 +5896,10 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
 
     !   The whole column is dilated to accommodate deeper topography than
     ! the bathymetry would indicate.
-    if (-eta(i,j,nz+1) < segment%dZtot(i,j) - hTolerance) then
+    if (-eta(i,j,nz+1) < dz_tot(i,j) - hTolerance) then
       dilations = dilations + 1
       ! expand bottom-most cell only
-      eta(i,j,nz+1) = -segment%dZtot(i,j)
+      eta(i,j,nz+1) = -dz_tot(i,j)
       segment%field(fld)%dz_src(i,j,nz) = eta(i,j,nz) - eta(i,j,nz+1)
       ! if (eta(i,j,1) <= eta(i,j,nz+1)) then
       !   do k=1,nz ; segment%field(fld)%dz_src(i,j,k) = (eta(i,j,1) + G%bathyT(i,j)) / real(nz) ; enddo
@@ -5844,7 +5912,6 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
   enddo ; enddo
 
   ! can not do communication call here since only PEs on the current segment are here
-
   ! call sum_across_PEs(contractions)
   ! if ((contractions > 0) .and. (is_root_pe())) then
   !    write(mesg,'("Thickness OBCs were contracted ",'// &
@@ -5857,7 +5924,8 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
   !         '"to fit topography in ",I8," places.")') dilations
   !    call MOM_error(WARNING, 'adjustEtaToFitBathymetry: '//mesg)
   ! endif
-  deallocate(eta)
+
+  deallocate(eta, dz_tot)
 
 end subroutine adjustSegmentEtaToFitBathymetry
 
@@ -5971,6 +6039,7 @@ subroutine rotate_OBC_config(OBC_in, G_in, OBC, G, turns)
   OBC%om4_remap_via_sub_cells = OBC_in%om4_remap_via_sub_cells
   OBC%remappingScheme = OBC_in%remappingScheme
   OBC%exterior_OBC_bug = OBC_in%exterior_OBC_bug
+  OBC%hor_index_bug = OBC_in%hor_index_bug
   OBC%n_tide_constituents = OBC_in%n_tide_constituents
   OBC%add_tide_constituents = OBC_in%add_tide_constituents
 
@@ -6233,14 +6302,15 @@ subroutine rotate_OBC_init(OBC_in, G, GV, US, param_file, tv, restart_CS, OBC)
                  "If true, Temperature and salinity are used as state "//&
                  "variables.", default=.true., do_not_log=.true.)
 
-  if (use_temperature) &
-    call fill_temp_salt_segments(G, GV, US, OBC, tv)
-
   do l = 1, OBC%number_of_segments
     call rotate_OBC_segment_data(OBC_in%segment(l), OBC%segment(l), G%HI%turns)
   enddo
 
-  call setup_OBC_tracer_reservoirs(G, GV, OBC)
+  if (use_temperature) &
+    call fill_temp_salt_segments(G, GV, US, OBC, tv)
+
+  ! There is already a call to setup_OBC_tracer_reservoirs in fill_temp_salt_segments
+  ! call setup_OBC_tracer_reservoirs(G, GV, OBC)
   call open_boundary_init(G, GV, US, param_file, OBC, restart_CS)
 end subroutine rotate_OBC_init
 
@@ -6406,21 +6476,25 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
       segment%tr_Reg%Tr(n)%OBC_inflow_conc = segment_in%tr_Reg%Tr(n)%OBC_inflow_conc
 
       if (allocated(segment_in%tr_Reg%tr(n)%t)) then
-        ke = size(segment_in%tr_Reg%tr(n)%t, 3)
-        if (segment%is_E_or_W) then
-          allocate(segment%tr_Reg%Tr(n)%t(IsdB:IedB,jsd:jed,1:ke), source=0.0)
-        elseif (segment%is_N_or_S) then
-          allocate(segment%tr_Reg%Tr(n)%t(isd:ied,JsdB:JedB,1:ke), source=0.0)
+        if (.not.allocated(segment%tr_Reg%tr(n)%t)) then
+          ke = size(segment_in%tr_Reg%tr(n)%t, 3)
+          if (segment%is_E_or_W) then
+            allocate(segment%tr_Reg%Tr(n)%t(IsdB:IedB,jsd:jed,1:ke), source=0.0)
+          elseif (segment%is_N_or_S) then
+            allocate(segment%tr_Reg%Tr(n)%t(isd:ied,JsdB:JedB,1:ke), source=0.0)
+          endif
         endif
         call rotate_array(segment_in%tr_Reg%tr(n)%t, turns, segment%tr_Reg%tr(n)%t)
       endif
 
       if (allocated(segment_in%tr_Reg%tr(n)%tres)) then
-        ke = size(segment_in%tr_Reg%tr(n)%tres, 3)
-        if (segment%is_E_or_W) then
-          allocate(segment%tr_Reg%Tr(n)%tres(IsdB:IedB,jsd:jed,1:ke), source=0.0)
-        elseif (segment%is_N_or_S) then
-          allocate(segment%tr_Reg%Tr(n)%tres(isd:ied,JsdB:JedB,1:ke), source=0.0)
+        if (.not.allocated(segment%tr_Reg%tr(n)%tres)) then
+          ke = size(segment_in%tr_Reg%tr(n)%tres, 3)
+          if (segment%is_E_or_W) then
+            allocate(segment%tr_Reg%Tr(n)%tres(IsdB:IedB,jsd:jed,1:ke), source=0.0)
+          elseif (segment%is_N_or_S) then
+            allocate(segment%tr_Reg%Tr(n)%tres(isd:ied,JsdB:JedB,1:ke), source=0.0)
+          endif
         endif
         call rotate_array(segment_in%tr_Reg%tr(n)%tres, turns, segment%tr_Reg%tr(n)%tres)
       endif
@@ -6558,6 +6632,7 @@ subroutine write_OBC_info(OBC, G, GV, US)
   if (OBC%force_bounds_in_subcell) call MOM_mesg("force_bounds_in_subcell", verb=1)
   if (OBC%om4_remap_via_sub_cells) call MOM_mesg("om4_remap_via_sub_cells", verb=1)
   if (OBC%exterior_OBC_bug) call MOM_mesg("exterior_OBC_bug", verb=1)
+  if (OBC%hor_index_bug) call MOM_mesg("hor_index_bug", verb=1)
   if (OBC%debug) call MOM_mesg("debug", verb=1)
   if (OBC%ramp) call MOM_mesg("ramp", verb=1)
   if (OBC%ramping_is_activated) call MOM_mesg("ramping_is_activated", verb=1)
@@ -6670,7 +6745,7 @@ subroutine chksum_OBC_segments(OBC, G, GV, US, nk)
   ! Local variables
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
   real :: norm ! A sign change used when rotating a normal component [nondim]
-  real :: tang ! A sign change used when rotating a normal component [nondim]
+  real :: tang ! A sign change used when rotating a tangential component [nondim]
   character(len=8) :: sn, segno
   character(len=1024) :: mesg
   integer :: c, n, dir
