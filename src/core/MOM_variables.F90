@@ -58,7 +58,8 @@ type, public :: surface
     ocean_heat, &  !< The total heat content of the ocean in [C R Z ~> degC kg m-2].
     ocean_salt, &  !< The total salt content of the ocean in [1e-3 S R Z ~> kgSalt m-2].
     taux_shelf, &  !< The zonal stresses on the ocean under shelves [R L Z T-2 ~> Pa].
-    tauy_shelf     !< The meridional stresses on the ocean under shelves [R L Z T-2 ~> Pa].
+    tauy_shelf, &  !< The meridional stresses on the ocean under shelves [R L Z T-2 ~> Pa].
+    fco2           !< CO2 flux from the ocean to the atmosphere [R Z T-1 ~> kgCO2 m-2 s-1]
   logical :: T_is_conT = .false. !< If true, the temperature variable SST is actually the
                    !! conservative temperature in [C ~> degC].
   logical :: S_is_absS = .false. !< If true, the salinity variable SSS is actually the
@@ -180,16 +181,40 @@ type, public :: accel_diag_ptrs
                            !! in du_dt_visc) [L T-2 ~> m s-2]
     dv_dt_str => NULL(), & !< Meridional acceleration due to the surface stress (included
                            !! in dv_dt_visc) [L T-2 ~> m s-2]
-    du_dt_dia => NULL(), & !< Zonal acceleration due to diapycnal  mixing [L T-2 ~> m s-2]
-    dv_dt_dia => NULL(), & !< Meridional acceleration due to diapycnal  mixing [L T-2 ~> m s-2]
+    du_dt_dia => NULL(), & !< Zonal acceleration due to diapycnal mixing [L T-2 ~> m s-2]
+    dv_dt_dia => NULL(), & !< Meridional acceleration due to diapycnal mixing [L T-2 ~> m s-2]
     u_accel_bt => NULL(), &!< Pointer to the zonal barotropic-solver acceleration [L T-2 ~> m s-2]
-    v_accel_bt => NULL()   !< Pointer to the meridional barotropic-solver acceleration [L T-2 ~> m s-2]
+    v_accel_bt => NULL(), &!< Pointer to the meridional barotropic-solver acceleration [L T-2 ~> m s-2]
+
+    ! sal_[uv] and tide_[uv] are 3D fields because of their baroclinic component in Boussinesq mode.
+    sal_u => NULL(), &     !< Zonal acceleration due to self-attraction and loading [L T-2 ~> m s-2]
+    sal_v => NULL(), &     !< Meridional acceleration due to self-attraction and loading [L T-2 ~> m s-2]
+    tides_u => NULL(), &    !< Zonal acceleration due to astronomical tidal forcing [L T-2 ~> m s-2]
+    tides_v => NULL()       !< Meridional acceleration due to astronomical tidal forcing [L T-2 ~> m s-2]
   real, pointer, dimension(:,:,:) :: du_other => NULL()
                            !< Zonal velocity changes due to any other processes that are
                            !! not due to any explicit accelerations [L T-1 ~> m s-1].
   real, pointer, dimension(:,:,:) :: dv_other => NULL()
                            !< Meridional velocity changes due to any other processes that are
                            !! not due to any explicit accelerations [L T-1 ~> m s-1].
+
+  ! Sub-terms of [uv]_accel_bt
+  real, pointer :: bt_pgf_u(:,:,:) => NULL() !< Zonal acceleration due to anomalous pressure gradient from
+                                             !! barotropic solver, a 3D component of u_accel_bt that includes both
+                                             !! PFuBT and the offset term for central differencing timestepping
+                                             !! [L T-2 ~> m s-2]
+  real, pointer :: bt_pgf_v(:,:,:) => NULL() !< Meridional acceleration due to anomalous pressure gradient from
+                                             !! barotropic solver, a 3D component of v_accel_bt that includes both
+                                             !! PFvBT and the offset term for central differencing timestepping
+                                             !! [L T-2 ~> m s-2]
+  real, pointer :: bt_cor_u(:,:) => NULL()   !< Zonal acceleration due to anomalous Coriolis force from barotropic
+                                             !! solver, a 2D component of u_accel_bt [L T-2 ~> m s-2]
+  real, pointer :: bt_cor_v(:,:) => NULL()   !< Meridional acceleration due to anomalous Coriolis force from barotropic
+                                             !! solver, a 2D component of v_accel_bt [L T-2 ~> m s-2]
+  real, pointer :: bt_lwd_u(:,:) => NULL()   !< Zonal acceleration due to linear wave drag from barotropic solver,
+                                             !! a 2D component of u_accel_bt [L T-2 ~> m s-2]
+  real, pointer :: bt_lwd_v(:,:) => NULL()   !< Meridional acceleration due to linear wave drag from barotropic solver,
+                                             !! a 2D component of v_accel_bt [L T-2 ~> m s-2]
 
   ! These accelerations are sub-terms included in the accelerations above.
   real, pointer :: gradKEu(:,:,:) => NULL()  !< gradKEu = - d/dx(u2) [L T-2 ~> m s-2]
@@ -339,7 +364,7 @@ contains
 !! the ocean model. Unused fields are unallocated.
 subroutine allocate_surface_state(sfc_state, G, use_temperature, do_integrals, &
                                   gas_fields_ocn, use_meltpot, use_iceshelves, &
-                                  omit_frazil, sfc_state_in, turns)
+                                  omit_frazil, sfc_state_in, turns, use_marbl_tracers)
   type(ocean_grid_type), intent(in)    :: G                !< ocean grid structure
   type(surface),         intent(inout) :: sfc_state        !< ocean surface state type to be allocated.
   logical,     optional, intent(in)    :: use_temperature  !< If true, allocate the space for thermodynamic variables.
@@ -365,9 +390,10 @@ subroutine allocate_surface_state(sfc_state, G, use_temperature, do_integrals, &
                                               !! is present, it is used and tr_fields_in is ignored.
   integer,     optional, intent(in)    :: turns  !< If present, the number of counterclockwise quarter
                                                  !! turns to use on the new grid.
+  logical,     optional, intent(in)    :: use_marbl_tracers  !< If true, allocate the space for CO2 flux from MARBL
 
   ! local variables
-  logical :: use_temp, alloc_integ, use_melt_potential, alloc_iceshelves, alloc_frazil
+  logical :: use_temp, alloc_integ, use_melt_potential, alloc_iceshelves, alloc_frazil, alloc_fco2
   logical :: even_turns  ! True if turns is absent or even
   integer :: tr_field_i_mem(4), tr_field_j_mem(4)
   integer :: is, ie, js, je, isd, ied, jsd, jed
@@ -382,6 +408,7 @@ subroutine allocate_surface_state(sfc_state, G, use_temperature, do_integrals, &
   use_melt_potential = .false. ; if (present(use_meltpot)) use_melt_potential = use_meltpot
   alloc_iceshelves = .false. ; if (present(use_iceshelves)) alloc_iceshelves = use_iceshelves
   alloc_frazil = .true. ; if (present(omit_frazil)) alloc_frazil = .not.omit_frazil
+  alloc_fco2 = .false. ; if (present(use_marbl_tracers)) alloc_fco2 = use_marbl_tracers
 
   if (sfc_state%arrays_allocated) return
 
@@ -434,6 +461,10 @@ subroutine allocate_surface_state(sfc_state, G, use_temperature, do_integrals, &
     endif
   endif
 
+  if (alloc_fco2) then
+    allocate(sfc_state%fco2(isd:ied,jsd:jed), source=0.0)
+  endif
+
   sfc_state%arrays_allocated = .true.
 
 end subroutine allocate_surface_state
@@ -455,6 +486,7 @@ subroutine deallocate_surface_state(sfc_state)
   if (allocated(sfc_state%ocean_mass)) deallocate(sfc_state%ocean_mass)
   if (allocated(sfc_state%ocean_heat)) deallocate(sfc_state%ocean_heat)
   if (allocated(sfc_state%ocean_salt)) deallocate(sfc_state%ocean_salt)
+  if (allocated(sfc_state%fco2)) deallocate(sfc_state%fco2)
   call coupler_type_destructor(sfc_state%tr_fields)
 
   sfc_state%arrays_allocated = .false.

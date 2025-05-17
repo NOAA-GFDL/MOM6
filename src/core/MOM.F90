@@ -23,7 +23,7 @@ use MOM_diag_mediator,        only : set_masks_for_axes
 use MOM_diag_mediator,        only : diag_grid_storage, diag_grid_storage_init
 use MOM_diag_mediator,        only : diag_save_grids, diag_restore_grids
 use MOM_diag_mediator,        only : diag_copy_storage_to_diag, diag_copy_diag_to_storage
-use MOM_domains,              only : MOM_domains_init
+use MOM_domains,              only : MOM_domains_init, MOM_domain_type
 use MOM_domains,              only : sum_across_PEs, pass_var, pass_vector
 use MOM_domains,              only : clone_MOM_domain, deallocate_MOM_domain
 use MOM_domains,              only : To_North, To_East, To_South, To_West
@@ -65,7 +65,7 @@ use MOM_coord_initialization,  only : MOM_initialize_coord, write_vertgrid_file
 use MOM_diabatic_driver,       only : diabatic, diabatic_driver_init, diabatic_CS, extract_diabatic_member
 use MOM_diabatic_driver,       only : adiabatic, adiabatic_driver_init, diabatic_driver_end
 use MOM_diabatic_driver,       only : register_diabatic_restarts
-use MOM_stochastics,           only : stochastics_init, update_stochastics, stochastic_CS
+use MOM_stochastics,           only : stochastics_init, update_stochastics, stochastic_CS, apply_skeb
 use MOM_diagnostics,           only : calculate_diagnostic_fields, MOM_diagnostics_init
 use MOM_diagnostics,           only : register_transport_diags, post_transport_diagnostics
 use MOM_diagnostics,           only : register_surface_diags, write_static_fields
@@ -78,6 +78,7 @@ use MOM_dynamics_unsplit,      only : MOM_dyn_unsplit_CS
 use MOM_dynamics_split_RK2,    only : step_MOM_dyn_split_RK2, register_restarts_dyn_split_RK2
 use MOM_dynamics_split_RK2,    only : initialize_dyn_split_RK2, end_dyn_split_RK2
 use MOM_dynamics_split_RK2,    only : MOM_dyn_split_RK2_CS, remap_dyn_split_rk2_aux_vars
+use MOM_dynamics_split_RK2,    only : init_dyn_split_RK2_diabatic
 use MOM_dynamics_split_RK2b,   only : step_MOM_dyn_split_RK2b, register_restarts_dyn_split_RK2b
 use MOM_dynamics_split_RK2b,   only : initialize_dyn_split_RK2b, end_dyn_split_RK2b
 use MOM_dynamics_split_RK2b,   only : MOM_dyn_split_RK2b_CS, remap_dyn_split_RK2b_aux_vars
@@ -113,7 +114,7 @@ use MOM_obsolete_diagnostics,  only : register_obsolete_diagnostics
 use MOM_open_boundary,         only : ocean_OBC_type, OBC_registry_type
 use MOM_open_boundary,         only : register_temp_salt_segments, update_segment_tracer_reservoirs
 use MOM_open_boundary,         only : open_boundary_register_restarts, remap_OBC_fields
-use MOM_open_boundary,         only : open_boundary_setup_vert
+use MOM_open_boundary,         only : open_boundary_setup_vert, update_OBC_segment_data
 use MOM_open_boundary,         only : rotate_OBC_config, rotate_OBC_init
 use MOM_porous_barriers,       only : porous_widths_layer, porous_widths_interface, porous_barriers_init
 use MOM_porous_barriers,       only : porous_barrier_CS
@@ -781,7 +782,8 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
     endif
   endif
   ! advance the random pattern if stochastic physics is active
-  if (CS%stoch_CS%do_sppt .OR. CS%stoch_CS%pert_epbl) call update_stochastics(CS%stoch_CS)
+  if (CS%stoch_CS%do_sppt .OR. CS%stoch_CS%pert_epbl .OR. CS%stoch_CS%do_skeb) &
+    call update_stochastics(CS%stoch_CS)
 
   if (do_dyn) then
     if (nonblocking_p_surf_update) &
@@ -1225,7 +1227,8 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
       if (CS%VarMix%use_variable_mixing) &
         call calc_slope_functions(h, CS%tv, dt, G, GV, US, CS%VarMix, OBC=CS%OBC)
       call thickness_diffuse(h, CS%uhtr, CS%vhtr, CS%tv, dt_tr_adv, G, GV, US, &
-                             CS%MEKE, CS%VarMix, CS%CDp, CS%thickness_diffuse_CSp)
+                             CS%MEKE, CS%VarMix, CS%CDp, CS%thickness_diffuse_CSp, &
+                             CS%stoch_CS)
       call cpu_clock_end(id_clock_thick_diff)
       call pass_var(h, G%Domain, clock=id_clock_pass, halo=max(2,CS%cont_stencil))
       if (showCallTree) call callTree_waypoint("finished thickness_diffuse_first (step_MOM)")
@@ -1303,7 +1306,7 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
       call step_MOM_dyn_split_RK2(u, v, h, CS%tv, CS%visc, Time_local, dt, forces, &
                   p_surf_begin, p_surf_end, CS%uh, CS%vh, CS%uhtr, CS%vhtr, &
                   CS%eta_av_bc, G, GV, US, CS%dyn_split_RK2_CSp, calc_dtbt, CS%VarMix, &
-                  CS%MEKE, CS%thickness_diffuse_CSp, CS%pbv, waves=waves)
+                  CS%MEKE, CS%thickness_diffuse_CSp, CS%pbv, CS%stoch_CS, waves=waves)
     endif
     if (showCallTree) call callTree_waypoint("finished step_MOM_dyn_split (step_MOM)")
 
@@ -1318,11 +1321,13 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
     if (CS%use_RK2) then
       call step_MOM_dyn_unsplit_RK2(u, v, h, CS%tv, CS%visc, Time_local, dt, forces, &
                p_surf_begin, p_surf_end, CS%uh, CS%vh, CS%uhtr, CS%vhtr, &
-               CS%eta_av_bc, G, GV, US, CS%dyn_unsplit_RK2_CSp, CS%VarMix, CS%MEKE, CS%pbv)
+               CS%eta_av_bc, G, GV, US, CS%dyn_unsplit_RK2_CSp, CS%VarMix, CS%MEKE, CS%pbv, &
+               CS%stoch_CS)
     else
       call step_MOM_dyn_unsplit(u, v, h, CS%tv, CS%visc, Time_local, dt, forces, &
                p_surf_begin, p_surf_end, CS%uh, CS%vh, CS%uhtr, CS%vhtr, &
-               CS%eta_av_bc, G, GV, US, CS%dyn_unsplit_CSp, CS%VarMix, CS%MEKE, CS%pbv, Waves=Waves)
+               CS%eta_av_bc, G, GV, US, CS%dyn_unsplit_CSp, CS%VarMix, CS%MEKE, CS%pbv, &
+               CS%stoch_CS, Waves=Waves)
     endif
     if (showCallTree) call callTree_waypoint("finished step_MOM_dyn_unsplit (step_MOM)")
 
@@ -1375,7 +1380,7 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
       if (CS%VarMix%use_variable_mixing) &
         call calc_slope_functions(h, CS%tv, dt, G, GV, US, CS%VarMix, OBC=CS%OBC)
       call thickness_diffuse(h, CS%uhtr, CS%vhtr, CS%tv, dt, G, GV, US, &
-                             CS%MEKE, CS%VarMix, CS%CDp, CS%thickness_diffuse_CSp)
+                             CS%MEKE, CS%VarMix, CS%CDp, CS%thickness_diffuse_CSp, CS%stoch_CS)
 
       if (CS%debug) call hchksum(h,"Post-thickness_diffuse h", G%HI, haloshift=1, unscale=GV%H_to_MKS)
       call cpu_clock_end(id_clock_thick_diff)
@@ -1670,6 +1675,10 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
                   Time_end_thermo, G, GV, US, CS%diabatic_CSp, CS%stoch_CS, CS%OBC, Waves)
     fluxes%fluxes_used = .true.
 
+    if (CS%stoch_CS%do_skeb) then
+       call apply_skeb(CS%G,CS%GV,CS%stoch_CS,CS%u,CS%v,CS%h,CS%tv,dtdia,Time_end_thermo)
+    endif
+
     if (showCallTree) call callTree_waypoint("finished diabatic (step_MOM_thermo)")
 
     if (CS%debug) then
@@ -1769,6 +1778,8 @@ subroutine ALE_regridding_and_remapping(CS, G, GV, US, u, v, h, tv, dtdia, Time_
   integer :: i, j, k, is, ie, js, je, nz
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+  use_ice_shelf = .false.
+  if (associated(CS%frac_shelf_h)) use_ice_shelf = .true.
   showCallTree = callTree_showQuery()
   if (showCallTree) call callTree_enter("ALE_regridding_and_remapping(), MOM.F90")
   if (CS%debug) call query_debugging_checks(do_redundant=debug_redundant)
@@ -1830,7 +1841,8 @@ subroutine ALE_regridding_and_remapping(CS, G, GV, US, u, v, h, tv, dtdia, Time_
   endif
 
   ! Remap the velocity components.
-  call ALE_remap_velocities(CS%ALE_CSp, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u, v, showCallTree)
+  call ALE_remap_velocities(CS%ALE_CSp, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u, v, showCallTree, &
+                            dtdia, allow_preserve_variance=.true.)
 
   if (allocated(tv%SpV_avg)) tv%valid_SpV_halo = -1   ! Record that SpV_avg is no longer valid.
 
@@ -2213,9 +2225,11 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   type(ocean_grid_type),  pointer :: G_in => NULL() ! Pointer to the input grid
   type(hor_index_type),   pointer :: HI => NULL()   ! A hor_index_type for array extents
   type(hor_index_type),   target  :: HI_in          ! HI on the input grid
+  type(hor_index_type)            :: HI_in_unmasked ! HI on the unmasked input grid
   type(verticalGrid_type), pointer :: GV => NULL()
   type(dyn_horgrid_type), pointer :: dG => NULL(), test_dG => NULL()
   type(dyn_horgrid_type), pointer :: dG_in => NULL()
+  type(dyn_horgrid_type), pointer :: dG_unmasked_in => NULL()
   type(diag_ctrl),        pointer :: diag => NULL()
   type(unit_scale_type),  pointer :: US => NULL()
   type(MOM_restart_CS),   pointer :: restart_CSp => NULL()
@@ -2270,6 +2284,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   logical :: symmetric         ! If true, use symmetric memory allocation.
   logical :: save_IC           ! If true, save the initial conditions.
   logical :: do_unit_tests     ! If true, call unit tests.
+  logical :: fpmix             ! Needed to decide if BLD should be passed to RK2.
   logical :: test_grid_copy = .false.
 
   logical :: bulkmixedlayer    ! If true, a refined bulk mixed layer scheme is used
@@ -2317,6 +2332,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   type(vardesc) :: vd_T, vd_S  ! Structures describing temperature and salinity variables.
   type(time_type)                 :: Start_time
   type(ocean_internal_state)      :: MOM_internal_state
+  type(MOM_domain_type), pointer  :: MOM_dom_unmasked => null() ! Unmasked MOM domain instance
+                                                                ! (To be used for writing out ocean geometry)
+  character(len=240) :: geom_file ! Name of the ocean geometry file
 
   CS%Time => Time
 
@@ -2369,6 +2387,16 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     call get_param(param_file, "MOM", "USE_RK2", CS%use_RK2, &
                  "If true, use RK2 instead of RK3 in the unsplit time stepping.", &
                  default=.false.)
+  endif
+
+  ! FPMIX is needed to decide if boundary layer depth should be passed to RK2
+  call get_param(param_file, '', "FPMIX", fpmix, &
+                 "If true, add non-local momentum flux increments and diffuse down the Eulerian gradient.", &
+                 default=.false., do_not_log=.true.)
+
+  if (fpmix .and. .not. CS%split)  then
+    call MOM_error(FATAL, "initialize_MOM: "//&
+       "FPMIX=True only works when SPLIT=True.")
   endif
 
   call get_param(param_file, "MOM", "BOUSSINESQ", Boussinesq, &
@@ -2695,6 +2723,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "vertical grid files. Other values are invalid.", default=1)
   if (write_geom<0 .or. write_geom>2) call MOM_error(FATAL,"MOM: "//&
          "WRITE_GEOM must be equal to 0, 1 or 2.")
+  call get_param(param_file, "MOM", "GEOM_FILE", geom_file, &
+                 "The file into which to write the ocean geometry.", &
+                 default="ocean_geometry")
   call get_param(param_file, "MOM", "USE_DBCLIENT", CS%use_dbclient, &
                  "If true, initialize a client to a remote database that can "//&
                  "be used for online analysis and machine-learning inference.",&
@@ -2776,10 +2807,10 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   call MOM_domains_init(G_in%domain, param_file, symmetric=symmetric, &
                         static_memory=.true., NIHALO=NIHALO_, NJHALO=NJHALO_, &
                         NIGLOBAL=NIGLOBAL_, NJGLOBAL=NJGLOBAL_, NIPROC=NIPROC_, &
-                        NJPROC=NJPROC_, US=US)
+                        NJPROC=NJPROC_, US=US, MOM_dom_unmasked=MOM_dom_unmasked)
 #else
   call MOM_domains_init(G_in%domain, param_file, symmetric=symmetric, &
-                        domain_name="MOM_in", US=US)
+                        domain_name="MOM_in", US=US, MOM_dom_unmasked=MOM_dom_unmasked)
 #endif
 
   ! Copy input grid (G_in) domain to active grid G
@@ -2993,7 +3024,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   ! initialization routine for tv.
   if (use_EOS) then
     allocate(CS%tv%eqn_of_state)
-    call EOS_init(param_file, CS%tv%eqn_of_state, US)
+    call EOS_init(param_file, CS%tv%eqn_of_state, US, use_conT_absS)
   endif
   if (use_temperature) then
     allocate(CS%tv%TempxPmE(isd:ied,jsd:jed), source=0.0)
@@ -3063,6 +3094,26 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     ! reservoirs are used.
     call open_boundary_register_restarts(HI, GV, US, CS%OBC, CS%tracer_Reg, &
                           param_file, restart_CSp, use_temperature)
+    if (turns /= 0) then
+      if (CS%OBC%radiation_BCs_exist_globally) then
+        OBC_in%rx_normal => CS%OBC%rx_normal
+        OBC_in%ry_normal => CS%OBC%ry_normal
+      endif
+      if (CS%OBC%oblique_BCs_exist_globally) then
+        OBC_in%rx_oblique_u => CS%OBC%rx_oblique_u
+        OBC_in%ry_oblique_u => CS%OBC%ry_oblique_u
+        OBC_in%rx_oblique_v => CS%OBC%rx_oblique_v
+        OBC_in%ry_oblique_v => CS%OBC%ry_oblique_v
+        OBC_in%cff_normal_u => CS%OBC%cff_normal_u
+        OBC_in%cff_normal_v => CS%OBC%cff_normal_v
+      endif
+      if (any(CS%OBC%tracer_x_reservoirs_used)) then
+        OBC_in%tres_x => CS%OBC%tres_x
+      endif
+      if (any(CS%OBC%tracer_y_reservoirs_used)) then
+        OBC_in%tres_y => CS%OBC%tres_y
+      endif
+    endif
   endif
 
   if (present(waves_CSp)) then
@@ -3074,7 +3125,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   endif
 
   if (.not. CS%adiabatic) then
-    call register_diabatic_restarts(G, GV, US, param_file, CS%int_tide_CSp, restart_CSp)
+    call register_diabatic_restarts(G, GV, US, param_file, CS%int_tide_CSp, restart_CSp, CS%diabatic_CSp)
   endif
 
   call callTree_waypoint("restart registration complete (initialize_MOM)")
@@ -3083,8 +3134,20 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   ! Write out all of the grid data used by this run.
   new_sim = determine_is_new_run(dirs%input_filename, dirs%restart_input_dir, G_in, restart_CSp)
   write_geom_files = ((write_geom==2) .or. ((write_geom==1) .and. new_sim))
-  if (write_geom_files) call write_ocean_geometry_file(dG_in, param_file, dirs%output_directory, US=US)
-
+  if (write_geom_files) then
+    if (associated(MOM_dom_unmasked)) then
+      call hor_index_init(MOM_dom_unmasked, HI_in_unmasked, param_file, &
+                          local_indexing=.not.global_indexing)
+      call create_dyn_horgrid(dG_unmasked_in, HI_in_unmasked, bathymetry_at_vel=bathy_at_vel)
+      call clone_MOM_domain(MOM_dom_unmasked, dG_unmasked_in%Domain)
+      call MOM_initialize_fixed(dG_unmasked_in, US, OBC_in, param_file, .false., dirs%output_directory)
+      call write_ocean_geometry_file(dG_unmasked_in, param_file, dirs%output_directory, US=US, geom_file=geom_file)
+      call deallocate_MOM_domain(MOM_dom_unmasked)
+      call destroy_dyn_horgrid(dG_unmasked_in)
+    else
+      call write_ocean_geometry_file(dG_in, param_file, dirs%output_directory, US=US, geom_file=geom_file)
+    endif
+  endif
   call destroy_dyn_horgrid(dG_in)
 
   ! Initialize dynamically evolving fields, perhaps from restart files.
@@ -3185,8 +3248,13 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
       call update_ALE_sponge_field(CS%ALE_sponge_CSp, S_in, G, GV, CS%S)
     endif
 
-    if (associated(OBC_in)) &
+    if (associated(OBC_in)) then
       call rotate_OBC_init(OBC_in, G, GV, US, param_file, CS%tv, restart_CSp, CS%OBC)
+      if (CS%OBC%some_need_no_IO_for_data) then
+        call calc_derived_thermo(CS%tv, CS%h, G, GV, US)
+        call update_OBC_segment_data(G, GV, US, CS%OBC, CS%tv, CS%h, Time)
+      endif
+    endif
 
     deallocate(u_in)
     deallocate(v_in)
@@ -3518,6 +3586,11 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                               CS%sponge_CSp, CS%ALE_sponge_CSp, CS%oda_incupd_CSp, CS%int_tide_CSp)
   endif
 
+  ! GMM, the following is needed to get BLDs into the dynamics module
+  if (CS%split .and. fpmix) then
+    call init_dyn_split_RK2_diabatic(CS%diabatic_CSp, CS%dyn_split_RK2_CSp)
+  endif
+
   if (associated(CS%sponge_CSp)) &
     call init_sponge_diags(Time, G, GV, US, diag, CS%sponge_CSp)
 
@@ -3794,7 +3867,7 @@ subroutine set_restart_fields(GV, US, param_file, CS, restart_CSp)
   ! hML is needed when using the ice shelf module
   call get_param(param_file, '', "ICE_SHELF", use_ice_shelf, default=.false., &
                  do_not_log=.true.)
-  if (use_ice_shelf) then
+  if (use_ice_shelf .and. associated(CS%Hml)) then
     call register_restart_field(CS%Hml, "hML", .false., restart_CSp, &
                                 "Mixed layer thickness", "m", conversion=US%Z_to_m)
   endif
