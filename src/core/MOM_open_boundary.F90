@@ -90,7 +90,8 @@ type, public :: OBC_segment_data_type
   type(external_field) :: handle            !< handle from FMS associated with segment data on disk
   type(external_field) :: dz_handle         !< handle from FMS associated with segment thicknesses on disk
   logical           :: use_IO = .false.     !< True if segment data is based on file input
-  character(len=32) :: name                 !< a name identifier for the segment data
+  character(len=32) :: name                 !< A name identifier for the segment data.  When there is grid
+                                            !! rotation, this is the name on the rotated internal grid.
   character(len=8)  :: genre                !< an identifier for the segment data
   real              :: scale                !< A scaling factor for converting input data to
                                             !! the internal units of this field.  For salinity this would
@@ -186,10 +187,10 @@ type, public :: OBC_segment_type
   logical :: is_E_or_W_2    !< True if the OB is facing East or West anywhere.
   type(OBC_segment_data_type), pointer :: field(:) => NULL()  !< OBC data
   integer :: num_fields     !< number of OBC data fields (e.g. u_normal,u_parallel and eta for Flather)
-  integer :: Is_obc         !< i-indices of boundary segment.
-  integer :: Ie_obc         !< i-indices of boundary segment.
-  integer :: Js_obc         !< j-indices of boundary segment.
-  integer :: Je_obc         !< j-indices of boundary segment.
+  integer :: Is_obc         !< Starting local i-index of boundary segment, this may be outside of the local PE.
+  integer :: Ie_obc         !< Ending local i-index of boundary segment, this may be outside of the local PE.
+  integer :: Js_obc         !< Starting local j-index of boundary segment, this may be outside of the local PE.
+  integer :: Je_obc         !< Ending local j-index of boundary segment, this may be outside of the local PE.
   integer :: uamp_index     !< Save where uamp is in segment%field.
   integer :: uphase_index   !< Save where uphase is in segment%field.
   integer :: vamp_index     !< Save where vamp is in segment%field.
@@ -204,8 +205,8 @@ type, public :: OBC_segment_type
   real, allocatable :: Cg(:,:)  !< The external gravity wave speed [L T-1 ~> m s-1]
                                 !! at OBC-points.
   real, allocatable :: Htot(:,:)  !< The total column thickness [H ~> m or kg m-2] at OBC-points.
-  real, allocatable :: dZtot(:,:) !< The total column vertical extent [Z ~> m] at OBC-points.
-  real, allocatable :: h(:,:,:)   !< The cell thickness [H ~> m or kg m-2] at OBC-points.
+  real, allocatable :: dZtot(:,:) !< The total column vertical extent [Z ~> m] at OBC segment faces.
+  real, allocatable :: h(:,:,:)   !< The cell thickness [H ~> m or kg m-2] at OBC segment faces
   real, allocatable :: normal_vel(:,:,:)      !< The layer velocity normal to the OB
                                               !! segment [L T-1 ~> m s-1].
   real, allocatable :: tangential_vel(:,:,:)  !< The layer velocity tangential to the OB segment
@@ -395,7 +396,8 @@ type, public :: ocean_OBC_type
   logical :: om4_remap_via_sub_cells !< If true, use the OM4 remapping algorithm
   character(40) :: remappingScheme !< String selecting the vertical remapping scheme
   type(group_pass_type) :: pass_oblique  !< Structure for group halo pass
-  logical :: exterior_OBC_bug      !< If true, use incorrect form of tracers exterior to OBCs.
+  logical :: exterior_OBC_bug   !< If true, use incorrect form of tracers exterior to OBCs.
+  logical :: hor_index_bug      !< If true, recover set of a horizontal indexing bugs in the OBC code.
 end type ocean_OBC_type
 
 !> Control structure for open boundaries that read from files.
@@ -433,11 +435,11 @@ character(len=40)  :: mdl = "MOM_open_boundary" !< This module's name.
 contains
 
 !> Enables OBC module and reads configuration parameters
-!> This routine is called from MOM_initialize_fixed which
-!> occurs before the initialization of the vertical coordinate
-!> and ALE_init.  Therefore segment data are not fully initialized
-!> here. The remainder of the segment data are initialized in a
-!> later call to update_open_boundary_data
+!! This routine is called from MOM_initialize_fixed which
+!! occurs before the initialization of the vertical coordinate
+!! and ALE_init.  Therefore segment data are not fully initialized
+!! here. The remainder of the segment data are initialized in a
+!! later call to update_open_boundary_data
 subroutine open_boundary_config(G, US, param_file, OBC)
   type(dyn_horgrid_type),  intent(inout) :: G   !< Ocean grid structure
   type(unit_scale_type),   intent(in)    :: US  !< A dimensional unit scaling type
@@ -573,6 +575,9 @@ subroutine open_boundary_config(G, US, param_file, OBC)
     call get_param(param_file, mdl, "EXTERIOR_OBC_BUG", OBC%exterior_OBC_bug, &
                  "If true, recover a bug in barotropic solver and other routines when "//&
                  "boundary contitions interior to the domain are used.", &
+                 default=.true.)
+    call get_param(param_file, mdl, "OBC_HOR_INDEXING_BUG", OBC%hor_index_bug, &
+                 "If true, recover set of a horizontal indexing bugs in the OBC code.", &
                  default=.true.)
     reentrant_x = .false.
     call get_param(param_file, mdl, "REENTRANT_X", reentrant_x, default=.true.)
@@ -803,7 +808,7 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
   character(len=128) :: inputdir
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
   character(len=256) :: mesg    ! Message for error messages.
-  integer, dimension(4) :: siz,siz2
+  integer, dimension(4) :: siz, siz2
   integer :: is, ie, js, je
   integer :: isd, ied, jsd, jed
   integer :: IsdB, IedB, JsdB, JedB
@@ -881,17 +886,18 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
     obgc_segments_props_list => OBC%obgc_segments_props !pointer to the head node
     do m=1,segment%num_fields
       if (m <= num_fields) then
-        !These are tracers with segments specified in MOM6 style override files
+        ! These are tracers with segments specified in MOM6 style override files
         call parse_segment_data_str(trim(segstr), m, trim(fields(m)), value, filename, fieldname)
+        segment%field(m)%genre = ''
       else
-        !These are obgc tracers with segments specified by external modules.
-        !Set a flag so that these can be distinguished from native tracers as they may need
-        !extra steps for preparation and handling.
+        ! These are obgc tracers with segments specified by external modules.
+        ! Set a flag so that these can be distinguished from native tracers as they may need
+        ! extra steps for preparation and handling.
         segment%field(m)%genre = 'obgc'
-        !Query the obgc segment properties by traversing the linkedlist
-        call get_obgc_segments_props(obgc_segments_props_list,fields(m),filename,fieldname,&
-                                     segment%field(m)%resrv_lfac_in,segment%field(m)%resrv_lfac_out)
-        !Make sure the obgc tracer is not specified in the MOM6 param file too.
+        ! Query the obgc segment properties by traversing the linkedlist
+        call get_obgc_segments_props(obgc_segments_props_list, fields(m), filename, fieldname, &
+                                     segment%field(m)%resrv_lfac_in, segment%field(m)%resrv_lfac_out)
+        ! Make sure the obgc tracer is not specified in the MOM6 param file too.
         do mm=1,num_fields
           if (trim(fields(m)) == trim(fields(mm))) then
             if (is_root_pe()) &
@@ -1272,7 +1278,7 @@ subroutine initialize_obc_tides(OBC, US, param_file)
 end subroutine initialize_obc_tides
 
 !> Define indices for segment and store in hor_index_type
-!> using global segment bounds corresponding to q-points
+!! using global segment bounds corresponding to q-points
 subroutine setup_segment_indices(G, seg, Is_obc, Ie_obc, Js_obc, Je_obc)
   type(dyn_horgrid_type), intent(in) :: G !< grid type
   type(OBC_segment_type), intent(inout) :: seg  !< Open boundary segment
@@ -1281,7 +1287,7 @@ subroutine setup_segment_indices(G, seg, Is_obc, Ie_obc, Js_obc, Je_obc)
   integer, intent(in) :: Js_obc !< Q-point global j-index of start of segment
   integer, intent(in) :: Je_obc !< Q-point global j-index of end of segment
   ! Local variables
-  integer :: IsgB, IegB, JsgB, JegB
+  integer :: IsgB, IegB, JsgB, JegB  ! Global corner point indices at the ends of the OBC segments
   integer :: isg, ieg, jsg, jeg
 
   ! Isg, Ieg will be I*_obc in global space
@@ -1422,7 +1428,7 @@ subroutine setup_u_point_obc(OBC, G, US, segment_str, l_seg, PF, reentrant_y)
     OBC%segment(l_seg)%direction = OBC_DIRECTION_E
   elseif (Je_obc<Js_obc) then
     OBC%segment(l_seg)%direction = OBC_DIRECTION_W
-    j=js_obc;js_obc=je_obc;je_obc=j
+    j = js_obc ; js_obc = je_obc ; je_obc = j
   endif
 
   OBC%segment(l_seg)%on_pe = .false.
@@ -1927,11 +1933,11 @@ subroutine parse_for_tracer_reservoirs(OBC, PF, use_temperature)
        !This logic assumes all external tarcers need a reservoir
        !The segments for tracers are not initialized yet (that happens later in initialize_segment_data())
        !so we cannot query to determine if this tracer needs a reservoir.
-       if (segment%is_E_or_W_2) then
+      if (segment%is_E_or_W_2) then
         OBC%tracer_x_reservoirs_used(m+na) = .true.
-       else
+      else
         OBC%tracer_y_reservoirs_used(m+na) = .true.
-       endif
+      endif
     enddo
   enddo
 
@@ -3714,7 +3720,9 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     ! If these are just Flather, change update_OBC_segment_data accordingly
     allocate(segment%Cg(IsdB:IedB,jsd:jed), source=0.0)
     allocate(segment%Htot(IsdB:IedB,jsd:jed), source=0.0)
-    allocate(segment%dZtot(IsdB:IedB,jsd:jed), source=0.0)
+    ! Allocate dZtot with extra values at the end to avoid segmentation faults in cases where
+    ! it is interpolated to OBC vorticity points.
+    allocate(segment%dZtot(IsdB:IedB,jsd-1:jed+1), source=0.0)
     allocate(segment%h(IsdB:IedB,jsd:jed,OBC%ke), source=0.0)
     allocate(segment%SSH(IsdB:IedB,jsd:jed), source=0.0)
     if (segment%radiation) &
@@ -3750,7 +3758,9 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     ! If these are just Flather, change update_OBC_segment_data accordingly
     allocate(segment%Cg(isd:ied,JsdB:JedB), source=0.0)
     allocate(segment%Htot(isd:ied,JsdB:JedB), source=0.0)
-    allocate(segment%dZtot(isd:ied,JsdB:JedB), source=0.0)
+    ! Allocate dZtot with extra values at the end to avoid segmentation faults in cases where
+    ! it is interpolated to OBC vorticity points.
+    allocate(segment%dZtot(isd-1:ied+1,JsdB:JedB), source=0.0)
     allocate(segment%h(isd:ied,JsdB:JedB,OBC%ke), source=0.0)
     allocate(segment%SSH(isd:ied,JsdB:JedB), source=0.0)
     if (segment%radiation) &
@@ -3916,6 +3926,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   type(thermo_var_ptrs),                     intent(in)    :: tv   !< Thermodynamics structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(inout) :: h    !< Thickness [H ~> m or kg m-2]
   type(time_type),                           intent(in)    :: Time !< Model time
+
   ! Local variables
   integer :: c, i, j, k, is, ie, js, je, isd, ied, jsd, jed
   integer :: IsdB, IedB, JsdB, JedB, n, m, nz, nt
@@ -3926,11 +3937,11 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   integer :: ni_buf, nj_buf  ! Number of filled values in tmp_buffer
   integer :: is_obc, ie_obc, js_obc, je_obc  ! segment indices within local domain
   integer :: ishift, jshift  ! offsets for staggered locations
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV))  :: dz ! Distance between the interfaces around a layer [Z ~> m]
+  real    :: dz(SZI_(G),SZJ_(G),SZK_(GV)) ! Distance between the interfaces around a layer [Z ~> m]
   real, dimension(:,:,:), allocatable, target :: tmp_buffer ! A buffer for input data [various units]
   real, dimension(:), allocatable :: dz_stack  ! Distance between the interfaces at corner points [Z ~> m]
   integer :: is_obc2, js_obc2
-  integer :: i_seg_offset, j_seg_offset
+  integer :: i_seg_offset, j_seg_offset, bug_offset
   real :: net_dz_src  ! Total vertical extent of the incoming flow in the source field [Z ~> m]
   real :: net_dz_int  ! Total vertical extent of the incoming flow in the model [Z ~> m]
   real :: scl_fac     ! A scaling factor to compensate for differences in total thicknesses [nondim]
@@ -3939,19 +3950,21 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   real, allocatable :: normal_trans_bt(:,:) ! barotropic transport [H L2 T-1 ~> m3 s-1]
   integer :: turns    ! Number of index quarter turns
   real :: time_delta  ! Time since tidal reference date [T ~> s]
+  logical :: flip_buffer ! If true, the input buffer needs to be transposed
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
   nz=GV%ke
 
-  turns = G%HI%turns
+  turns = modulo(G%HI%turns, 4)
 
   if (.not. associated(OBC)) return
 
   if (OBC%add_tide_constituents) time_delta = US%s_to_T * time_type_to_real(Time - OBC%time_ref)
 
   if (OBC%number_of_segments >= 1) then
+    dz(:,:,:) = 0.0
     call thickness_to_dz(h, tv, dz, G, GV, US)
     call pass_var(dz, G%Domain)
   endif
@@ -3961,7 +3974,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
     if (.not. segment%on_pe) cycle ! continue to next segment if not in computational domain
 
-    ! NOTE: These are in segment%HI, but defined slightly differently
+    ! NOTE: segment%is_obc and segment%ie_obc are range of indices for the full segment.
+    !  The other data set here are in segment%HI, but here they defined slightly differently.
     ni_seg = segment%ie_obc-segment%is_obc+1
     nj_seg = segment%je_obc-segment%js_obc+1
     is_obc = max(segment%is_obc,isd-1)
@@ -3980,34 +3994,38 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 ! i2 has to start at Is_obc+1 and end at Ie_obc.
 ! j2 is J_obc and jshift has to be +1 at both the north and south.
 
-     ! calculate auxiliary fields at staggered locations
-    ishift=0;jshift=0
+    ! calculate auxiliary fields at staggered locations
+    ishift = 0 ; jshift = 0
+    segment%Htot(:,:) = 0.0
+    segment%dZtot(:,:) = 0.0
     if (segment%is_E_or_W) then
       allocate(normal_trans_bt(segment%HI%IsdB:segment%HI%IedB,segment%HI%jsd:segment%HI%jed), source=0.0)
       if (segment%direction == OBC_DIRECTION_W) ishift=1
       I=segment%HI%IsdB
+      ! dZtot may extend one point past the end of the segment on the current PE for use at vorticity points
+      do k=1,GV%ke ; do j = max(segment%HI%jsd-1,G%jsd), min(segment%HI%jed+1,G%jed)
+        segment%dZtot(I,j) = segment%dZtot(I,j) + dz(i+ishift,j,k)
+      enddo ; enddo
+      do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
+        segment%h(I,j,k) = h(i+ishift,j,k)
+        segment%Htot(I,j) = segment%Htot(I,j) + segment%h(I,j,k)
+      enddo ; enddo
       do j=segment%HI%jsd,segment%HI%jed
-        segment%Htot(I,j) = 0.0
-        segment%dZtot(I,j) = 0.0
-        do k=1,GV%ke
-          segment%h(I,j,k) = h(i+ishift,j,k)
-          segment%Htot(I,j) = segment%Htot(I,j) + segment%h(I,j,k)
-          segment%dZtot(I,j) = segment%dZtot(I,j) + dz(i+ishift,j,k)
-        enddo
         segment%Cg(I,j) = sqrt(GV%g_prime(1) * max(0.0, segment%dZtot(I,j)))
       enddo
-    else! (segment%direction == OBC_DIRECTION_N .or. segment%direction == OBC_DIRECTION_S)
+    else ! (segment%direction == OBC_DIRECTION_N .or. segment%direction == OBC_DIRECTION_S)
       allocate(normal_trans_bt(segment%HI%isd:segment%HI%ied,segment%HI%JsdB:segment%HI%JedB), source=0.0)
       if (segment%direction == OBC_DIRECTION_S) jshift=1
       J=segment%HI%JsdB
+      ! dZtot may extend one point past the end of the segment on the current PE for use at vorticity points
+      do k=1,GV%ke ; do i = max(segment%HI%isd-1,G%isd), min(segment%HI%ied+1,G%ied)
+        segment%dZtot(i,J) = segment%dZtot(i,J) + dz(i,j+jshift,k)
+      enddo ; enddo
+      do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
+        segment%h(i,J,k) = h(i,j+jshift,k)
+        segment%Htot(i,J) = segment%Htot(i,J) + segment%h(i,J,k)
+      enddo ; enddo
       do i=segment%HI%isd,segment%HI%ied
-        segment%Htot(i,J) = 0.0
-        segment%dZtot(i,J) = 0.0
-        do k=1,GV%ke
-          segment%h(i,J,k) = h(i,j+jshift,k)
-          segment%Htot(i,J) = segment%Htot(i,J) + segment%h(i,J,k)
-          segment%dZtot(i,J) = segment%dZtot(i,J) + dz(i,j+jshift,k)
-        enddo
         segment%Cg(i,J) = sqrt(GV%g_prime(1) * max(0.0, segment%dZtot(i,J)))
       enddo
     endif
@@ -4100,53 +4118,61 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
         ! This is where the data values are actually read in.
         call time_interp_external(segment%field(m)%handle, Time, tmp_buffer_in, scale=segment%field(m)%scale)
 
-        ! NOTE: Rotation of face-points require that we skip the final value
+        ! NOTE: Rotation of face-points require that we skip the final value when not in brushcutter mode.
         if (turns /= 0) then
-          ! TODO: This is hardcoded for 90 degrees, and needs to be generalized.
-          if (segment%is_E_or_W &
-              .and. .not. (segment%field(m)%name == 'V' .or. segment%field(m)%name == 'Vamp' &
-                  .or. segment%field(m)%name == 'Vphase' .or. segment%field(m)%name == 'DVDX')) then
+          flip_buffer = ((turns==1) .or. (turns==3))
+          if (OBC%brushcutter_mode .or. (.not.flip_buffer)) then
+            call rotate_array(tmp_buffer_in, turns, tmp_buffer)
+          elseif ((flip_buffer .and. segment%is_E_or_W) .and. &
+              (.not. (segment%field(m)%name == 'V' .or. segment%field(m)%name == 'Vamp' &
+                  .or. segment%field(m)%name == 'Vphase' .or. segment%field(m)%name == 'DVDX') )) then
             nj_buf = size(tmp_buffer, 2) - 1
             call rotate_array(tmp_buffer_in(:nj_buf,:,:), turns, tmp_buffer(:,:nj_buf,:))
-          elseif (segment%is_N_or_S &
-              .and. .not. (segment%field(m)%name == 'U' .or. segment%field(m)%name == 'Uamp' &
-                  .or. segment%field(m)%name == 'Uphase' .or. segment%field(m)%name == 'DUDY')) then
+          elseif ((flip_buffer .and. segment%is_N_or_S) .and. &
+                  (.not. (segment%field(m)%name == 'U' .or. segment%field(m)%name == 'Uamp' &
+                      .or. segment%field(m)%name == 'Uphase' .or. segment%field(m)%name == 'DUDY') )) then
             ni_buf = size(tmp_buffer, 1) - 1
             call rotate_array(tmp_buffer_in(:,:ni_buf,:), turns, tmp_buffer(:ni_buf,:,:))
           else
             call rotate_array(tmp_buffer_in, turns, tmp_buffer)
           endif
 
-          ! TODO: This is hardcoded for 90 degrees, and needs to be generalized.
-          if (segment%field(m)%name == 'U' &
-              .or. segment%field(m)%name == 'DVDX' &
-              .or. segment%field(m)%name == 'DUDY' &
-              .or. segment%field(m)%name == 'Uamp') then
+          if (((segment%field(m)%name == 'U') .and. ((turns==1).or.(turns==2))) .or. &
+              ((segment%field(m)%name == 'V') .and. ((turns==2).or.(turns==3))) .or. &
+              ((segment%field(m)%name == 'Vamp') .and. ((turns==2).or.(turns==3))) .or. &
+              ((segment%field(m)%name == 'Uamp') .and. ((turns==1).or.(turns==2))) .or. &
+              ((segment%field(m)%name == 'DVDX') .and. ((turns==1).or.(turns==3))) .or. &
+              ((segment%field(m)%name == 'DUDY') .and. ((turns==1).or.(turns==3))) ) then
             tmp_buffer(:,:,:) = -tmp_buffer(:,:,:)
           endif
         endif
 
         if (OBC%brushcutter_mode) then
+          ! In brushcutter mode, the input data includes vales at both the vorticity point nodes and
+          ! the velocity point faces of the OBC segments.  The vorticity node values are at the odd
+          ! posiitons in tmp_buffer, while the faces are at the even points.  The bug that is being
+          ! corrected here is the use of the odd indexed points for both the corners and the faces.
+          bug_offset = 0 ; if (OBC%hor_index_bug) bug_offset = -1
           if (segment%is_E_or_W) then
             if (segment%field(m)%name == 'V' .or. segment%field(m)%name == 'DVDX' .or. &
                 segment%field(m)%name == 'Vamp' .or. segment%field(m)%name == 'Vphase') then
               segment%field(m)%buffer_src(is_obc,:,:) = &
-                  tmp_buffer(1,2*(js_obc+j_seg_offset)+1:2*(je_obc+j_seg_offset)+1:2,:)
+                  tmp_buffer(1, 2*(js_obc+j_seg_offset+1)-1:2*(je_obc+j_seg_offset)+1:2, :)
             else
               segment%field(m)%buffer_src(is_obc,:,:) = &
-                  tmp_buffer(1,2*(js_obc+j_seg_offset)+1:2*(je_obc+j_seg_offset):2,:)
+                  tmp_buffer(1, 2*(js_obc+j_seg_offset+1)+bug_offset:2*(je_obc+j_seg_offset):2, :)
             endif
           else
             if (segment%field(m)%name == 'U' .or. segment%field(m)%name == 'DUDY' .or. &
                 segment%field(m)%name == 'Uamp' .or. segment%field(m)%name == 'Uphase') then
               segment%field(m)%buffer_src(:,js_obc,:) = &
-                  tmp_buffer(2*(is_obc+i_seg_offset)+1:2*(ie_obc+i_seg_offset)+1:2,1,:)
+                  tmp_buffer(2*(is_obc+i_seg_offset+1)-1:2*(ie_obc+i_seg_offset)+1:2, 1, :)
             else
               segment%field(m)%buffer_src(:,js_obc,:) = &
-                  tmp_buffer(2*(is_obc+i_seg_offset)+1:2*(ie_obc+i_seg_offset):2,1,:)
+                  tmp_buffer(2*(is_obc+i_seg_offset+1)+bug_offset:2*(ie_obc+i_seg_offset):2, 1, :)
             endif
           endif
-        else
+        else  ! Not brushcutter_mode.
           if (segment%is_E_or_W) then
             if (segment%field(m)%name == 'V' .or. segment%field(m)%name == 'DVDX' .or. &
                 segment%field(m)%name == 'Vamp' .or. segment%field(m)%name == 'Vphase') then
@@ -4167,44 +4193,48 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
             endif
           endif
         endif
+
         ! no dz for tidal variables
         if (segment%field(m)%nk_src > 1 .and.&
             (index(segment%field(m)%name, 'phase') <= 0 .and. index(segment%field(m)%name, 'amp') <= 0)) then
-          ! This is where the 2-d tidal data values are actually read in.
+          ! This is where the 2-d tidal data values (apart from phase and amp) are actually read in.
           call time_interp_external(segment%field(m)%dz_handle, Time, tmp_buffer_in, scale=US%m_to_Z)
+
           if (turns /= 0) then
-            ! TODO: This is hardcoded for 90 degrees, and needs to be generalized.
-            if (segment%is_E_or_W &
-                .and. .not. (segment%field(m)%name == 'V' .or. segment%field(m)%name == 'DVDX')) then
+            flip_buffer = ((turns==1) .or. (turns==3))
+            if ((flip_buffer .and. segment%is_E_or_W) .and. &
+                (.not. (segment%field(m)%name == 'V' .or. segment%field(m)%name == 'DVDX') )) then
               nj_buf = size(tmp_buffer, 2) - 1
               call rotate_array(tmp_buffer_in(:nj_buf,:,:), turns, tmp_buffer(:,:nj_buf,:))
-            elseif (segment%is_N_or_S &
-                .and. .not. (segment%field(m)%name == 'U' .or. segment%field(m)%name == 'DUDY')) then
+            elseif ((flip_buffer .and. segment%is_N_or_S) .and. &
+                    (.not. (segment%field(m)%name == 'U' .or. segment%field(m)%name == 'DUDY') )) then
               ni_buf = size(tmp_buffer, 1) - 1
               call rotate_array(tmp_buffer_in(:,:ni_buf,:), turns, tmp_buffer(:ni_buf,:,:))
             else
               call rotate_array(tmp_buffer_in, turns, tmp_buffer)
             endif
-          endif
+          endif ! End of rotation
+
           if (OBC%brushcutter_mode) then
+            bug_offset = 0 ; if (OBC%hor_index_bug) bug_offset = -1
             if (segment%is_E_or_W) then
               if (segment%field(m)%name == 'V' .or. segment%field(m)%name == 'DVDX') then
                 segment%field(m)%dz_src(is_obc,:,:) = &
-                    tmp_buffer(1,2*(js_obc+j_seg_offset)+1:2*(je_obc+j_seg_offset)+1:2,:)
+                    tmp_buffer(1, 2*(js_obc+j_seg_offset+1)-1:2*(je_obc+j_seg_offset)+1:2, :)
               else
                 segment%field(m)%dz_src(is_obc,:,:) = &
-                    tmp_buffer(1,2*(js_obc+j_seg_offset)+1:2*(je_obc+j_seg_offset):2,:)
+                    tmp_buffer(1, 2*(js_obc+j_seg_offset+1)+bug_offset:2*(je_obc+j_seg_offset):2, :)
               endif
             else
               if (segment%field(m)%name == 'U' .or. segment%field(m)%name == 'DUDY') then
                 segment%field(m)%dz_src(:,js_obc,:) = &
-                    tmp_buffer(2*(is_obc+i_seg_offset)+1:2*(ie_obc+i_seg_offset)+1:2,1,:)
+                    tmp_buffer(2*(is_obc+i_seg_offset+1)-1:2*(ie_obc+i_seg_offset)+1:2, 1, :)
               else
                 segment%field(m)%dz_src(:,js_obc,:) = &
-                    tmp_buffer(2*(is_obc+i_seg_offset)+1:2*(ie_obc+i_seg_offset):2,1,:)
+                    tmp_buffer(2*(is_obc+i_seg_offset+1)+bug_offset:2*(ie_obc+i_seg_offset):2, 1, :)
               endif
             endif
-          else
+          else  ! Not brushcutter_mode.
             if (segment%is_E_or_W) then
               if (segment%field(m)%name == 'V' .or. segment%field(m)%name == 'DVDX') then
                 segment%field(m)%dz_src(is_obc,:,:) = &
@@ -4224,8 +4254,14 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
             endif
           endif
 
-          ! The units of ...%dz_src are no longer changed from [Z ~> m] to [H ~> m or kg m-2] here.
-          call adjustSegmentEtaToFitBathymetry(G,GV,US,segment,m)
+          if ((((segment%field(m)%name == 'V' .or. segment%field(m)%name == 'DVDX') .and. segment%is_E_or_W) .or. &
+               ((segment%field(m)%name == 'U' .or. segment%field(m)%name == 'DUDY') .and. segment%is_N_or_S)) .and. &
+             (.not.OBC%hor_index_bug)) then
+            ! This point is at the OBC vorticity point nodes, rather than the OBC velocity point faces.
+            call adjustSegmentEtaToFitBathymetry(G, GV, US, segment, m, at_node=.true.)
+          else
+            call adjustSegmentEtaToFitBathymetry(G, GV, US, segment, m, at_node=.false.)
+          endif
 
           if (segment%is_E_or_W) then
             ishift=1
@@ -4236,6 +4272,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
               do J=max(js_obc,jsd),min(je_obc,jed-1)
                 ! Using the h remapping approach
                 ! Pretty sure we need to check for source/target grid consistency here
+                !### For a concave corner between OBC segments, there are 3 thicknesses we might
+                ! consider using.
                 segment%field(m)%buffer_dst(I,J,:) = 0.0  ! initialize remap destination buffer
                 if (G%mask2dCu(I,j)>0. .and. G%mask2dCu(I,j+1)>0.) then
                   dz_stack(:) = 0.5*(dz(i+ishift,j,:) + dz(i+ishift,j+1,:))
@@ -4370,7 +4408,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
           segment%field(m)%buffer_dst(:,:,:) = segment%field(m)%value
         endif
       endif
-    enddo
+    enddo ! end field loop
+
     ! Start second loop to update all fields now that data for all fields are available.
     ! (split because tides depend on multiple variables).
     do m = 1,segment%num_fields
@@ -4830,11 +4869,11 @@ subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, &
     if (segment%is_E_or_W) then
       allocate(segment%tr_Reg%Tr(ntseg)%t(IsdB:IedB,jsd:jed,1:GV%ke), source=0.0)
       allocate(segment%tr_Reg%Tr(ntseg)%tres(IsdB:IedB,jsd:jed,1:GV%ke), source=0.0)
-      segment%tr_Reg%Tr(ntseg)%is_initialized=.false.
+      segment%tr_Reg%Tr(ntseg)%is_initialized = .false.
     elseif (segment%is_N_or_S) then
       allocate(segment%tr_Reg%Tr(ntseg)%t(isd:ied,JsdB:JedB,1:GV%ke), source=0.0)
       allocate(segment%tr_Reg%Tr(ntseg)%tres(isd:ied,JsdB:JedB,1:GV%ke), source=0.0)
-      segment%tr_Reg%Tr(ntseg)%is_initialized=.false.
+      segment%tr_Reg%Tr(ntseg)%is_initialized = .false.
     endif
   endif
 
@@ -4855,6 +4894,8 @@ subroutine segment_tracer_registry_end(Reg)
   endif
 end subroutine segment_tracer_registry_end
 
+!> Register temperature and salinity tracers that are active on an OBC segment.
+!! tracer inflow values are specified.
 subroutine register_temp_salt_segments(GV, US, OBC, tr_Reg, param_file)
   type(verticalGrid_type),    intent(in)    :: GV         !< ocean vertical grid structure
   type(unit_scale_type),      intent(in)    :: US         !< Unit scaling type
@@ -5352,14 +5393,14 @@ subroutine open_boundary_register_restarts(HI, GV, US, OBC, Reg, param_file, res
 
     vd(1) = var_desc("rx_normal", "gridpoint timestep-1", "Normal Phase Speed for EW radiation OBCs", 'u', 'L')
     vd(2) = var_desc("ry_normal", "gridpoint timestep-1", "Normal Phase Speed for NS radiation OBCs", 'v', 'L')
-    call register_restart_pair(OBC%rx_normal, OBC%ry_normal, vd(1), vd(2), .false., restart_CS)
+    call register_restart_pair(OBC%rx_normal, OBC%ry_normal, vd(1), vd(2), .false., restart_CS, scalar_pair=.true.)
     ! The rx_normal and ry_normal arrays used with radiation OBCs are currently in units of grid
     ! points per timestep, but if this were to be corrected to [L T-1 ~> m s-1] or [T-1 ~> s-1] to
     ! permit timesteps to change between calls to the OBC code, the following would be needed instead:
     ! vd(1) = var_desc("rx_normal", "m s-1", "Normal Phase Speed for EW radiation OBCs", 'u', 'L')
     ! vd(2) = var_desc("ry_normal", "m s-1", "Normal Phase Speed for NS radiation OBCs", 'v', 'L')
     ! call register_restart_pair(OBC%rx_normal, OBC%ry_normal, vd(1), vd(2), .false., restart_CS, &
-    !                            conversion=US%L_T_to_m_s)
+    !                            conversion=US%L_T_to_m_s, scalar_pair=.true.)
   endif
 
   if (OBC%oblique_BCs_exist_globally) then
@@ -5758,15 +5799,17 @@ end subroutine remap_OBC_fields
 !! is dilated (expanded) to fill the void.
 !!   @remark{There is a (hard-wired) "tolerance" parameter such that the
 !! criteria for adjustment must equal or exceed 10cm.}
-subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
+subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment, fld, at_node)
   type(ocean_grid_type),   intent(in)    :: G   !< The ocean's grid structure
   type(verticalGrid_type), intent(in)    :: GV  !< The ocean's vertical grid structure
   type(unit_scale_type),   intent(in)    :: US  !< A dimensional unit scaling type
   type(OBC_segment_type),  intent(inout) :: segment !< OBC segment
   integer,                 intent(in)    :: fld  !< field index to adjust thickness
+  logical,                 intent(in)    :: at_node !< True this point is at the OBC nodes rather than the faces
 
   integer :: i, j, k, is, ie, js, je, nz, contractions, dilations
   real, allocatable, dimension(:,:,:) :: eta ! Segment source data interface heights [Z ~> m]
+  real, allocatable, dimension(:,:)   :: dz_tot ! Segment total thicknesses [Z ~> m]
   real :: hTolerance = 0.1 !<  Tolerance to exceed adjustment criteria [Z ~> m]
   ! real :: dilate      ! A factor by which to dilate the water column [nondim]
   !character(len=100) :: mesg
@@ -5776,15 +5819,51 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
   nz = size(segment%field(fld)%dz_src,3)
 
   if (segment%is_E_or_W) then
-    ! segment thicknesses are defined at cell face centers.
-    is = segment%HI%isdB ; ie = segment%HI%iedB
-    js = segment%HI%jsd ; je = segment%HI%jed
-  else
-    is = segment%HI%isd ; ie = segment%HI%ied
+    is = segment%HI%IsdB ; ie = segment%HI%IedB
+    if (at_node) then   ! This point is at the OBC nodes, rather than the cell face centers.
+      Js = max(segment%Js_obc, G%jsd)
+      Je = min(segment%Je_obc, G%jed-1)
+    else   ! Segment thicknesses are defined at cell face centers.
+      js = segment%HI%jsd ; je = segment%HI%jed
+    endif
+  else ! segment%is_N_or_S
     js = segment%HI%jsdB ; je = segment%HI%jedB
+    if (at_node) then  ! This point is at the OBC nodes, rather than the cell face centers.
+      is = max(segment%HI%IsdB, G%isd)
+      ie = min(segment%HI%IedB, G%ied-1)
+    else   ! Segment thicknesses are defined at cell face centers.
+      is = segment%HI%isd ; ie = segment%HI%ied
+    endif
   endif
   allocate(eta(is:ie,js:je,nz+1))
-  contractions=0; dilations=0
+  allocate(dz_tot(is:ie,js:je), source=0.0)
+
+  if (at_node) then
+    if (segment%is_E_or_W) then
+      I = Is
+      do J=Js,Je
+        dz_tot(I,J) = 0.5*(segment%dZtot(I,j) + segment%dZtot(I,j+1))
+      enddo
+      ! Do not extrapolate past the end of a global segment.
+      ! ### For a concave corner between segments, perhaps we should do something more sophisticated.
+      if (Js == segment%Js_obc) dz_tot(I,Js) = segment%dZtot(I,js+1)
+      if (Je == segment%Js_obc) dz_tot(I,Je) = segment%dZtot(I,je)
+    else
+      J = Js
+      do I=Is,Ie
+        dz_tot(I,J) = 0.5*(segment%dZtot(i,J) + segment%dZtot(i+1,J))
+      enddo
+      ! Do not extrapolate past the end of a global segment.
+      if (Is == segment%Is_obc) dz_tot(Is,J) = segment%dZtot(is+1,J)
+      if (Ie == segment%Is_obc) dz_tot(Ie,J) = segment%dZtot(ie,J)
+    endif
+  else
+    do j=js,je ; do i=is,ie
+      dz_tot(i,j) = segment%dZtot(i,j)
+    enddo ; enddo
+  endif
+
+  contractions = 0 ; dilations = 0
   do j=js,je ; do i=is,ie
     eta(i,j,1) = 0.0  ! segment data are assumed to be located on a static grid
     ! For remapping calls, the entire column will be dilated
@@ -5798,8 +5877,8 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
     ! The normal slope at the boundary is zero by a
     ! previous call to open_boundary_impose_normal_slope
     do k=nz+1,1,-1
-      if (-eta(i,j,k) > segment%dZtot(i,j) + hTolerance) then
-        eta(i,j,k) = -segment%dZtot(i,j)
+      if (-eta(i,j,k) > dz_tot(i,j) + hTolerance) then
+        eta(i,j,k) = -dz_tot(i,j)
         contractions = contractions + 1
       endif
     enddo
@@ -5817,10 +5896,10 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
 
     !   The whole column is dilated to accommodate deeper topography than
     ! the bathymetry would indicate.
-    if (-eta(i,j,nz+1) < segment%dZtot(i,j) - hTolerance) then
+    if (-eta(i,j,nz+1) < dz_tot(i,j) - hTolerance) then
       dilations = dilations + 1
       ! expand bottom-most cell only
-      eta(i,j,nz+1) = -segment%dZtot(i,j)
+      eta(i,j,nz+1) = -dz_tot(i,j)
       segment%field(fld)%dz_src(i,j,nz) = eta(i,j,nz) - eta(i,j,nz+1)
       ! if (eta(i,j,1) <= eta(i,j,nz+1)) then
       !   do k=1,nz ; segment%field(fld)%dz_src(i,j,k) = (eta(i,j,1) + G%bathyT(i,j)) / real(nz) ; enddo
@@ -5833,7 +5912,6 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
   enddo ; enddo
 
   ! can not do communication call here since only PEs on the current segment are here
-
   ! call sum_across_PEs(contractions)
   ! if ((contractions > 0) .and. (is_root_pe())) then
   !    write(mesg,'("Thickness OBCs were contracted ",'// &
@@ -5846,19 +5924,20 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment,fld)
   !         '"to fit topography in ",I8," places.")') dilations
   !    call MOM_error(WARNING, 'adjustEtaToFitBathymetry: '//mesg)
   ! endif
-  deallocate(eta)
+
+  deallocate(eta, dz_tot)
 
 end subroutine adjustSegmentEtaToFitBathymetry
 
 !> This is more of a rotate initialization than an actual rotate
 subroutine rotate_OBC_config(OBC_in, G_in, OBC, G, turns)
-  type(ocean_OBC_type), pointer, intent(in) :: OBC_in   !< Input OBC
-  type(dyn_horgrid_type),  intent(in) :: G_in           !< Input grid metric
+  type(ocean_OBC_type), pointer, intent(in)    :: OBC_in !< Input OBC
+  type(dyn_horgrid_type),        intent(in)    :: G_in  !< Input grid
   type(ocean_OBC_type), pointer, intent(inout) :: OBC   !< Rotated OBC
-  type(dyn_horgrid_type),  intent(in) :: G              !< Rotated grid metric
-  integer, intent(in) :: turns                      !< Number of quarter turns
+  type(dyn_horgrid_type),        intent(in)    :: G     !< Rotated grid
+  integer,                       intent(in)    :: turns !< Number of quarter turns
 
-  integer :: l
+  integer :: c, n, l_seg
 
   if (OBC_in%number_of_segments==0) return
 
@@ -5882,29 +5961,39 @@ subroutine rotate_OBC_config(OBC_in, G_in, OBC, G, turns)
 
   ! Segment rotation
   allocate(OBC%segment(0:OBC%number_of_segments))
-  do l = 1, OBC%number_of_segments
-    call rotate_OBC_segment_config(OBC_in%segment(l), G_in, OBC%segment(l), G, turns)
+  do l_seg = 1, OBC%number_of_segments
+    call rotate_OBC_segment_config(OBC_in%segment(l_seg), G_in, OBC%segment(l_seg), G, turns)
     ! Data up to setup_[uv]_point_obc is needed for allocate_obc_segment_data!
-    call allocate_OBC_segment_data(OBC, OBC%segment(l))
-    call rotate_OBC_segment_data(OBC_in%segment(l), OBC%segment(l), turns)
+    call allocate_OBC_segment_data(OBC, OBC%segment(l_seg))
+    call rotate_OBC_segment_data(OBC_in%segment(l_seg), OBC%segment(l_seg), turns)
   enddo
 
   ! The horizontal segment map
   allocate(OBC%segnum_u(G%IsdB:G%IedB,G%jsd:G%jed))
   allocate(OBC%segnum_v(G%isd:G%ied,G%JsdB:G%JedB))
-  call rotate_array_pair(OBC_in%segnum_u, OBC_in%segnum_v, turns, &
-      OBC%segnum_u, OBC%segnum_v)
+  call rotate_array_pair(OBC_in%segnum_u, OBC_in%segnum_v, turns, OBC%segnum_u, OBC%segnum_v)
 
   ! These are conditionally enabled during segment configuration
-  OBC%open_u_BCs_exist_globally = OBC_in%open_v_BCs_exist_globally
-  OBC%open_v_BCs_exist_globally = OBC_in%open_u_BCs_exist_globally
-  OBC%Flather_u_BCs_exist_globally = OBC_in%Flather_v_BCs_exist_globally
-  OBC%Flather_v_BCs_exist_globally = OBC_in%Flather_u_BCs_exist_globally
+  if (modulo(turns,2) == 0) then
+    OBC%open_u_BCs_exist_globally = OBC_in%open_u_BCs_exist_globally
+    OBC%open_v_BCs_exist_globally = OBC_in%open_v_BCs_exist_globally
+    OBC%Flather_u_BCs_exist_globally = OBC_in%Flather_u_BCs_exist_globally
+    OBC%Flather_v_BCs_exist_globally = OBC_in%Flather_v_BCs_exist_globally
+    OBC%nudged_u_BCs_exist_globally = OBC_in%nudged_u_BCs_exist_globally
+    OBC%nudged_v_BCs_exist_globally = OBC_in%nudged_v_BCs_exist_globally
+    OBC%specified_u_BCs_exist_globally= OBC_in%specified_u_BCs_exist_globally
+    OBC%specified_v_BCs_exist_globally= OBC_in%specified_v_BCs_exist_globally
+  else  ! Swap information for u- and v- OBCs
+    OBC%open_u_BCs_exist_globally = OBC_in%open_v_BCs_exist_globally
+    OBC%open_v_BCs_exist_globally = OBC_in%open_u_BCs_exist_globally
+    OBC%Flather_u_BCs_exist_globally = OBC_in%Flather_v_BCs_exist_globally
+    OBC%Flather_v_BCs_exist_globally = OBC_in%Flather_u_BCs_exist_globally
+    OBC%nudged_u_BCs_exist_globally = OBC_in%nudged_v_BCs_exist_globally
+    OBC%nudged_v_BCs_exist_globally = OBC_in%nudged_u_BCs_exist_globally
+    OBC%specified_u_BCs_exist_globally= OBC_in%specified_v_BCs_exist_globally
+    OBC%specified_v_BCs_exist_globally= OBC_in%specified_u_BCs_exist_globally
+  endif
   OBC%oblique_BCs_exist_globally = OBC_in%oblique_BCs_exist_globally
-  OBC%nudged_u_BCs_exist_globally = OBC_in%nudged_v_BCs_exist_globally
-  OBC%nudged_v_BCs_exist_globally = OBC_in%nudged_u_BCs_exist_globally
-  OBC%specified_u_BCs_exist_globally= OBC_in%specified_v_BCs_exist_globally
-  OBC%specified_v_BCs_exist_globally= OBC_in%specified_u_BCs_exist_globally
   OBC%radiation_BCs_exist_globally = OBC_in%radiation_BCs_exist_globally
 
   ! These are set by initialize_segment_data
@@ -5913,11 +6002,69 @@ subroutine rotate_OBC_config(OBC_in, G_in, OBC, G, turns)
   OBC%needs_IO_for_data = OBC_in%needs_IO_for_data
   OBC%any_needs_IO_for_data = OBC_in%any_needs_IO_for_data
 
+  OBC%update_OBC_seg_data = OBC_in%update_OBC_seg_data
   OBC%ntr = OBC_in%ntr
+  if (OBC%ntr > 0) then
+    allocate(OBC%tracer_x_reservoirs_used(OBC%ntr), source=.false.)
+    allocate(OBC%tracer_y_reservoirs_used(OBC%ntr), source=.false.)
+    if (modulo(turns,2) == 0) then
+      do n=1,OBC%ntr
+        OBC%tracer_x_reservoirs_used(n) = OBC_in%tracer_x_reservoirs_used(n)
+        OBC%tracer_y_reservoirs_used(n) = OBC_in%tracer_y_reservoirs_used(n)
+      enddo
+    else  ! Swap information for u- and v- OBCs
+      do n=1,OBC%ntr
+        OBC%tracer_x_reservoirs_used(n) = OBC_in%tracer_y_reservoirs_used(n)
+        OBC%tracer_y_reservoirs_used(n) = OBC_in%tracer_x_reservoirs_used(n)
+      enddo
+    endif
+  endif
 
   OBC%gamma_uv = OBC_in%gamma_uv
   OBC%rx_max = OBC_in%rx_max
   OBC%OBC_pe = OBC_in%OBC_pe
+
+  ! These are run-time parameters that are read in via open_boundary_config
+  OBC%debug = OBC_in%debug
+  OBC%ramp = OBC_in%ramp
+  OBC%ramping_is_activated = OBC_in%ramping_is_activated
+  OBC%ramp_timescale = OBC_in%ramp_timescale
+  OBC%trunc_ramp_time = OBC_in%trunc_ramp_time
+  OBC%ramp_value = OBC_in%ramp_value
+  OBC%ramp_start_time = OBC_in%ramp_start_time
+  OBC%remap_answer_date = OBC_in%remap_answer_date
+  OBC%check_reconstruction  = OBC_in%check_reconstruction
+  OBC%check_remapping = OBC_in%check_remapping
+  OBC%force_bounds_in_subcell = OBC_in%force_bounds_in_subcell
+  OBC%om4_remap_via_sub_cells = OBC_in%om4_remap_via_sub_cells
+  OBC%remappingScheme = OBC_in%remappingScheme
+  OBC%exterior_OBC_bug = OBC_in%exterior_OBC_bug
+  OBC%hor_index_bug = OBC_in%hor_index_bug
+  OBC%n_tide_constituents = OBC_in%n_tide_constituents
+  OBC%add_tide_constituents = OBC_in%add_tide_constituents
+
+  ! These are read in via initialize_obc_tides when n_tide_constituents > 0
+  if (OBC%add_tide_constituents .and. (OBC%n_tide_constituents>0)) then
+    OBC%add_eq_phase = OBC_in%add_eq_phase
+    OBC%add_nodal_terms = OBC_in%add_nodal_terms
+    OBC%time_ref = OBC_in%time_ref
+
+    allocate(OBC%tide_names(OBC%n_tide_constituents))
+    allocate(OBC%tide_frequencies(OBC%n_tide_constituents))
+    allocate(OBC%tide_eq_phases(OBC%n_tide_constituents))
+    allocate(OBC%tide_fn(OBC%n_tide_constituents))
+    allocate(OBC%tide_un(OBC%n_tide_constituents))
+    do c=1,OBC%n_tide_constituents
+      OBC%tide_names(c) = OBC_in%tide_names(c)
+      OBC%tide_frequencies(c) = OBC_in%tide_frequencies(c)
+      OBC%tide_eq_phases(c) = OBC_in%tide_eq_phases(c)
+      OBC%tide_fn(c) = OBC_in%tide_fn(c)
+      OBC%tide_un(c) = OBC_in%tide_un(c)
+    enddo
+
+    if (OBC%add_eq_phase .or.  OBC%add_nodal_terms)  &
+      OBC%tidal_longitudes = OBC_in%tidal_longitudes
+  endif
 
   ! remap_z_CS and remap_h_CS are set up by initialize_segment_data, so we copy the fields here.
   if (ASSOCIATED(OBC_in%remap_z_CS)) then
@@ -5943,8 +6090,9 @@ subroutine rotate_OBC_segment_config(segment_in, G_in, segment, G, turns)
   integer, intent(in) :: turns                      !< Number of quarter turns
 
   ! Global segment indices
-  integer :: Is_obc_in, Ie_obc_in, Js_obc_in, Je_obc_in ! Input domain
-  integer :: Is_obc, Ie_obc, Js_obc, Je_obc             ! Rotated domain
+  integer :: Is_obc_in, Ie_obc_in, Js_obc_in, Je_obc_in ! Input domain global indices
+  integer :: Is_obc, Ie_obc, Js_obc, Je_obc             ! Rotated domain global indices
+  integer :: qturns ! The number of quarter turns in the range of 0 to 3
 
   ! NOTE: A "rotation" of the OBC segment string would allow us to use
   !   setup_[uv]_point_obc to set up most of this.  For now, we just copy/swap
@@ -5952,6 +6100,8 @@ subroutine rotate_OBC_segment_config(segment_in, G_in, segment, G, turns)
 
   ! This is set if the segment is in the local grid
   segment%on_pe = segment_in%on_pe
+
+  qturns = modulo(turns, 4)
 
   ! Transfer configuration flags
   segment%Flather = segment_in%Flather
@@ -5970,13 +6120,37 @@ subroutine rotate_OBC_segment_config(segment_in, G_in, segment, G, turns)
   segment%open = segment_in%open
   segment%gradient = segment_in%gradient
 
-  ! NOTE: [uv]_values_needed are swapped
-  segment%u_values_needed = segment_in%v_values_needed
-  segment%v_values_needed = segment_in%u_values_needed
+  if ((qturns == 0) .or. (qturns == 2)) then
+    segment%u_values_needed = segment_in%u_values_needed
+    segment%v_values_needed = segment_in%v_values_needed
+    segment%uamp_values_needed = segment_in%uamp_values_needed
+    segment%vamp_values_needed = segment_in%vamp_values_needed
+    segment%uphase_values_needed = segment_in%uphase_values_needed
+    segment%vphase_values_needed = segment_in%vphase_values_needed
+    segment%uamp_index = segment_in%uamp_index  ! ### Perhaps this should not be set here.
+    segment%vamp_index = segment_in%vamp_index
+    segment%uphase_index = segment_in%uphase_index
+    segment%vphase_index = segment_in%vphase_index
+  else ! NOTE: [uv]_values_needed are swapped
+    segment%u_values_needed = segment_in%v_values_needed
+    segment%v_values_needed = segment_in%u_values_needed
+    segment%uamp_values_needed = segment_in%vamp_values_needed
+    segment%vamp_values_needed = segment_in%uamp_values_needed
+    segment%uphase_values_needed = segment_in%vphase_values_needed
+    segment%vphase_values_needed = segment_in%uphase_values_needed
+    segment%uamp_index = segment_in%vamp_index  ! ### Perhaps this should not be set here.
+    segment%vamp_index = segment_in%uamp_index
+    segment%uphase_index = segment_in%vphase_index
+    segment%vphase_index = segment_in%uphase_index
+  endif
   segment%z_values_needed = segment_in%z_values_needed
   segment%g_values_needed = segment_in%g_values_needed
   segment%t_values_needed = segment_in%t_values_needed
   segment%s_values_needed = segment_in%s_values_needed
+  segment%zamp_values_needed = segment_in%zamp_values_needed
+  segment%zphase_values_needed = segment_in%zphase_values_needed
+  segment%zamp_index = segment_in%zamp_index  ! ### Perhaps this should not be set here.
+  segment%zphase_index = segment_in%zphase_index
 
   segment%values_needed = segment_in%values_needed
 
@@ -5990,7 +6164,7 @@ subroutine rotate_OBC_segment_config(segment_in, G_in, segment, G, turns)
   ! NOTE: The values stored in the segment are always saved in ascending order,
   !   e.g. (is < ie).  In order to use setup_segment_indices, we reorder the
   !   indices here to indicate face direction.
-  !   Segment indices are also indexed locally, so we remove the halo offset.
+  !   Segment indices are also indexed locally, so here we convert to global indices
   if (segment_in%direction == OBC_DIRECTION_N) then
     Is_obc_in = segment_in%Ie_obc + G_in%idg_offset
     Ie_obc_in = segment_in%Is_obc + G_in%idg_offset
@@ -6007,18 +6181,26 @@ subroutine rotate_OBC_segment_config(segment_in, G_in, segment, G, turns)
     Je_obc_in = segment_in%Je_obc + G_in%jdg_offset
   endif
 
-  ! TODO: This is hardcoded for 90 degrees, and needs to be generalized.
-  Is_obc = G_in%jegB - Js_obc_in
-  Ie_obc = G_in%JegB - Je_obc_in
-  Js_obc = Is_obc_in
-  Je_obc = Ie_obc_in
+  ! Rotate the global indices of the segment according to the number of turns.
+  if (qturns == 0) then
+    Is_obc = Is_obc_in ; Ie_obc = Ie_obc_in
+    Js_obc = Js_obc_in ; Je_obc = Je_obc_in
+  elseif (qturns == 1) then
+    Is_obc = G_in%JegB - Js_obc_in ; Ie_obc = G_in%JegB - Je_obc_in
+    Js_obc = Is_obc_in ; Je_obc = Ie_obc_in
+  elseif (qturns == 2) then
+    Is_obc = G_in%IegB - Is_obc_in ; Ie_obc = G_in%IegB - Ie_obc_in
+    Js_obc = G_in%JegB - Js_obc_in ; Je_obc = G_in%JegB - Je_obc_in
+  elseif (qturns == 3) then
+    Is_obc = Js_obc_in ; Ie_obc = Je_obc_in
+    Js_obc = G_in%IegB - Is_obc_in ; Je_obc = G_in%IegB - Ie_obc_in
+  endif
 
-  ! Orientation is based on the index ordering, [IJ][se]_obc are re-ordered
-  ! after the index is set.  So we now need to restore the original order
-
+  ! Orientation is based on the index ordering, and setup_segment_indices
+  ! is based on the the original order in the intput files.
   call setup_segment_indices(G, segment, Is_obc, Ie_obc, Js_obc, Je_obc)
 
-  ! Re-order [IJ][se]_obc back to ascending, and remove the halo offset.
+  ! Re-order [IJ][se]_obc back to ascending, and remove the global indexing offset.
   if (Is_obc > Ie_obc) then
     segment%Is_obc = Ie_obc - G%idg_offset
     segment%Ie_obc = Is_obc - G%idg_offset
@@ -6110,6 +6292,9 @@ subroutine rotate_OBC_init(OBC_in, G, GV, US, param_file, tv, restart_CS, OBC)
   logical :: use_temperature
   integer :: l
 
+  ! update_OBC may have been updated during initialization.
+  OBC%update_OBC = OBC_in%update_OBC
+
   call get_param(param_file, "MOM", "ENABLE_THERMODYNAMICS", use_temperature, &
                  "If true, Temperature and salinity are used as state "//&
                  "variables.", default=.true., do_not_log=.true.)
@@ -6121,6 +6306,7 @@ subroutine rotate_OBC_init(OBC_in, G, GV, US, param_file, tv, restart_CS, OBC)
     call rotate_OBC_segment_data(OBC_in%segment(l), OBC%segment(l), G%HI%turns)
   enddo
 
+  ! There is already a call to setup_OBC_tracer_reservoirs in fill_temp_salt_segments
   call setup_OBC_tracer_reservoirs(G, GV, OBC)
   call open_boundary_init(G, GV, US, param_file, OBC, restart_CS)
 end subroutine rotate_OBC_init
@@ -6128,21 +6314,46 @@ end subroutine rotate_OBC_init
 
 !> Rotate an OBC segment's fields from the input to the model index map.
 subroutine rotate_OBC_segment_data(segment_in, segment, turns)
-  type(OBC_segment_type), intent(in) :: segment_in
-  type(OBC_segment_type), intent(inout) :: segment
-  integer, intent(in) :: turns
+  type(OBC_segment_type), intent(in) :: segment_in  !< The unrotated segment to use as a source
+  type(OBC_segment_type), intent(inout) :: segment  !< The rotated segment to initialize
+  integer, intent(in) :: turns  !< The number of quarter turns of the grid to apply
 
+  ! Local variables
   integer :: n
   integer :: num_fields
-
+  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB, ke
 
   num_fields = segment_in%num_fields
   allocate(segment%field(num_fields))
+
+  isd = segment%HI%isd ; ied = segment%HI%ied
+  jsd = segment%HI%jsd ; jed = segment%HI%jed
+  IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
+  JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
+
+  if ((turns == 0) .or. (turns == 2)) then
+    segment%uamp_index = segment_in%uamp_index
+    segment%vamp_index = segment_in%vamp_index
+    segment%uphase_index = segment_in%uphase_index
+    segment%vphase_index = segment_in%vphase_index
+  else ! NOTE: [uv]_values_needed are swapped
+    segment%uamp_index = segment_in%vamp_index
+    segment%vamp_index = segment_in%uamp_index
+    segment%uphase_index = segment_in%vphase_index
+    segment%vphase_index = segment_in%uphase_index
+  endif
+  segment%zamp_index = segment_in%zamp_index
+  segment%zphase_index = segment_in%zphase_index
 
   segment%num_fields = segment_in%num_fields
   do n = 1, num_fields
     segment%field(n)%handle = segment_in%field(n)%handle
     segment%field(n)%dz_handle = segment_in%field(n)%dz_handle
+    segment%field(n)%use_IO = segment_in%field(n)%use_IO
+    segment%field(n)%genre = segment_in%field(n)%genre
+    segment%field(n)%scale = segment_in%field(n)%scale
+    segment%field(n)%resrv_lfac_in = segment_in%field(n)%resrv_lfac_in
+    segment%field(n)%resrv_lfac_out = segment_in%field(n)%resrv_lfac_out
 
     if (allocated(segment_in%field(n)%buffer_dst)) then
       call allocate_rotated_seg_data(segment_in%field(n)%buffer_dst, segment_in%HI, &
@@ -6382,6 +6593,7 @@ subroutine write_OBC_info(OBC, G, GV, US)
   if (OBC%force_bounds_in_subcell) call MOM_mesg("force_bounds_in_subcell", verb=1)
   if (OBC%om4_remap_via_sub_cells) call MOM_mesg("om4_remap_via_sub_cells", verb=1)
   if (OBC%exterior_OBC_bug) call MOM_mesg("exterior_OBC_bug", verb=1)
+  if (OBC%hor_index_bug) call MOM_mesg("hor_index_bug", verb=1)
   if (OBC%debug) call MOM_mesg("debug", verb=1)
   if (OBC%ramp) call MOM_mesg("ramp", verb=1)
   if (OBC%ramping_is_activated) call MOM_mesg("ramping_is_activated", verb=1)
