@@ -177,7 +177,8 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
                         ! allows the use of Fatal unused parameters.
   type(EOS_type), pointer :: eos => NULL()
   logical :: debug      ! If true, write debugging output.
-  logical :: debug_obc  ! If true, do debugging calls related to OBCs.
+  logical :: debug_obc  ! If true, do additional calls resetting values to help debug the correctness
+                        ! of the open boundary condition code.
   logical :: debug_layers = .false.
   logical :: use_ice_shelf
   character(len=80) :: mesg
@@ -194,7 +195,10 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   call callTree_enter("MOM_initialize_state(), MOM_state_initialization.F90")
   call log_version(PF, mdl, version, "")
   call get_param(PF, mdl, "DEBUG", debug, default=.false.)
-  call get_param(PF, mdl, "DEBUG_OBC", debug_obc, default=.false.)
+  call get_param(PF, mdl, "OBC_DEBUGGING_TESTS", debug_obc, &
+                 "If true, do additional calls resetting values to help verify the correctness "//&
+                 "of the open boundary condition code.", default=.false.,  &
+                 do_not_log=.true., old_name="DEBUG_OBC", debuggingParam=.true.)
 
   new_sim = is_new_run(restart_CS)
   just_read = .not.new_sim
@@ -624,11 +628,10 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   if (associated(OBC)) then
     call initialize_segment_data(G, GV, US, OBC, PF)
 !     call open_boundary_config(G, US, PF, OBC)
-    ! Call this once to fill boundary arrays from fixed values
-    if (OBC%some_need_no_IO_for_data) then
-      call calc_derived_thermo(tv, h, G, GV, US)
-      call update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
-    endif
+
+    call calc_derived_thermo(tv, h, G, GV, US)
+    ! Call this during initialization to fill boundary arrays from fixed values
+    call update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
     call get_param(PF, mdl, "OBC_USER_CONFIG", config, &
                  "A string that sets how the user code is invoked to set open boundary data: \n"//&
@@ -737,7 +740,10 @@ subroutine initialize_thickness_from_file(h, depth_tot, G, GV, US, param_file, f
                  "The name of the thickness file.", &
                  fail_if_missing=.not.just_read, do_not_log=just_read)
 
-  filename = trim(inputdir)//trim(thickness_file)
+  filename = trim(thickness_file)
+  if (scan(thickness_file, "/") == 0) then ! prepend inputdir if only a filename is given
+    filename = trim(inputdir)//trim(thickness_file)
+  endif
   if (.not.just_read) call log_param(param_file, mdl, "INPUTDIR/THICKNESS_FILE", filename)
 
   if ((.not.just_read) .and. (.not.file_exists(filename, G%Domain))) call MOM_error(FATAL, &
@@ -1525,7 +1531,10 @@ subroutine initialize_velocity_from_file(u, v, G, GV, US, param_file, just_read)
   call get_param(param_file, mdl, "INPUTDIR", inputdir, default=".")
   inputdir = slasher(inputdir)
 
-  filename = trim(inputdir)//trim(velocity_file)
+  filename = trim(velocity_file)
+  if (scan(velocity_file, '/')== 0) then ! prepend inputdir if only a filename is given
+    filename = trim(inputdir)//trim(velocity_file)
+  endif
   if (.not.just_read) call log_param(param_file, mdl, "INPUTDIR/VELOCITY_FILE", filename)
 
   call get_param(param_file, mdl, "U_IC_VAR", u_IC_var, &
@@ -1709,7 +1718,10 @@ subroutine initialize_temp_salt_from_file(T, S, G, GV, US, param_file, just_read
   call get_param(param_file, mdl, "INPUTDIR", inputdir, default=".")
   inputdir = slasher(inputdir)
 
-  filename = trim(inputdir)//trim(ts_file)
+  filename = trim(ts_file)
+  if (scan(ts_file, '/')== 0) then ! prepend inputdir if only a filename is given
+    filename = trim(inputdir)//trim(ts_file)
+  endif
   if (.not.just_read) call log_param(param_file, mdl, "INPUTDIR/TS_FILE", filename)
   call get_param(param_file, mdl, "TEMP_IC_VAR", temp_var, &
                  "The initial condition variable for potential temperature.", &
@@ -1729,7 +1741,10 @@ subroutine initialize_temp_salt_from_file(T, S, G, GV, US, param_file, just_read
   ! Read the temperatures and salinities from netcdf files.
   call MOM_read_data(filename, temp_var, T(:,:,:), G%Domain, scale=US%degC_to_C)
 
-  salt_filename = trim(inputdir)//trim(salt_file)
+  salt_filename = trim(salt_file)
+  if (scan(salt_file, '/')== 0) then ! prepend inputdir if only a filename is given
+    salt_filename = trim(inputdir)//trim(salt_file)
+  endif
   if (.not.file_exists(salt_filename, G%Domain)) call MOM_error(FATAL, &
      " initialize_temp_salt_from_file: Unable to open "//trim(salt_filename))
 
@@ -2058,7 +2073,10 @@ subroutine initialize_sponges_file(G, GV, US, use_temperature, tv, u, v, depth_t
                  default=.false.)
 
   ! Read in sponge damping rate for tracers
-  filename = trim(inputdir)//trim(damping_file)
+  filename = trim(damping_file)
+  if (scan(damping_file, '/')== 0) then ! prepend inputdir if only a filename is given
+    filename = trim(inputdir)//trim(damping_file)
+  endif
   call log_param(param_file, mdl, "INPUTDIR/SPONGE_DAMPING_FILE", filename)
   if (.not.file_exists(filename, G%Domain)) &
     call MOM_error(FATAL, " initialize_sponges: Unable to open "//trim(filename))
@@ -2355,7 +2373,10 @@ subroutine initialize_oda_incupd_file(G, GV, US, use_temperature, tv, h, u, v, p
 !  call get_param(param_file, mdl, "USE_REGRIDDING", use_ALE, default=.false., do_not_log=.true.)
 
   ! Read in incremental update for tracers
-  filename = trim(inputdir)//trim(inc_file)
+  filename = trim(inc_file)
+  if (scan(inc_file, '/')== 0) then ! prepend inputdir if only a filename is given
+    filename = trim(inputdir)//trim(inc_file)
+  endif
   call log_param(param_file, mdl, "INPUTDIR/ODA_INCUPD_FILE", filename)
   if (.not.file_exists(filename, G%Domain)) &
     call MOM_error(FATAL, " initialize_oda_incupd: Unable to open "//trim(filename))

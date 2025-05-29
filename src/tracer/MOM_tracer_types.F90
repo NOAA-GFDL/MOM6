@@ -99,6 +99,7 @@ type, public :: tracer_type
   ! logical :: hordiff_tr = .true.      !< If true, this tracer should experience epineutral diffusion
   ! logical :: kpp_nonlocal_tr = .true. !< if true, apply KPP nonlocal transport to this tracer before diffusion
   logical :: remap_tr = .true.        !< If true, this tracer should be vertically remapped
+  integer :: advect_scheme = -1  !< flag for advection scheme
 
   integer :: diag_form = 1  !< An integer indicating which template is to be used to label diagnostics.
   !>@{ Diagnostic IDs
@@ -113,6 +114,7 @@ type, public :: tracer_type
   integer :: id_remap_conc = -1, id_remap_cont = -1, id_remap_cont_2d = -1
   integer :: id_tendency = -1, id_trxh_tendency = -1, id_trxh_tendency_2d = -1
   integer :: id_tr_vardec = -1
+  integer :: id_zint = -1, id_zint_100m = -1, id_surf = -1
   integer :: id_net_surfflux = -1, id_NLT_tendency = -1, id_NLT_budget = -1
   !>@}
 end type tracer_type

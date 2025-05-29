@@ -30,7 +30,8 @@ implicit none ; private
 
 public register_tracer
 public MOM_tracer_chksum, MOM_tracer_chkinv
-public register_tracer_diagnostics, post_tracer_diagnostics_at_sync, post_tracer_transport_diagnostics
+public register_tracer_diagnostics
+public post_tracer_diagnostics_at_sync, post_tracer_transport_diagnostics
 public preALE_tracer_diagnostics, postALE_tracer_diagnostics
 public tracer_registry_init, lock_tracer_registry, tracer_registry_end
 public tracer_name_lookup
@@ -50,12 +51,13 @@ contains
 
 !> This subroutine registers a tracer to be advected and laterally diffused.
 subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, units, &
-                           cmor_name, cmor_units, cmor_longname, net_surfflux_name, NLT_budget_name, &
-                           net_surfflux_longname, tr_desc, OBC_inflow, OBC_in_u, OBC_in_v, ad_x, ad_y, &
-                           df_x, df_y, ad_2d_x, ad_2d_y, df_2d_x, df_2d_y, advection_xy, registry_diags, &
+                           cmor_name, cmor_units, cmor_longname, net_surfflux_name, &
+                           NLT_budget_name, net_surfflux_longname, tr_desc, OBC_inflow, &
+                           OBC_in_u, OBC_in_v, ad_x, ad_y, df_x, df_y, ad_2d_x, ad_2d_y, &
+                           df_2d_x, df_2d_y, advection_xy, registry_diags, &
                            conc_scale, flux_nameroot, flux_longname, flux_units, flux_scale, &
                            convergence_units, convergence_scale, cmor_tendprefix, diag_form, &
-                           restart_CS, mandatory, underflow_conc, Tr_out)
+                           restart_CS, mandatory, underflow_conc, Tr_out, advect_scheme)
   type(hor_index_type),           intent(in)    :: HI           !< horizontal index type
   type(verticalGrid_type),        intent(in)    :: GV           !< ocean vertical grid structure
   type(tracer_registry_type),     pointer       :: Reg          !< pointer to the tracer registry
@@ -128,6 +130,9 @@ subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, unit
   real,                 optional, intent(in)    :: underflow_conc !< A tiny concentration, below which the tracer
                                                                 !! concentration underflows to 0 [CU ~> conc].
   type(tracer_type),    optional, pointer       :: Tr_out       !< If present, returns pointer into registry
+
+  integer,                 optional, intent(in) :: advect_scheme !< Advection scheme for this tracer, the default is -1
+                                                                !! indicating to use the scheme from MOM_tracer_advect
 
   logical :: mand
   type(tracer_type), pointer :: Tr=>NULL()
@@ -229,6 +234,9 @@ subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, unit
   Tr%diag_form = 1
   if (present(diag_form)) Tr%diag_form = diag_form
 
+  Tr%advect_scheme = -1
+  if(present(advect_scheme)) Tr%advect_scheme = advect_scheme
+
   Tr%t => tr_ptr
 
   if (present(registry_diags)) Tr%registry_diags = registry_diags
@@ -244,7 +252,9 @@ subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, unit
   if (present(ad_2d_y)) then ; if (associated(ad_2d_y)) Tr%ad2d_y => ad_2d_y ; endif
   if (present(df_2d_x)) then ; if (associated(df_2d_x)) Tr%df2d_x => df_2d_x ; endif
 
-  if (present(advection_xy)) then ; if (associated(advection_xy)) Tr%advection_xy => advection_xy ; endif
+  if (present(advection_xy)) then
+    if (associated(advection_xy)) Tr%advection_xy => advection_xy
+  endif
 
   if (present(restart_CS)) then
     ! Register this tracer to be read from and written to restart files.
@@ -367,7 +377,8 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
           y_cell_method='sum', conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T)
       Tr%id_hbd_dfy = register_diag_field("ocean_model", trim(shortnm)//"_hbd_diffy", &
           diag%axesCvL, Time, trim(flux_longname)//" diffusive meridional " //&
-          "flux from the horizontal boundary diffusion scheme", trim(flux_units), v_extensive=.true., &
+          "flux from the horizontal boundary diffusion scheme", trim(flux_units), &
+          v_extensive=.true., &
           x_cell_method='sum', conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T)
     else
       Tr%id_adx = register_diag_field("ocean_model", trim(shortnm)//"_adx", &
@@ -385,14 +396,26 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
           flux_units, v_extensive=.true., conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T, &
           x_cell_method='sum')
       Tr%id_hbd_dfx = register_diag_field("ocean_model", trim(shortnm)//"_hbd_diffx", &
-          diag%axesCuL, Time, "Horizontal Boundary Diffusive Zonal Flux of "//trim(flux_longname), &
+          diag%axesCuL, Time, &
+          "Horizontal Boundary Diffusive Zonal Flux of "//trim(flux_longname), &
           flux_units, v_extensive=.true., conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T, &
           y_cell_method='sum')
       Tr%id_hbd_dfy = register_diag_field("ocean_model", trim(shortnm)//"_hbd_diffy", &
-          diag%axesCvL, Time, "Horizontal Boundary Diffusive Meridional Flux of "//trim(flux_longname), &
+          diag%axesCvL, Time, &
+          "Horizontal Boundary Diffusive Meridional Flux of "//trim(flux_longname), &
           flux_units, v_extensive=.true., conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T, &
           x_cell_method='sum')
     endif
+    Tr%id_zint = register_diag_field("ocean_model", trim(shortnm)//"_zint", &
+        diag%axesT1, Time, &
+        "Thickness-weighted integral of " // trim(longname), &
+        trim(units) // " m")
+    Tr%id_zint_100m = register_diag_field("ocean_model", trim(shortnm)//"_zint_100m", &
+        diag%axesT1, Time, &
+        "Thickness-weighted integral of "// trim(longname) // " over top 100m", &
+        trim(units) // " m")
+    Tr%id_surf = register_diag_field("ocean_model", trim(shortnm)//"_SURF", &
+        diag%axesT1, Time, "Surface values of "// trim(longname), trim(units))
     if (Tr%id_adx > 0) call safe_alloc_ptr(Tr%ad_x,IsdB,IedB,jsd,jed,nz)
     if (Tr%id_ady > 0) call safe_alloc_ptr(Tr%ad_y,isd,ied,JsdB,JedB,nz)
     if (Tr%id_dfx > 0) call safe_alloc_ptr(Tr%df_x,IsdB,IedB,jsd,jed,nz)
@@ -425,7 +448,7 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
     Tr%id_hbd_dfy_2d = register_diag_field("ocean_model", trim(shortnm)//"_hbd_diffy_2d", &
         diag%axesCv1, Time, "Vertically-integrated meridional diffusive flux from the horizontal boundary diffusion "//&
         "scheme for "//trim(flux_longname), flux_units, conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T, &
-         x_cell_method='sum')
+        x_cell_method='sum')
 
     if (Tr%id_adx_2d > 0) call safe_alloc_ptr(Tr%ad2d_x,IsdB,IedB,jsd,jed)
     if (Tr%id_ady_2d > 0) call safe_alloc_ptr(Tr%ad2d_y,isd,ied,JsdB,JedB)
@@ -436,7 +459,8 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
 
     Tr%id_adv_xy = register_diag_field('ocean_model', trim(shortnm)//"_advection_xy", &
         diag%axesTL, Time, &
-        'Horizontal convergence of residual mean advective fluxes of '//trim(lowercase(flux_longname)), &
+        'Horizontal convergence of residual mean advective fluxes of '//&
+        trim(lowercase(flux_longname)), &
         conv_units, v_extensive=.true., conversion=Tr%conv_scale*US%s_to_T)
     Tr%id_adv_xy_2d = register_diag_field('ocean_model', trim(shortnm)//"_advection_xy_2d", &
         diag%axesT1, Time, &
@@ -461,45 +485,58 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
     if (Tr%diag_form == 1) then
       Tr%id_dfxy_cont = register_diag_field("ocean_model", trim(shortnm)//'_dfxy_cont_tendency', &
           diag%axesTL, Time, "Neutral diffusion tracer content tendency for "//trim(shortnm), &
-          conv_units, conversion=Tr%conv_scale*US%s_to_T, x_cell_method='sum', y_cell_method='sum', v_extensive=.true.)
+          conv_units, conversion=Tr%conv_scale*US%s_to_T, &
+          x_cell_method='sum', y_cell_method='sum', v_extensive=.true.)
 
-      Tr%id_dfxy_cont_2d = register_diag_field("ocean_model", trim(shortnm)//'_dfxy_cont_tendency_2d', &
+      Tr%id_dfxy_cont_2d = register_diag_field("ocean_model", &
+          trim(shortnm)//'_dfxy_cont_tendency_2d', &
           diag%axesT1, Time, "Depth integrated neutral diffusion tracer content "//&
           "tendency for "//trim(shortnm), conv_units, conversion=Tr%conv_scale*US%s_to_T, &
           x_cell_method='sum', y_cell_method='sum')
 
       Tr%id_hbdxy_cont = register_diag_field("ocean_model", trim(shortnm)//'_hbdxy_cont_tendency', &
-          diag%axesTL, Time, "Horizontal boundary diffusion tracer content tendency for "//trim(shortnm), &
-          conv_units, conversion=Tr%conv_scale*US%s_to_T, x_cell_method='sum', y_cell_method='sum', v_extensive=.true.)
+          diag%axesTL, Time, "Horizontal boundary diffusion tracer content tendency for "//&
+          trim(shortnm), &
+          conv_units, conversion=Tr%conv_scale*US%s_to_T, &
+          x_cell_method='sum', y_cell_method='sum', v_extensive=.true.)
 
-      Tr%id_hbdxy_cont_2d = register_diag_field("ocean_model", trim(shortnm)//'_hbdxy_cont_tendency_2d', &
+      Tr%id_hbdxy_cont_2d = register_diag_field("ocean_model", &
+          trim(shortnm)//'_hbdxy_cont_tendency_2d', &
           diag%axesT1, Time, "Depth integrated horizontal boundary diffusion tracer content "//&
           "tendency for "//trim(shortnm), conv_units, conversion=Tr%conv_scale*US%s_to_T, &
           x_cell_method='sum', y_cell_method='sum')
     else
       cmor_var_lname = 'Tendency of '//trim(lowercase(cmor_longname))//' expressed as '//&
-          trim(lowercase(flux_longname))//' content due to parameterized mesoscale neutral diffusion'
+          trim(lowercase(flux_longname))//&
+          ' content due to parameterized mesoscale neutral diffusion'
       Tr%id_dfxy_cont = register_diag_field("ocean_model", trim(shortnm)//'_dfxy_cont_tendency', &
           diag%axesTL, Time, "Neutral diffusion tracer content tendency for "//trim(shortnm), &
-          conv_units, conversion=Tr%conv_scale*US%s_to_T, cmor_field_name=trim(Tr%cmor_tendprefix)//'pmdiff', &
-          cmor_long_name=trim(cmor_var_lname), cmor_standard_name=trim(cmor_long_std(cmor_var_lname)), &
+          conv_units, conversion=Tr%conv_scale*US%s_to_T, &
+          cmor_field_name=trim(Tr%cmor_tendprefix)//'pmdiff', &
+          cmor_long_name=trim(cmor_var_lname), &
+          cmor_standard_name=trim(cmor_long_std(cmor_var_lname)), &
           x_cell_method='sum', y_cell_method='sum', v_extensive=.true.)
 
       cmor_var_lname = 'Tendency of '//trim(lowercase(cmor_longname))//' expressed as '//&
-                       trim(lowercase(flux_longname))//' content due to parameterized mesoscale neutral diffusion'
-      Tr%id_dfxy_cont_2d = register_diag_field("ocean_model", trim(shortnm)//'_dfxy_cont_tendency_2d', &
+                       trim(lowercase(flux_longname))//&
+                       ' content due to parameterized mesoscale neutral diffusion'
+      Tr%id_dfxy_cont_2d = register_diag_field("ocean_model", &
+          trim(shortnm)//'_dfxy_cont_tendency_2d', &
           diag%axesT1, Time, "Depth integrated neutral diffusion tracer "//&
           "content tendency for "//trim(shortnm), conv_units, conversion=Tr%conv_scale*US%s_to_T, &
           cmor_field_name=trim(Tr%cmor_tendprefix)//'pmdiff_2d', &
-          cmor_long_name=trim(cmor_var_lname), cmor_standard_name=trim(cmor_long_std(cmor_var_lname)), &
+          cmor_long_name=trim(cmor_var_lname), &
+          cmor_standard_name=trim(cmor_long_std(cmor_var_lname)), &
           x_cell_method='sum', y_cell_method='sum')
 
       Tr%id_hbdxy_cont = register_diag_field("ocean_model", trim(shortnm)//'_hbdxy_cont_tendency', &
-          diag%axesTL, Time, "Horizontal boundary diffusion tracer content tendency for "//trim(shortnm), &
+          diag%axesTL, Time, &
+          "Horizontal boundary diffusion tracer content tendency for "//trim(shortnm), &
           conv_units, conversion=Tr%conv_scale*US%s_to_T, &
           x_cell_method='sum', y_cell_method='sum', v_extensive=.true.)
 
-      Tr%id_hbdxy_cont_2d = register_diag_field("ocean_model", trim(shortnm)//'_hbdxy_cont_tendency_2d', &
+      Tr%id_hbdxy_cont_2d = register_diag_field("ocean_model", &
+          trim(shortnm)//'_hbdxy_cont_tendency_2d', &
           diag%axesT1, Time, "Depth integrated horizontal boundary diffusion of tracer "//&
           "content tendency for "//trim(shortnm), conv_units, conversion=Tr%conv_scale*US%s_to_T, &
           x_cell_method='sum', y_cell_method='sum')
@@ -509,7 +546,8 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
         trim(units)//' s-1', conversion=Tr%conc_scale*US%s_to_T)
 
     Tr%id_hbdxy_conc = register_diag_field("ocean_model", trim(shortnm)//'_hbdxy_conc_tendency', &
-        diag%axesTL, Time, "Horizontal diffusion tracer concentration tendency for "//trim(shortnm), &
+        diag%axesTL, Time, &
+        "Horizontal diffusion tracer concentration tendency for "//trim(shortnm), &
         trim(units)//' s-1', conversion=Tr%conc_scale*US%s_to_T)
 
     var_lname = "Net time tendency for "//lowercase(flux_longname)
@@ -595,7 +633,7 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
         conversion = GV%H_to_kg_m2
       else
         conversion = Tr%conv_scale
-      end if
+      endif
       ! We actually want conversion=Tr%conv_scale for all tracers, but introducing the local variable
       ! 'conversion' and setting it to GV%H_to_kg_m2 instead of 0.001*GV%H_to_kg_m2 for salt tracers
       ! keeps changes introduced by this refactoring limited to round-off level; as it turns out,
@@ -603,7 +641,8 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
       ! so introducing the 0.001 here will fix that bug.
       Tr%id_NLT_budget = register_diag_field('ocean_model', Tr%NLT_budget_name, &
           diag%axesTL, Time, &
-          trim(flux_longname)//' content change due to non-local transport, as calculated by [CVMix] KPP', &
+          trim(flux_longname)//&
+          ' content change due to non-local transport, as calculated by [CVMix] KPP', &
           conv_units, conversion=conversion*US%s_to_T, v_extensive=.true.)
     endif
 
@@ -697,7 +736,8 @@ subroutine post_tracer_diagnostics_at_sync(Reg, h, diag_prev, diag, G, GV, dt)
         work3d(i,j,k)     = (Tr%t(i,j,k)*h(i,j,k) - Tr%Trxh_prev(i,j,k)) * Idt
         Tr%Trxh_prev(i,j,k) =  Tr%t(i,j,k) * h(i,j,k)
       enddo ; enddo ; enddo
-      if (Tr%id_trxh_tendency > 0) call post_data(Tr%id_trxh_tendency, work3d, diag, alt_h=diag_prev%h_state)
+      if (Tr%id_trxh_tendency > 0) call post_data(Tr%id_trxh_tendency, work3d, diag, &
+                                                  alt_h=diag_prev%h_state)
       if (Tr%id_trxh_tendency_2d > 0) then
         work2d(:,:) = 0.0
         do k=1,nz ; do j=js,je ; do i=is,ie
@@ -720,12 +760,44 @@ subroutine post_tracer_transport_diagnostics(G, GV, Reg, h_diag, diag)
                               intent(in) :: h_diag !< Layer thicknesses on which to post fields [H ~> m or kg m-2]
   type(diag_ctrl),            intent(in) :: diag !< structure to regulate diagnostic output
 
-  integer :: i, j, k, is, ie, js, je, nz, m
+  integer :: i, j, k, is, ie, js, je, nz, m, khi
   real    :: work2d(SZI_(G),SZJ_(G))      ! The vertically integrated convergence of lateral advective
                                           ! tracer fluxes [CU H T-1 ~> conc m s-1 or conc kg m-2 s-1]
+  real    :: frac_under_100m(SZI_(G),SZJ_(G),SZK_(GV)) ! weights used to compute 100m vertical integrals [nondim]
+  real    :: ztop(SZI_(G),SZJ_(G)) ! position of the top interface [H ~> m or kg m-2]
+  real    :: zbot(SZI_(G),SZJ_(G)) ! position of the bottom interface [H ~> m or kg m-2]
   type(tracer_type), pointer :: Tr=>NULL()
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+
+  ! If any tracers are posting 100m vertical integrals, compute weights
+  frac_under_100m(:,:,:) = 0.0
+  ! khi will be the largest layer index corresponding where ztop < 100m and ztop >= 100m
+  ! in any column (we can reduce computation of 100m integrals by only looping through khi
+  ! rather than GV%ke)
+  khi = 0
+  do m=1,Reg%ntr ; if (Reg%Tr(m)%registry_diags) then
+    Tr => Reg%Tr(m)
+    if (Tr%id_zint_100m > 0) then
+      zbot(:,:) = 0.0
+      do k=1, nz
+        do j=js,je ; do i=is,ie
+          ztop(i,j) = zbot(i,j)
+          zbot(i,j) = ztop(i,j) + h_diag(i,j,k)*GV%H_to_m
+          if (zbot(i,j) <= 100.0) then
+            frac_under_100m(i,j,k) = 1.0
+          elseif (ztop(i,j) < 100.0) then
+            frac_under_100m(i,j,k) = (100.0 - ztop(i,j)) / (zbot(i,j) - ztop(i,j))
+          else
+            frac_under_100m(i,j,k) = 0.0
+          endif
+          ! frac_under_100m(i,j,k) = max(0, min(1.0, (100.0 - ztop(i,j)) / (zbot(i,j) - ztop(i,j))))
+        enddo ; enddo
+        if (any(frac_under_100m(:,:,k) > 0)) khi = k
+      enddo
+      exit
+    endif
+  endif; enddo
 
   do m=1,Reg%ntr ; if (Reg%Tr(m)%registry_diags) then
     Tr => Reg%Tr(m)
@@ -746,6 +818,28 @@ subroutine post_tracer_transport_diagnostics(G, GV, Reg, h_diag, diag)
       enddo ; enddo ; enddo
       call post_data(Tr%id_adv_xy_2d, work2d, diag)
     endif
+
+    ! A few diagnostics introduce with MARBL driver
+    ! Compute full-depth vertical integral
+    if (Tr%id_zint > 0) then
+      work2d(:,:) = 0.0
+      do k=1,nz ; do j=js,je ; do i=is,ie
+        work2d(i,j) = work2d(i,j) + (h_diag(i,j,k)*GV%H_to_m)*tr%t(i,j,k)
+      enddo ; enddo ; enddo
+      call post_data(Tr%id_zint, work2d, diag)
+    endif
+
+    ! Compute 100m vertical integral
+    if (Tr%id_zint_100m > 0) then
+      work2d(:,:) = 0.0
+      do k=1,khi ; do j=js,je ; do i=is,ie
+        work2d(i,j) = work2d(i,j) + frac_under_100m(i,j,k)*((h_diag(i,j,k)*GV%H_to_m)*tr%t(i,j,k))
+      enddo ; enddo ; enddo
+      call post_data(Tr%id_zint_100m, work2d, diag)
+    endif
+
+    ! Surface values of tracers
+    if (Tr%id_SURF > 0) call post_data(Tr%id_SURF, Tr%t(:,:,1), diag)
   endif ; enddo
 
 end subroutine post_tracer_transport_diagnostics
@@ -803,10 +897,12 @@ subroutine tracer_array_chkinv(mesg, G, GV, h, Tr, ntr)
   vol_scale = GV%H_to_MKS*G%US%L_to_m**2
   do m=1,ntr
     do k=1,nz ; do j=js,je ; do i=is,ie
-      tr_inv(i,j,k) = Tr(m)%conc_scale*Tr(m)%t(i,j,k) * (vol_scale * h(i,j,k) * G%areaT(i,j)*G%mask2dT(i,j))
+      tr_inv(i,j,k) = Tr(m)%conc_scale*Tr(m)%t(i,j,k) * &
+                      (vol_scale * h(i,j,k) * G%areaT(i,j)*G%mask2dT(i,j))
     enddo ; enddo ; enddo
     total_inv = reproducing_sum(tr_inv, is+(1-G%isd), ie+(1-G%isd), js+(1-G%jsd), je+(1-G%jsd))
-    if (is_root_pe()) write(0,'(A,1X,A5,1X,ES25.16,1X,A)') "h-point: inventory", Tr(m)%name, total_inv, mesg
+    if (is_root_pe()) write(0,'(A,1X,A5,1X,ES25.16,1X,A)') &
+                      "h-point: inventory", Tr(m)%name, total_inv, mesg
   enddo
 
 end subroutine tracer_array_chkinv
@@ -835,10 +931,12 @@ subroutine tracer_Reg_chkinv(mesg, G, GV, h, Reg)
   vol_scale = GV%H_to_MKS*G%US%L_to_m**2
   do m=1,Reg%ntr
     do k=1,nz ; do j=js,je ; do i=is,ie
-      tr_inv(i,j,k) = Reg%Tr(m)%conc_scale*Reg%Tr(m)%t(i,j,k) * (vol_scale * h(i,j,k) * G%areaT(i,j)*G%mask2dT(i,j))
+      tr_inv(i,j,k) = Reg%Tr(m)%conc_scale*Reg%Tr(m)%t(i,j,k) * &
+                      (vol_scale * h(i,j,k) * G%areaT(i,j)*G%mask2dT(i,j))
     enddo ; enddo ; enddo
     total_inv = reproducing_sum(tr_inv, is+(1-G%isd), ie+(1-G%isd), js+(1-G%jsd), je+(1-G%jsd))
-    if (is_root_pe()) write(0,'(A,1X,A5,1X,ES25.16,1X,A)') "h-point: inventory", Reg%Tr(m)%name, total_inv, mesg
+    if (is_root_pe()) write(0,'(A,1X,A5,1X,ES25.16,1X,A)') &
+                      "h-point: inventory", Reg%Tr(m)%name, total_inv, mesg
   enddo
 
 end subroutine tracer_Reg_chkinv
