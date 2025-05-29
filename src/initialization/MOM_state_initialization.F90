@@ -26,7 +26,7 @@ use MOM_open_boundary, only : open_boundary_query
 use MOM_open_boundary, only : set_tracer_data, initialize_segment_data
 use MOM_open_boundary, only : open_boundary_test_extern_h
 use MOM_open_boundary, only : fill_temp_salt_segments, setup_OBC_tracer_reservoirs
-use MOM_open_boundary, only : update_OBC_segment_data
+use MOM_open_boundary, only : update_OBC_segment_data, set_initialized_OBC_tracer_reservoirs
 !use MOM_open_boundary, only : set_3D_OBC_data
 use MOM_grid_initialize, only : initialize_masks, set_grid_metrics
 use MOM_restart, only : restore_state, is_new_run, copy_restart_var, copy_restart_vector
@@ -164,6 +164,8 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   logical :: new_sim, rotate_index
   logical :: use_temperature, use_sponge, use_OBC, use_oda_incupd
   logical :: verify_restart_time
+  logical :: OBC_reservoir_restart_bug  ! If true, initialize the OBC tracer reservoirs without
+                         ! consideration of whether they may have values in the restart files.
   logical :: use_EOS     ! If true, density is calculated from T & S using an equation of state.
   logical :: depress_sfc ! If true, remove the mass that would be displaced
                          ! by a large surface pressure by squeezing the column.
@@ -627,9 +629,14 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   endif
 
   if (associated(OBC)) then
+    call get_param(PF, mdl, "OBC_RESERVOIR_RESTART_BUG", OBC_reservoir_restart_bug, &
+                 "If true, reset the OBC tracer reservoirs at startup without consideration of "//&
+                 "what may be in the restart files.", default=.true.)
+                 !### Change the default of OBC_RESERVOIR_RESTART_BUG to false.
     if (use_temperature) then
       call fill_temp_salt_segments(G, GV, US, OBC, tv)
-      call setup_OBC_tracer_reservoirs(G, GV, OBC)
+      if (new_sim .or. OBC_reservoir_restart_bug) call setup_OBC_tracer_reservoirs(G, GV, OBC)
+      if (OBC_reservoir_restart_bug) call set_initialized_OBC_tracer_reservoirs(G, OBC, restart_CS)
     endif
     ! This does halo updates for OBC-related fields, but it is not needed?
     ! call open_boundary_halo_update(G, OBC)
