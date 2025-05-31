@@ -25,7 +25,7 @@ use MOM_regridding,           only : regridding_CS
 use MOM_remapping,            only : remappingSchemesDoc, remappingDefaultScheme, remapping_CS
 use MOM_remapping,            only : initialize_remapping, remapping_core_h, end_remapping
 use MOM_restart,              only : register_restart_field, register_restart_pair
-use MOM_restart,              only : query_initialized, MOM_restart_CS
+use MOM_restart,              only : query_initialized, set_initialized, MOM_restart_CS
 use MOM_string_functions,     only : extract_word, remove_spaces, uppercase, lowercase
 use MOM_tidal_forcing,        only : astro_longitudes, astro_longitudes_init, eq_phase, nodal_fu, tidal_frequency
 use MOM_time_manager,         only : set_date, time_type, time_type_to_real, operator(-)
@@ -41,7 +41,7 @@ implicit none ; private
 public open_boundary_apply_normal_flow
 public open_boundary_config
 public open_boundary_setup_vert
-public open_boundary_init
+public open_boundary_halo_update
 public open_boundary_query
 public open_boundary_end
 public open_boundary_impose_normal_slope
@@ -68,6 +68,7 @@ public set_obgc_segments_props
 public setup_OBC_tracer_reservoirs
 public open_boundary_register_restarts
 public update_segment_tracer_reservoirs
+public set_initialized_OBC_tracer_reservoirs
 public update_OBC_ramp
 public remap_OBC_fields
 public rotate_OBC_config
@@ -375,6 +376,8 @@ type, public :: ocean_OBC_type
   real, pointer :: tres_y(:,:,:,:) => Null()     !< Array storage of tracer reservoirs for restarts,
                                                  !! in unscaled units [conc]
   logical :: debug                         !< If true, write verbose checksums for debugging purposes.
+  integer :: nk_OBC_debug = 0              !< The number of layers of OBC segment data to write out
+                                           !! in full when DEBUG_OBCS is true.
   real :: silly_h  !< A silly value of thickness outside of the domain that can be used to test
                    !! the independence of the OBCs to this external data [Z ~> m].
   real :: silly_u  !< A silly value of velocity outside of the domain that can be used to test
@@ -398,6 +401,8 @@ type, public :: ocean_OBC_type
   type(group_pass_type) :: pass_oblique  !< Structure for group halo pass
   logical :: exterior_OBC_bug   !< If true, use incorrect form of tracers exterior to OBCs.
   logical :: hor_index_bug      !< If true, recover set of a horizontal indexing bugs in the OBC code.
+  logical :: reservoir_restart_bug !< If true, reset the OBC tracer reservoirs at startup without
+                                   !! consideration of what may be in the restart files.
 end type ocean_OBC_type
 
 !> Control structure for open boundaries that read from files.
@@ -563,6 +568,10 @@ subroutine open_boundary_config(G, US, param_file, OBC)
                  "If true, do additional calls resetting certain values to help verify the correctness "//&
                  "of the open boundary condition code.", &
                  default=.false., old_name="DEBUG_OBC", debuggingParam=.true.)
+    call get_param(param_file, mdl, "NK_OBC_DEBUG", OBC%nk_OBC_debug, &
+                 "The number of layers of OBC segment data to write out in full "//&
+                 "when DEBUG_OBCS is true.", &
+                 default=0, debuggingParam=.true., do_not_log=.not.OBC%debug)
 
     call get_param(param_file, mdl, "OBC_SILLY_THICK", OBC%silly_h, &
                  "A silly value of thicknesses used outside of open boundary "//&
@@ -579,6 +588,10 @@ subroutine open_boundary_config(G, US, param_file, OBC)
     call get_param(param_file, mdl, "OBC_HOR_INDEXING_BUG", OBC%hor_index_bug, &
                  "If true, recover set of a horizontal indexing bugs in the OBC code.", &
                  default=.true.)
+    call get_param(param_file, mdl, "OBC_RESERVOIR_RESTART_BUG", OBC%reservoir_restart_bug, &
+                 "If true, reset the OBC tracer reservoirs at startup without consideration of "//&
+                 "what may be in the restart files.", default=.true., do_not_log=.true.)
+                 !### Change the default of OBC_RESERVOIR_RESTART_BUG to false.
     reentrant_x = .false.
     call get_param(param_file, mdl, "REENTRANT_X", reentrant_x, default=.true.)
     reentrant_y = .false.
@@ -1945,21 +1958,13 @@ subroutine parse_for_tracer_reservoirs(OBC, PF, use_temperature)
 
 end subroutine parse_for_tracer_reservoirs
 
-!> Initialize open boundary control structure and do any necessary rescaling of OBC
-!! fields that have been read from a restart file.
-subroutine open_boundary_init(G, GV, US, param_file, OBC, restart_CS)
+!> Do any necessary halo updates on OBC-related fields.
+subroutine open_boundary_halo_update(G, OBC)
   type(ocean_grid_type),   intent(in) :: G   !< Ocean grid structure
-  type(verticalGrid_type), intent(in) :: GV  !< Container for vertical grid information
-  type(unit_scale_type),   intent(in) :: US  !< A dimensional unit scaling type
-  type(param_file_type),   intent(in) :: param_file !< Parameter file handle
   type(ocean_OBC_type),    pointer    :: OBC !< Open boundary control structure
-  type(MOM_restart_CS),    intent(in) :: restart_CS !< Restart structure, data intent(inout)
 
   ! Local variables
-  integer :: i, j, k, isd, ied, jsd, jed, nz, m
-  integer :: IsdB, IedB, JsdB, JedB
-  isd  = G%isd  ; ied  = G%ied  ; jsd  = G%jsd  ; jed  = G%jed ; nz = GV%ke
-  IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
+  integer :: m
 
   if (.not.associated(OBC)) return
 
@@ -1989,7 +1994,7 @@ subroutine open_boundary_init(G, GV, US, param_file, OBC, restart_CS)
     enddo
   endif
 
-end subroutine open_boundary_init
+end subroutine open_boundary_halo_update
 
 logical function open_boundary_query(OBC, apply_open_OBC, apply_specified_OBC, apply_Flather_OBC, &
                                      apply_nudged_OBC, needs_ext_seg_data)
@@ -2232,49 +2237,98 @@ subroutine open_boundary_impose_land_mask(OBC, G, areaCu, areaCv, US)
 
 end subroutine open_boundary_impose_land_mask
 
-!> Make sure the OBC tracer reservoirs are initialized.
-subroutine setup_OBC_tracer_reservoirs(G, GV, OBC)
-  type(ocean_grid_type),      intent(in)    :: G   !< Ocean grid structure
-  type(verticalGrid_type),    intent(in)    :: GV  !< The ocean's vertical grid structure
-  type(ocean_OBC_type), target, intent(inout) :: OBC !< Open boundary control structure
+!> Initialize the tracer reservoirs values, perhaps only if they have not been set via a restart file.
+subroutine setup_OBC_tracer_reservoirs(G, GV, OBC, restart_CS)
+  type(ocean_grid_type),          intent(in)    :: G   !< Ocean grid structure
+  type(verticalGrid_type),        intent(in)    :: GV  !< The ocean's vertical grid structure
+  type(ocean_OBC_type), target,   intent(inout) :: OBC !< Open boundary control structure
+  type(MOM_restart_CS), optional, intent(in)    :: restart_CS !< MOM restart control structure
 
+  ! Local variables
   type(OBC_segment_type), pointer :: segment => NULL()
   real :: I_scale         ! The inverse of the scaling factor for the tracers.
                           ! For salinity the units would be [ppt S-1 ~> 1]
+  logical :: set_tres_x, set_tres_y
+  character(len=12) :: x_var_name, y_var_name
   integer :: i, j, k, m, n
 
-  do n=1,OBC%number_of_segments
-    segment=>OBC%segment(n)
-    if (associated(segment%tr_Reg)) then
-      if (segment%is_E_or_W) then
-        I = segment%HI%IsdB
-        do m=1,OBC%ntr
-          I_scale = 1.0 ; if (segment%tr_Reg%Tr(m)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(m)%scale
-          if (allocated(segment%tr_Reg%Tr(m)%tres)) then
-            do k=1,GV%ke
-              do j=segment%HI%jsd,segment%HI%jed
-                OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%t(i,j,k)
-              enddo
-            enddo
-          endif
-        enddo
+  do m=1,OBC%ntr
+
+    set_tres_x = associated(OBC%tres_x) .and. OBC%tracer_x_reservoirs_used(m)
+    set_tres_y = associated(OBC%tres_y) .and. OBC%tracer_y_reservoirs_used(m)
+
+    if (present(restart_CS)) then
+      ! Set the names of the reservoirs for this tracer in the restart file, and inquire whether
+      ! they have been initialized
+      if (modulo(G%HI%turns, 2) == 0) then
+        write(x_var_name,'("tres_x_",I3.3)') m
+        write(y_var_name,'("tres_y_",I3.3)') m
       else
-        J = segment%HI%JsdB
-        do m=1,OBC%ntr
-          I_scale = 1.0 ; if (segment%tr_Reg%Tr(m)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(m)%scale
-          if (allocated(segment%tr_Reg%Tr(m)%tres)) then
-            do k=1,GV%ke
-              do i=segment%HI%isd,segment%HI%ied
-                OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%t(i,J,k)
-              enddo
-            enddo
-          endif
-        enddo
+        write(x_var_name,'("tres_y_",I3.3)') m
+        write(y_var_name,'("tres_x_",I3.3)') m
       endif
+      if (set_tres_x) set_tres_x = .not.query_initialized(OBC%tres_x, x_var_name, restart_CS)
+      if (set_tres_y) set_tres_y = .not.query_initialized(OBC%tres_y, y_var_name, restart_CS)
     endif
+
+    do n=1,OBC%number_of_segments
+      segment => OBC%segment(n)
+      if (associated(segment%tr_Reg)) then ; if (allocated(segment%tr_Reg%Tr(m)%tres)) then
+        I_scale = 1.0 ; if (segment%tr_Reg%Tr(m)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(m)%scale
+
+        if (segment%is_E_or_W .and. set_tres_x) then
+          I = segment%HI%IsdB
+          if (segment%tr_Reg%Tr(m)%is_initialized) then
+            do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
+              OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,j,k)
+            enddo ; enddo
+          else
+            do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
+              OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%t(i,j,k)
+            enddo ; enddo
+          endif
+        elseif (segment%is_N_or_S .and. set_tres_y) then
+          J = segment%HI%JsdB
+          if (segment%tr_Reg%Tr(m)%is_initialized) then
+            do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
+              OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,J,k)
+            enddo ; enddo
+          else
+            do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
+              OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%t(i,J,k)
+            enddo ; enddo
+          endif
+        endif
+      endif ; endif
+    enddo
   enddo
 
 end subroutine setup_OBC_tracer_reservoirs
+
+!> Record that the tracer reservoirs have been initialized so that their values are not reset later.
+subroutine set_initialized_OBC_tracer_reservoirs(G, OBC, restart_CS)
+  type(ocean_grid_type),          intent(in)    :: G   !< Ocean grid structure
+  type(ocean_OBC_type),           intent(in)    :: OBC !< Open boundary control structure
+  type(MOM_restart_CS),           intent(inout) :: restart_CS !< MOM restart control structure
+  character(len=12) :: x_var_name, y_var_name
+  integer :: i, j, k, m, n
+
+  do m=1,OBC%ntr
+    ! Set the names of the reservoirs for this tracer in the restart file
+    if (modulo(G%HI%turns, 2) == 0) then
+      write(x_var_name,'("tres_x_",I3.3)') m
+      write(y_var_name,'("tres_y_",I3.3)') m
+    else
+      write(x_var_name,'("tres_y_",I3.3)') m
+      write(y_var_name,'("tres_x_",I3.3)') m
+    endif
+
+    if (OBC%tracer_x_reservoirs_used(m)) call set_initialized(OBC%tres_x, x_var_name, restart_CS)
+    if (OBC%tracer_y_reservoirs_used(m)) call set_initialized(OBC%tres_y, y_var_name, restart_CS)
+  enddo
+
+end subroutine set_initialized_OBC_tracer_reservoirs
+
 
 !> Apply radiation conditions to 3D u,v at open boundaries
 subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US, dt)
@@ -2325,6 +2379,9 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
 
   if (.not.(OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally)) &
     return
+
+  if (OBC%debug) call chksum_OBC_segments(OBC, G, GV, US, OBC%nk_OBC_debug)
+
 
   eps = 1.0e-20*US%m_s_to_L_T**2
 
@@ -4894,8 +4951,7 @@ subroutine segment_tracer_registry_end(Reg)
   endif
 end subroutine segment_tracer_registry_end
 
-!> Register temperature and salinity tracers that are active on an OBC segment.
-!! tracer inflow values are specified.
+!> Registers the temperature and salinity in the segment tracer registry.
 subroutine register_temp_salt_segments(GV, US, OBC, tr_Reg, param_file)
   type(verticalGrid_type),    intent(in)    :: GV         !< ocean vertical grid structure
   type(unit_scale_type),      intent(in)    :: US         !< Unit scaling type
@@ -4903,7 +4959,7 @@ subroutine register_temp_salt_segments(GV, US, OBC, tr_Reg, param_file)
   type(tracer_registry_type), pointer       :: tr_Reg     !< Tracer registry
   type(param_file_type),      intent(in)    :: param_file !< file to parse for  model parameter values
 
-! Local variables
+  ! Local variables
   integer :: n, ntr_id
   character(len=32) :: name
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
@@ -4970,12 +5026,13 @@ subroutine get_obgc_segments_props(node, tr_name,obc_src_file_name,obc_src_field
   node => node%next
 end subroutine get_obgc_segments_props
 
+!> Registers a named tracer in the segment tracer registries for the OBC segments on which it is active.
 subroutine register_obgc_segments(GV, OBC, tr_Reg, param_file, tr_name)
   type(verticalGrid_type),    intent(in)    :: GV         !< ocean vertical grid structure
   type(ocean_OBC_type),       pointer       :: OBC        !< Open boundary structure
   type(tracer_registry_type), pointer       :: tr_Reg     !< Tracer registry
   type(param_file_type),      intent(in)    :: param_file !< file to parse for  model parameter values
-  character(len=*),           intent(in)    :: tr_name!< Tracer name
+  character(len=*),           intent(in)    :: tr_name    !< Tracer name
 ! Local variables
   integer :: isd, ied, IsdB, IedB, jsd, jed, JsdB, JedB, nz, nf, ntr_id, fd_id
   integer :: i, j, k, n, m
@@ -4998,6 +5055,7 @@ subroutine register_obgc_segments(GV, OBC, tr_Reg, param_file, tr_name)
 
 end subroutine register_obgc_segments
 
+!> Stores the interior tracer values on the segment, and in some cases also sets the tracer reservoir values.
 subroutine fill_obgc_segments(G, GV, OBC, tr_ptr, tr_name)
   type(ocean_grid_type),      intent(inout) :: G      !< Ocean grid structure
   type(verticalGrid_type),    intent(in)    :: GV     !< ocean vertical grid structure
@@ -5017,7 +5075,7 @@ subroutine fill_obgc_segments(G, GV, OBC, tr_ptr, tr_name)
   do n=1, OBC%number_of_segments
     segment => OBC%segment(n)
     if (.not. segment%on_pe) cycle
-    nt=get_tracer_index(segment,tr_name)
+    nt = get_tracer_index(segment, tr_name)
     if (nt < 0) then
       call MOM_error(FATAL,"fill_obgc_segments: Did not find tracer "// tr_name)
     endif
@@ -5025,40 +5083,65 @@ subroutine fill_obgc_segments(G, GV, OBC, tr_ptr, tr_name)
     jsd = segment%HI%jsd ; jed = segment%HI%jed
     IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
     JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
-    I_scale = 1.0
-    if (segment%tr_Reg%Tr(nt)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(nt)%scale
-    ! Fill with Tracer values
-    if (segment%is_E_or_W) then
-      I=segment%HI%IsdB
+
+    ! Fill segments with Tracer values
+    if (segment%direction == OBC_DIRECTION_W) then
+      I = segment%HI%IsdB
       do k=1,nz ; do j=segment%HI%jsd,segment%HI%jed
-        if (segment%direction == OBC_DIRECTION_W) then
-          segment%tr_Reg%Tr(nt)%t(I,j,k) = tr_ptr(i+1,j,k)
-        else
-          segment%tr_Reg%Tr(nt)%t(I,j,k) = tr_ptr(i,j,k)
-        endif
-        OBC%tres_x(I,j,k,nt) = I_scale * segment%tr_Reg%Tr(nt)%t(I,j,k)
+        segment%tr_Reg%Tr(nt)%t(I,j,k) = tr_ptr(i+1,j,k)
       enddo ; enddo
-    else
-      J=segment%HI%JsdB
+    elseif (segment%direction == OBC_DIRECTION_E) then
+      I = segment%HI%IsdB
+      do k=1,nz ; do j=segment%HI%jsd,segment%HI%jed
+        segment%tr_Reg%Tr(nt)%t(I,j,k) = tr_ptr(i,j,k)
+      enddo ; enddo
+    elseif (segment%direction == OBC_DIRECTION_S) then
+      J = segment%HI%JsdB
       do k=1,nz ; do i=segment%HI%isd,segment%HI%ied
-        if (segment%direction == OBC_DIRECTION_S) then
-          segment%tr_Reg%Tr(nt)%t(i,J,k) = tr_ptr(i,j+1,k)
-        else
-          segment%tr_Reg%Tr(nt)%t(i,J,k) = tr_ptr(i,j,k)
-        endif
-        OBC%tres_y(i,J,k,nt) = I_scale * segment%tr_Reg%Tr(nt)%t(i,J,k)
+        segment%tr_Reg%Tr(nt)%t(i,J,k) = tr_ptr(i,j+1,k)
+      enddo ; enddo
+    elseif (segment%direction == OBC_DIRECTION_N) then
+      J = segment%HI%JsdB
+      do k=1,nz ; do i=segment%HI%isd,segment%HI%ied
+        segment%tr_Reg%Tr(nt)%t(i,J,k) = tr_ptr(i,j,k)
       enddo ; enddo
     endif
-    segment%tr_Reg%Tr(nt)%tres(:,:,:) = segment%tr_Reg%Tr(nt)%t(:,:,:)
-  enddo
+
+    if (.not.segment%tr_Reg%Tr(n)%is_initialized) &
+      segment%tr_Reg%Tr(nt)%tres(:,:,:) = segment%tr_Reg%Tr(nt)%t(:,:,:)
+
+    if (OBC%reservoir_restart_bug) then
+      ! OBC%tres_x and OBC%tres_y should not be set here, but in a subsequent call to setup_OBC_tracer_reservoirs.
+      I_scale = 1.0
+      if (segment%tr_Reg%Tr(nt)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(nt)%scale
+      if (segment%is_E_or_W) then
+        if (associated(OBC%tres_x)) then
+          I = segment%HI%IsdB
+          do k=1,nz ; do j=segment%HI%jsd,segment%HI%jed
+            OBC%tres_x(I,j,k,nt) = I_scale * segment%tr_Reg%Tr(nt)%tres(I,j,k)
+          enddo ; enddo
+        endif
+      else  ! segment%is_N_or_S
+        if (associated(OBC%tres_y)) then
+          J = segment%HI%JsdB
+          do k=1,nz ; do i=segment%HI%isd,segment%HI%ied
+            OBC%tres_y(i,J,k,nt) = I_scale * segment%tr_Reg%Tr(nt)%tres(i,J,k)
+          enddo ; enddo
+        endif
+      endif
+    endif
+
+  enddo ! End of loop over segments.
+
 end subroutine fill_obgc_segments
 
+!> Set the value of temperatures and salinities on OBC segments
 subroutine fill_temp_salt_segments(G, GV, US, OBC, tv)
   type(ocean_grid_type),   intent(in)    :: G   !< Ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV  !< ocean vertical grid structure
   type(unit_scale_type),   intent(in)    :: US  !< Unit scaling
   type(ocean_OBC_type),    pointer       :: OBC !< Open boundary structure
-  type(thermo_var_ptrs),   intent(inout) :: tv  !< Thermodynamics structure
+  type(thermo_var_ptrs),   intent(in)    :: tv  !< Thermodynamics structure
 
   integer :: isd, ied, IsdB, IedB, jsd, jed, JsdB, JedB, n, nz
   integer :: i, j, k
@@ -5067,9 +5150,6 @@ subroutine fill_temp_salt_segments(G, GV, US, OBC, tv)
   if (.not. associated(OBC)) return
   if (.not. associated(tv%T) .and. associated(tv%S)) return
   ! Both temperature and salinity fields
-
-  call pass_var(tv%T, G%Domain)
-  call pass_var(tv%S, G%Domain)
 
   nz = GV%ke
 
@@ -5106,11 +5186,12 @@ subroutine fill_temp_salt_segments(G, GV, US, OBC, tv)
         endif
       enddo ; enddo
     endif
-    segment%tr_Reg%Tr(1)%tres(:,:,:) = segment%tr_Reg%Tr(1)%t(:,:,:)
-    segment%tr_Reg%Tr(2)%tres(:,:,:) = segment%tr_Reg%Tr(2)%t(:,:,:)
+    if (.not.segment%tr_Reg%Tr(1)%is_initialized) &
+      segment%tr_Reg%Tr(1)%tres(:,:,:) = segment%tr_Reg%Tr(1)%t(:,:,:)
+    if (.not.segment%tr_Reg%Tr(2)%is_initialized) &
+      segment%tr_Reg%Tr(2)%tres(:,:,:) = segment%tr_Reg%Tr(2)%t(:,:,:)
   enddo
 
-  call setup_OBC_tracer_reservoirs(G, GV, OBC)
 end subroutine fill_temp_salt_segments
 
 !> Find the region outside of all open boundary segments and
@@ -6279,36 +6360,20 @@ end function rotate_OBC_segment_direction
 
 
 !> Initialize the segments and field-related data of a rotated OBC.
-subroutine rotate_OBC_init(OBC_in, G, GV, US, param_file, tv, restart_CS, OBC)
+subroutine rotate_OBC_init(OBC_in, G, OBC)
   type(ocean_OBC_type), intent(in) :: OBC_in            !< OBC on input map
   type(ocean_grid_type), intent(in) :: G                !< Rotated grid metric
-  type(verticalGrid_type), intent(in) :: GV             !< Vertical grid
-  type(unit_scale_type), intent(in) :: US               !< Unit scaling
-  type(param_file_type), intent(in) :: param_file       !< Input parameters
-  type(thermo_var_ptrs), intent(inout) :: tv            !< Tracer fields
-  type(MOM_restart_CS), intent(in) :: restart_CS        !< Restart CS
   type(ocean_OBC_type), pointer, intent(inout) :: OBC   !< Rotated OBC
 
-  logical :: use_temperature
-  integer :: l
+  integer :: l_seg
 
   ! update_OBC may have been updated during initialization.
   OBC%update_OBC = OBC_in%update_OBC
 
-  call get_param(param_file, "MOM", "ENABLE_THERMODYNAMICS", use_temperature, &
-                 "If true, Temperature and salinity are used as state "//&
-                 "variables.", default=.true., do_not_log=.true.)
-
-  if (use_temperature) &
-    call fill_temp_salt_segments(G, GV, US, OBC, tv)
-
-  do l = 1, OBC%number_of_segments
-    call rotate_OBC_segment_data(OBC_in%segment(l), OBC%segment(l), G%HI%turns)
+  do l_seg = 1, OBC%number_of_segments
+    call rotate_OBC_segment_data(OBC_in%segment(l_seg), OBC%segment(l_seg), G%HI%turns)
   enddo
 
-  ! There is already a call to setup_OBC_tracer_reservoirs in fill_temp_salt_segments
-  call setup_OBC_tracer_reservoirs(G, GV, OBC)
-  call open_boundary_init(G, GV, US, param_file, OBC, restart_CS)
 end subroutine rotate_OBC_init
 
 
@@ -6460,7 +6525,7 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
       call rotate_array(segment_in%tr_Reg%tr(n)%t, turns, segment%tr_Reg%tr(n)%t)
       call rotate_array(segment_in%tr_Reg%tr(n)%tres, turns, segment%tr_Reg%tr(n)%tres)
       ! Testing this to see if it works for contant tres values. Probably wrong otherwise.
-      segment%tr_Reg%Tr(n)%is_initialized=.true.
+      segment%tr_Reg%Tr(n)%is_initialized = segment_in%tr_Reg%Tr(n)%is_initialized
     enddo
   endif
 

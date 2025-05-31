@@ -113,9 +113,11 @@ use MOM_mixed_layer_restrat,   only : mixedlayer_restrat_register_restarts
 use MOM_obsolete_diagnostics,  only : register_obsolete_diagnostics
 use MOM_open_boundary,         only : ocean_OBC_type, OBC_registry_type
 use MOM_open_boundary,         only : register_temp_salt_segments, update_segment_tracer_reservoirs
+use MOM_open_boundary,         only : setup_OBC_tracer_reservoirs, fill_temp_salt_segments
 use MOM_open_boundary,         only : open_boundary_register_restarts, remap_OBC_fields
 use MOM_open_boundary,         only : open_boundary_setup_vert, update_OBC_segment_data
-use MOM_open_boundary,         only : rotate_OBC_config, rotate_OBC_init, write_OBC_info, chksum_OBC_segments
+use MOM_open_boundary,         only : rotate_OBC_config, rotate_OBC_init, open_boundary_halo_update
+use MOM_open_boundary,         only : write_OBC_info, chksum_OBC_segments
 use MOM_porous_barriers,       only : porous_widths_layer, porous_widths_interface, porous_barriers_init
 use MOM_porous_barriers,       only : porous_barrier_CS
 use MOM_set_visc,              only : set_viscous_BBL, set_viscous_ML, set_visc_CS
@@ -1284,7 +1286,7 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
       endif
     endif
   endif
-  if (CS%debug_OBCs .and. associated(CS%OBC)) call chksum_OBC_segments(CS%OBC, G, GV, US, 3)
+  ! if (CS%debug_OBCs .and. associated(CS%OBC)) call chksum_OBC_segments(CS%OBC, G, GV, US, 3)
 
   if (CS%do_dynamics .and. CS%split) then !--------------------------- start SPLIT
     ! This section uses a split time stepping scheme for the dynamic equations,
@@ -2321,6 +2323,8 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   logical :: semi_Boussinesq   ! If true, this run is partially non-Boussinesq
   logical :: use_KPP           ! If true, diabatic is using KPP vertical mixing
   logical :: MLE_use_PBL_MLD   ! If true, use stored boundary layer depths for submesoscale restratification.
+  logical :: OBC_reservoir_restart_bug  ! If true, initialize the OBC tracer reservoirs without
+                               ! consideration of whether they may have values in the restart files.
   integer :: nkml, nkbl, verbosity, write_geom, number_of_OBC_segments
   integer :: dynamics_stencil  ! The computational stencil for the calculations
                                ! in the dynamic core.
@@ -2716,6 +2720,10 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "If true, uses the wrong calendar time for diabatic processes, as was "//&
                  "done in MOM6 versions prior to February 2018. This is not recommended.", &
                  default=.false.)
+  call get_param(param_file, "MOM", "OBC_RESERVOIR_RESTART_BUG", OBC_reservoir_restart_bug, &
+                 "If true, reset the OBC tracer reservoirs at startup without consideration of "//&
+                 "what may be in the restart files.", default=.true., do_not_log=.true.)
+                 !### Change the default of OBC_RESERVOIR_RESTART_BUG to false.
 
   call get_param(param_file, "MOM", "SAVE_INITIAL_CONDS", save_IC, &
                  "If true, write the initial conditions to a file given "//&
@@ -3260,7 +3268,13 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     endif
 
     if (associated(OBC_in)) then
-      call rotate_OBC_init(OBC_in, G, GV, US, param_file, CS%tv, restart_CSp, CS%OBC)
+      if (use_temperature) then
+        call pass_var(CS%tv%T, G%Domain)
+        call pass_var(CS%tv%S, G%Domain)
+        call fill_temp_salt_segments(G, GV, US, CS%OBC, CS%tv)
+      endif
+
+      call rotate_OBC_init(OBC_in, G, CS%OBC)
       call calc_derived_thermo(CS%tv, CS%h, G, GV, US)
       call update_OBC_segment_data(G, GV, US, CS%OBC, CS%tv, CS%h, Time)
     endif
@@ -3274,7 +3288,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     endif
     if (use_ice_shelf) &
       deallocate(frac_shelf_in,mass_shelf_in)
-  else
+  else  ! The model is being run without grid rotation.  This is true of all production runs.
     if (use_ice_shelf) then
       call initialize_ice_shelf(param_file, G, Time, ice_shelf_CSp, diag_ptr, Time_init, &
                                dirs%output_directory, calve_ice_shelf_bergs=point_calving)
@@ -3343,8 +3357,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
 
   if (ALE_remap_init_conds(CS%ALE_CSp) .and. .not. query_initialized(CS%h,"h",restart_CSp)) then
     ! This block is controlled by the ALE parameter REMAP_AFTER_INITIALIZATION.
-    ! \todo This block exists for legacy reasons and we should phase it out of
-    ! all examples. !###
+    ! \todo This block exists for legacy reasons and we should phase it out of all examples. !###
     if (CS%debug) then
       call uvchksum("Pre ALE adjust init cond [uv]", CS%u, CS%v, G%HI, haloshift=1, unscale=US%L_T_to_m_s)
       call hchksum(CS%h,"Pre ALE adjust init cond h", G%HI, haloshift=1, unscale=GV%H_to_MKS)
@@ -3655,6 +3668,15 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                               tracer_flow_CSp=CS%tracer_flow_CSp, tracer_Reg=CS%tracer_Reg, &
                               tv=CS%tv, x_before_y=(MODULO(first_direction,2)==0), debug=CS%debug )
     call register_diags_offline_transport(Time, CS%diag, CS%offline_CSp, GV, US)
+  endif
+
+  if (associated(CS%OBC)) then
+    ! At this point any information related to the tracer reservoirs has either been read from
+    ! the restart file or has been specified in the segments.  Initialize the tracer reservior
+    ! values from the segments if they have not been set via the restart file.
+    if ((.not.OBC_reservoir_restart_bug) .or. CS%rotate_index) &
+      call setup_OBC_tracer_reservoirs(G, GV, CS%OBC, restart_CSp)
+    call open_boundary_halo_update(G, CS%OBC)
   endif
 
   call register_obsolete_diagnostics(param_file, CS%diag)
