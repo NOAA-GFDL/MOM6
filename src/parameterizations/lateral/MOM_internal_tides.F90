@@ -516,6 +516,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     enddo ; enddo
   endif
 
+  call complete_group_pass(pass_test, G%domain)
+
   ! TKE_slope_loss need to be accumulated but since it is
   ! passed as inout and accumulated within propagate_x/propagate_y
   ! it does not need temp array for accumulation
@@ -562,8 +564,6 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       enddo ; enddo
     enddo ; enddo ; enddo
   endif
-
-  call complete_group_pass(pass_test, G%domain)
 
   ! Set the halo size to work on, using similar logic to that used in propagate.  This may need
   ! to be adjusted depending on the advection scheme and whether teleport is used.
@@ -661,6 +661,10 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       enddo ; enddo
     enddo ; enddo ; enddo
   endif
+
+  do m=1,CS%nMode ; do fr=1,CS%Nfreq
+    call pass_var(CS%En(:,:,:,fr,m), G%domain)
+  enddo ; enddo
 
   enddo ! end subcycling
 
