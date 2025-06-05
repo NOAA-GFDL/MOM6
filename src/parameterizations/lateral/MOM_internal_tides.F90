@@ -12,7 +12,7 @@ use MOM_diag_mediator, only : disable_averaging, enable_averages
 use MOM_diag_mediator, only : register_diag_field, diag_ctrl, safe_alloc_ptr
 use MOM_diag_mediator, only : axes_grp, define_axes_group
 use MOM_domains, only       : AGRID, To_South, To_West, To_All, CGRID_NE
-use MOM_domains, only       : create_group_pass, pass_var, pass_vector
+use MOM_domains, only       : create_group_pass, do_group_pass, pass_var, pass_vector
 use MOM_domains, only       : group_pass_type, start_group_pass, complete_group_pass
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, MOM_mesg, is_root_pe
 use MOM_file_parser, only   : read_param, get_param, log_param, log_version, param_file_type
@@ -47,7 +47,7 @@ type, public :: int_tide_CS ; private
   integer :: nMode = 1       !< The number of internal tide vertical modes
   integer :: nAngle = 24     !< The number of internal tide angular orientations
   integer :: energized_angle = -1 !< If positive, only this angular band is energized for debugging purposes
-  integer :: subcycles = 1   !< If > 1, number of times the refraction/propagation is called within a timestep
+  real    :: dt_itides       !< The timestep for internal tides ray-tracing [s ~> T]
   real    :: uniform_test_cg !< Uniform group velocity of internal tide
                              !! for testing internal tides [L T-1 ~> m s-1]
   logical :: corner_adv      !< If true, use a corner advection rather than PPM.
@@ -152,6 +152,7 @@ type, public :: int_tide_CS ; private
   real :: En_underflow  !< A minuscule amount of energy [H Z2 T-2 ~> m3 s-2 or J m-2]
   integer :: En_restart_power !< A power factor of 2 by which to multiply the energy in restart [nondim]
   type(time_type), pointer :: Time => NULL() !< A pointer to the model's clock.
+  type(group_pass_type) :: pass_En !< Pass 5d array Energy as a group of 3d arrays
   character(len=200) :: inputdir !< directory to look for coastline angle file
   real, allocatable, dimension(:,:,:,:) :: decay_rate_2d !< rate at which internal tide energy is
                                                          !! lost to the interior ocean internal wave field
@@ -315,7 +316,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   real :: I_D_here ! The inverse of the local water column thickness [H-1 ~> m-1 or m2 kg-1]
   real :: I_mass   ! The inverse of the local water mass [R-1 Z-1 ~> m2 kg-1]
   real :: I_dt     ! The inverse of the timestep [T-1 ~> s-1]
-  real :: dt_sub   ! The timestep divided by the number of subcycles [T ~> s]
+  real :: dt_sub   ! The effective timestep use to subcycle the propagation [T ~> s]
   real :: En_restart_factor ! A multiplicative factor of the form 2**En_restart_power [nondim]
   real :: I_En_restart_factor ! The inverse of the restart mult factor [nondim]
   real :: freq2    ! The frequency squared [T-2 ~> s-2]
@@ -341,7 +342,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   integer :: En_halo_ij_stencil ! The halo size needed for energy advection
   integer :: a, m, fr, i, j, k, is, ie, js, je, isd, ied, jsd, jed, nAngle, nc
   integer :: id_g, jd_g         ! global (decomp-invar) indices (for debugging)
-  type(group_pass_type), save :: pass_test, pass_En
+  integer :: subcycles           ! number of subcycles for the propagation
+  type(group_pass_type), save :: pass_test
   type(time_type) :: time_end
   logical:: avg_enabled
 
@@ -357,7 +359,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   I_dt = 1.0 / dt
   En_restart_factor = 2**CS%En_restart_power
   I_En_restart_factor = 1.0 / En_restart_factor
-  dt_sub = dt/CS%subcycles
+  subcycles = CEILING(dt/CS%dt_itides - 0.0001)
+  dt_sub = dt / subcycles
 
   ! initialize local arrays
   TKE_itidal_input(:,:,:) = 0.
@@ -524,147 +527,145 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   CS%TKE_slope_loss(:,:,:,fr,m) = 0.
 
   ! Start subcycling
-  do nc=1,CS%subcycles
+  do nc=1,subcycles
 
-  ! Apply half the refraction.
-  if (CS%apply_refraction) then
-    do m=1,CS%nMode ; do fr=1,CS%nFreq
-      call refract(CS%En(:,:,:,fr,m), cn(:,:,m), CS%frequency(fr), 0.5*dt_sub, &
-                   G, US, CS%nAngle, CS%use_PPMang)
-    enddo ; enddo
-  endif
-  ! A this point, CS%En is only valid on the computational domain.
-
-  if (CS%force_posit_En) then
-    do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
-      do j=jsd,jed ; do i=isd,ied
-        if (CS%En(i,j,a,fr,m)<0.0) then
-          CS%En(i,j,a,fr,m) = 0.0
-        endif
+    ! Apply half the refraction.
+    if (CS%apply_refraction) then
+      do m=1,CS%nMode ; do fr=1,CS%nFreq
+        call refract(CS%En(:,:,:,fr,m), cn(:,:,m), CS%frequency(fr), 0.5*dt_sub, &
+                     G, US, CS%nAngle, CS%use_PPMang)
       enddo ; enddo
-    enddo ; enddo ; enddo
-  endif
-
-  if (CS%debug) then
-    call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af refr", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
-    do m=1,CS%nMode ; do fr=1,CS%Nfreq
-      call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after 1/2 refraction')
-      if (is_root_pe()) write(stdout,'(A,E18.10)') 'prop_int_tide: after 1/2 refraction', CS%En_sum
-    enddo ; enddo
-    ! Check for En<0 - for debugging, delete later
-    do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
-      do j=js,je ; do i=is,ie
-        if (CS%En(i,j,a,fr,m)<0.0) then
-          id_g = i + G%idg_offset ; jd_g = j + G%jdg_offset ! for debugging
-          write(mesg,*) 'After first refraction: En<0.0 at ig=', id_g, ', jg=', jd_g, &
-                        'En=', HZ2_T2_to_J_m2*CS%En(i,j,a,fr,m)
-          call MOM_error(WARNING, "propagate_int_tide: "//trim(mesg))
-          !call MOM_error(FATAL, "propagate_int_tide: stopped due to negative energy.")
-        endif
+    endif
+    ! A this point, CS%En is only valid on the computational domain.
+  
+    if (CS%force_posit_En) then
+      do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
+        do j=jsd,jed ; do i=isd,ied
+          if (CS%En(i,j,a,fr,m)<0.0) then
+            CS%En(i,j,a,fr,m) = 0.0
+          endif
+        enddo ; enddo
+      enddo ; enddo ; enddo
+    endif
+  
+    if (CS%debug) then
+      call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af refr", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
+      do m=1,CS%nMode ; do fr=1,CS%Nfreq
+        call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after 1/2 refraction')
+        if (is_root_pe()) write(stdout,'(A,E18.10)') 'prop_int_tide: after 1/2 refraction', CS%En_sum
       enddo ; enddo
-    enddo ; enddo ; enddo
-  endif
-
-  ! Set the halo size to work on, using similar logic to that used in propagate.  This may need
-  ! to be adjusted depending on the advection scheme and whether teleport is used.
-  if (CS%upwind_1st) then ; En_halo_ij_stencil = 2
-  else ; En_halo_ij_stencil = 3 ; endif
-
-  ! Rotate points in the halos as necessary.
-  call correct_halo_rotation(CS%En, test, G, CS%nAngle, halo=En_halo_ij_stencil)
-
-  if (CS%debug) then
-    call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af halo R", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
-    do m=1,CS%nMode ; do fr=1,CS%Nfreq
-      call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after correct halo rotation')
-      if (is_root_pe()) write(stdout,'(A,E18.10)') 'prop_int_tide: after correct halo rotation', CS%En_sum
-    enddo ; enddo
-  endif
-
-  ! Propagate the waves.
-  do m=1,CS%nMode ; do fr=1,CS%Nfreq
-
-    if (CS%apply_propagation) then
-      call propagate(CS%En(:,:,:,fr,m), cn(:,:,m), CS%frequency(fr), dt_sub, &
-                     G, GV, US, CS, CS%NAngle, CS%TKE_slope_loss(:,:,:,fr,m))
-      endif
-  enddo ; enddo
-
-  if (CS%force_posit_En) then
-    do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
-      do j=jsd,jed ; do i=isd,ied
-        if (CS%En(i,j,a,fr,m)<0.0) then
-          CS%En(i,j,a,fr,m) = 0.0
-        endif
-      enddo ; enddo
-    enddo ; enddo ; enddo
-  endif
-
-  if (CS%debug) then
-    call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af prop", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
-    do m=1,CS%nMode ; do fr=1,CS%Nfreq
-      call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after propagate')
-      if (is_root_pe()) write(stdout,'(A,E18.10)') 'prop_int_tide: after propagate', CS%En_sum
-    enddo ; enddo
-    ! Check for En<0 - for debugging, delete later
-    do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
-      do j=js,je ; do i=is,ie
-        if (CS%En(i,j,a,fr,m)<0.0) then
-          id_g = i + G%idg_offset ; jd_g = j + G%jdg_offset
-          if (abs(CS%En(i,j,a,fr,m))>CS%En_check_tol) then ! only print if large
-            write(mesg,*)  'After propagation: En<0.0 at ig=', id_g, ', jg=', jd_g, &
-                           'En=', HZ2_T2_to_J_m2*CS%En(i,j,a,fr,m)
+      ! Check for En<0 - for debugging, delete later
+      do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
+        do j=js,je ; do i=is,ie
+          if (CS%En(i,j,a,fr,m)<0.0) then
+            id_g = i + G%idg_offset ; jd_g = j + G%jdg_offset ! for debugging
+            write(mesg,*) 'After first refraction: En<0.0 at ig=', id_g, ', jg=', jd_g, &
+                          'En=', HZ2_T2_to_J_m2*CS%En(i,j,a,fr,m)
             call MOM_error(WARNING, "propagate_int_tide: "//trim(mesg))
-            ! RD propagate produces very little negative energy (diff 2 large numbers), needs fix
             !call MOM_error(FATAL, "propagate_int_tide: stopped due to negative energy.")
           endif
-        endif
+        enddo ; enddo
+      enddo ; enddo ; enddo
+    endif
+  
+    ! Set the halo size to work on, using similar logic to that used in propagate.  This may need
+    ! to be adjusted depending on the advection scheme and whether teleport is used.
+    if (CS%upwind_1st) then ; En_halo_ij_stencil = 2
+    else ; En_halo_ij_stencil = 3 ; endif
+  
+    ! Rotate points in the halos as necessary.
+    call correct_halo_rotation(CS%En, test, G, CS%nAngle, halo=En_halo_ij_stencil)
+  
+    if (CS%debug) then
+      call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af halo R", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
+      do m=1,CS%nMode ; do fr=1,CS%Nfreq
+        call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after correct halo rotation')
+        if (is_root_pe()) write(stdout,'(A,E18.10)') 'prop_int_tide: after correct halo rotation', CS%En_sum
       enddo ; enddo
-    enddo ; enddo ; enddo
-  endif
-
-  if (CS%apply_refraction) then
-    ! Apply the other half of the refraction.
+    endif
+  
+    ! Propagate the waves.
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
-      call refract(CS%En(:,:,:,fr,m), cn(:,:,m), CS%frequency(fr), 0.5*dt_sub, &
-                   G, US, CS%NAngle, CS%use_PPMang)
-    enddo ; enddo
-    ! A this point, CS%En is only valid on the computational domain.
-  endif
-
-  if (CS%force_posit_En) then
-    do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
-      do j=jsd,jed ; do i=isd,ied
-        if (CS%En(i,j,a,fr,m)<0.0) then
-          CS%En(i,j,a,fr,m) = 0.0
+  
+      if (CS%apply_propagation) then
+        call propagate(CS%En(:,:,:,fr,m), cn(:,:,m), CS%frequency(fr), dt_sub, &
+                       G, GV, US, CS, CS%NAngle, CS%TKE_slope_loss(:,:,:,fr,m))
         endif
-      enddo ; enddo
-    enddo ; enddo ; enddo
-  endif
-
-  if (CS%debug) then
-    call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af refr2", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
-    do m=1,CS%nMode ; do fr=1,CS%Nfreq
-      call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after 2/2 refraction')
-      if (is_root_pe()) write(stdout,'(A,E18.10)') 'prop_int_tide: after 2/2 refraction', CS%En_sum
     enddo ; enddo
-    ! Check for En<0 - for debugging, delete later
-    do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
-      do j=js,je ; do i=is,ie
-        if (CS%En(i,j,a,fr,m)<0.0) then
-          id_g = i + G%idg_offset ; jd_g = j + G%jdg_offset ! for debugging
-          write(mesg,*) 'After second refraction: En<0.0 at ig=', id_g, ', jg=', jd_g, &
-                        'En=', HZ2_T2_to_J_m2*CS%En(i,j,a,fr,m)
-          call MOM_error(WARNING, "propagate_int_tide: "//trim(mesg))
-          !call MOM_error(FATAL, "propagate_int_tide: stopped due to negative energy.")
-        endif
+  
+    if (CS%force_posit_En) then
+      do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
+        do j=jsd,jed ; do i=isd,ied
+          if (CS%En(i,j,a,fr,m)<0.0) then
+            CS%En(i,j,a,fr,m) = 0.0
+          endif
+        enddo ; enddo
+      enddo ; enddo ; enddo
+    endif
+  
+    if (CS%debug) then
+      call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af prop", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
+      do m=1,CS%nMode ; do fr=1,CS%Nfreq
+        call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after propagate')
+        if (is_root_pe()) write(stdout,'(A,E18.10)') 'prop_int_tide: after propagate', CS%En_sum
       enddo ; enddo
-    enddo ; enddo ; enddo
-  endif
-
-  do m=1,CS%nMode ; do fr=1,CS%Nfreq
-    call pass_var(CS%En(:,:,:,fr,m), G%domain)
-  enddo ; enddo
+      ! Check for En<0 - for debugging, delete later
+      do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
+        do j=js,je ; do i=is,ie
+          if (CS%En(i,j,a,fr,m)<0.0) then
+            id_g = i + G%idg_offset ; jd_g = j + G%jdg_offset
+            if (abs(CS%En(i,j,a,fr,m))>CS%En_check_tol) then ! only print if large
+              write(mesg,*)  'After propagation: En<0.0 at ig=', id_g, ', jg=', jd_g, &
+                             'En=', HZ2_T2_to_J_m2*CS%En(i,j,a,fr,m)
+              call MOM_error(WARNING, "propagate_int_tide: "//trim(mesg))
+              ! RD propagate produces very little negative energy (diff 2 large numbers), needs fix
+              !call MOM_error(FATAL, "propagate_int_tide: stopped due to negative energy.")
+            endif
+          endif
+        enddo ; enddo
+      enddo ; enddo ; enddo
+    endif
+  
+    if (CS%apply_refraction) then
+      ! Apply the other half of the refraction.
+      do m=1,CS%nMode ; do fr=1,CS%Nfreq
+        call refract(CS%En(:,:,:,fr,m), cn(:,:,m), CS%frequency(fr), 0.5*dt_sub, &
+                     G, US, CS%NAngle, CS%use_PPMang)
+      enddo ; enddo
+      ! A this point, CS%En is only valid on the computational domain.
+    endif
+  
+    if (CS%force_posit_En) then
+      do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
+        do j=jsd,jed ; do i=isd,ied
+          if (CS%En(i,j,a,fr,m)<0.0) then
+            CS%En(i,j,a,fr,m) = 0.0
+          endif
+        enddo ; enddo
+      enddo ; enddo ; enddo
+    endif
+  
+    if (CS%debug) then
+      call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af refr2", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
+      do m=1,CS%nMode ; do fr=1,CS%Nfreq
+        call sum_En(G, GV, US, CS, CS%En(:,:,:,fr,m), 'prop_int_tide: after 2/2 refraction')
+        if (is_root_pe()) write(stdout,'(A,E18.10)') 'prop_int_tide: after 2/2 refraction', CS%En_sum
+      enddo ; enddo
+      ! Check for En<0 - for debugging, delete later
+      do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
+        do j=js,je ; do i=is,ie
+          if (CS%En(i,j,a,fr,m)<0.0) then
+            id_g = i + G%idg_offset ; jd_g = j + G%jdg_offset ! for debugging
+            write(mesg,*) 'After second refraction: En<0.0 at ig=', id_g, ', jg=', jd_g, &
+                          'En=', HZ2_T2_to_J_m2*CS%En(i,j,a,fr,m)
+            call MOM_error(WARNING, "propagate_int_tide: "//trim(mesg))
+            !call MOM_error(FATAL, "propagate_int_tide: stopped due to negative energy.")
+          endif
+        enddo ; enddo
+      enddo ; enddo ; enddo
+    endif
+  
+    call do_group_pass(CS%pass_En, G%domain)
 
   enddo ! end subcycling
 
@@ -2952,7 +2953,7 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
   logical :: semi_Boussinesq   ! If true, this run is partially non-Boussinesq
   logical :: use_int_tides
   integer :: num_freq, num_angle , num_mode, period_1
-  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB, i, j, a, fr
+  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB, i, j, a, fr, m
   character(64) :: var_name, cfr, units
 
   type(axis_info) :: axes_inttides(2)
@@ -3000,6 +3001,10 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
 
   ! full energy array
   allocate(CS%En(isd:ied, jsd:jed, num_angle, num_freq, num_mode), source=0.0)
+
+  do m=1,num_mode ; do fr=1,num_freq
+    call create_group_pass(CS%pass_En, CS%En(:,:,:,fr,m), G%Domain)
+  enddo ; enddo
 
   ! restart strategy: support for 5d restart is not yet available so we split into
   ! 4d restarts. Vertical modes >= 6 are dissipated locally and do not propagate
@@ -3201,9 +3206,9 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "INTERNAL_TIDE_ANGLES", num_angle, &
                  "The number of angular resolution bands for the internal "//&
                  "tide calculations.", default=24)
-  call get_param(param_file, mdl, "INTERNAL_TIDE_SUBCYCLES", CS%subcycles, &
-                 "The number of times refraction/propagation is called within "//&
-                 "a thermodynamics timestep.", default=1)
+  call get_param(param_file, mdl, "DT_ITIDES", CS%dt_itides, &
+                 "The timestep for internal tides ray-tracing scheme", &
+                 units="s", default=3600., scale=US%s_to_T)
 
   if (use_int_tides) then
     if ((num_freq <= 0) .and. (num_mode <= 0) .and. (num_angle <= 0)) then
