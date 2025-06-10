@@ -524,7 +524,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   ! TKE_slope_loss need to be accumulated but since it is
   ! passed as inout and accumulated within propagate_x/propagate_y
   ! it does not need temp array for accumulation
-  CS%TKE_slope_loss(:,:,:,fr,m) = 0.
+  CS%TKE_slope_loss(:,:,:,:,:) = 0.
 
   ! Start subcycling
   do nc=1,subcycles
@@ -537,7 +537,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       enddo ; enddo
     endif
     ! A this point, CS%En is only valid on the computational domain.
-  
+
     if (CS%force_posit_En) then
       do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
         do j=jsd,jed ; do i=isd,ied
@@ -547,7 +547,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         enddo ; enddo
       enddo ; enddo ; enddo
     endif
-  
+
     if (CS%debug) then
       call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af refr", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
       do m=1,CS%nMode ; do fr=1,CS%Nfreq
@@ -567,15 +567,15 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         enddo ; enddo
       enddo ; enddo ; enddo
     endif
-  
+
     ! Set the halo size to work on, using similar logic to that used in propagate.  This may need
     ! to be adjusted depending on the advection scheme and whether teleport is used.
     if (CS%upwind_1st) then ; En_halo_ij_stencil = 2
     else ; En_halo_ij_stencil = 3 ; endif
-  
+
     ! Rotate points in the halos as necessary.
     call correct_halo_rotation(CS%En, test, G, CS%nAngle, halo=En_halo_ij_stencil)
-  
+
     if (CS%debug) then
       call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af halo R", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
       do m=1,CS%nMode ; do fr=1,CS%Nfreq
@@ -583,16 +583,16 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         if (is_root_pe()) write(stdout,'(A,E18.10)') 'prop_int_tide: after correct halo rotation', CS%En_sum
       enddo ; enddo
     endif
-  
+
     ! Propagate the waves.
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
-  
+
       if (CS%apply_propagation) then
         call propagate(CS%En(:,:,:,fr,m), cn(:,:,m), CS%frequency(fr), dt_sub, &
                        G, GV, US, CS, CS%NAngle, CS%TKE_slope_loss(:,:,:,fr,m))
         endif
     enddo ; enddo
-  
+
     if (CS%force_posit_En) then
       do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
         do j=jsd,jed ; do i=isd,ied
@@ -602,7 +602,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         enddo ; enddo
       enddo ; enddo ; enddo
     endif
-  
+
     if (CS%debug) then
       call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af prop", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
       do m=1,CS%nMode ; do fr=1,CS%Nfreq
@@ -625,7 +625,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         enddo ; enddo
       enddo ; enddo ; enddo
     endif
-  
+
     if (CS%apply_refraction) then
       ! Apply the other half of the refraction.
       do m=1,CS%nMode ; do fr=1,CS%Nfreq
@@ -634,7 +634,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       enddo ; enddo
       ! A this point, CS%En is only valid on the computational domain.
     endif
-  
+
     if (CS%force_posit_En) then
       do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
         do j=jsd,jed ; do i=isd,ied
@@ -644,7 +644,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         enddo ; enddo
       enddo ; enddo ; enddo
     endif
-  
+
     if (CS%debug) then
       call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides af refr2", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
       do m=1,CS%nMode ; do fr=1,CS%Nfreq
@@ -664,7 +664,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         enddo ; enddo
       enddo ; enddo ; enddo
     endif
-  
+
     call do_group_pass(CS%pass_En, G%domain)
 
   enddo ! end subcycling
@@ -2188,7 +2188,6 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
 
   ! Update halos
   call pass_var(En, G%domain)
-  call pass_var(residual_loss, G%domain)
 
   if (CS%debug) then
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
@@ -2211,7 +2210,6 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
   enddo ; enddo ; enddo
 
   call pass_var(En, G%domain)
-  call pass_var(residual_loss, G%domain)
 
   if (CS%debug) then
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
