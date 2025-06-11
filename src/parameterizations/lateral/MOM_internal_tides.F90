@@ -359,7 +359,12 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   I_dt = 1.0 / dt
   En_restart_factor = 2**CS%En_restart_power
   I_En_restart_factor = 1.0 / En_restart_factor
-  subcycles = CEILING(dt/CS%dt_itides - 0.0001)
+
+  if (CS%dt_itides <= 0.) then
+    subcycles = 1
+  else
+    subcycles = CEILING(dt/CS%dt_itides - 0.0001)
+  endif
   dt_sub = dt / subcycles
 
   ! initialize local arrays
@@ -3205,8 +3210,9 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
                  "The number of angular resolution bands for the internal "//&
                  "tide calculations.", default=24)
   call get_param(param_file, mdl, "DT_ITIDES", CS%dt_itides, &
-                 "The timestep for internal tides ray-tracing scheme", &
-                 units="s", default=3600., scale=US%s_to_T)
+                 "The timestep for internal tides ray-tracing scheme"//&
+                 "If set to -1 (default), it uses the same value as DT_THERM", &
+                 units="s", default=-1., scale=US%s_to_T)
 
   if (use_int_tides) then
     if ((num_freq <= 0) .and. (num_mode <= 0) .and. (num_angle <= 0)) then
