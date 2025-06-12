@@ -2899,7 +2899,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
 
     ! Build the target grid (and set the model thickness to it)
 
-    call ALE_initRegridding( GV, US, G%max_depth, PF, mdl, regridCS ) ! sets regridCS
+    call ALE_initRegridding( G, GV, US, G%max_depth, PF, mdl, regridCS ) ! sets regridCS
     if (remap_general) then
       dz_neglect = set_h_neglect(GV, remap_answer_date, dz_neglect_edge)
     else

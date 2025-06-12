@@ -312,7 +312,7 @@ subroutine init_oda(Time, G, GV, US, diag_CS, CS)
   call set_grid_metrics(dG, PF, CS%US)
   call MOM_initialize_topography(dG%bathyT, dG%max_depth, dG, PF, CS%US)
   call MOM_initialize_coord(CS%GV, CS%US, PF, tv_dummy, dG%max_depth)
-  call ALE_init(PF, CS%GV, CS%US, dG%max_depth, CS%ALE_CS)
+  call ALE_init(PF, CS%G, CS%GV, CS%US, dG%max_depth, CS%ALE_CS)
   call MOM_grid_init(CS%Grid, PF, global_indexing=.false.)
   call ALE_updateVerticalGridType(CS%ALE_CS, CS%GV)
   call copy_dyngrid_to_MOM_grid(dG, CS%Grid, CS%US)
@@ -337,7 +337,7 @@ subroutine init_oda(Time, G, GV, US, diag_CS, CS)
        "If true, use the OM4 remapping-via-subcells algorithm for ODA. "//&
        "See REMAPPING_USE_OM4_SUBCELLS for more details. "//&
        "We recommend setting this option to false.", default=om4_remap_via_sub_cells)
-  call initialize_regridding(CS%regridCS, CS%GV, CS%US, dG%max_depth,PF,'oda_driver',coord_mode,'','')
+  call initialize_regridding(CS%regridCS, CS%G, CS%GV, CS%US, dG%max_depth,PF,'oda_driver',coord_mode,'','')
 
   h_neglect = set_h_neglect(GV, CS%answer_date, h_neglect_edge)
   call initialize_remapping(CS%remapCS, remap_scheme, om4_remap_via_sub_cells=om4_remap_via_sub_cells, &

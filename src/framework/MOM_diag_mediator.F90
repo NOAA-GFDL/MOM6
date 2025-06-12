@@ -506,7 +506,7 @@ subroutine set_axes_info(G, GV, US, param_file, diag_cs, set_vertical)
 
   do i=1, diag_cs%num_diag_coords
     ! For each possible diagnostic coordinate
-    call diag_remap_configure_axes(diag_cs%diag_remap_cs(i), GV, US, param_file)
+    call diag_remap_configure_axes(diag_cs%diag_remap_cs(i), G, GV, US, param_file)
 
     ! Allocate these arrays since the size of the diagnostic array is now known
     allocate(diag_cs%diag_remap_cs(i)%h(G%isd:G%ied,G%jsd:G%jed, diag_cs%diag_remap_cs(i)%nz))
@@ -704,7 +704,7 @@ subroutine set_axes_info_dsamp(G, GV, param_file, diag_cs, id_zl_native, id_zi_n
 
     do i=1, diag_cs%num_diag_coords
       ! For each possible diagnostic coordinate
-      !call diag_remap_configure_axes(diag_cs%diag_remap_cs(i), GV, param_file)
+      !call diag_remap_configure_axes(diag_cs%diag_remap_cs(i), G, GV, param_file)
 
       ! This vertical coordinate has been configured so can be used.
       if (diag_remap_axes_configured(diag_cs%diag_remap_cs(i))) then

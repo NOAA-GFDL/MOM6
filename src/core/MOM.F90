@@ -3139,7 +3139,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   call callTree_waypoint("returned from MOM_initialize_coord() (initialize_MOM)")
 
   if (CS%use_ALE_algorithm) then
-    call ALE_init(param_file, GV, US, G%max_depth, CS%ALE_CSp)
+    call ALE_init(param_file, G, GV, US, G%max_depth, CS%ALE_CSp)
     call callTree_waypoint("returned from ALE_init() (initialize_MOM)")
   endif
 
