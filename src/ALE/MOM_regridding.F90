@@ -15,8 +15,7 @@ use MOM_unit_scaling,  only : unit_scale_type
 use MOM_variables,     only : ocean_grid_type, thermo_var_ptrs
 use MOM_verticalGrid,  only : verticalGrid_type
 use MOM_EOS,           only : EOS_type, calculate_density
-use MOM_domains,       only : max_across_PEs
-!!!use MOM_domains,       only : max_across_PEs, pass_var
+use MOM_domains,       only : max_across_PEs, pass_var
 use MOM_string_functions, only : uppercase, extractWord, extract_integer, extract_real
 
 use MOM_remapping, only : remapping_CS
@@ -547,7 +546,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       trim(mdl)//", initialize_regridding: HYBRID_3D "// &
       "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
     call MOM_read_data(trim(fileName), trim(varName), rho_target_3d, G%Domain)
-!!!!    call pass_var(rho_target_3d, G%Domain, halo=1)
+    call pass_var(rho_target_3d, G%Domain, halo=1)
     varName = trim( extractWord(trim(string(11:)), 3) )
     if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz_3d
       allocate(dz(ke))
@@ -573,7 +572,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
         trim(mdl)//", initialize_regridding: HYBRID_3D "// &
         "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
       call MOM_read_data(trim(fileName), trim(varName), dz_3d, G%Domain)
-!!!!      call pass_var(dz_3d, G%Domain, halo=1)
+      call pass_var(dz_3d, G%Domain, halo=1)
       ! set nominal 1-d dz to UNIFORM
       allocate(dz(ke))
       dz(:) = uniformResolution(ke, coord_mode, maximum_depth, &
@@ -600,7 +599,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
       "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
     call MOM_read_data(trim(fileName), trim(varName), index_map, G%Domain)
-!!!!    call pass_var(index_map, G%Domain, halo=1)
+    call pass_var(index_map, G%Domain, halo=1)
     !find maximum index
     tmpReal = 1
     do j=G%jsc, G%jec ; do i=G%isc, G%iec
