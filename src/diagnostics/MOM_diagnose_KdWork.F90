@@ -812,8 +812,8 @@ subroutine Allocate_VBF_CS(G, GV, VBF)
     allocate(VBF%Kd_Froude(isd:ied,jsd:jed,nz+1), source=0.0)
   if (VBF%id_Bdif_slope>0 .or. VBF%id_Bdif_dz_slope>0 .or. VBF%id_Bdif_idz_slope>0 .or. VBF%id_Bdif_idV_slope>0) &
     allocate(VBF%Kd_slope(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_lowmode>0 .or. VBF%id_Bdif_dz_lowmode>0 .or. VBF%id_Bdif_idz_lowmode>0 .or. VBF%id_Bdif_idV_lowmode>0) &
-    allocate(VBF%Kd_lowmode(isd:ied,jsd:jed,nz+1), source=0.0)
+  if (VBF%id_Bdif_lowmode>0 .or. VBF%id_Bdif_dz_lowmode>0 .or. VBF%id_Bdif_idz_lowmode>0 .or. &
+      VBF%id_Bdif_idV_lowmode>0) allocate(VBF%Kd_lowmode(isd:ied,jsd:jed,nz+1), source=0.0)
   if (VBF%id_Bdif_Niku>0 .or. VBF%id_Bdif_dz_Niku>0 .or. VBF%id_Bdif_idz_Niku>0 .or. VBF%id_Bdif_idV_Niku>0) &
     allocate(VBF%Kd_Niku(isd:ied,jsd:jed,nz+1), source=0.0)
   if (VBF%id_Bdif_itides>0 .or. VBF%id_Bdif_dz_itides>0 .or. VBF%id_Bdif_idz_itides>0 .or. VBF%id_Bdif_idV_itides>0) &
