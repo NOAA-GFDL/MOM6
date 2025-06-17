@@ -209,6 +209,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   ! Local variables
   integer :: ke ! Number of levels
   integer :: np ! Number of profiles, for HYBRID_MAP
+  integer :: n_sigma ! Number of shallow dz's, for HYBRID_MAP or HYBRID_3D
   character(len=80)  :: string, string2, varName ! Temporary strings
   character(len=40)  :: coord_units, coord_res_param ! Temporary strings
   character(len=MAX_PARAM_LENGTH) :: param_name
@@ -225,6 +226,10 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   real :: maximum_depth ! The maximum depth of the ocean [m] (not in Z).
   real :: dz_extra      ! The thickness of an added layer to append to the woa09_dz profile when
                         ! maximum_depth is large [m] (not in Z).
+  real :: nominalDepth  ! Depth of ocean bottom in thickness units (positive downward) [H ~> m or kg m-2]
+  real :: depth_q       ! A depth scale factor [nondim]
+  real :: depth_s       ! The end of the shallow Z regime (m)
+  real :: depth_d       ! The start of the deep Z regime (m)
   real :: adaptTimeRatio, adaptZoomCoeff ! Temporary variables for input parameters [nondim]
   real :: adaptBuoyCoeff, adaptAlpha     ! Temporary variables for input parameters [nondim]
   real :: adaptZoom  ! The thickness of the near-surface zooming region with the adaptive coordinate [H ~> m or kg m-2]
@@ -236,6 +241,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                                             ! or [Z ~> m] or [H ~> m or kg m-2] or [R ~> kg m-3] or other units.
   real, dimension(:,:,:), allocatable :: dz_3d  ! 3D resolution (thickness) in units of coordinate, which may be [m]
                                             ! or [Z ~> m] or [H ~> m or kg m-2] or [R ~> kg m-3] or other units.
+  real, dimension(:), allocatable :: dz_shallow  ! Shallow resolution (thickness), for HYBRID_MAP or HYBRID_3D [m]
   real, dimension(:,:),   allocatable :: rho_target_2d ! 2D target density used in HYBRID mode [kg m-3]
   real, dimension(:,:,:), allocatable :: rho_target_3d ! 3D target density used in HYBRID mode [kg m-3]
   real, dimension(:,:),   allocatable :: index_map ! Region array of indexes for HYBRID_MAP [nondim]
@@ -525,7 +531,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       call log_param(param_file, mdl, "!"//coord_res_param, dz, &
                trim(message), units=coordinateUnits(coord_mode))
       call log_param(param_file, mdl, "!TARGET_DENSITIES", rho_target, &
-               'HYBRID target densities for interfaces', units=coordinateUnits(coord_mode))
+               'HYBRID target densities for interfaces', units="kg m-3")
     endif
   elseif (index(trim(string),'HYBRID_3D:')==1) then
     ke = GV%ke
@@ -622,7 +628,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     call read_variable(trim(fileName), trim(varName), rho_target_2d)
     if (main_parameters) then
       call log_param(param_file, mdl, "!TARGET_DENSITIES", rho_target_2d(:,1), &
-               'HYBRID target densities for interfaces', units=coordinateUnits(coord_mode))
+               'HYBRID target densities for interfaces', units="kg m-3")
     endif
     do i=G%isc-1,G%iec+1; do j=G%jsc-1,G%jec+1
       if (G%mask2dT(i,j)>0.) then
@@ -631,7 +637,9 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
           call MOM_error(FATAL, trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
             "index_map out of range")
         endif
-        rho_target_3d(i,j,:) = rho_target_2d(:,nint(index_map(i,j)))
+        do k=1,ke+1
+          rho_target_3d(i,j,k) = rho_target_2d(k,nint(index_map(i,j)))
+        enddo
       endif !mask2dT
     enddo; enddo
     varName = trim( extractWord(trim(string(12:)), 4) )
@@ -787,6 +795,77 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     endif
   endif
 
+  if (coordinateMode(coord_mode) == REGRIDDING_HYCOM1) then
+    allocate(dz_shallow(ke))
+    call get_param(param_file, mdl, "SHALLOW_"//trim(coord_res_param), dz_shallow, &
+                   "HYBGEN-style Z-sigma-Z near surface fixed coordinate. "//&
+                   "The default of all zeros turns this option off. "//&
+                   "Let N_SIGMA be the number of consecutive non-zero entries, typically < NK. "//&
+                   "Use SHALLOW_"//trim(coord_res_param)//" when rest depth is shallower than "//&
+                   "SUM(SHALLOW_"//trim(coord_res_param)//"(1:N_SIGMA)). "//&
+                   "Use "//trim(coord_res_param)//" when rest depth is deeper than "//&
+                   "SUM("//trim(coord_res_param)//"(1:N_SIGMA)). "//&
+                   "Otherwise use a linear sum of the two weighted by rest depth.",&
+                   units="m", default=0.0)
+    n_sigma = ke
+    depth_s = 0.0
+    do k= 1,ke
+      depth_s = depth_s + dz_shallow(k)
+      if (dz_shallow(k) == 0.0) then
+        n_sigma = k-1
+        exit
+      endif
+    enddo
+    if (n_sigma > 0) then
+      if (main_parameters) call log_param(param_file, mdl, "!N_SIGMA", n_sigma, &
+                   "Number of consecutive non-zero entries in SHALLOW_"//&
+                   trim(coord_res_param)//".")
+      if (.not.allocated(dz_3d)) then
+        allocate(dz_3d(SZI_(G),SZJ_(G),ke), source=0.0)
+        allocate(rho_target_3d(SZI_(G),SZJ_(G),ke+1), source=0.0)
+        do i=G%isc-1,G%iec+1; do j=G%jsc-1,G%jec+1
+          if (G%mask2dT(i,j)>0.) then
+            do k=1,ke
+              dz_3d(i,j,k) = dz(k)
+            enddo
+            do k=1,ke+1
+              rho_target_3d(i,j,k) = rho_target(k)
+            enddo
+          endif !mask2dT
+        enddo; enddo
+      endif
+      do i=G%isc-1,G%iec+1; do j=G%jsc-1,G%jec+1
+        if (G%mask2dT(i,j)>0.) then
+          nominalDepth = (G%bathyT(i,j)+G%Z_ref)*US%Z_to_m
+          if (nominalDepth <= depth_s) then
+            do k= 1,n_sigma
+              dz_3d(i,j,k) = dz_shallow(k)
+            enddo
+            do k= n_sigma+1,ke
+              dz_3d(i,j,k) = dz_shallow(n_sigma)
+            enddo
+          else ! >depth_s
+            depth_d = 0.0
+            do k= 1,n_sigma
+              depth_d = depth_d + dz_3d(i,j,k)
+            enddo
+            ! do nothing if nominalDepth >= depth_d
+            if (nominalDepth < depth_d) then
+              depth_q = (nominalDepth - depth_s) / (depth_d - depth_s)
+              do k= 1,n_sigma
+                dz_3d(i,j,k) = (1.0-depth_q)*dz_shallow(k) + depth_q*dz_3d(i,j,k)
+              enddo
+              do k= n_sigma+1,ke
+                dz_3d(i,j,k) = (1.0-depth_q)*dz_shallow(n_sigma) + depth_q*dz_3d(i,j,k)
+              enddo
+            endif !<depth_d and >depth_s
+          endif !nominalDepth
+        endif !mask2dT
+      enddo; enddo
+    endif !n_sigma
+    deallocate(dz_shallow)
+  endif !REGRIDDING_HYCOM1
+
   CS%nk=ke
 
   ! Target resolution (for fixed coordinates)
@@ -839,7 +918,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   elseif (coordinateMode(coord_mode) == REGRIDDING_RHO) then
     call set_target_densities_from_GV(GV, US, CS)
     call log_param(param_file, mdl, "!TARGET_DENSITIES", US%R_to_kg_m3*CS%target_density(:), &
-             'RHO target densities for interfaces', units=coordinateUnits(coord_mode))
+             'RHO target densities for interfaces', "kg m-3")
   endif
 
   ! initialise coordinate-specific control structure
