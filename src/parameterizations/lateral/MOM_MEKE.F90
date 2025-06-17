@@ -126,6 +126,7 @@ type, public :: MEKE_CS ; private
   integer :: eke_src !< Enum specifying whether EKE is stepped forward prognostically (default),
                      !! read in from a file, or inferred via a neural network
   logical :: sqg_use_MEKE !< If True, use MEKE%Le for the SQG vertical structure.
+  logical :: MEKE_positive !< If True, apply a lower bound 0.0 to MEKE
   type(diag_ctrl), pointer :: diag => NULL() !< A type that regulates diagnostics output
   !>@{ Diagnostic handles
   integer :: id_MEKE = -1, id_Ue = -1, id_Kh = -1, id_src = -1
@@ -847,6 +848,12 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
         endif
       endif
     endif ! MEKE_KH>=0
+
+    if (CS%MEKE_positive) then
+      do j=js,je ; do i=is,ie
+        MEKE%MEKE(i,j) = max(0.0, MEKE%MEKE(i,j))
+      enddo ; enddo
+    endif
 
     if (CS%debug) then
       call hchksum(MEKE%MEKE, "MEKE post-update MEKE", G%HI, haloshift=0, unscale=US%L_T_to_m_s**2)
@@ -1593,6 +1600,9 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
                  units="nondim", default=0.0)
   call get_param(param_file, mdl, "SQG_USE_MEKE", CS%sqg_use_MEKE, &
                  "If true, the eddy scale of MEKE is used for the SQG vertical structure ",&
+                 default=.false.)
+  call get_param(param_file, mdl, "MEKE_POSITIVE", CS%MEKE_positive, &
+                 "If true, apply a lower bound 0.0 to MEKE. ",&
                  default=.false.)
 
   ! Nonlocal module parameters
