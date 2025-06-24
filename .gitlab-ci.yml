@@ -22,7 +22,7 @@ p:merge:
   tags:
     - mom6-ci-c5
   script:
-    - git pull --no-edit https://github.com/NOAA-GFDL/MOM6.git dev/gfdl
+    - git pull --no-edit https://github.com/NOAA-GFDL/MOM6.git prg860
 
 # Setup the persistent JOB_DIR for all subsequent stages
 #

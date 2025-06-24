@@ -29,7 +29,7 @@ set -e # Stop if we encounter an error
 
 # Environment variables that can be set outside
 STATS_REPO_URL="${STATS_REPO_URL:-https://gitlab.gfdl.noaa.gov/ogrp/Gaea-stats-MOM6-examples.git}"
-STATS_REPO_BRANCH="${STATS_REPO_BRANCH:-dev/gfdl}"
+STATS_REPO_BRANCH="${STATS_REPO_BRANCH:-prg860}"
 CONFIGS_DIR="${CONFIGS_DIR:-MOM6-examples}"
 CONFIGS_REPO_BRANCH="${CONFIGS_REPO_BRANCH:-$STATS_REPO_BRANCH}"
 
@@ -430,7 +430,7 @@ while [[ $# -gt 0 ]]; do # Loop through arguments
     clean-job-dir)
       clean-job-dir; continue ;;
     create-job-dir)
-      create-job-dir https://gitlab.gfdl.noaa.gov/ogrp/Gaea-stats-MOM6-examples.git dev/gfdl; continue ;;
+      create-job-dir https://gitlab.gfdl.noaa.gov/ogrp/Gaea-stats-MOM6-examples.git prg860; continue ;;
     copy-test-space)
       copy-test-space $1; shift; continue ;;
     mrs-compile)
