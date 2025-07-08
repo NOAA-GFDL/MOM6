@@ -8,6 +8,7 @@ use MOM_cpu_clock,     only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock,     only : CLOCK_MODULE_DRIVER, CLOCK_MODULE, CLOCK_ROUTINE
 use MOM_diag_mediator, only : post_data, register_diag_field, safe_alloc_ptr
 use MOM_diag_mediator, only : diag_ctrl, time_type
+use MOM_domains,       only : pass_var
 use MOM_EOS,           only : calculate_density, calculate_TFreeze, EOS_domain
 use MOM_EOS,           only : calculate_specific_vol_derivs, calculate_density_derivs
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, callTree_showQuery
@@ -107,7 +108,7 @@ contains
 !! This subroutine warms any water that is colder than the (currently
 !! surface) freezing point up to the freezing point and accumulates
 !! the required heat (in [Q R Z ~> J m-2]) in tv%frazil.
-subroutine make_frazil(h, tv, G, GV, US, CS, p_surf, halo)
+subroutine make_frazil(h, tv, G, GV, US, CS, p_surf, halo, frazil_halo_pass)
   type(ocean_grid_type),   intent(in)    :: G  !< The ocean's grid structure
   type(verticalGrid_type), intent(in)    :: GV !< The ocean's vertical grid structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
@@ -120,7 +121,7 @@ subroutine make_frazil(h, tv, G, GV, US, CS, p_surf, halo)
   real, dimension(SZI_(G),SZJ_(G)), &
                  optional, intent(in)    :: p_surf !< The pressure at the ocean surface [R L2 T-2 ~> Pa].
   integer,       optional, intent(in)    :: halo !< Halo width over which to calculate frazil
-
+  logical,       optional, intent(in)    :: frazil_halo_pass !< Indicates if frazil should be updated in halos
   ! Local variables
   real, dimension(SZI_(G)) :: &
     fraz_col, & ! The accumulated heat requirement due to frazil [Q R Z ~> J m-2].
@@ -137,6 +138,15 @@ subroutine make_frazil(h, tv, G, GV, US, CS, p_surf, halo)
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   if (present(halo)) then
     is = G%isc-halo ; ie = G%iec+halo ; js = G%jsc-halo ; je = G%jec+halo
+    ! Frazil needs a halo pass only when all of the following are true:
+    ! (1) frazil is calculated and applied in the halo (e.g., vertex_shear is true)
+    ! (2) the thermodynamic loop is called more than once before passing frazil to the sea-ice (dt_therm<dt_cpld)
+    ! (3) reclaim_frazil is true
+    ! (4) a previous make_frazil was called after the diabatic loop and before T&S were updated in halos.
+    if (present(frazil_halo_pass)) then
+      if ( CS%reclaim_frazil .and. (.not.tv%frazil_was_reset) .and. frazil_halo_pass) &
+        call pass_var(tv%frazil, G%domain, halo=halo)
+    endif
   endif
 
   call cpu_clock_begin(id_clock_frazil)
@@ -223,6 +233,9 @@ subroutine make_frazil(h, tv, G, GV, US, CS, p_surf, halo)
       tv%frazil(i,j) = tv%frazil(i,j) + fraz_col(i)
     enddo
   enddo
+
+  tv%frazil_was_reset = .false.
+
   call cpu_clock_end(id_clock_frazil)
 
 end subroutine make_frazil
