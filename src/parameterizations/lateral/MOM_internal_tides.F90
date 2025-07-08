@@ -2680,7 +2680,6 @@ subroutine turning_latitude(En, NAngle, freq2, CS, G, LB)
   angle_r0 = 0
   angle_to_wall = 0
 
-
   do j=jsh,jeh ; do i=ish,ieh
     ! init
     angle_wall = 0
@@ -2712,6 +2711,7 @@ subroutine turning_latitude(En, NAngle, freq2, CS, G, LB)
     angle_r = 0
     angle_r0 = 0
     angle_to_wall = 0
+
     if (angle_c(i,j) /= CS%nullangle) then
       ! refection angle is given in rad, convert to the discrete angle
       angle_wall = nint(angle_c(i,j)*I_Angle_size) + 1
