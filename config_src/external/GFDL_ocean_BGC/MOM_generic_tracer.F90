@@ -87,7 +87,7 @@ function register_MOM_generic_tracer(HI, GV, param_file, CS, tr_Reg, restart_CS)
 
   register_MOM_generic_tracer = .false.
 
-  call MOM_error(FATAL, "register_MOM_generic_tracer should not be called with the stub code "//
+  call MOM_error(FATAL, "register_MOM_generic_tracer should not be called with the stub code "// &
          "in MOM6/config_src/external, as it does nothing.  Recompile using the full MOM_generic_tracer package.")
 
 end function register_MOM_generic_tracer
