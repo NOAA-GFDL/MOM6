@@ -18,6 +18,7 @@ module MOM_generic_tracer
 use MOM_ALE_sponge, only : ALE_sponge_CS
 use MOM_coms, only : EFP_type
 use MOM_diag_mediator, only : diag_ctrl
+use MOM_error_handler, only : MOM_error, FATAL
 use MOM_file_parser, only : param_file_type
 use MOM_forcing_type, only : forcing, optics_type
 use MOM_grid, only : ocean_grid_type
@@ -85,6 +86,9 @@ function register_MOM_generic_tracer(HI, GV, param_file, CS, tr_Reg, restart_CS)
   logical :: register_MOM_generic_tracer
 
   register_MOM_generic_tracer = .false.
+
+  call MOM_error(FATAL, "register_MOM_generic_tracer should not be called with the stub code "//
+         "in MOM6/config_src/external, as it does nothing.  Recompile using the full MOM_generic_tracer package.")
 
 end function register_MOM_generic_tracer
 
