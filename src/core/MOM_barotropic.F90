@@ -209,6 +209,10 @@ type, public :: barotropic_CS ; private
                              !! equation.  Otherwise the transports are the sum of the transports
                              !! based on a series of instantaneous velocities and the BT_CONT_TYPE
                              !! for transports.  This is only valid if a BT_CONT_TYPE is used.
+  logical :: bt_adjust_src_for_filter !< If true, increases the rate at which BT mass sources are
+                             !! applied so that they are all used up before the steps within the
+                             !! filtering period start. This avoids the mass sink driving the SSH
+                             !! below the bottom during the period of filtering.
   logical :: integral_OBCs   !< This is true if integral_bt_cont is true and there are open boundary
                              !! conditions being applied somewhere in the global domain.
   logical :: Nonlinear_continuity !< If true, the barotropic continuity equation
@@ -2389,6 +2393,8 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
   real :: be_proj     ! The fractional amount by which velocities are projected
                       ! when project_velocity is true [nondim]. For now be_proj is set
                       ! to equal bebt, as they have similar roles and meanings.
+  real :: eta_cor_multiplier ! Increases the rate of applying CS%eta_cor so that the mass
+                      ! source is all used up by the beginning of the filtering [nondim]
   logical :: do_hifreq_output  ! If true, output occurs every barotropic step.
   logical :: do_ave   ! If true, diagnostics are enabled on this step.
   logical :: evolving_face_areas
@@ -2712,9 +2718,17 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
 
     ! Update eta in a corrector step using the barotropic continuity equation.
     if (integral_BT_cont) then
+      eta_cor_multiplier = n
+      if ( CS%bt_adjust_src_for_filter ) then
+        if ( nstep > nfilter ) then
+          eta_cor_multiplier = min(nstep - nfilter, n) * nstep / real(nstep - nfilter)
+        else
+          eta_cor_multiplier = nstep
+        endif
+      endif
       !$OMP do
       do j=jsv,jev ; do i=isv,iev
-        eta(i,j) = (eta_IC(i,j) + n*eta_src(i,j)) + CS%IareaT_OBCmask(i,j) * &
+        eta(i,j) = (eta_IC(i,j) + eta_cor_multiplier*eta_src(i,j)) + CS%IareaT_OBCmask(i,j) * &
                    ((uhbt_int(I-1,j) - uhbt_int(I,j)) + (vhbt_int(i,J-1) - vhbt_int(i,J)))
         eta_wtd(i,j) = eta_wtd(i,j) + eta(i,j) * wt_eta(n)
       enddo ; enddo
@@ -5439,6 +5453,11 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                  "This is a decent approximation to the inclusion of "//&
                  "sum(u dh_dt) while also correcting for truncation errors.", &
                  default=.false.)
+  call get_param(param_file, mdl, "BT_ADJUST_SRC_FOR_FILTER", CS%bt_adjust_src_for_filter, &
+                 "If true, increases the rate at which BT mass sources are applied so "//&
+                 "that they are all used up before the filtering period starts. "//&
+                 "This option is only valid if INTEGRAL_BT_CONTINUITY = True.", &
+                 default=.false., do_not_log=.not.CS%integral_bt_cont)
   call get_param(param_file, mdl, "BT_USE_VISC_REM_U_UH0", CS%visc_rem_u_uh0, &
                  "If true, use the viscous remnants when estimating the "//&
                  "barotropic velocities that were used to calculate uh0 "//&
