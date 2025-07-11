@@ -157,6 +157,9 @@ type, public :: MOM_dyn_split_RK2_CS ; private
   logical :: BT_use_layer_fluxes  !< If true, use the summed layered fluxes plus
                                   !! an adjustment due to a changed barotropic
                                   !! velocity in the barotropic continuity equation.
+  logical :: BT_adj_corr_mass_src !< If true, recalculates the barotropic mass source after
+                                  !! predictor step. This should make little difference in the
+                                  !! deep ocean but appears to help for vanished layers.
   logical :: split_bottom_stress  !< If true, provide the bottom stress
                                   !! calculated by the vertical viscosity to the
                                   !! barotropic solver.
@@ -817,9 +820,11 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   ! used in the next call to btstep.  This call is at this point so that
   ! hp can be changed if CS%begw /= 0.
   ! eta_cor = ...                 (hidden inside CS%barotropic_CSp)
-  call cpu_clock_begin(id_clock_btcalc)
-  call bt_mass_source(hp, eta_pred, .false., G, GV, CS%barotropic_CSp)
-  call cpu_clock_end(id_clock_btcalc)
+  if (CS%BT_adj_corr_mass_src) then
+    call cpu_clock_begin(id_clock_btcalc)
+    call bt_mass_source(hp, eta_pred, .false., G, GV, CS%barotropic_CSp)
+    call cpu_clock_end(id_clock_btcalc)
+  endif
 
   if (CS%begw /= 0.0) then
     ! hp <- (1-begw)*h_in + begw*hp
@@ -1454,6 +1459,11 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
                  "If true, use the summed layered fluxes plus an "//&
                  "adjustment due to the change in the barotropic velocity "//&
                  "in the barotropic continuity equation.", default=.true.)
+  call get_param(param_file, mdl, "BT_ADJ_CORR_MASS_SRC", CS%BT_adj_corr_mass_src, &
+                 "If true, recalculates the barotropic mass source after "//&
+                 "predictor step. This should make little difference in the "//&
+                 "deep ocean but appears to help for vanished layers. If false, "//&
+                 "uses the same mass source as from the predictor step.", default=.true.)
   call get_param(param_file, mdl, "STORE_CORIOLIS_ACCEL", CS%store_CAu, &
                  "If true, calculate the Coriolis accelerations at the end of each "//&
                  "timestep for use in the predictor step of the next split RK2 timestep.", &
