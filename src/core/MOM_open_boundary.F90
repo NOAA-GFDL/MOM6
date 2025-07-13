@@ -1784,6 +1784,12 @@ subroutine parse_segment_str(ni_global, nj_global, segment_str, l, m, n, action_
                    "Range in string '"//trim(segment_str)//"' must span one cell.")
   endif
 
+  ! checking if the number of provided OBC types is less than or equal to 8
+  if (extract_word(segment_str,',',2+9)/="") then
+    call MOM_error(FATAL, "MOM_open_boundary.F90, parse_segment_str: "//&
+                   "Number of OBC types in '"//trim(segment_str)//"' too high, can be at most 8.")
+  endif
+
   ! Type of open boundary condition
   do j = 1, size(action_str)
     action_str(j) = extract_word(segment_str,',',2+j)
