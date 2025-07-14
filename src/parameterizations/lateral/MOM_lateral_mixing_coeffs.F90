@@ -1085,12 +1085,12 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e, uh, vh)
     do j=js-1,je+1 ; do I=is-1,ie
       E_x(I,j) = (e(i+1,j,K)-e(i,j,K))*G%IdxCu(I,j)
       ! Mask slopes where interface intersects topography
-      if (min(h(I,j,k),h(I+1,j,k)) < H_cutoff) E_x(I,j) = 0.
+      if (min(h(i,j,k),h(i+1,j,k)) < H_cutoff) E_x(I,j) = 0.
     enddo ; enddo
     do J=js-1,je ; do i=is-1,ie+1
       E_y(i,J) = (e(i,j+1,K)-e(i,j,K))*G%IdyCv(i,J)
       ! Mask slopes where interface intersects topography
-      if (min(h(i,J,k),h(i,J+1,k)) < H_cutoff) E_y(I,j) = 0.
+      if (min(h(i,j,k),h(i,j+1,k)) < H_cutoff) E_y(I,j) = 0.
     enddo ; enddo
 
     if (CS%use_gradient_model) then
