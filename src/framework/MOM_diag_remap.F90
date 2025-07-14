@@ -41,15 +41,17 @@ use MOM_unit_scaling,     only : unit_scale_type
 use MOM_verticalGrid,     only : verticalGrid_type
 use MOM_EOS,              only : EOS_type
 use MOM_remapping,        only : remapping_CS, initialize_remapping, remapping_core_h
-use MOM_remapping,        only : interpolate_column, reintegrate_column
+use MOM_remapping,        only : interpolate_column, reintegrate_column, histogram_column
 use MOM_regridding,       only : regridding_CS, initialize_regridding, end_regridding
 use MOM_regridding,       only : set_regrid_params, get_regrid_size
+use MOM_regridding,       only : check_if_histogram_extensive_diags
 use MOM_regridding,       only : getCoordinateInterfaces, set_h_neglect, set_dz_neglect
-use MOM_regridding,       only : get_zlike_CS, get_sigma_CS, get_rho_CS
+use MOM_regridding,       only : get_zlike_CS, get_sigma_CS, get_rho_CS, get_scalar_CS
 use regrid_consts,        only : coordinateMode
 use coord_zlike,          only : build_zstar_column
 use coord_sigma,          only : build_sigma_column
 use coord_rho,            only : build_rho_column
+use coord_scalar,         only : build_scalar_column
 
 
 implicit none ; private
@@ -64,6 +66,7 @@ public diag_remap_get_axes_info, diag_remap_set_active
 public diag_remap_diag_registration_closed
 public vertically_reintegrate_diag_field
 public vertically_interpolate_diag_field
+public vertically_histogram_diag_field
 public horizontally_average_diag_field
 
 !> Represents remapping of diagnostics to a particular vertical coordinate.
@@ -90,6 +93,7 @@ type :: diag_remap_ctrl
                                       !! vertical extents in [Z ~> m], depending on the setting of Z_based_coord.
   real, dimension(:,:,:), allocatable :: h_extensive !< Remap grid thicknesses in [H ~> m or kg m-2] or
                                       !! vertical extents in [Z ~> m] for remapping extensive variables
+  real, dimension(:,:,:,:), allocatable :: hweights3d !< Mapping of histogram weights
   integer :: interface_axes_id = 0 !< Vertical axes id for remapping at interfaces
   integer :: layer_axes_id = 0 !< Vertical axes id for remapping on layers
   logical :: om4_remap_via_sub_cells !< Use the OM4-era ramap_via_sub_cells
@@ -204,6 +208,9 @@ subroutine diag_remap_configure_axes(remap_cs, GV, US, param_file)
   elseif (remap_cs%vertical_coord == coordinateMode('RHO')) then
     units = 'kg m-3'
     longname = 'Target Potential Density'
+  elseif (remap_cs%vertical_coord == coordinateMode('SCALAR')) then
+    units = 'degC'
+    longname = 'Target Scalar Values'
   else
     units = 'meters'
     longname = 'Depth'
@@ -263,7 +270,7 @@ end function
 !! height or layer thicknesses changes. In the case of density-based
 !! coordinates then technically we should also regenerate the
 !! target grid whenever T/S change.
-subroutine diag_remap_update(remap_cs, G, GV, US, h, T, S, eqn_of_state, h_target)
+subroutine diag_remap_update(remap_cs, G, GV, US, h, T, S, eqn_of_state, h_target, hweights3d)
   type(diag_remap_ctrl),   intent(inout) :: remap_cs !< Diagnostic coordinate control structure
   type(ocean_grid_type),   pointer    :: G  !< The ocean's grid type
   type(verticalGrid_type), intent(in) :: GV !< ocean vertical grid structure
@@ -279,6 +286,7 @@ subroutine diag_remap_update(remap_cs, G, GV, US, h, T, S, eqn_of_state, h_targe
   real, dimension(SZI_(G),SZJ_(G),remap_cs%nz), &
                         intent(inout) :: h_target  !< The new diagnostic thicknesses in [H ~> m or kg m-2]
                                             !! or [Z ~> m], depending on the value of remap_cs%Z_based_coord
+  real, optional, dimension(SZI_(G),SZJ_(G),SZK_(GV),remap_cs%nz) :: hweights3d
 
   ! Local variables
   real, dimension(remap_cs%nz + 1) :: zInterfaces ! Interface positions [H ~> m or kg m-2] or [Z ~> m]
@@ -287,7 +295,9 @@ subroutine diag_remap_update(remap_cs, G, GV, US, h, T, S, eqn_of_state, h_targe
   real :: h_tot(SZI_(G),SZJ_(G))        ! The total thickness of the water column [H ~> m or kg m-2] or [Z ~> m]
   real :: Z_unit_scale   ! A conversion factor from Z-units the internal work units in this routine,
                          ! in units of [H Z-1 ~> 1 or kg m-3] or [nondim], depending on remap_cs%Z_based_coord.
-  integer :: i, j, k, is, ie, js, je, nz
+  integer :: i, j, k, is, ie, js, je, nz, k0, k1
+  real, dimension(SZK_(GV),remap_cs%nz) :: histogram_weights
+  logical :: histogram_extensive_diags
 
   ! Note that coordinateMode('LAYER') is never 'configured' so will always return here.
   if (.not. remap_cs%configured) return
@@ -360,8 +370,38 @@ subroutine diag_remap_update(remap_cs, G, GV, US, h, T, S, eqn_of_state, h_targe
       ! This function call can work with 5 arguments in units of [Z ~> m] or [H ~> kg m-2].
       call build_rho_column(get_rho_CS(remap_cs%regrid_cs), GV%ke, &
                             bottom_depth(i,j), h(i,j,:), T(i,j,:), S(i,j,:), &
-                            eqn_of_state, zInterfaces, h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
+                            eqn_of_state, zInterfaces, histogram_weights=histogram_weights, h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
+
       do k=1,nz ; h_target(i,j,k) = zInterfaces(K) - zInterfaces(K+1) ; enddo
+
+      ! Fill out 4d array of histogram weights
+      call check_if_histogram_extensive_diags(remap_cs%regrid_cs,histogram_extensive_diags)
+      if ( histogram_extensive_diags ) then
+        do k0 = 1,GV%ke
+          do k1 = 1,nz
+            hweights3d(i,j,k0,k1) = histogram_weights(k0,k1)
+          enddo
+        enddo
+      endif
+    endif ; enddo ; enddo
+  elseif (remap_cs%vertical_coord == coordinateMode('SCALAR')) then
+    do j=js-1,je+1 ; do i=is-1,ie+1 ; if (G%mask2dT(i,j) > 0.0) then
+      ! This function call can work with 5 arguments in units of [Z ~> m] or [H ~> kg m-2].
+      call build_scalar_column(get_scalar_CS(remap_cs%regrid_cs), GV%ke, &
+                            bottom_depth(i,j), h(i,j,:), T(i,j,:), S(i,j,:), &
+                            eqn_of_state, zInterfaces, histogram_weights=histogram_weights, h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
+
+      do k=1,nz ; h_target(i,j,k) = zInterfaces(K) - zInterfaces(K+1) ; enddo
+
+      ! Fill out 4d array of histogram weights
+      call check_if_histogram_extensive_diags(remap_cs%regrid_cs,histogram_extensive_diags)
+      if ( histogram_extensive_diags ) then
+        do k0 = 1,GV%ke
+          do k1 = 1,nz
+            hweights3d(i,j,k0,k1) = histogram_weights(k0,k1)
+          enddo
+        enddo
+      endif
     endif ; enddo ; enddo
   elseif (remap_cs%vertical_coord == coordinateMode('HYCOM1')) then
     call MOM_error(FATAL,"diag_remap_update: HYCOM1 coordinate not coded for diagnostics yet!")
@@ -656,6 +696,89 @@ subroutine vertically_reintegrate_field(remap_cs, G, isdf, jsdf, h, h_target, st
   endif
 
 end subroutine vertically_reintegrate_field
+
+!> Vertically histogram a diagnostic field to alternative vertical grid.
+subroutine vertically_histogram_diag_field(remap_cs, G, hweights3d, staggered_in_x, staggered_in_y, &
+                                            mask, field, histogrammed_field)
+  type(diag_remap_ctrl),  intent(in)  :: remap_cs !< Diagnostic coordinate control structure
+  type(ocean_grid_type),  intent(in)  :: G        !< Ocean grid structure
+  real, dimension(:,:,:,:), intent(in)  :: hweights3d !< Weights used to map from grid to histogram
+  logical,                intent(in)  :: staggered_in_x !< True is the x-axis location is at u or q points
+  logical,                intent(in)  :: staggered_in_y !< True is the y-axis location is at v or q points
+  real, dimension(:,:,:), pointer     :: mask     !< A mask for the field [nondim].  Note that because this
+                                                  !! is a pointer it retains its declared indexing conventions.
+  real, dimension(:,:,:), intent(in)  :: field    !<  The diagnostic field to be remapped [A]
+  real, dimension(:,:,:), intent(out) :: histogrammed_field !< Field argument remapped to alternative coordinate [A]
+
+  ! Local variables
+  integer :: isdf, jsdf !< The starting i- and j-indices in memory for field
+
+  call assert(remap_cs%initialized, 'vertically_histogram_diag_field: remap_cs not initialized.')
+  call assert(size(field, 3) == size(hweights3d, 3), 'vertically_histogram_diag_field: Remap field and thickness z-axes do not match.')
+
+  isdf = G%isd ; if (staggered_in_x) Isdf = G%IsdB
+  jsdf = G%jsd ; if (staggered_in_y) Jsdf = G%JsdB
+
+  if (associated(mask)) then
+    call vertically_histogram_field(remap_cs, G, isdf, jsdf, hweights3d, staggered_in_x, staggered_in_y, &
+                                      field, histogrammed_field, mask(:,:,1))
+  else
+    call vertically_histogram_field(remap_cs, G, isdf, jsdf, hweights3d, staggered_in_x, staggered_in_y, &
+                                      field, histogrammed_field)
+  endif
+  
+end subroutine vertically_histogram_diag_field
+
+!> The internal routine to vertically histogram a diagnostic field to
+!! an alternative vertical grid.
+subroutine vertically_histogram_field(remap_cs, G, isdf, jsdf, hweights3d, staggered_in_x, staggered_in_y, &
+                                        field, histogrammed_field, mask)
+  type(diag_remap_ctrl),  intent(in)  :: remap_cs !< Diagnostic coordinate control structure
+  type(ocean_grid_type),  intent(in)  :: G        !< Ocean grid structure
+  integer,                intent(in)  :: isdf     !< The starting i-index in memory for field
+  integer,                intent(in)  :: jsdf     !< The starting j-index in memory for field
+  real, dimension(G%isd:,G%jsd:,:,:), intent(in)  :: hweights3d !< The weights for histogramming from source to target
+  logical,                intent(in)  :: staggered_in_x !< True is the x-axis location is at u or q points
+  logical,                intent(in)  :: staggered_in_y !< True is the y-axis location is at v or q points
+  real, dimension(isdf:,jsdf:,:), &
+                          intent(in)  :: field   !< The diagnostic field to be remapped [A]
+  real, dimension(isdf:,jsdf:,:), &
+                          intent(out) :: histogrammed_field !< Field argument remapped to alternative coordinate [A]
+  real, dimension(isdf:,jsdf:), &
+                          optional, intent(in)  :: mask !< A mask for the field [nondim]
+
+  ! Local variables
+  integer :: i, j                   ! Grid index
+  integer :: nz_src, nz_dest
+
+  nz_src = size(field,3)
+  nz_dest = remap_cs%nz
+  histogrammed_field(:,:,:) = 0.
+
+  if (staggered_in_x .and. .not. staggered_in_y) then
+    ! U-points
+    call assert(.false., 'vertically_histogram_diag_field: U point histogramming is not coded yet.')
+  elseif (staggered_in_y .and. .not. staggered_in_x) then
+    ! V-points
+    call assert(.false., 'vertically_histogram_diag_field: V point histogramming is not coded yet.')
+  elseif ((.not. staggered_in_x) .and. (.not. staggered_in_y)) then
+    ! H-points
+    if (present(mask)) then
+      do j=G%jsc,G%jec ; do i=G%isc,G%iec ; if (mask(i,J) > 0.0) then
+        call histogram_column(nz_src, field(i,j,:), &
+                                nz_dest, histogrammed_field(i,j,:), hweights3d(i,j,:,:))
+      endif ; enddo ; enddo
+    else
+      do j=G%jsc,G%jec ; do i=G%isc,G%iec
+        call histogram_column(nz_src, field(i,j,:), &
+                                nz_dest, histogrammed_field(i,j,:), hweights3d(i,j,:,:))
+      enddo ; enddo
+    endif
+  else
+    call assert(.false., 'vertically_histogram_diag_field: Q point remapping is not coded yet.')
+  endif
+
+end subroutine vertically_histogram_field
 
 !> Vertically interpolate diagnostic field to alternative vertical grid.
 subroutine vertically_interpolate_diag_field(remap_cs, G, h, staggered_in_x, staggered_in_y, &

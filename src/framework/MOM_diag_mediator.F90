@@ -17,6 +17,7 @@ use MOM_diag_manager_infra, only : get_MOM_diag_field_id, DIAG_FIELD_NOT_FOUND
 use MOM_diag_remap,       only : diag_remap_ctrl, diag_remap_update, diag_remap_calc_hmask
 use MOM_diag_remap,       only : diag_remap_init, diag_remap_end, diag_remap_do_remap
 use MOM_diag_remap,       only : vertically_reintegrate_diag_field, vertically_interpolate_diag_field
+use MOM_diag_remap,       only : vertically_histogram_diag_field
 use MOM_diag_remap,       only : horizontally_average_diag_field, diag_remap_get_axes_info
 use MOM_diag_remap,       only : diag_remap_configure_axes, diag_remap_axes_configured
 use MOM_diag_remap,       only : diag_remap_diag_registration_closed, diag_remap_set_active
@@ -35,6 +36,7 @@ use MOM_time_manager,     only : get_time
 use MOM_unit_scaling,     only : unit_scale_type
 use MOM_variables,        only : thermo_var_ptrs
 use MOM_verticalGrid,     only : verticalGrid_type
+use MOM_regridding,       only : check_if_histogram_extensive_diags
 
 implicit none ; private
 
@@ -511,6 +513,7 @@ subroutine set_axes_info(G, GV, US, param_file, diag_cs, set_vertical)
     ! Allocate these arrays since the size of the diagnostic array is now known
     allocate(diag_cs%diag_remap_cs(i)%h(G%isd:G%ied,G%jsd:G%jed, diag_cs%diag_remap_cs(i)%nz))
     allocate(diag_cs%diag_remap_cs(i)%h_extensive(G%isd:G%ied,G%jsd:G%jed, diag_cs%diag_remap_cs(i)%nz))
+    allocate(diag_cs%diag_remap_cs(i)%hweights3d(G%isd:G%ied,G%jsd:G%jed, GV%ke, diag_cs%diag_remap_cs(i)%nz))
 
     ! This vertical coordinate has been configured so can be used.
     if (diag_remap_axes_configured(diag_cs%diag_remap_cs(i))) then
@@ -1593,6 +1596,8 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
     dz_diag, &  ! Layer vertical extents for remapping [Z ~> m]
     dz_begin    ! Layer vertical extents for remapping extensive quantities [Z ~> m]
 
+  logical :: histogram_extensive_diags
+
   if (id_clock_diag_mediator>0) call cpu_clock_begin(id_clock_diag_mediator)
 
   ! For intensive variables only, we can choose to use a different diagnostic grid to map to
@@ -1640,36 +1645,63 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
     staggered_in_y = diag%axes%is_v_point .or. diag%axes%is_q_point
 
     if (diag%v_extensive .and. .not.diag%axes%is_native) then
-      ! The field is vertically integrated and needs to be re-gridded
+        ! The field is vertically integrated and needs to either be re-gridded
+        ! or binned into a new coordinate using a histogram approach
       if (present(mask)) then
         call MOM_error(FATAL,"post_data_3d: no mask for regridded field.")
       endif
 
-      if (id_clock_diag_remap>0) call cpu_clock_begin(id_clock_diag_remap)
-      allocate(remapped_field(size(field,1), size(field,2), diag%axes%nz))
-      if (diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%Z_based_coord) then
-        call vertically_reintegrate_diag_field(                                    &
-                diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), diag_cs%G, &
-                dz_begin, diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%h_extensive, &
-                staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
+      call check_if_histogram_extensive_diags(diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%regrid_cs, histogram_extensive_diags)
+      if ( histogram_extensive_diags ) then
+        ! Take histogramming approach
+        if (id_clock_diag_remap>0) call cpu_clock_begin(id_clock_diag_remap)
+        allocate(remapped_field(size(field,1), size(field,2), diag%axes%nz))
+        ! Shouldn't ever be specified for a Z-based coordinate, so can call directly, unlike below
+        call vertically_histogram_diag_field(                                    &
+                  diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), diag_cs%G, &
+                  diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%hweights3d, &
+                  staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
+        if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
+        if (associated(diag%axes%mask3d)) then
+          ! Since 3d masks do not vary in the vertical, just use as much as is
+          ! needed.
+          call post_data_3d_low(diag, remapped_field, diag_cs, is_static, &
+                                mask=diag%axes%mask3d)
+        else
+          call post_data_3d_low(diag, remapped_field, diag_cs, is_static)
+        endif
+        if (id_clock_diag_remap>0) call cpu_clock_begin(id_clock_diag_remap)
+        deallocate(remapped_field)
+        if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
       else
-        call vertically_reintegrate_diag_field(                                    &
-                diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), diag_cs%G, &
-                diag_cs%h_begin, diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%h_extensive, &
-                staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
+        ! The field is vertically integrated and needs to be re-gridded
+        ! Take regridding approach
+        if (id_clock_diag_remap>0) call cpu_clock_begin(id_clock_diag_remap)
+        allocate(remapped_field(size(field,1), size(field,2), diag%axes%nz))
+        if (diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%Z_based_coord) then
+          call vertically_reintegrate_diag_field(                                    &
+                  diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), diag_cs%G, &
+                  dz_begin, diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%h_extensive, &
+                  staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
+        else
+          call vertically_reintegrate_diag_field(                                    &
+                  diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), diag_cs%G, &
+                  diag_cs%h_begin, diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%h_extensive, &
+                  staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
+        endif
+        if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
+        if (associated(diag%axes%mask3d)) then
+          ! Since 3d masks do not vary in the vertical, just use as much as is
+          ! needed.
+          call post_data_3d_low(diag, remapped_field, diag_cs, is_static, &
+                                mask=diag%axes%mask3d)
+        else
+          call post_data_3d_low(diag, remapped_field, diag_cs, is_static)
+        endif
+        if (id_clock_diag_remap>0) call cpu_clock_begin(id_clock_diag_remap)
+        deallocate(remapped_field)
+        if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
       endif
-      if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
-      if (associated(diag%axes%mask3d)) then
-        ! Since 3d masks do not vary in the vertical, just use as much as is
-        ! needed.
-        call post_data_3d_low(diag, remapped_field, diag_cs, is_static, &
-                              mask=diag%axes%mask3d)
-      else
-        call post_data_3d_low(diag, remapped_field, diag_cs, is_static)
-      endif
-      if (id_clock_diag_remap>0) call cpu_clock_begin(id_clock_diag_remap)
-      deallocate(remapped_field)
-      if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
     elseif (diag%axes%needs_remapping) then
       ! Remap this field to another vertical coordinate.
       if (present(mask)) then
@@ -3633,7 +3665,7 @@ subroutine diag_update_remap_grids(diag_cs, alt_h, alt_T, alt_S, update_intensiv
                                diag_cs%eqn_of_state, diag_cs%diag_remap_cs(m)%h)
       else
         call diag_remap_update(diag_cs%diag_remap_cs(m), diag_cs%G, diag_cs%GV, diag_cs%US, h_diag, T_diag, S_diag, &
-                               diag_cs%eqn_of_state, diag_cs%diag_remap_cs(m)%h)
+                               diag_cs%eqn_of_state, diag_cs%diag_remap_cs(m)%h, diag_cs%diag_remap_cs(m)%hweights3d)
       endif
     enddo
   endif
@@ -3645,7 +3677,7 @@ subroutine diag_update_remap_grids(diag_cs, alt_h, alt_T, alt_S, update_intensiv
                                diag_cs%eqn_of_state, diag_cs%diag_remap_cs(m)%h_extensive)
       else
         call diag_remap_update(diag_cs%diag_remap_cs(m), diag_cs%G, diag_cs%GV, diag_cs%US, h_diag, T_diag, S_diag, &
-                               diag_cs%eqn_of_state, diag_cs%diag_remap_cs(m)%h_extensive)
+                               diag_cs%eqn_of_state, diag_cs%diag_remap_cs(m)%h_extensive, diag_cs%diag_remap_cs(m)%hweights3d)
       endif
     enddo
   endif
