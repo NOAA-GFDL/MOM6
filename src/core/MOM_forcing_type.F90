@@ -135,6 +135,10 @@ type, public :: forcing
     frunoff_glc   => NULL(), & !< frozen river glacier runoff entering ocean [R Z T-1 ~> kg m-2 s-1]
     seaice_melt   => NULL()    !< snow/seaice melt (positive) or formation (negative) [R Z T-1 ~> kg m-2 s-1]
 
+  ! carbon content associated with water crossing ocean surface
+  real, pointer, dimension(:,:) :: &
+    carbon_content_lrunoff     => NULL() !< carbon content associated with liquid runoff [R Z T-1 ~> kg m-2 s-1]
+
   ! Integrated water mass fluxes into the ocean, used for passive tracer sources [H ~> m or kg m-2]
   real, pointer, dimension(:,:) :: &
     netMassIn     => NULL(), & !< Sum of water mass fluxes into the ocean integrated over a
@@ -370,6 +374,7 @@ type, public :: forcing_diags ; private
   integer :: id_heat_added              = -1, id_heat_content_massin     = -1
   integer :: id_hfrainds                = -1, id_hfrunoffds              = -1
   integer :: id_seaice_melt_heat        = -1
+  integer :: id_carbon_content_lrunoff  = -1
 
   ! global area integrated heat flux diagnostic handles
   integer :: id_total_net_heat_coupler        = -1, id_total_net_heat_surface        = -1
@@ -1852,6 +1857,11 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
         'W m-2', conversion=US%QRZ_T_to_W_m2, &
         standard_name='temperature_flux_due_to_runoff_expressed_as_heat_flux_into_sea_water')
 
+  handles%id_carbon_content_lrunoff = register_diag_field('ocean_model', 'carbon_content_lrunoff', &
+        diag%axesT1, Time, 'Carbon content of liquid runoff into ocean',        &
+        'Kg m-2 s-1', &
+        standard_name='carbon_flux_due_to_runoff')
+
   if (present(use_glc_runoff)) then
     handles%id_heat_content_frunoff_glc = register_diag_field('ocean_model', 'heat_content_frunoff_glc', &
           diag%axesT1, Time, 'Heat content (relative to 0C) of solid glacier runoff into ocean',         &
@@ -2478,6 +2488,11 @@ subroutine fluxes_accumulate(flux_tmp, fluxes, G, wt2, forces)
                                              wt2*flux_tmp%heat_content_frunoff_glc(i,j)
     enddo ; enddo
   endif
+  if (associated(fluxes%carbon_content_lrunoff) .and. associated(flux_tmp%carbon_content_lrunoff)) then
+    do j=js,je ; do i=is,ie
+      fluxes%carbon_content_lrunoff(i,j) = wt1*fluxes%carbon_content_lrunoff(i,j) + wt2*flux_tmp%carbon_content_lrunoff(i,j)
+    enddo ; enddo
+  endif
 
   if (associated(fluxes%ustar_shelf) .and. associated(flux_tmp%ustar_shelf)) then
     do i=isd,ied ; do j=jsd,jed
@@ -2993,6 +3008,9 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
       endif
     endif
 
+    if ((handles%id_carbon_content_lrunoff > 0) .and. associated(fluxes%carbon_content_lrunoff))  &
+      call post_data(handles%id_carbon_content_lrunoff, fluxes%carbon_content_lrunoff, diag)
+
     ! post diagnostics for boundary heat fluxes ====================================
 
     if ((handles%id_heat_content_lrunoff > 0) .and. associated(fluxes%heat_content_lrunoff))  &
@@ -3488,6 +3506,7 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
   call myAlloc(fluxes%latent_frunoff_glc_diag,isd,ied,jsd,jed, heat)
 
   call myAlloc(fluxes%salt_flux,isd,ied,jsd,jed, salt)
+  call myAlloc(fluxes%carbon_content_lrunoff,isd,ied,jsd,jed, .true.)
 
   if (present(heat) .and. present(water)) then ; if (heat .and. water) then
     call myAlloc(fluxes%heat_content_cond,isd,ied,jsd,jed, .true.)
@@ -3800,6 +3819,7 @@ subroutine deallocate_forcing_type(fluxes)
   if (associated(fluxes%latent_frunoff_diag))  deallocate(fluxes%latent_frunoff_diag)
   if (associated(fluxes%latent_frunoff_glc_diag))  deallocate(fluxes%latent_frunoff_glc_diag)
   if (associated(fluxes%sens))                 deallocate(fluxes%sens)
+  if (associated(fluxes%carbon_content_lrunoff)) deallocate(fluxes%carbon_content_lrunoff)
   if (associated(fluxes%heat_added))           deallocate(fluxes%heat_added)
   if (associated(fluxes%heat_content_lrunoff)) deallocate(fluxes%heat_content_lrunoff)
   if (associated(fluxes%heat_content_frunoff)) deallocate(fluxes%heat_content_frunoff)

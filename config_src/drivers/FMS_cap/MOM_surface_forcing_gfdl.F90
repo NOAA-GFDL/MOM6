@@ -191,6 +191,7 @@ type, public :: ice_ocean_boundary_type
   real, pointer, dimension(:,:) :: lprec           =>NULL() !< mass flux of liquid precip [kg m-2 s-1]
   real, pointer, dimension(:,:) :: fprec           =>NULL() !< mass flux of frozen precip [kg m-2 s-1]
   real, pointer, dimension(:,:) :: runoff          =>NULL() !< mass flux of liquid runoff [kg m-2 s-1]
+  real, pointer, dimension(:,:) :: runoff_carbon   =>NULL() !< mass flux of carbon in liquid runoff [kg m-2 s-1]
   real, pointer, dimension(:,:) :: calving         =>NULL() !< mass flux of frozen runoff [kg m-2 s-1]
   real, pointer, dimension(:,:) :: stress_mag      =>NULL() !< The time-mean magnitude of the stress on the ocean [Pa]
   real, pointer, dimension(:,:) :: ustar_berg      =>NULL() !< frictional velocity beneath icebergs [m s-1]
@@ -503,6 +504,12 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
       fluxes%heat_content_lrunoff(i,j) = US%W_m2_to_QRZ_T * IOB%runoff_hflx(i-i0,j-j0) * G%mask2dT(i,j)
       if (CS%check_no_land_fluxes) &
         call check_mask_val_consistency(IOB%runoff_hflx(i-i0,j-j0), G%mask2dT(i,j), i, j, 'runoff_hflx', G)
+    endif
+
+    if (associated(IOB%runoff_carbon)) then
+      fluxes%carbon_content_lrunoff(i,j) = US%W_m2_to_QRZ_T * IOB%runoff_carbon(i-i0,j-j0) * G%mask2dT(i,j)
+      if (CS%check_no_land_fluxes) &
+        call check_mask_val_consistency(IOB%runoff_carbon(i-i0,j-j0), G%mask2dT(i,j), i, j, 'runoff_carbon', G)
     endif
 
     if (associated(IOB%calving_hflx)) then
