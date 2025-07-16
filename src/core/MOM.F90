@@ -115,10 +115,12 @@ use MOM_obsolete_diagnostics,  only : register_obsolete_diagnostics
 use MOM_open_boundary,         only : ocean_OBC_type, open_boundary_end
 use MOM_open_boundary,         only : register_temp_salt_segments, update_segment_tracer_reservoirs
 use MOM_open_boundary,         only : setup_OBC_tracer_reservoirs
+use MOM_open_boundary,         only : setup_OBC_thickness_reservoirs
 use MOM_open_boundary,         only : open_boundary_register_restarts, remap_OBC_fields
 use MOM_open_boundary,         only : initialize_segment_data, rotate_OBC_config
 use MOM_open_boundary,         only : update_OBC_segment_data, open_boundary_halo_update
 use MOM_open_boundary,         only : write_OBC_info, chksum_OBC_segments
+use MOM_open_boundary,         only : segment_thickness_reservoir_init
 use MOM_porous_barriers,       only : porous_widths_layer, porous_widths_interface, porous_barriers_init
 use MOM_porous_barriers,       only : porous_barrier_CS
 use MOM_set_visc,              only : set_viscous_BBL, set_viscous_ML, set_visc_CS
@@ -1334,8 +1336,6 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
     call particles_to_z_space(CS%particles, h)
   endif
 
-
-
   ! Update the model's current to reflect wind-wave growth
   if (Waves%Stokes_DDT .and. (.not.Waves%Passive_Stokes_DDT)) then
     do J=jsq,jeq ; do i=is,ie
@@ -1515,7 +1515,7 @@ subroutine step_MOM_tracer_dyn(CS, G, GV, US, h, Time_local)
   if (associated(CS%OBC)) then
     call pass_vector(CS%uhtr, CS%vhtr, G%Domain)
     call update_segment_tracer_reservoirs(G, GV, CS%uhtr, CS%vhtr, h, CS%OBC, &
-                     CS%t_dyn_rel_adv, CS%tracer_Reg)
+                     CS%tracer_Reg)
   endif
   call cpu_clock_end(id_clock_tracer) ; call cpu_clock_end(id_clock_thermo)
 
@@ -3088,6 +3088,10 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     !This is the equivalent call to register_temp_salt_segments for external tracers with OBC
     call call_tracer_register_obc_segments(GV, param_file, CS%tracer_flow_CSp, CS%tracer_Reg, CS%OBC)
 
+    ! Set up the thickness reservoirs if using them.
+    if (CS%OBC%use_h_res) &
+      call segment_thickness_reservoir_init(GV, US, CS%OBC, param_file)
+
     ! This needs the number of tracers and to have called any code that sets whether
     ! reservoirs are used.
     call open_boundary_register_restarts(HI, GV, US, CS%OBC, CS%tracer_Reg, &
@@ -3652,6 +3656,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     ! the restart file or has been specified in the segments.  Initialize the tracer reservoir
     ! values from the segments if they have not been set via the restart file.
     call setup_OBC_tracer_reservoirs(G, GV, CS%OBC, restart_CSp)
+    call setup_OBC_thickness_reservoirs(G, GV, CS%OBC, restart_CSp)
     call open_boundary_halo_update(G, CS%OBC)
   endif
 

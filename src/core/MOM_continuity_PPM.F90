@@ -459,7 +459,7 @@ subroutine zonal_edge_thickness(h_in, h_W, h_E, G, GV, US, CS, OBC, LB_in)
     !$OMP parallel do default(shared)
     do k=1,nz
       call PPM_reconstruction_x(h_in(:,:,k), h_W(:,:,k), h_E(:,:,k), G, LB, &
-                                2.0*GV%Angstrom_H, CS%monotonic, CS%simple_2nd, OBC)
+                                2.0*GV%Angstrom_H, CS%monotonic, CS%simple_2nd, OBC, k)
     enddo
   endif
 
@@ -506,7 +506,7 @@ subroutine meridional_edge_thickness(h_in, h_S, h_N, G, GV, US, CS, OBC, LB_in)
     !$OMP parallel do default(shared)
     do k=1,nz
       call PPM_reconstruction_y(h_in(:,:,k), h_S(:,:,k), h_N(:,:,k), G, LB, &
-                                2.0*GV%Angstrom_H, CS%monotonic, CS%simple_2nd, OBC)
+                                2.0*GV%Angstrom_H, CS%monotonic, CS%simple_2nd, OBC, k)
     enddo
   endif
 
@@ -2304,7 +2304,7 @@ subroutine set_merid_BT_cont(v, h_in, h_S, h_N, BT_cont, vh_tot_0, dvhdv_tot_0, 
 end subroutine set_merid_BT_cont
 
 !> Calculates left/right edge values for PPM reconstruction.
-subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_2nd, OBC)
+subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_2nd, OBC, k)
   type(ocean_grid_type),             intent(in)  :: G    !< Ocean's grid structure.
   real, dimension(SZI_(G),SZJ_(G)),  intent(in)  :: h_in !< Layer thickness [H ~> m or kg m-2].
   real, dimension(SZI_(G),SZJ_(G)),  intent(out) :: h_W  !< West edge thickness in the reconstruction,
@@ -2321,6 +2321,7 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
                     !! arithmetic mean thicknesses as the default edge values
                     !! for a simple 2nd order scheme.
   type(ocean_OBC_type),              pointer     :: OBC !< Open boundaries control structure.
+  integer :: k      !< vertical grid index
 
   ! Local variables with useful mnemonic names.
   real, dimension(SZI_(G),SZJ_(G))  :: slp ! The slopes per grid point [H ~> m or kg m-2]
@@ -2411,20 +2412,52 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
       if (.not. segment%on_pe) cycle
       if (segment%direction == OBC_DIRECTION_E) then
         I=segment%HI%IsdB
-        do j=segment%HI%jsd,segment%HI%jed
-          h_W(i+1,j) = h_in(i,j)
-          h_E(i+1,j) = h_in(i,j)
-          h_W(i,j) = h_in(i,j)
-          h_E(i,j) = h_in(i,j)
-        enddo
+        if (associated(segment%h_Reg)) then
+          if (allocated(segment%h_Reg%h_res)) then
+            do j=segment%HI%jsd,segment%HI%jed
+              h_W(i+1,j) = segment%h_Reg%h_res(i,j,k)
+              h_E(i+1,j) = segment%h_Reg%h_res(i,j,k)
+              h_W(i,j) = segment%h_Reg%h_res(i,j,k)
+              h_E(i,j) = segment%h_Reg%h_res(i,j,k)
+            enddo
+          else
+            write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with ", &
+                         & "badly configured h_res.")') &
+                         stencil + max(G%jsd-jsl,jel-G%jed)
+            call MOM_error(FATAL,mesg)
+          endif
+        else
+          do j=segment%HI%jsd,segment%HI%jed
+            h_W(i+1,j) = h_in(i,j)
+            h_E(i+1,j) = h_in(i,j)
+            h_W(i,j) = h_in(i,j)
+            h_E(i,j) = h_in(i,j)
+          enddo
+        endif
       elseif (segment%direction == OBC_DIRECTION_W) then
         I=segment%HI%IsdB
-        do j=segment%HI%jsd,segment%HI%jed
-          h_W(i,j) = h_in(i+1,j)
-          h_E(i,j) = h_in(i+1,j)
-          h_W(i+1,j) = h_in(i+1,j)
-          h_E(i+1,j) = h_in(i+1,j)
-        enddo
+        if (associated(segment%h_Reg)) then
+          if (allocated(segment%h_Reg%h_res)) then
+            do j=segment%HI%jsd,segment%HI%jed
+              h_W(i,j) = segment%h_Reg%h_res(i,j,k)
+              h_E(i,j) = segment%h_Reg%h_res(i,j,k)
+              h_W(i+1,j) = segment%h_Reg%h_res(i,j,k)
+              h_E(i+1,j) = segment%h_Reg%h_res(i,j,k)
+            enddo
+          else
+            write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with ", &
+                         & "badly configured h_res.")') &
+                         stencil + max(G%jsd-jsl,jel-G%jed)
+            call MOM_error(FATAL,mesg)
+          endif
+        else
+          do j=segment%HI%jsd,segment%HI%jed
+            h_W(i,j) = h_in(i+1,j)
+            h_E(i,j) = h_in(i+1,j)
+            h_W(i+1,j) = h_in(i+1,j)
+            h_E(i+1,j) = h_in(i+1,j)
+          enddo
+        endif
       endif
     enddo
   endif
@@ -2439,7 +2472,7 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
 end subroutine PPM_reconstruction_x
 
 !> Calculates left/right edge values for PPM reconstruction.
-subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_2nd, OBC)
+subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_2nd, OBC, k)
   type(ocean_grid_type),             intent(in)  :: G    !< Ocean's grid structure.
   real, dimension(SZI_(G),SZJ_(G)),  intent(in)  :: h_in !< Layer thickness [H ~> m or kg m-2].
   real, dimension(SZI_(G),SZJ_(G)),  intent(out) :: h_S  !< South edge thickness in the reconstruction,
@@ -2456,6 +2489,7 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_
                     !! arithmetic mean thicknesses as the default edge values
                     !! for a simple 2nd order scheme.
   type(ocean_OBC_type),              pointer     :: OBC !< Open boundaries control structure.
+  integer :: k      !< vertical grid index
 
   ! Local variables with useful mnemonic names.
   real, dimension(SZI_(G),SZJ_(G))  :: slp ! The slopes per grid point [H ~> m or kg m-2]
@@ -2544,20 +2578,52 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_
       if (.not. segment%on_pe) cycle
       if (segment%direction == OBC_DIRECTION_N) then
         J=segment%HI%JsdB
-        do i=segment%HI%isd,segment%HI%ied
-          h_S(i,j+1) = h_in(i,j)
-          h_N(i,j+1) = h_in(i,j)
-          h_S(i,j) = h_in(i,j)
-          h_N(i,j) = h_in(i,j)
-        enddo
+        if (associated(segment%h_Reg)) then
+          if (allocated(segment%h_Reg%h_res)) then
+            do i=segment%HI%isd,segment%HI%ied
+              h_S(i,j+1) = segment%h_Reg%h_res(i,j,k)
+              h_N(i,j+1) = segment%h_Reg%h_res(i,j,k)
+              h_S(i,j) = segment%h_Reg%h_res(i,j,k)
+              h_N(i,j) = segment%h_Reg%h_res(i,j,k)
+            enddo
+          else
+            write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with ", &
+                         & "badly configured h_res.")') &
+                         stencil + max(G%jsd-jsl,jel-G%jed)
+            call MOM_error(FATAL,mesg)
+          endif
+        else
+          do i=segment%HI%isd,segment%HI%ied
+            h_S(i,j+1) = h_in(i,j)
+            h_N(i,j+1) = h_in(i,j)
+            h_S(i,j) = h_in(i,j)
+            h_N(i,j) = h_in(i,j)
+          enddo
+        endif
       elseif (segment%direction == OBC_DIRECTION_S) then
         J=segment%HI%JsdB
-        do i=segment%HI%isd,segment%HI%ied
-          h_S(i,j) = h_in(i,j+1)
-          h_N(i,j) = h_in(i,j+1)
-          h_S(i,j+1) = h_in(i,j+1)
-          h_N(i,j+1) = h_in(i,j+1)
-        enddo
+        if (associated(segment%h_Reg)) then
+          if (allocated(segment%h_Reg%h_res)) then
+            do i=segment%HI%isd,segment%HI%ied
+              h_S(i,j) = segment%h_Reg%h_res(i,j,k)
+              h_N(i,j) = segment%h_Reg%h_res(i,j,k)
+              h_S(i,j+1) = segment%h_Reg%h_res(i,j,k)
+              h_N(i,j+1) = segment%h_Reg%h_res(i,j,k)
+            enddo
+          else
+            write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with ", &
+                         & "badly configured h_res.")') &
+                         stencil + max(G%jsd-jsl,jel-G%jed)
+            call MOM_error(FATAL,mesg)
+          endif
+        else
+          do i=segment%HI%isd,segment%HI%ied
+            h_S(i,j) = h_in(i,j+1)
+            h_N(i,j) = h_in(i,j+1)
+            h_S(i,j+1) = h_in(i,j+1)
+            h_N(i,j+1) = h_in(i,j+1)
+          enddo
+        endif
       endif
     enddo
   endif

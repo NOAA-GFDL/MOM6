@@ -60,6 +60,8 @@ use MOM_MEKE_types,            only : MEKE_type
 use MOM_open_boundary,         only : ocean_OBC_type, radiation_open_bdry_conds
 use MOM_open_boundary,         only : open_boundary_zero_normal_flow, open_boundary_query
 use MOM_open_boundary,         only : open_boundary_test_extern_h, update_OBC_ramp
+use MOM_open_boundary,         only : copy_thickness_reservoirs
+use MOM_open_boundary,         only : update_segment_thickness_reservoirs
 use MOM_PressureForce,         only : PressureForce, PressureForce_CS
 use MOM_PressureForce,         only : PressureForce_init
 use MOM_set_visc,              only : set_viscous_ML, set_visc_CS
@@ -643,6 +645,9 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   if (G%nonblocking_updates) &
     call complete_group_pass(CS%pass_visc_rem, G%Domain, clock=id_clock_pass)
 
+  if (associated(CS%OBC)) &
+    call copy_thickness_reservoirs(CS%OBC, G, GV)
+
 ! u_accel_bt = layer accelerations due to barotropic solver
   if (associated(CS%BT_cont) .or. CS%BT_use_layer_fluxes) then
     call cpu_clock_begin(id_clock_continuity)
@@ -790,6 +795,7 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   call do_group_pass(CS%pass_hp_uv, G%Domain, clock=id_clock_pass)
 
   if (associated(CS%OBC)) then
+    call update_segment_thickness_reservoirs(G, GV, uhtr, vhtr, hp, CS%OBC)
 
     if (CS%debug) &
       call uvchksum("Pre OBC avg [uv]", u_av, v_av, G%HI, haloshift=1, symmetric=sym, unscale=US%L_T_to_m_s)
@@ -1062,6 +1068,7 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   endif
 
   if (associated(CS%OBC)) then
+    call update_segment_thickness_reservoirs(G, GV, uhtr, vhtr, h, CS%OBC)
     !### I suspect that there is a bug here when u_inst is compared with a previous value of u_av
     ! to estimate the dominant outward group velocity, but a fix is not available yet.
     call radiation_open_bdry_conds(CS%OBC, u_inst, u_old_rad_OBC, v_inst, v_old_rad_OBC, G, GV, US, dt)
