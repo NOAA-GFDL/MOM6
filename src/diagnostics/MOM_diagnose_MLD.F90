@@ -413,7 +413,7 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, k_bounds
           !These are mathematically equivalent, the latter is numerically well-behaved, but the
           ! former is kept as a comment as it may be more intuitive how it is derived.
           !PE_Mixed_TST = (0.5 * (Rho_ML*pe_dir)) * ( (Zr + pe_dir*H_ML_TST)**2 - Zr**2.)
-          PE_Mixed_TST = (0.5 * (Rho_ML*pe_dir)) * (H_ML_TST * (H_ML_TST - 2.0*pe_dir*Zr))
+          PE_Mixed_TST = (0.5 * (Rho_ML*pe_dir)) * (H_ML_TST * (H_ML_TST + 2.0*pe_dir*Zr))
 
           ! Check if we supplied enough energy to mix to this layer
           if (PE_Mixed_TST - PE <= PE_threshold(iM)) then
