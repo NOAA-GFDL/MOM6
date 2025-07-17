@@ -477,7 +477,8 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, visc, dt, Kd_int, G, GV, 
     diag_mstar_LT, &   ! mstar due to Langmuir turbulence [nondim]
     diag_LA, &         ! Langmuir number [nondim]
     diag_LA_mod, &     ! Modified Langmuir number [nondim]
-    diag_ustar, diag_bflx
+    diag_ustar, &      ! The surface boundary layer friction velocity [Z T-1 ~> m s-1]
+    diag_bflx          ! The surface boundary layer buoyancy flux  [Z2 T-3 ~> m2 s-3]
 
   ! The following variables are only used for diagnosing sensitivities to ePBL settings
   real, dimension(SZK_(GV)+1) :: &
@@ -695,8 +696,15 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, visc, dt, Kd_int, G, GV, 
       if (BBL_mixing) then
         if (CS%MLD_iteration_guess .and. (CS%BBL_depth(i,j) > 0.0)) BBLD_io = CS%BBL_depth(i,j)
         BBLD_in = BBLD_io
-        u_star_BBL = max(visc%ustar_BBL(i,j), CS%ustar_min*GV%Z_to_H)
+        u_star_BBL = max(visc%ustar_BBL(i,j), CS%ustar_min*GV%Z_to_H)  ! units are H T-1
         u_star_BBL_z_t = u_star_bbl*GV%H_to_Z
+        ! ^ units are now H T-1 * Z H-1 = Z T-1, but nonBoussinesq has a factor of Rho/Rho0
+        if (.not.GV%Boussinesq) then
+          u_star_BBL = u_star_BBL*(GV%Rho0*tv%SpV_avg(i,j,1)) ! factor of Rho/Rho0 is divided out
+        endif
+
+        !
+
         if (CS%ePBL_BBL_use_mstar) then
           BBL_TKE = dt * ((u_star_BBL*GV%H_to_RZ) * u_star_BBL_z_t**2)
         else
@@ -3512,7 +3520,7 @@ end subroutine find_PE_chg_orig
 !> This subroutine finds the mstar value for ePBL
 subroutine find_mstar(CS, US, Buoyancy_Flux, UStar, &
                       BLD, Abs_Coriolis, Is_BBL, mstar, &
-                      Langmuir_Number,mstar_LT, Convect_Langmuir_Number)
+                      Langmuir_Number, mstar_LT, Convect_Langmuir_Number)
   type(energetic_PBL_CS), intent(in) :: CS    !< Energetic PBL control structure
   type(unit_scale_type), intent(in)  :: US    !< A dimensional unit scaling type
   real,                  intent(in)  :: UStar !< ustar including gustiness [Z T-1 ~> m s-1]

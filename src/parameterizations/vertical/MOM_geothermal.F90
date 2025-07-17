@@ -619,7 +619,7 @@ subroutine geothermal_init(Time, G, GV, US, param_file, diag, CS, useALEalgorith
   if (id > 0) call post_data(id, CS%geo_heat, diag, .true.)
 
   CS%id_geothermal_buoyancy_flux = register_diag_field('ocean_model', &
-        'geo_bflx',diag%axesT1,Time,'Geothermal buoyancy flux into ocean', &
+        'geo_bflx', diag%axesT1, Time, 'Geothermal buoyancy flux into ocean', &
         'm2 s-3', conversion=US%Z_to_m**2*US%s_to_T**3)
 
   ! Diagnostic for tendencies due to internal heat (in 3d)

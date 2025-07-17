@@ -2429,9 +2429,9 @@ subroutine set_diffusivity_init(Time, G, GV, US, param_file, diag, CS, int_tide_
                  "diffusion.  This is only used if BOTTOMDRAGLAW is true.", &
                  units="nondim", default=0.20, scale=US%L_to_Z**2)
     call get_param(param_file, mdl, "EPBL_BBL_EFFIC", CS%ePBL_BBL_effic, &
-                   units="nondim", default=0.0,do_not_log=.true.)
+                 units="nondim", default=0.0, do_not_log=.true.)
     call get_param(param_file, mdl, "EPBL_BBL_USE_MSTAR", CS%ePBL_BBL_mstar, &
-                   default=.false.,do_not_log=.true.)
+                 default=.false., do_not_log=.true.)
     call get_param(param_file, mdl, "BBL_MIXING_MAX_DECAY", decay_length, &
                  "The maximum decay scale for the BBL diffusion, or 0 to allow the mixing "//&
                  "to penetrate as far as stratification and rotation permit.  The default "//&

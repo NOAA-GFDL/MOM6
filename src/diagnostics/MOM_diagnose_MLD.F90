@@ -357,7 +357,7 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, k_bounds
     pe_dir = -1. ! A "down" factor so calculations forward and backward use the same algorithm
     k_Zr = k_bounds(1) !top of cell indicated by k_bounds(1)
   else
-    k_int=-1     ! k_interval is backward in k-space
+    k_int = -1     ! k_interval is backward in k-space
     pe_dir = 1.  ! An "up" factor so calculations forward and backward use the same algorithm
     k_Zr = k_bounds(1)+1 !bottom of cell indicated by k_bounds(1)
   endif
@@ -410,7 +410,10 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, k_bounds
           ! The PE assuming all layers including this were mixed
           ! Zr is the upper (lower) bound of the integral when operating in surface (bottom)
           ! mixed layer calculation mode.
-          PE_Mixed_TST = (0.5 * (Rho_ML*pe_dir)) * ( (Zr + pe_dir*H_ML_TST)**2 - Zr**2.)
+          !These are mathematically equivalent, the latter is numerically well-behaved, but the
+          ! former is kept as a comment as it may be more intuitive how it is derived.
+          !PE_Mixed_TST = (0.5 * (Rho_ML*pe_dir)) * ( (Zr + pe_dir*H_ML_TST)**2 - Zr**2.)
+          PE_Mixed_TST = (0.5 * (Rho_ML*pe_dir)) * (H_ML_TST * (H_ML_TST - 2.0*pe_dir*Zr))
 
           ! Check if we supplied enough energy to mix to this layer
           if (PE_Mixed_TST - PE <= PE_threshold(iM)) then
