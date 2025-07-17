@@ -697,13 +697,11 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, visc, dt, Kd_int, G, GV, 
         if (CS%MLD_iteration_guess .and. (CS%BBL_depth(i,j) > 0.0)) BBLD_io = CS%BBL_depth(i,j)
         BBLD_in = BBLD_io
         u_star_BBL = max(visc%ustar_BBL(i,j), CS%ustar_min*GV%Z_to_H)  ! units are H T-1
-        u_star_BBL_z_t = u_star_bbl*GV%H_to_Z
-        ! ^ units are now H T-1 * Z H-1 = Z T-1, but nonBoussinesq has a factor of Rho/Rho0
-        if (.not.GV%Boussinesq) then
-          u_star_BBL_z_t = u_star_BBL_z_t*(GV%Rho0*tv%SpV_avg(i,j,1)) ! factor of Rho/Rho0 is divided out
+        if (GV%Boussinesq) then
+          u_star_BBL_z_t = u_star_BBL*GV%H_to_Z
+        else
+          u_star_BBL_z_t = u_star_BBL*GV%H_to_RZ*tv%SpV_avg(i,j,1)
         endif
-
-        !
 
         if (CS%ePBL_BBL_use_mstar) then
           BBL_TKE = dt * ((u_star_BBL*GV%H_to_RZ) * u_star_BBL_z_t**2)

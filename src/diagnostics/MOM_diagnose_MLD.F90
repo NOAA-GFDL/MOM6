@@ -364,10 +364,20 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, k_bounds
 
   do j=js,je
     ! Find the vertical distances across layers.
-    call thickness_to_dz(h, tv, dz, j, G, GV)
+    call thickness_to_dz(h, tv, dZ, j, G, GV)
+
+    if (pe_dir>0) then
+      ! We want to reference pressure to bottom for upward calculation
+      pRef_MLD(:) = 0.0
+      do i=is,ie ; if (G%mask2dT(i,j) > 0.0) then
+        do k=1,nz
+          pRef_MLD(i) = pRef_MLD(i) + h(i,j,k)*GV%H_to_RZ*GV%g_Earth
+        enddo
+      endif ; enddo
+    endif
 
     do k=1,nz
-      call calculate_density(tv%T(:,j,k), tv%S(:,j,K), pRef_MLD, rho_c(:,k), tv%eqn_of_state, EOSdom)
+      call calculate_density(tv%T(:,j,k), tv%S(:,j,K), pRef_MLD(:), rho_c(:,k), tv%eqn_of_state, EOSdom)
     enddo
 
     do i=is,ie ; if (G%mask2dT(i,j) > 0.0) then
@@ -398,7 +408,12 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, k_bounds
         do k=k_bounds(1),k_bounds(2),k_int
 
           ! This is the unmixed PE cumulative sum in the direction k_int
-          PE = PE + 0.5 * Rho_c(i,k) * (Z_int(K)**2 - Z_int(K+1)**2)
+          ! The first expression preserves OM4 diagnostic answers, the second is more robust
+          if (use_OM4_iteration) then
+            PE = PE + 0.5 * Rho_c(i,k) * (Z_int(K)**2 - Z_int(K+1)**2)
+          else
+            PE = PE + 0.5 * (Rho_c(i,k) * dZ(i,k)) * (Z_int(K) + Z_int(K+1))
+          endif
 
           ! This is the depth and integral of density
           H_ML_TST = H_ML + dZ(i,k)
