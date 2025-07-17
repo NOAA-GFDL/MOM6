@@ -700,7 +700,7 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, visc, dt, Kd_int, G, GV, 
         u_star_BBL_z_t = u_star_bbl*GV%H_to_Z
         ! ^ units are now H T-1 * Z H-1 = Z T-1, but nonBoussinesq has a factor of Rho/Rho0
         if (.not.GV%Boussinesq) then
-          u_star_BBL = u_star_BBL*(GV%Rho0*tv%SpV_avg(i,j,1)) ! factor of Rho/Rho0 is divided out
+          u_star_BBL_z_t = u_star_BBL_z_t*(GV%Rho0*tv%SpV_avg(i,j,1)) ! factor of Rho/Rho0 is divided out
         endif
 
         !
