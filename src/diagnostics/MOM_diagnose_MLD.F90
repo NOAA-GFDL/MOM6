@@ -520,8 +520,8 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, k_bounds
               !up   Ca2 = -R2
               Ca2 = ( -1. * pe_dir ) * R2
               !down Cb2 = R2*(2*D1-2*Zr)
-              !up   Cb2 = R2*(2*D1-2*Zr)
-              Cb2 = ( 2. * R2 ) * ( D1 - Zr )
+              !up   Cb2 = R2*(-2*D1-2*Zr)
+              Cb2 = ( 2. * R2 ) * ( (-1.*pe_dir)*D1 - Zr )
               !down Cc2 = R2*(2.*Zr*D2-2.*D1*D2-D2**2)
               !up   Cc2 = R2*(2.*Zr*D2+2.*D1*D2+D2**2)
               Cc2 = ( R2 * D2 ) * ( 2.* Zr + pe_dir * ( 2. * D1 + D2 ) )
