@@ -578,9 +578,11 @@ subroutine get_bias_correction_tracer(Time, US, CS)
 
   call cpu_clock_begin(id_clock_bias_adjustment)
   call horiz_interp_and_extrap_tracer(CS%INC_CS%T, Time, CS%G, T_bias, &
-            valid_flag, z_in, z_edges_in, missing_value, scale=US%degC_to_C*US%s_to_T, spongeOngrid=.true., answer_date=CS%answer_date)
+            valid_flag, z_in, z_edges_in, missing_value, scale=US%degC_to_C*US%s_to_T, spongeOngrid=.true., &
+            answer_date=CS%answer_date)
   call horiz_interp_and_extrap_tracer(CS%INC_CS%S, Time, CS%G, S_bias, &
-            valid_flag, z_in, z_edges_in, missing_value, scale=US%ppt_to_S*US%s_to_T, spongeOngrid=.true., answer_date=CS%answer_date)
+            valid_flag, z_in, z_edges_in, missing_value, scale=US%ppt_to_S*US%s_to_T, spongeOngrid=.true., &
+            answer_date=CS%answer_date)
 
   ! This should be replaced to use mask_z instead of the following lines
   ! which are intended to zero land values using an arbitrary limit.
