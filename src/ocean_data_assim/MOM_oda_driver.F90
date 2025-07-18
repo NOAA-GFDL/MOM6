@@ -587,11 +587,11 @@ subroutine get_bias_correction_tracer(Time, US, CS)
   ! This should be replaced to use mask_z instead of the following lines
   ! which are intended to zero land values using an arbitrary limit.
   fld_sz=shape(T_bias)
-  if (CS%reproduce_2018_nmme) then 
+  if (CS%reproduce_2018_nmme) then
     do i=1,fld_sz(1)
       do j=1,fld_sz(2)
         do k=1,fld_sz(3)
-          ! The following two lines are needed for backward compatibility for NMME answers (2018 vintage) 
+          ! The following two lines are needed for backward compatibility for NMME answers (2018 vintage)
           ! These were implemented to catch missing values, so large values are excluded.
           if (T_bias(i,j,k) > 1.0E-3*US%degC_to_C) T_bias(i,j,k) = 0.0
           if (S_bias(i,j,k) > 1.0E-3*US%ppt_to_S) S_bias(i,j,k) = 0.0
