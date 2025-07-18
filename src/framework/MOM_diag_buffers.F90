@@ -323,7 +323,10 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
 
     allocate(test_2d(nlen, is:ie, js:je))
     call random_number(test_2d)
-    buffer = diag_buffer_2d(is=is, ie=ie, js=js, je=je)
+    buffer%is = is
+    buffer%ie = ie
+    buffer%js = js
+    buffer%je = je
 
     do i=1,nlen
       call buffer%store(test_2d(i,:,:), i*3)
@@ -457,7 +460,12 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
 
     local_fail = .false.
     call random_number(test_3d)
-    buffer = diag_buffer_3d(is=is, ie=ie, js=js, je=je, ks=1, ke=10)
+    buffer%is = is
+    buffer%ie = ie
+    buffer%js = js
+    buffer%je = je
+    buffer%ks = ks
+    buffer%ke = ke
 
     do i=1,nlen
       call buffer%store(test_3d(i,:,:,:), i*3)
@@ -484,7 +492,12 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
     call random_number(test_3d_first)
     call random_number(test_3d_second)
 
-    buffer = diag_buffer_3d(is=is, ie=ie, js=js, je=je, ks=ks, ke=ke)
+    buffer%is = is
+    buffer%ie = ie
+    buffer%js = js
+    buffer%je = je
+    buffer%ks = ks
+    buffer%ke = ke
 
     do i=1,nlen
       call buffer%store(test_3d_first(i,:,:,:), id=i*3)
