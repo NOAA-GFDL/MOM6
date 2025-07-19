@@ -15,7 +15,7 @@ use MOM_domains,       only : To_North, To_East
 use MOM_domains,       only : pass_var, CORNER
 use MOM_cpu_clock,     only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock,     only : CLOCK_MODULE, CLOCK_ROUTINE
-use MOM_ANN,           only : ANN_init, ANN_apply, ANN_end, ANN_CS
+use MOM_ANN,           only : ANN_init, ANN_apply_array_sio, ANN_end, ANN_CS
 
 implicit none ; private
 
@@ -664,13 +664,18 @@ subroutine compute_stress_ANN_collocated(G, GV, CS)
   type(ZB2020_CS),         intent(inout) :: CS   !< ZB2020 control structure.
 
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
-  integer :: i, j, k, n
+  integer :: i, j, k, n, m
   integer :: ii, jj
+  integer :: nij
 
-  real :: x(3*CS%stencil_size**2)    ! Vector of non-dimensional input features
+  real, allocatable :: x(:,:)        ! Vector of non-dimensional input features
+                                     ! number of horizontal grid points x
                                      ! (sh_xy, sh_xx, vort_xy) on a stencil    [nondim]
-  real :: y(3)                       ! Vector of nondimensional
-                                     ! output features (Txy,Txx,Tyy) [nondim]
+  real, allocatable :: y(:,:)        ! Vector of nondimensional
+                                     ! output features number of horizontal grid points x
+                                     ! (Txy,Txx,Tyy) [nondim]
+  real :: yy(3)                      ! Vector of dimensional
+                                     ! output features (Txy,Txx,Tyy) [L2 T-2 ~> m2 s-2]
   real :: input_norm                 ! Norm of input features [T-1 ~> s-1]
   real :: tmp                        ! Temporal value of squared norm [T-2 ~> s-2]
   integer :: offset                  ! Half the stencil size. Used for selection
@@ -689,6 +694,11 @@ subroutine compute_stress_ANN_collocated(G, GV, CS)
 
   is  = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec ; nz = GV%ke
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
+
+  ! Number of horizontal grid points in ANN inference loop below
+  nij = (ie - is + 5) * (je - js + 5)
+  allocate(x(nij, 3 * CS%stencil_size**2))
+  allocate(y(nij, 3))
 
   sh_xy_h = 0.
   vort_xy_h = 0.
@@ -728,28 +738,32 @@ subroutine compute_stress_ANN_collocated(G, GV, CS)
   call pass_var(norm_h, G%Domain, clock=CS%id_clock_mpi)
 
   do k=1,nz
+    m = 0
     do j=js-2,je+2 ; do i=is-2,ie+2
-      x(1:stencil_points) =                                                            &
-                        RESHAPE(sh_xy_h(i-offset:i+offset,                             &
+      m = m + 1
+      x(m,1:stencil_points) =                                                            &
+                        RESHAPE(sh_xy_h(i-offset:i+offset,                               &
                                         j-offset:j+offset,k), (/stencil_points/))
-      x(stencil_points+1:2*stencil_points) =                                           &
-                        RESHAPE(CS%sh_xx(i-offset:i+offset,                            &
+      x(m,stencil_points+1:2*stencil_points) =                                           &
+                        RESHAPE(CS%sh_xx(i-offset:i+offset,                              &
                                          j-offset:j+offset,k), (/stencil_points/))
-      x(2*stencil_points+1:3*stencil_points) =                                         &
-                        RESHAPE(vort_xy_h(i-offset:i+offset,                           &
+      x(m,2*stencil_points+1:3*stencil_points) =                                         &
+                        RESHAPE(vort_xy_h(i-offset:i+offset,                             &
                                           j-offset:j+offset,k), (/stencil_points/))
 
-      input_norm = norm_h(i,j,k)
+      x(m,:) = x(m,:) / (norm_h(i,j,k) + CS%subroundoff_shear)
+    enddo; enddo
 
-      x(:) = x(:) / (input_norm + CS%subroundoff_shear)
+    call ANN_apply_array_sio(nij, x, y, CS%ann_Tall)
 
-      call ANN_apply(x, y, CS%ann_Tall)
+    m = 0
+    do j=js-2,je+2 ; do i=is-2,ie+2
+      m = m+1
+      yy(:) = y(m, :) * norm_h(i,j,k) * norm_h(i,j,k) * CS%kappa_h(i,j)
 
-      y(:) = y(:) * input_norm * input_norm * CS%kappa_h(i,j)
-
-      Txy(i,j)      = y(1)
-      CS%Txx(i,j,k) = y(2)
-      CS%Tyy(i,j,k) = y(3)
+      Txy(i,j)      = yy(1)
+      CS%Txx(i,j,k) = yy(2)
+      CS%Tyy(i,j,k) = yy(3)
     enddo ; enddo
 
     do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
@@ -762,6 +776,9 @@ subroutine compute_stress_ANN_collocated(G, GV, CS)
   call pass_var(CS%Txy, G%Domain, clock=CS%id_clock_mpi, position=CORNER)
   call pass_var(CS%Txx, G%Domain, clock=CS%id_clock_mpi)
   call pass_var(CS%Tyy, G%Domain, clock=CS%id_clock_mpi)
+
+  deallocate(x)
+  deallocate(y)
 
   call cpu_clock_end(CS%id_clock_stress_ANN)
 
