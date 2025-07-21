@@ -1376,8 +1376,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   ! Note that the filtered velocities are only updated during the current predictor step,
   ! and are calculated using the barotropic velocity from the previous correction step.
   if (CS%use_filter) then
-    call Filt_accum(ubt(G%IsdB:G%IedB,G%jsd:G%jed), ufilt, CS%Time, US, CS%Filt_CS_u)
-    call Filt_accum(vbt(G%isd:G%ied,G%JsdB:G%JedB), vfilt, CS%Time, US, CS%Filt_CS_v)
+    call Filt_accum(ubt(G%IsdB:G%IedB,G%jsd-1:G%jed+1), ufilt, CS%Time, US, CS%Filt_CS_u)
+    call Filt_accum(vbt(G%isd-1:G%ied+1,G%JsdB:G%JedB), vfilt, CS%Time, US, CS%Filt_CS_v)
   endif
 
   if (CS%use_filter .and. CS%linear_freq_drag) then
@@ -5989,7 +5989,6 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                              position=NORTH_FACE, scale=wave_drag_scale*GV%m_to_H*US%T_to_s)
           call pass_vector(CS%lin_drag_uv, CS%lin_drag_vu, G%domain, direction=To_All+SCALAR_PAIR)
         endif ! (len_trim(wave_drag_uv) > 0 .and. len_trim(wave_drag_vu) > 0)
-
       else
         allocate(lin_drag_h(isd:ied,jsd:jed), source=0.0)
 

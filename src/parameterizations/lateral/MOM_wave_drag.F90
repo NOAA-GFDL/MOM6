@@ -21,6 +21,10 @@ type, public :: wave_drag_CS ; private
   integer :: nf                                 !< Number of filters to be used in the simulation
   real, allocatable, dimension(:,:,:) :: coef_u !< frequency-dependent drag coefficients [H T-1 ~> m s-1]
   real, allocatable, dimension(:,:,:) :: coef_v !< frequency-dependent drag coefficients [H T-1 ~> m s-1]
+  real, allocatable, dimension(:,:,:) :: coef_uv !< frequency-dependent drag coefficients [H T-1 ~> m s-1]
+  real, allocatable, dimension(:,:,:) :: coef_vu !< frequency-dependent drag coefficients [H T-1 ~> m s-1]
+  logical :: tensor_drag                        !< If true, include the off-diagonal components of the
+                                                !! wave drag tensor for computing the wave drag
 end type wave_drag_CS
 
 contains
@@ -38,7 +42,7 @@ subroutine wave_drag_init(param_file, wave_drag_file, G, GV, US, CS)
   character(len=40)  :: mdl = "MOM_wave_drag"          !< This module's name
   character(len=50)  :: filter_name_str                !< List of drag coefficients to be used
   character(len=2),  allocatable, dimension(:) :: filter_names !< Names of drag coefficients
-  character(len=80)  :: var_names(2)                   !< Names of variables in wave_drag_file
+  character(len=80)  :: var_names(4)                   !< Names of variables in wave_drag_file
   character(len=200) :: mesg
   real               :: var_scale                      !< Scaling factors of drag coefficients [nondim]
   integer            :: c
@@ -53,7 +57,11 @@ subroutine wave_drag_init(param_file, wave_drag_file, G, GV, US, CS)
 
   allocate(CS%coef_u(G%IsdB:G%IedB,G%jsd:G%jed,CS%nf)) ; CS%coef_u(:,:,:) = 0.0
   allocate(CS%coef_v(G%isd:G%ied,G%JsdB:G%JedB,CS%nf)) ; CS%coef_v(:,:,:) = 0.0
+  allocate(CS%coef_uv(G%IsdB:G%IedB,G%jsd:G%jed,CS%nf)) ; CS%coef_uv(:,:,:) = 0.0
+  allocate(CS%coef_vu(G%isd:G%ied,G%JsdB:G%JedB,CS%nf)) ; CS%coef_vu(:,:,:) = 0.0
   allocate(filter_names(CS%nf)) ; read(filter_name_str, *) filter_names
+
+  CS%tensor_drag = .false.
 
   if (len_trim(wave_drag_file) > 0) then
     do c=1,CS%nf
@@ -65,17 +73,37 @@ subroutine wave_drag_init(param_file, wave_drag_file, G, GV, US, CS)
                      var_names(2), "The name of the variable in BT_WAVE_DRAG_FILE "//&
                      "for the drag coefficient of the "//trim(filter_names(c))//&
                      " frequency at v points.", default="")
+      call get_param(param_file, mdl, "BT_"//trim(filter_names(c))//"_DRAG_UV", &
+                     var_names(3), "The name of the variable in BT_WAVE_DRAG_FILE "//&
+                     "for the drag coefficient of the "//trim(filter_names(c))//&
+                     " frequency at u points, corresponding to the off-diagonal "//&
+                     "component of the wave drag tensor.", default="")
+      call get_param(param_file, mdl, "BT_"//trim(filter_names(c))//"_DRAG_VU", &
+                     var_names(4), "The name of the variable in BT_WAVE_DRAG_FILE "//&
+                     "for the drag coefficient of the "//trim(filter_names(c))//&
+                     " frequency at v points, corresponding to the off-diagonal "//&
+                     "component of the wave drag tensor.", default="")
       call get_param(param_file, mdl, "BT_"//trim(filter_names(c))//"_DRAG_SCALE", &
                      var_scale, "A scaling factor for the drag coefficient of the "//&
                      trim(filter_names(c))//" frequency.", default=1.0, units="nondim")
 
-      if (len_trim(var_names(1))+len_trim(var_names(2))>0 .and. var_scale>0.0) then
+      if (len_trim(var_names(1))>0 .and. len_trim(var_names(2))>0 .and. var_scale>0.0) then
         call MOM_read_data(wave_drag_file, trim(var_names(1)), CS%coef_u(:,:,c), G%Domain, &
                            position=EAST_FACE, scale=var_scale*GV%m_to_H*US%T_to_s)
         call MOM_read_data(wave_drag_file, trim(var_names(2)), CS%coef_v(:,:,c), G%Domain, &
                            position=NORTH_FACE, scale=var_scale*GV%m_to_H*US%T_to_s)
         call pass_vector(CS%coef_u(:,:,c), CS%coef_v(:,:,c), G%domain, &
                          direction=To_All+SCALAR_PAIR)
+
+        if (len_trim(var_names(3))>0 .and. len_trim(var_names(4))>0) then
+          CS%tensor_drag = .true.
+          call MOM_read_data(wave_drag_file, trim(var_names(3)), CS%coef_uv(:,:,c), G%Domain, &
+                             position=EAST_FACE, scale=var_scale*GV%m_to_H*US%T_to_s)
+          call MOM_read_data(wave_drag_file, trim(var_names(4)), CS%coef_vu(:,:,c), G%Domain, &
+                             position=NORTH_FACE, scale=var_scale*GV%m_to_H*US%T_to_s)
+          call pass_vector(CS%coef_uv(:,:,c), CS%coef_vu(:,:,c), G%domain, &
+                           direction=To_All+SCALAR_PAIR)
+        endif
 
         write(mesg, *) "MOM_wave_drag: ", trim(filter_names(c)), &
                        " coefficients read from file, scaling factor = ", var_scale
@@ -107,15 +135,39 @@ subroutine wave_drag_calc(u, v, drag_u, drag_v, G, CS)
 
   Drag_u(:,:) = 0.0 ; Drag_v(:,:) = 0.0
 
-  !$OMP do
-  do k=1,CS%nf ; do j=js,je ; do I=is-1,ie
-    Drag_u(I,j) = Drag_u(I,j) + u(I,j,k) * CS%coef_u(I,j,k)
-  enddo ; enddo ; enddo
-
-  !$OMP do
-  do k=1,CS%nf ; do J=js-1,je ; do i=is,ie
-    Drag_v(i,J) = Drag_v(i,J) + v(i,J,k) * CS%coef_v(i,J,k)
-  enddo ; enddo ; enddo
+  if (CS%tensor_drag) then
+    !$OMP do
+    do k=1,CS%nf ; do j=js,je
+      do I=is-1,ie
+        Drag_u(I,j) = Drag_u(I,j) + u(I,j,k) * CS%coef_u(I,j,k) + &
+                      .25 * (v(i+1,J,k) + v(i,J-1,k) + v(i,J,k) + v(i+1,J-1,k)) * CS%coef_uv(I,j,k)
+      enddo
+!      Drag_u(is-1,j) = Drag_u(is-1,j) + u(is-1,j,k) * CS%coef_u(is-1,j,k) + &
+!                       .5 * (v(is,J-1,k) + v(is,J,k)) * CS%coef_uv(is-1,j,k)
+!      Drag_u(ie,j)   = Drag_u(ie,j) + u(ie,j,k) * CS%coef_u(ie,j,k) + &
+!                       .5 * (v(ie,J-1,k) + v(ie,J,k)) * CS%coef_uv(ie,j,k)
+    enddo ; enddo
+    !$OMP do
+    do k=1,CS%nf ; do i=is,ie
+      do J=js-1,je
+        Drag_v(i,J) = Drag_v(i,J) + v(i,J,k) * CS%coef_v(i,J,k) + &
+                      .25 * (u(I-1,j,k) + u(I,j+1,k) + u(I,j,k) + u(I-1,j+1,k)) * CS%coef_vu(i,J,k)
+      enddo
+!      Drag_v(i,js-1) = Drag_v(i,js-1) + v(i,js-1,k) * CS%coef_v(i,js-1,k) + &
+!                       .5 * (u(I-1,js,k) + u(I,js,k)) * CS%coef_vu(i,js-1,k)
+!      Drag_v(i,je)   = Drag_v(i,j) + v(i,je,k) * CS%coef_v(i,je,k) + &
+!                       .5 * (u(I-1,je,k) + u(I,je,k)) * CS%coef_vu(i,je,k)
+    enddo ; enddo
+  else
+    !$OMP do
+    do k=1,CS%nf ; do j=js,je ; do I=is-1,ie
+      Drag_u(I,j) = Drag_u(I,j) + u(I,j,k) * CS%coef_u(I,j,k)
+    enddo ; enddo ; enddo
+    !$OMP do
+    do k=1,CS%nf ; do J=js-1,je ; do i=is,ie
+      Drag_v(i,J) = Drag_v(i,J) + v(i,J,k) * CS%coef_v(i,J,k)
+    enddo ; enddo ; enddo
+  endif
 
 end subroutine wave_drag_calc
 
