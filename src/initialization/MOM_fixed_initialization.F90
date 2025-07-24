@@ -94,7 +94,11 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
   call open_boundary_impose_normal_slope(OBC, G, G%bathyT)
 
   ! This call sets masks that prohibit flow over any point interpreted as land
-  call initialize_masks(G, PF, US)
+  if (associated(OBC)) then
+    call initialize_masks(G, PF, US, OBC_dir_u=OBC%segnum_u, OBC_dir_v=OBC%segnum_v)
+  else
+    call initialize_masks(G, PF, US)
+  endif
 
   ! Make OBC mask consistent with land mask
   call open_boundary_impose_land_mask(OBC, G, G%areaCu, G%areaCv, US)
