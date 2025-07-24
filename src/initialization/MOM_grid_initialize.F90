@@ -1182,16 +1182,33 @@ end function Adcroft_reciprocal
 !! flow over any points which are shallower than Dmask and permit an
 !! appropriate treatment of the boundary conditions.  mask2dCu and mask2dCv
 !! are 0.0 at any points adjacent to a land point.  mask2dBu is 0.0 at
-!! any land or boundary point.  For points in the interior, mask2dCu,
-!! mask2dCv, and mask2dBu are all 1.0.
-subroutine initialize_masks(G, PF, US)
+!! any land or boundary point.  For points in the ocean interior or at open boundary
+!! condition points, mask2dCu, mask2dCv, and mask2dBu are all 1.0.
+subroutine initialize_masks(G, PF, US, OBC_dir_u, OBC_dir_v, open_corner_OBCs)
   type(dyn_horgrid_type), intent(inout) :: G  !< The dynamic horizontal grid type
   type(param_file_type),  intent(in)    :: PF !< Parameter file structure
   type(unit_scale_type),  intent(in)    :: US !< A dimensional unit scaling type
+  integer, dimension(G%IsdB:G%IedB,G%jsd:G%jed), &
+                optional, intent(in)    :: OBC_dir_u  !< Trinary values that indicate whether there
+                                              !! is an open boundary condition at zonal velocity
+                                              !! faces and their orientation, with 0 for no OBC,
+                                              !! a positive value for an Eastern OBC and
+                                              !! a negative value for a Western OBC.
+  integer, dimension(G%isd:G%ied,G%JsdB:G%JedB), &
+                optional, intent(in)    :: OBC_dir_v  !< Trinary values that indicate whether there
+                                              !! is an open boundary condition at zonal velocity
+                                              !! faces and their orientation, with 0 for no OBC,
+                                              !! a positive value for a Northern OBC and
+                                              !! a negative value for a Southern OBC.
+  logical,      optional, intent(in)   :: open_corner_OBCs  !< If present and true, the bay-like corner
+                                              !! between two orthogonal open boundary segments is open,
+                                              !! otherwise it is closed.
+
   ! Local variables
   real :: Dmask      ! The depth for masking in the same units as G%bathyT [Z ~> m].
   real :: min_depth  ! The minimum ocean depth in the same units as G%bathyT [Z ~> m].
   real :: mask_depth ! The depth shallower than which to mask a point as land [Z ~> m].
+  logical :: open_corners ! If true, the bay-like corner between two orthogonal open boundary segments is open
   character(len=40)  :: mdl = "MOM_grid_init initialize_masks"
   integer :: i, j
 
@@ -1212,6 +1229,8 @@ subroutine initialize_masks(G, PF, US)
   Dmask = mask_depth
   if (mask_depth == -9999.0*US%m_to_Z) Dmask = min_depth
 
+  open_corners = .false. ; if (present(open_corner_OBCs)) open_corners = open_corner_OBCs
+
   G%mask2dCu(:,:) = 0.0 ; G%mask2dCv(:,:) = 0.0 ; G%mask2dBu(:,:) = 0.0
 
   ! Construct the h-point or T-point mask
@@ -1229,6 +1248,20 @@ subroutine initialize_masks(G, PF, US)
     else
       G%mask2dCu(I,j) = 1.0
     endif
+  enddo ; enddo
+
+  if (present(OBC_dir_u)) then
+    do j=G%jsd,G%jed ; do I=G%isd,G%ied-1
+      if (OBC_dir_u(I,j) > 0) then
+        if (G%bathyT(i,j) > Dmask) G%mask2dCu(I,j) = 1.0
+      endif
+      if (OBC_dir_u(I,j) < 0) then
+        if (G%bathyT(i+1,j) > Dmask) G%mask2dCu(I,j) = 1.0
+      endif
+    enddo ; enddo
+  endif
+
+  do j=G%jsd,G%jed ; do I=G%isd,G%ied-1
     ! This mask may be revised later after the open boundary positions are specified.
     G%OBCmaskCu(I,j) = G%mask2dCu(I,j)
   enddo ; enddo
@@ -1239,18 +1272,59 @@ subroutine initialize_masks(G, PF, US)
     else
       G%mask2dCv(i,J) = 1.0
     endif
+  enddo ; enddo
+
+  if (present(OBC_dir_v)) then
+    do J=G%jsd,G%jed-1 ; do i=G%isd,G%ied
+      if (OBC_dir_v(i,J) > 0) then
+        if (G%bathyT(i,j) > Dmask) G%mask2dCv(i,J) = 1.0
+      endif
+      if (OBC_dir_v(i,J) < 0) then
+        if (G%bathyT(i,j+1) > Dmask) G%mask2dCv(i,J) = 1.0
+      endif
+    enddo ; enddo
+  endif
+
+  do J=G%jsd,G%jed-1 ; do i=G%isd,G%ied
     ! This mask may be revised later after the open boundary positions are specified.
     G%OBCmaskCv(i,J) = G%mask2dCv(i,J)
   enddo ; enddo
 
+  ! The mask at the vertex can be determined from the masks at the faces.
+  ! This works at interior ocean points or at convex OBC points.
   do J=G%jsd,G%jed-1 ; do I=G%isd,G%ied-1
-    if ((G%bathyT(i+1,j) <= Dmask) .or. (G%bathyT(i+1,j+1) <= Dmask) .or. &
-        (G%bathyT(i,j) <= Dmask) .or. (G%bathyT(i,j+1) <= Dmask)) then
-      G%mask2dBu(I,J) = 0.0
-    else
-      G%mask2dBu(I,J) = 1.0
-    endif
+    G%mask2dBu(I,J) = (G%mask2dCu(I,j) * G%mask2dCu(I,j+1)) * (G%mask2dCv(i,J) * G%mask2dCv(i+1,J))
   enddo ; enddo
+
+  ! This block resets masks at the vertices when there are OBCs.  The right logic is that if there
+  ! are 2 or more unmasked OBCs, this point should be open, but to recreate the previous answers,
+  if (present(OBC_dir_u)) then
+    do J=G%jsd,G%jed-1 ; do I=G%isd,G%ied-1
+      ! These are conditions to set open vertex points on a straight north-south coastline
+      if ((G%mask2dCu(I,j) * OBC_dir_u(I,j)) * (G%mask2dCu(I,j+1) * OBC_dir_u(I,j+1)) > 0.) &
+        G%mask2dBu(I,J) = 1.0
+    enddo ; enddo
+  endif
+  if (present(OBC_dir_v)) then
+    do J=G%jsd,G%jed-1 ; do I=G%isd,G%ied-1
+      ! These are conditions to set open vertex points on a straight east-west coastline
+      if ((G%mask2dCv(i,J) * OBC_dir_v(i,J)) * (G%mask2dCv(i+1,J) * OBC_dir_v(i+1,J)) > 0.) &
+        G%mask2dBu(I,J) = 1.0
+    enddo ; enddo
+  endif
+  if (open_corners .and. present(OBC_dir_u) .and. present(OBC_dir_v)) then
+    do J=G%jsd,G%jed-1 ; do I=G%isd,G%ied-1
+      ! These are the 4 conditions to set an open point in a concave (bay-like) corner
+      if ((G%mask2dCu(I,j+1) * OBC_dir_u(I,j+1) < 0.) .and. (G%mask2dCv(i+1,J) * OBC_dir_v(i+1,J) < 0.)) &
+         G%mask2dBu(I,J) = 1.0  ! Southwestern corner
+      if ((G%mask2dCu(I,j+1) * OBC_dir_u(I,j+1) > 0.) .and. (G%mask2dCv(i,J) * OBC_dir_v(i,J) < 0.)) &
+         G%mask2dBu(I,J) = 1.0  ! Southeastern corner
+      if ((G%mask2dCu(I,j) * OBC_dir_u(I,j) < 0.) .and. (G%mask2dCv(i+1,J) * OBC_dir_v(i+1,J) > 0.)) &
+         G%mask2dBu(I,J) = 1.0  ! Northwestern corner
+      if ((G%mask2dCu(I,j) * OBC_dir_u(I,j) > 0.) .and. (G%mask2dCv(i,J) * OBC_dir_v(i,J) > 0.)) &
+         G%mask2dBu(I,J) = 1.0  ! Northeastern corner
+    enddo ; enddo
+  endif
 
   call pass_var(G%mask2dBu, G%Domain, position=CORNER)
   call pass_vector(G%mask2dCu, G%mask2dCv, G%Domain, To_All+Scalar_Pair, CGRID_NE)
