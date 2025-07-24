@@ -138,25 +138,25 @@ subroutine wave_drag_calc(u, v, drag_u, drag_v, G, CS)
   if (CS%tensor_drag) then
     !$OMP do
     do k=1,CS%nf ; do j=js,je
-      do I=is-1,ie
+      do I=is,ie-1
         Drag_u(I,j) = Drag_u(I,j) + u(I,j,k) * CS%coef_u(I,j,k) + &
                       .25 * (v(i+1,J,k) + v(i,J-1,k) + v(i,J,k) + v(i+1,J-1,k)) * CS%coef_uv(I,j,k)
       enddo
-!      Drag_u(is-1,j) = Drag_u(is-1,j) + u(is-1,j,k) * CS%coef_u(is-1,j,k) + &
-!                       .5 * (v(is,J-1,k) + v(is,J,k)) * CS%coef_uv(is-1,j,k)
-!      Drag_u(ie,j)   = Drag_u(ie,j) + u(ie,j,k) * CS%coef_u(ie,j,k) + &
-!                       .5 * (v(ie,J-1,k) + v(ie,J,k)) * CS%coef_uv(ie,j,k)
+      Drag_u(is-1,j) = Drag_u(is-1,j) + u(is-1,j,k) * CS%coef_u(is-1,j,k) + &
+                       .5 * (v(is,J-1,k) + v(is,J,k)) * CS%coef_uv(is-1,j,k)
+      Drag_u(ie,j)   = Drag_u(ie,j) + u(ie,j,k) * CS%coef_u(ie,j,k) + &
+                       .5 * (v(ie,J-1,k) + v(ie,J,k)) * CS%coef_uv(ie,j,k)
     enddo ; enddo
     !$OMP do
     do k=1,CS%nf ; do i=is,ie
-      do J=js-1,je
+      do J=js,je-1
         Drag_v(i,J) = Drag_v(i,J) + v(i,J,k) * CS%coef_v(i,J,k) + &
                       .25 * (u(I-1,j,k) + u(I,j+1,k) + u(I,j,k) + u(I-1,j+1,k)) * CS%coef_vu(i,J,k)
       enddo
-!      Drag_v(i,js-1) = Drag_v(i,js-1) + v(i,js-1,k) * CS%coef_v(i,js-1,k) + &
-!                       .5 * (u(I-1,js,k) + u(I,js,k)) * CS%coef_vu(i,js-1,k)
-!      Drag_v(i,je)   = Drag_v(i,j) + v(i,je,k) * CS%coef_v(i,je,k) + &
-!                       .5 * (u(I-1,je,k) + u(I,je,k)) * CS%coef_vu(i,je,k)
+      Drag_v(i,js-1) = Drag_v(i,js-1) + v(i,js-1,k) * CS%coef_v(i,js-1,k) + &
+                       .5 * (u(I-1,js,k) + u(I,js,k)) * CS%coef_vu(i,js-1,k)
+      Drag_v(i,je)   = Drag_v(i,j) + v(i,je,k) * CS%coef_v(i,je,k) + &
+                       .5 * (u(I-1,je,k) + u(I,je,k)) * CS%coef_vu(i,je,k)
     enddo ; enddo
   else
     !$OMP do

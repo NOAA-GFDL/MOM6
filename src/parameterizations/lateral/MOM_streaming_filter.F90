@@ -56,9 +56,9 @@ subroutine Filt_register(nf, key, grid, HI, CS, restart_CS)
     case ('h')
       CS%is = HI%isd  ; CS%ie = HI%ied  ; CS%js = HI%jsd  ; CS%je = HI%jed
     case ('u')
-      CS%is = HI%IsdB ; CS%ie = HI%IedB ; CS%js = HI%jsd-1; CS%je = HI%jed+1
+      CS%is = HI%IsdB ; CS%ie = HI%IedB ; CS%js = HI%jsd  ; CS%je = HI%jed
     case ('v')
-      CS%is = HI%isd-1; CS%ie = HI%ied+1; CS%js = HI%JsdB ; CS%je = HI%JedB
+      CS%is = HI%isd  ; CS%ie = HI%ied  ; CS%js = HI%JsdB ; CS%je = HI%JedB
     case default
       call MOM_error(FATAL, "MOM_streaming_filter: horizontal grid not supported")
   end select

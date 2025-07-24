@@ -1376,8 +1376,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   ! Note that the filtered velocities are only updated during the current predictor step,
   ! and are calculated using the barotropic velocity from the previous correction step.
   if (CS%use_filter) then
-    call Filt_accum(ubt(G%IsdB:G%IedB,G%jsd-1:G%jed+1), ufilt, CS%Time, US, CS%Filt_CS_u)
-    call Filt_accum(vbt(G%isd-1:G%ied+1,G%JsdB:G%JedB), vfilt, CS%Time, US, CS%Filt_CS_v)
+    call Filt_accum(ubt(G%IsdB:G%IedB,G%jsd:G%jed), ufilt, CS%Time, US, CS%Filt_CS_u)
+    call Filt_accum(vbt(G%isd:G%ied,G%JsdB:G%JedB), vfilt, CS%Time, US, CS%Filt_CS_v)
   endif
 
   if (CS%use_filter .and. CS%linear_freq_drag) then
