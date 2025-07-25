@@ -140,7 +140,6 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
                                      ! state calculations at h points with 1 extra halo point
   integer :: is, ie, js, je, nz, IsdB
   integer :: i, j, k
-  integer :: l_seg
 
   if (present(halo)) then
     is = G%isc-halo ; ie = G%iec+halo ; js = G%jsc-halo ; je = G%jec+halo
@@ -258,7 +257,7 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
   !$OMP                                  drho_dT_u,drho_dS_u,hg2A,hg2B,hg2L,hg2R,haA, &
   !$OMP                                  drho_dT_dT_h,scrap,pres_h,T_h,S_h, &
   !$OMP                                  haB,haL,haR,dzaL,dzaR,wtA,wtB,wtL,wtR,drdz,  &
-  !$OMP                                  drdx,mag_grad2,slope,l_seg) &
+  !$OMP                                  drdx,mag_grad2,slope) &
   !$OMP                          firstprivate(GxSpV_u)
   do j=js,je ; do K=nz,2,-1
     if (.not.(use_EOS)) then
@@ -274,20 +273,24 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
         S_u(I) = 0.25*((S(i,j,k) + S(i+1,j,k)) + (S(i,j,k-1) + S(i+1,j,k-1)))
       enddo
       if (OBC_friendly) then
-        do I=is-1,ie
-          l_seg = OBC%segnum_u(I,j)
-          if (l_seg /= OBC_NONE) then
-            if (OBC%segment(l_seg)%direction == OBC_DIRECTION_E) then
+        if (OBC%u_E_OBCs_on_PE .and. (j>=OBC%js_u_E_obc) .and. (j<=OBC%je_u_E_obc)) then
+          do I = max(is-1, OBC%Is_u_E_obc), min(ie, OBC%Ie_u_E_obc)
+            if (OBC%segnum_u(I,j) > 0) then !  OBC_DIRECTION_E
               pres_u(I) = pres(i,j,K)
               T_u(I) = 0.5*(T(i,j,k) + T(i,j,k-1))
               S_u(I) = 0.5*(S(i,j,k) + S(i,j,k-1))
-            elseif (OBC%segment(l_seg)%direction == OBC_DIRECTION_W) then
+            endif
+          enddo
+        endif
+        if (OBC%u_W_OBCs_on_PE .and. (j>=OBC%js_u_W_obc) .and. (j<=OBC%je_u_W_obc)) then
+          do I = max(is-1, OBC%Is_u_W_obc), min(ie, OBC%Ie_u_W_obc)
+            if (OBC%segnum_u(I,j) < 0) then !  OBC_DIRECTION_W
               pres_u(I) = pres(i+1,j,K)
               T_u(I) = 0.5*(T(i+1,j,k) + T(i+1,j,k-1))
               S_u(I) = 0.5*(S(i+1,j,k) + S(i+1,j,k-1))
             endif
-          endif
-        enddo
+          enddo
+        endif
       endif
       call calculate_density_derivs(T_u, S_u, pres_u, drho_dT_u, drho_dS_u, &
                                     tv%eqn_of_state, EOSdom_u)
@@ -363,13 +366,12 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
       !          ((hg2L/haL) + (hg2R/haR))
       ! which is an estimate of the gradient of density across geopotentials.
       if (present_N2_u) then
-        if (OBC_friendly) then ; if (OBC%segnum_u(I,j) /= OBC_NONE) then
-          l_seg = OBC%segnum_u(I,j)
-          if (OBC%segment(l_seg)%direction == OBC_DIRECTION_E) then
+        if (OBC_friendly) then ; if (OBC%segnum_u(I,j) /= 0) then
+          if (OBC%segnum_u(I,j) > 0) then !  OBC_DIRECTION_E
             drdz = drdkL / dzaL  ! Note that drdz is not used for slopes at OBC faces.
             if (use_EOS .and. allocated(tv%SpV_avg)) &
               GxSpV_u(I) = GV%g_Earth * 0.5 * (tv%SpV_avg(i,j,k) + tv%SpV_avg(i,j,k-1))
-          elseif (OBC%segment(l_seg)%direction == OBC_DIRECTION_W) then
+          elseif (OBC%segnum_u(I,j) < 0) then !  OBC_DIRECTION_W
             drdz = drdkR / dzaR
             if (use_EOS .and. allocated(tv%SpV_avg)) &
               GxSpV_u(I) = GV%g_Earth * 0.5 * (tv%SpV_avg(i+1,j,k) + tv%SpV_avg(i+1,j,k-1))
@@ -396,13 +398,12 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
       endif
 
       if (local_open_u_BC) then
-        l_seg = OBC%segnum_u(I,j)
-        if (l_seg /= OBC_NONE) then
-          if (OBC%segment(l_seg)%open) then
+        if (OBC%segnum_u(I,j) /= 0) then
+          if (OBC%segment(abs(OBC%segnum_u(I,j)))%open) then
             slope = 0.
             ! This and/or the masking code below is to make slopes match inside
             ! land mask. Might not be necessary except for DEBUG output.
-!           if (OBC%segment(OBC%segnum_u(I,j))%direction == OBC_DIRECTION_E) then
+!           if (OBC%segnum_u(I,j) > 0) then !  OBC_DIRECTION_E
 !             slope_x(I+1,j,K) = 0.
 !           else
 !             slope_x(I-1,j,K) = 0.
@@ -434,7 +435,7 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
   !$OMP                                  drho_dT_dT_h,scrap,pres_h,T_h,S_h, &
   !$OMP                                  drho_dT_dT_hr,pres_hr,T_hr,S_hr,             &
   !$OMP                                  haB,haL,haR,dzaL,dzaR,wtA,wtB,wtL,wtR,drdz,  &
-  !$OMP                                  drdy,mag_grad2,slope,l_seg) &
+  !$OMP                                  drdy,mag_grad2,slope) &
   !$OMP                          firstprivate(GxSpV_v)
   do J=js-1,je ; do K=nz,2,-1
     if (.not.(use_EOS)) then
@@ -449,20 +450,24 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
         S_v(i) = 0.25*((S(i,j,k) + S(i,j+1,k)) + (S(i,j,k-1) + S(i,j+1,k-1)))
       enddo
       if (OBC_friendly) then
-        do i=is,ie
-          l_seg = OBC%segnum_v(i,J)
-          if (l_seg /= OBC_NONE) then
-            if (OBC%segment(l_seg)%direction == OBC_DIRECTION_N) then
+        if (OBC%v_N_OBCs_on_PE .and. (J>=OBC%Js_v_N_obc) .and. (J<=OBC%Je_v_N_obc)) then
+          do i = max(is, OBC%is_v_N_obc), min(ie, OBC%ie_v_N_obc)
+            if (OBC%segnum_v(i,J) > 0) then !  OBC_DIRECTION_N
               pres_v(i) = pres(i,j,K)
               T_v(i) = 0.5*(T(i,j,k) + T(i,j,k-1))
               S_v(i) = 0.5*(S(i,j,k) + S(i,j,k-1))
-            elseif (OBC%segment(l_seg)%direction == OBC_DIRECTION_S) then
+            endif
+          enddo
+        endif
+        if (OBC%v_S_OBCs_on_PE .and. (J>=OBC%Js_v_S_obc) .and. (J<=OBC%Je_v_S_obc)) then
+          do i = max(is, OBC%is_v_S_obc), min(ie, OBC%ie_v_S_obc)
+            if (OBC%segnum_v(i,J) < 0) then !  OBC_DIRECTION_S
               pres_v(i) = pres(i,j+1,K)
               T_v(i) = 0.5*(T(i,j+1,k) + T(i,j+1,k-1))
               S_v(i) = 0.5*(S(i,j+1,k) + S(i,j+1,k-1))
             endif
-          endif
-        enddo
+          enddo
+        endif
       endif
       call calculate_density_derivs(T_v, S_v, pres_v, drho_dT_v, drho_dS_v, &
                                     tv%eqn_of_state, EOSdom_v)
@@ -545,13 +550,12 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
       !          ((hg2L/haL) + (hg2R/haR))
       ! which is an estimate of the gradient of density across geopotentials.
       if (present_N2_v) then
-        if (OBC_friendly) then ; if (OBC%segnum_v(i,J) /= OBC_NONE) then
-          l_seg = OBC%segnum_v(i,J)
-          if (OBC%segment(l_seg)%direction == OBC_DIRECTION_N) then
+        if (OBC_friendly) then ; if (OBC%segnum_v(i,J) /= 0) then
+          if (OBC%segnum_v(i,J) > 0) then !  OBC_DIRECTION_N
             drdz = drdkL / dzaL  ! Note that drdz is not used for slopes at OBC faces.
             if (use_EOS .and. allocated(tv%SpV_avg)) &
               GxSpV_v(i) = GV%g_Earth * 0.5 * (tv%SpV_avg(i,j,k) + tv%SpV_avg(i,j,k-1))
-          elseif (OBC%segment(l_seg)%direction == OBC_DIRECTION_S) then
+          elseif (OBC%segnum_v(i,J) < 0) then !  OBC_DIRECTION_S
             drdz = drdkL / dzaL
             if (use_EOS .and. allocated(tv%SpV_avg)) &
               GxSpV_v(i) = GV%g_Earth * 0.5 * (tv%SpV_avg(i,j+1,k) + tv%SpV_avg(i,j+1,k-1))
@@ -578,13 +582,12 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
       endif
 
       if (local_open_v_BC) then
-        l_seg = OBC%segnum_v(i,J)
-        if (l_seg /= OBC_NONE) then
-          if (OBC%segment(l_seg)%open) then
+        if (OBC%segnum_v(i,J) /= 0) then
+          if (OBC%segment(abs(OBC%segnum_v(i,J)))%open) then
             slope = 0.
             ! This and/or the masking code below is to make slopes match inside
             ! land mask. Might not be necessary except for DEBUG output.
-!           if (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_N) then
+!           if (OBC%segnum_v(i,J)) > 0) then ! OBC_DIRECTION_N
 !             slope_y(i,J+1,K) = 0.
 !           else
 !             slope_y(i,J-1,K) = 0.
