@@ -2198,6 +2198,7 @@ subroutine open_boundary_impose_land_mask(OBC, G, areaCu, areaCv, US)
     segment => OBC%segment(n)
     if (.not. (segment%on_pe .and. segment%open)) cycle
     ! Set the OBCmask values to help eliminate certain terms at u- or v- OBC points.
+    ! Testing suggests this could be applied at all u- or v- OBC points without changing answers.
     if (segment%is_E_or_W) then
       I=segment%HI%IsdB
       do j=segment%HI%jsd,segment%HI%jed
