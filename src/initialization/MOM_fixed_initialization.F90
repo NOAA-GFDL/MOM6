@@ -61,7 +61,7 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
   ! Local variables
   character(len=200) :: inputdir   ! The directory where NetCDF input files are.
   character(len=200) :: config
-  logical            :: read_porous_file
+  logical            :: read_porous_file, OBC_projection_bug, open_corners, enable_bugs
   character(len=40)  :: mdl = "MOM_fixed_initialization" ! This module's name.
   integer :: I, J
   logical :: debug
@@ -91,11 +91,23 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
   call open_boundary_config(G, US, PF, OBC)
 
   ! Make bathymetry consistent with open boundaries
-  call open_boundary_impose_normal_slope(OBC, G, G%bathyT)
+  call get_param(PF, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+                 default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
+  call get_param(PF, mdl, "OBC_PROJECTION_BUG", OBC_projection_bug, &
+                 "If false, use only interior ocean points at OBCs to specify several "//&
+                 "calculations at OBC points, and it avoids applying a land mask at the bay-like "//&
+                 "intersection of orthogonal OBC segments.  Otherwise the calculation of terms "//&
+                 "like the potential vorticity used in the barotropic solver relies on bathymetry "//&
+                 "or other fields being projected outward across OBCs.  This option changes "//&
+                 "answers for some configurations that use OBCs.", &
+                 default=enable_bugs, do_not_log=.not.associated(OBC))
+  open_corners = .not.OBC_projection_bug
 
   ! This call sets masks that prohibit flow over any point interpreted as land
   if (associated(OBC)) then
-    call initialize_masks(G, PF, US, OBC_dir_u=OBC%segnum_u, OBC_dir_v=OBC%segnum_v)
+    if (OBC_projection_bug) &
+      call open_boundary_impose_normal_slope(OBC, G, G%bathyT)
+    call initialize_masks(G, PF, US, OBC_dir_u=OBC%segnum_u, OBC_dir_v=OBC%segnum_v, open_corner_OBCs=open_corners)
   else
     call initialize_masks(G, PF, US)
   endif
