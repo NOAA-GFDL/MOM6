@@ -213,6 +213,8 @@ type, public :: barotropic_CS ; private
                              !! applied so that they are all used up before the steps within the
                              !! filtering period start. This avoids the mass sink driving the SSH
                              !! below the bottom during the period of filtering.
+  logical :: bt_limit_integral_transport !< If true, limit the time-integrated transports by the
+                             !! initial volume accounting for sinks of mass.
   logical :: integral_OBCs   !< This is true if integral_bt_cont is true and there are open boundary
                              !! conditions being applied somewhere in the global domain.
   logical :: Nonlinear_continuity !< If true, the barotropic continuity equation
@@ -1735,9 +1737,10 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   endif
   nfilter = ceiling(dt_filt / dtbt)
 
-  if (nstep+nfilter==0 ) call MOM_error(FATAL, &
+  if ( nstep+nfilter<=0 ) call MOM_error(FATAL, &
       "btstep: number of barotropic step (nstep+nfilter) is 0")
-
+  if ( CS%bt_limit_integral_transport .and.  nstep-nfilter<=0 ) call MOM_error(FATAL, &
+      "btstep: barotropic filter steps too large (nstep-nfilter) is 0")
 
   ! Set up the normalized weights for the filtered velocity.
   sum_wt_vel = 0.0 ; sum_wt_eta = 0.0 ; sum_wt_accel = 0.0 ; sum_wt_trans = 0.0
@@ -2378,7 +2381,8 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
   real, target, dimension(SZIW_(CS),SZJW_(CS)) :: &
     eta_pred      ! A predictor value of eta [H ~> m or kg m-2] like eta
   real, dimension(SZIW_(CS),SZJW_(CS)) :: &
-    p_surf_dyn    !< A dynamic surface pressure under rigid ice [L2 T-2 ~> m2 s-2]
+    p_surf_dyn, & !< A dynamic surface pressure under rigid ice [L2 T-2 ~> m2 s-2]
+    cfl_ltd_vol   !< The volume available after removing sinks used to limit uhbt_int and vhbt_int [H L2 ~> m3]
   real :: wt_end      ! The weighting of the final value of eta_PF [nondim]
   real :: Instep      ! The inverse of the number of barotropic time steps to take [nondim]
   real :: trans_wt1, trans_wt2 ! The weights used to compute ubt_trans and vbt_trans [nondim]
@@ -2496,6 +2500,28 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
   endif
 
   p_surf_dyn(:,:) = 0.0
+  cfl_ltd_vol(:,:) = huge( GV%Z_to_H )
+  if (CS%bt_limit_integral_transport) then
+    ! Issue warnings if there are unphysical values of the initial sea surface height or total water column mass.
+    if (GV%Boussinesq) then
+      do j=js,je ; do i=is,ie
+        if ((eta_IC(i,j) < -GV%Z_to_H*G%bathyT(i,j)) .and. (G%mask2dT(i,j) > 0.0)) then
+          write(mesg,'(ES24.16," vs. ",ES24.16, " at ", ES12.4, ES12.4, i7, i7)') GV%H_to_m*eta(i,j), &
+               -US%Z_to_m*G%bathyT(i,j), G%geoLonT(i,j), G%geoLatT(i,j), i + G%HI%idg_offset, j + G%HI%jdg_offset
+          call MOM_error(FATAL, "btstep: eta_IC starts below bathyT: "//trim(mesg), all_print=.true.)
+        endif
+      enddo ; enddo
+    else
+      do j=js,je ; do i=is,ie
+        if (eta_IC(i,j) < 0.0) then
+          write(mesg,'(" at ", ES12.4, ES12.4, i7, i7)') &
+              G%geoLonT(i,j), G%geoLatT(i,j), i + G%HI%idg_offset, j + G%HI%jdg_offset
+          call MOM_error(FATAL, "btstep: negative eta_IC at start of a non-Boussinesq barotropic solver "//&
+                trim(mesg), all_print=.true.)
+        endif
+      enddo ; enddo
+    endif
+  endif
 
   ! Set up the group pass used for halo updates within the barotropic time stepping loops.
   call create_group_pass(CS%pass_eta_ubt, eta, CS%BT_Domain)
@@ -2607,12 +2633,30 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
 
     ! Determine the transports based on the updated velocities when no OBCs are applied
     if (integral_BT_cont) then
+      if (CS%bt_limit_integral_transport) then
+        ! Calculate the volume that could be used for divergent transport to use for a limter. This applies to
+        ! uhbt_int and vhbt_int at each BT step. It does not allow for temporary flooding during the BT cycling.
+        ! Only the sink is accounted for: if diverent motion occurs at the beginning of the BT cycling but the volume
+        ! was due only to a +ve source being applied gradually, then the instantaneous eta could drop below the bottom.
+        if (GV%Boussinesq) then
+          do j=jsv,jev ; do i=isv,iev
+            cfl_ltd_vol(i,j) = ( CS%maxCFL_BT_cont * G%areaT(i,j) ) * &
+                      max( 0., ( GV%Z_to_H*G%bathyT(i,j) + eta_IC(i,j) ) + nstep * min( 0., eta_src(i,j) ) )
+          enddo ; enddo
+        else
+          do j=jsv,jev ; do i=isv,iev
+            cfl_ltd_vol(i,j) = ( CS%maxCFL_BT_cont * G%areaT(i,j) ) * &
+                      max( 0., eta_IC(i,j) + nstep * min( 0., eta_src(i,j) ) )
+          enddo ; enddo
+        endif
+      endif
       !$OMP do schedule(static)
       do j=jsv,jev ; do I=isv-1,iev
         ubt_trans(I,j) = trans_wt1*ubt(I,j) + trans_wt2*ubt_prev(I,j)
         ubt_int_prev(I,j) = ubt_int(I,j) ! Store the previous integrated velocity so it can be reset by at OBC points
         ubt_int(I,j) = ubt_int(I,j) + dtbt * ubt_trans(I,j)
         uhbt_int(I,j) = find_uhbt(ubt_int(I,j), BTCL_u(I,j)) + n*dtbt*uhbt0(I,j)
+        uhbt_int(I,j) = max( -cfl_ltd_vol(i+1,j), min( uhbt_int(I,j), cfl_ltd_vol(i,j) ) )
         ! Estimate the mass flux within a single timestep to take the filtered average.
         uhbt(I,j) = (uhbt_int(I,j) - uhbt_int_prev(I,j)) * Idtbt
       enddo ; enddo
@@ -2623,6 +2667,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
         vbt_int_prev(i,J) = vbt_int(i,J) ! Store the previous integrated velocity so it can be reset by at OBC points
         vbt_int(i,J) = vbt_int(i,J) + dtbt * vbt_trans(i,J)
         vhbt_int(i,J) = find_vhbt(vbt_int(i,J), BTCL_v(i,J)) + n*dtbt*vhbt0(i,J)
+        vhbt_int(i,J) = max( -cfl_ltd_vol(i,j+1), min( vhbt_int(i,J), cfl_ltd_vol(i,j) ) )
         ! Estimate the mass flux within a single timestep to take the filtered average.
         vhbt(i,J) = (vhbt_int(i,J) - vhbt_int_prev(i,J)) * Idtbt
       enddo ; enddo
@@ -2754,6 +2799,8 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
         if ((eta(i,j) < -GV%Z_to_H*G%bathyT(i,j)) .and. (G%mask2dT(i,j) > 0.0)) then
           write(mesg,'(ES24.16," vs. ",ES24.16, " at ", ES12.4, ES12.4, i7, i7)') GV%H_to_m*eta(i,j), &
                -US%Z_to_m*G%bathyT(i,j), G%geoLonT(i,j), G%geoLatT(i,j), i + G%HI%idg_offset, j + G%HI%jdg_offset
+          if (CS%bt_limit_integral_transport) &
+            call MOM_error(FATAL, "btstep: eta has dropped below bathyT: "//trim(mesg))
           if (err_count < 2) &
             call MOM_error(WARNING, "btstep: eta has dropped below bathyT: "//trim(mesg), all_print=.true.)
           err_count = err_count + 1
@@ -2764,6 +2811,8 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
         if (eta(i,j) < 0.0) then
           write(mesg,'(" at ", ES12.4, ES12.4, i7, i7)') &
               G%geoLonT(i,j), G%geoLatT(i,j), i + G%HI%idg_offset, j + G%HI%jdg_offset
+          if (CS%bt_limit_integral_transport) &
+            call MOM_error(FATAL, "btstep: negative eta in a non-Boussinesq barotropic solver "//trim(mesg))
           if (err_count < 2) &
             call MOM_error(WARNING, "btstep: negative eta in a non-Boussinesq barotropic solver "//&
                 trim(mesg), all_print=.true.)
@@ -5456,6 +5505,11 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   call get_param(param_file, mdl, "BT_ADJUST_SRC_FOR_FILTER", CS%bt_adjust_src_for_filter, &
                  "If true, increases the rate at which BT mass sources are applied so "//&
                  "that they are all used up before the filtering period starts. "//&
+                 "This option is only valid if INTEGRAL_BT_CONTINUITY = True.", &
+                 default=.false., do_not_log=.not.CS%integral_bt_cont)
+  call get_param(param_file, mdl, "BT_LIMIT_INTEGRAL_TRANSPORT", CS%bt_limit_integral_transport, &
+                 "If true, limit the time-integrated transports by the initial volume "//&
+                 "accounting for sinks of mass. The limiter uses MAXCFL_BT_CONT. "//&
                  "This option is only valid if INTEGRAL_BT_CONTINUITY = True.", &
                  default=.false., do_not_log=.not.CS%integral_bt_cont)
   call get_param(param_file, mdl, "BT_USE_VISC_REM_U_UH0", CS%visc_rem_u_uh0, &
