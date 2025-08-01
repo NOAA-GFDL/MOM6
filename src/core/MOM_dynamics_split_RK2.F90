@@ -795,7 +795,6 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   call do_group_pass(CS%pass_hp_uv, G%Domain, clock=id_clock_pass)
 
   if (associated(CS%OBC)) then
-    call update_segment_thickness_reservoirs(G, GV, uhtr, vhtr, hp, CS%OBC)
 
     if (CS%debug) &
       call uvchksum("Pre OBC avg [uv]", u_av, v_av, G%HI, haloshift=1, symmetric=sym, unscale=US%L_T_to_m_s)
@@ -1068,7 +1067,6 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   endif
 
   if (associated(CS%OBC)) then
-    call update_segment_thickness_reservoirs(G, GV, uhtr, vhtr, h, CS%OBC)
     !### I suspect that there is a bug here when u_inst is compared with a previous value of u_av
     ! to estimate the dominant outward group velocity, but a fix is not available yet.
     call radiation_open_bdry_conds(CS%OBC, u_inst, u_old_rad_OBC, v_inst, v_old_rad_OBC, G, GV, US, dt)
@@ -1092,6 +1090,10 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
       vhtr(i,J,k) = vhtr(i,J,k) + vh(i,J,k)*dt
     enddo ; enddo
   enddo
+
+  if (associated(CS%OBC)) then
+    call update_segment_thickness_reservoirs(G, GV, uhtr, vhtr, h, CS%OBC)
+  endif
 
   if (CS%store_CAu) then
     ! Calculate a predictor-step estimate of the Coriolis and momentum advection terms

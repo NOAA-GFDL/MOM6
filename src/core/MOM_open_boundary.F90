@@ -5992,9 +5992,9 @@ subroutine update_segment_thickness_reservoirs(G, GV, uhr, vhr, h, OBC)
           ! When InvLscale_in is 0 and inflow, only nudged data is applied to reservoirs
           a_out = b_out * max(0.0, sign(1.0, idir*uhr(I,j,k)))
           a_in  = b_in  * min(0.0, sign(1.0, idir*uhr(I,j,k)))
-          u_L_out = max(0.0, (idir*uhr(I,j,k))*segment%Tr_InvLscale_out*resrv_lfac_out / &
+          u_L_out = max(0.0, (idir*uhr(I,j,k))*segment%Th_InvLscale_out*resrv_lfac_out / &
                     ((h(i+ishift,j,k) + GV%H_subroundoff)*G%dyCu(I,j)))
-          u_L_in  = min(0.0, (idir*uhr(I,j,k))*segment%Tr_InvLscale_in*resrv_lfac_in  / &
+          u_L_in  = min(0.0, (idir*uhr(I,j,k))*segment%Th_InvLscale_in*resrv_lfac_in  / &
                     ((h(i+ishift,j,k) + GV%H_subroundoff)*G%dyCu(I,j)))
           fac1 = (1.0 - (a_out - a_in)) + ((u_L_out + a_out) - (u_L_in + a_in))
           segment%h_Reg%h_res(I,j,k) = (1.0/fac1) * &
@@ -6029,9 +6029,9 @@ subroutine update_segment_thickness_reservoirs(G, GV, uhr, vhr, h, OBC)
         if (allocated(segment%h_Reg%h_res)) then ; do k=1,nz
           a_out = b_out * max(0.0, sign(1.0, jdir*vhr(i,J,k)))
           a_in  = b_in  * min(0.0, sign(1.0, jdir*vhr(i,J,k)))
-          v_L_out = max(0.0, (jdir*vhr(i,J,k))*segment%Tr_InvLscale_out*resrv_lfac_out / &
+          v_L_out = max(0.0, (jdir*vhr(i,J,k))*segment%Th_InvLscale_out*resrv_lfac_out / &
                     ((h(i,j+jshift,k) + GV%H_subroundoff)*G%dxCv(i,J)))
-          v_L_in  = min(0.0, (jdir*vhr(i,J,k))*segment%Tr_InvLscale_in*resrv_lfac_in  / &
+          v_L_in  = min(0.0, (jdir*vhr(i,J,k))*segment%Th_InvLscale_in*resrv_lfac_in  / &
                     ((h(i,j+jshift,k) + GV%H_subroundoff)*G%dxCv(i,J)))
           fac1 = (1.0 - (a_out - a_in)) + ((v_L_out + a_out) - (v_L_in + a_in))
           segment%h_Reg%h_res(i,J,k) = (1.0/fac1) * &
