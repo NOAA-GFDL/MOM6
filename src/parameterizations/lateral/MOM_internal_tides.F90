@@ -2201,7 +2201,7 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, test, halo_size, r
   ! Apply propagation in the first direction (reflection included)
   LB%jsh = jsh ; LB%jeh = jeh ; LB%ish = ish ; LB%ieh = ieh
   if (x_first) then
-    call propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, CS%nAngle, CS, LB, residual_loss)
+    call propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, CS%nAngle, CS, LB, residual_loss, freq2)
   else
     call propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, CS%nAngle, CS, LB, residual_loss, freq2)
   endif
@@ -2234,7 +2234,7 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, test, halo_size, r
   if (x_first) then
     call propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, CS%nAngle, CS, LB, residual_loss, freq2)
   else
-    call propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, CS%nAngle, CS, LB, residual_loss)
+    call propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, CS%nAngle, CS, LB, residual_loss, freq2)
   endif
 
   ! fix underflows
@@ -2256,7 +2256,7 @@ end subroutine propagate
 
 
 !> Propagates the internal wave energy in the logical x-direction.
-subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, residual_loss)
+subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, residual_loss, freq2)
   type(ocean_grid_type),   intent(in)    :: G  !< The ocean's grid structure.
   integer,                 intent(in)    :: NAngle !< The number of wave orientations in the
                                                !! discretized wave energy spectrum.
@@ -2276,6 +2276,8 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, res
   real, dimension(G%isd:G%ied,G%jsd:G%jed,Nangle),   &
                            intent(inout) :: residual_loss !< internal tide energy loss due
                                                           !! to the residual at slopes [H Z2 T-3 ~> m3 s-3 or W m-2].
+  real, intent(in) :: freq2 !< The square of internal tides frequency [T-2 ~> s-2].
+
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
     EnL, EnR    ! Left and right face energy densities [H Z2 T-2 ~> m3 s-2 or J m-2].
@@ -2335,6 +2337,11 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, res
   do a=1,Nangle ; do j=jsh,jeh ; do i=ish,ieh
     En(i,j,a) = En(i,j,a) + (G%IareaT(i,j)*(Fdt_m(i,j,a) + Fdt_p(i,j,a)))
   enddo ; enddo ; enddo
+
+  ! existing energy at turning latitude should reflect away
+  if (CS%turn_critical_lat ) then
+    call turning_latitude(En, NAngle, freq2, CS, G, LB)
+  endif
 
 end subroutine propagate_x
 
