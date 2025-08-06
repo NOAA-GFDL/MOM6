@@ -30,6 +30,7 @@ use MOM_unit_scaling, only  : unit_scale_type
 use MOM_variables, only     : surface, thermo_var_ptrs, vertvisc_type
 use MOM_verticalGrid, only  : verticalGrid_type
 use MOM_wave_speed, only    : wave_speeds, wave_speed_CS, wave_speed_init
+use mpp_domains_mod, only : NORTH_FACE => NORTH, EAST_FACE => EAST
 
 implicit none ; private
 
@@ -61,6 +62,10 @@ type, public :: int_tide_CS ; private
   logical :: update_Kd       !< If true, the scheme will modify the diffusivities seen by the dynamics
   logical :: apply_refraction  !< If false, skip refraction (for debugging)
   logical :: apply_propagation !< If False, do not propagate energy (for debugging)
+  logical :: turn_critical_lat !< If True, rays change direction at critical latitude instead
+                               !! of being trapped
+  logical :: reflect_critical_lat !< If True, rays reflect at the critical latitude instead
+                               !! of turning parallel to it
   logical :: debug             !< If true, use debugging prints
   logical :: init_forcing_only !< if True, add TKE forcing only at first step (for debugging)
   logical :: force_posit_En    !< if True, remove subroundoff negative values (needs enhancement)
@@ -520,7 +525,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   endif
 
   ! Pass a test vector to check for grid rotation in the halo updates.
-  do j=jsd,jed ; do i=isd,ied ; test(i,j,1) = 1.0 ; test(i,j,2) = 0.0 ; enddo ; enddo
+  do j=jsd,jed ; do i=isd,ied ; test(i,j,1) = 0.0 ; test(i,j,2) = 1.0 ; enddo ; enddo
   call create_group_pass(pass_test, test(:,:,1), test(:,:,2), G%domain, stagger=AGRID)
   call start_group_pass(pass_test, G%domain)
 
@@ -587,6 +592,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     else ; En_halo_ij_stencil = 3 ; endif
 
     ! Rotate points in the halos as necessary.
+    call do_group_pass(CS%pass_En, G%domain)
     call correct_halo_rotation(CS%En, test, G, CS%nAngle, halo=En_halo_ij_stencil)
 
     if (CS%debug) then
@@ -602,9 +608,14 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
 
       if (CS%apply_propagation) then
         call propagate(CS%En(:,:,:,fr,m), cn(:,:,m), CS%frequency(fr), dt_sub, &
-                       G, GV, US, CS, CS%NAngle, CS%TKE_slope_loss(:,:,:,fr,m))
+                       G, GV, US, CS, CS%NAngle, test(:,:,:), En_halo_ij_stencil, CS%TKE_slope_loss(:,:,:,fr,m))
         endif
     enddo ; enddo
+
+    ! Rotate points in the halos as necessary.
+    call do_group_pass(CS%pass_En, G%domain)
+    call correct_halo_rotation(CS%En, test, G, CS%nAngle, halo=En_halo_ij_stencil)
+
 
     if (CS%force_posit_En) then
       do m=1,CS%nMode ; do fr=1,CS%Nfreq ; do a=1,CS%nAngle
@@ -679,6 +690,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     endif
 
     call do_group_pass(CS%pass_En, G%domain)
+    call correct_halo_rotation(CS%En, test, G, CS%nAngle, halo=En_halo_ij_stencil)
 
   enddo ! end subcycling
 
@@ -1480,6 +1492,8 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
   real :: hmin                  ! A minimum allowable thickness [H ~> m or kg m-2]
   real :: h_rmn                 ! Remaining thickness in k-loop [H ~> m or kg m-2]
   real :: frac                  ! A fraction of thicknesses [nondim]
+  real :: I_h_bot               ! inverse of Bottom boundary layer thickness [H-1 ~> m-1 or m2 kg-1]
+
   real :: verif_N,   &          ! profile verification [nondim]
           verif_N2,  &          ! profile verification [nondim]
           verif_bbl, &          ! profile verification [nondim]
@@ -1536,6 +1550,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
     tmp_StLau_slope = 0.0
     htot = 0.0
     htmp = 0.0
+    I_h_bot = 1.0 / h_bot(i)
 
     do k=1,nz
       ! N-profile
@@ -1559,12 +1574,12 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
       if (G%mask2dT(i,j) > 0.0) then
         profile_BBL(k) = 0.0
         if (h(i,j,k) <= h_rmn) then
-          profile_BBL(k) = 1.0 / h_bot(i)
+          profile_BBL(k) = 1.0 * I_h_bot
           h_rmn = h_rmn - h(i,j,k)
         else
           if (h_rmn > 0.0) then
             frac = h_rmn / h(i,j,k)
-            profile_BBL(k) = frac / h_bot(i)
+            profile_BBL(k) = frac * I_h_bot
             h_rmn = h_rmn - frac*h(i,j,k)
           endif
         endif
@@ -2069,7 +2084,7 @@ subroutine PPM_angular_advect(En2d, CFL_ang, Flux_En, NAngle, dt, halo_ang)
 end subroutine PPM_angular_advect
 
 !> Propagates internal waves at a single frequency.
-subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
+subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, test, halo_size, residual_loss)
   type(ocean_grid_type), intent(inout) :: G    !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)  :: GV   !< The ocean's vertical grid structure.
   integer,               intent(in)    :: NAngle !< The number of wave orientations in the
@@ -2083,7 +2098,9 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
   real,                  intent(in)    :: freq !< Wave frequency [T-1 ~> s-1].
   real,                  intent(in)    :: dt   !< Time step [T ~> s].
   type(unit_scale_type), intent(in)    :: US   !< A dimensional unit scaling type
+  real, dimension(G%isd:G%ied,G%jsd:G%jed,2), intent(in) :: test !< test rotation vector
   type(int_tide_CS),     intent(inout)    :: CS   !< Internal tide control structure
+  integer, intent(in) :: halo_size  !< halo size for correct rotation
   real, dimension(G%isd:G%ied,G%jsd:G%jed,NAngle), &
                          intent(inout) :: residual_loss !< internal tide energy loss due
                                                         !! to the residual at slopes [H Z2 T-3 ~> m3 s-3 or W m-2].
@@ -2176,15 +2193,17 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
                    sqrt(max(freq2 - f2, 0.0)) * Ifreq
   enddo ; enddo
 
-  call pass_vector(speed_x, speed_y, G%Domain, stagger=CGRID_NE)
+  call pass_var(speed_x, G%Domain, position=EAST_FACE)
+  call pass_var(speed_y, G%Domain, position=NORTH_FACE)
+
   call pass_var(En, G%domain)
 
   ! Apply propagation in the first direction (reflection included)
   LB%jsh = jsh ; LB%jeh = jeh ; LB%ish = ish ; LB%ieh = ieh
   if (x_first) then
-    call propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, CS%nAngle, CS, LB, residual_loss)
+    call propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, CS%nAngle, CS, LB, residual_loss, freq2)
   else
-    call propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, CS%nAngle, CS, LB, residual_loss)
+    call propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, CS%nAngle, CS, LB, residual_loss, freq2)
   endif
 
   ! fix underflows
@@ -2201,6 +2220,7 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
 
   ! Update halos
   call pass_var(En, G%domain)
+  call correct_halo_rotation_2d(En, test, G, NAngle, halo=halo_size)
 
   if (CS%debug) then
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
@@ -2212,9 +2232,9 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
   ! LB%jsh = js ; LB%jeh = je ; LB%ish = is ; LB%ieh = ie ! Use if no teleport
   LB%jsh = jsh ; LB%jeh = jeh ; LB%ish = ish ; LB%ieh = ieh
   if (x_first) then
-    call propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, CS%nAngle, CS, LB, residual_loss)
+    call propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, CS%nAngle, CS, LB, residual_loss, freq2)
   else
-    call propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, CS%nAngle, CS, LB, residual_loss)
+    call propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, CS%nAngle, CS, LB, residual_loss, freq2)
   endif
 
   ! fix underflows
@@ -2223,6 +2243,7 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, residual_loss)
   enddo ; enddo ; enddo
 
   call pass_var(En, G%domain)
+  call correct_halo_rotation_2d(En, test, G, NAngle, halo=halo_size)
 
   if (CS%debug) then
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
@@ -2235,7 +2256,7 @@ end subroutine propagate
 
 
 !> Propagates the internal wave energy in the logical x-direction.
-subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, residual_loss)
+subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, residual_loss, freq2)
   type(ocean_grid_type),   intent(in)    :: G  !< The ocean's grid structure.
   integer,                 intent(in)    :: NAngle !< The number of wave orientations in the
                                                !! discretized wave energy spectrum.
@@ -2255,6 +2276,8 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, res
   real, dimension(G%isd:G%ied,G%jsd:G%jed,Nangle),   &
                            intent(inout) :: residual_loss !< internal tide energy loss due
                                                           !! to the residual at slopes [H Z2 T-3 ~> m3 s-3 or W m-2].
+  real, intent(in) :: freq2 !< The square of internal tides frequency [T-2 ~> s-2].
+
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
     EnL, EnR    ! Left and right face energy densities [H Z2 T-2 ~> m3 s-2 or J m-2].
@@ -2315,10 +2338,15 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, res
     En(i,j,a) = En(i,j,a) + (G%IareaT(i,j)*(Fdt_m(i,j,a) + Fdt_p(i,j,a)))
   enddo ; enddo ; enddo
 
+  ! existing energy at turning latitude should reflect away
+  if (CS%turn_critical_lat ) then
+    call turning_latitude(En, NAngle, freq2, CS, G, LB)
+  endif
+
 end subroutine propagate_x
 
 !> Propagates the internal wave energy in the logical y-direction.
-subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB, residual_loss)
+subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB, residual_loss, freq2)
   type(ocean_grid_type),   intent(in)    :: G  !< The ocean's grid structure.
   integer,                 intent(in)    :: NAngle !< The number of wave orientations in the
                                                !! discretized wave energy spectrum.
@@ -2338,6 +2366,8 @@ subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB, res
   real, dimension(G%isd:G%ied,G%jsd:G%jed,Nangle),   &
                            intent(inout) :: residual_loss !< internal tide energy loss due
                                                           !! to the residual at slopes [H Z2 T-3 ~> m3 s-3 or W m-2].
+  real, intent(in) :: freq2 !< The square of internal tides frequency [T-2 ~> s-2].
+
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
     EnL, EnR    ! South and north face energy densities [H Z2 T-2 ~> m3 s-2 or J m-2].
@@ -2397,6 +2427,11 @@ subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB, res
   do a=1,Nangle ; do j=jsh,jeh ; do i=ish,ieh
     En(i,j,a) = En(i,j,a) + G%IareaT(i,j)*(Fdt_m(i,j,a) + Fdt_p(i,j,a))
   enddo ; enddo ; enddo
+
+  ! existing energy at turning latitude should reflect away
+  if (CS%turn_critical_lat ) then
+    call turning_latitude(En, NAngle, freq2, CS, G, LB)
+  endif
 
 end subroutine propagate_y
 
@@ -2511,6 +2546,7 @@ subroutine reflect(En, NAngle, CS, G, LB)
 
   real    :: TwoPi                         ! 2*pi = 6.2831853... [nondim]
   real    :: Angle_size                    ! size of beam wedge [rad]
+  real    :: I_Angle_size                  ! inverse of size of beam wedge [rad-1]
   integer :: angle_wall                    ! angle-bin of coast/ridge/shelf wrt equator
   integer :: angle_wall0                   ! angle-bin of coast/ridge/shelf wrt equator
   integer :: angle_r                       ! angle-bin of reflected ray wrt equator
@@ -2529,6 +2565,7 @@ subroutine reflect(En, NAngle, CS, G, LB)
 
   TwoPi = 8.0*atan(1.0)
   Angle_size = TwoPi / (real(NAngle))
+  I_Angle_size = 1.0 / Angle_size
   Nangle_d2 = (Nangle / 2)
 
   ! init local arrays
@@ -2550,7 +2587,7 @@ subroutine reflect(En, NAngle, CS, G, LB)
     ! i.e., if energy is in a reflecting cell
     if (angle_c(i,j) /= CS%nullangle) then
       ! refection angle is given in rad, convert to the discrete angle
-      angle_wall = nint(angle_c(i,j)/Angle_size) + 1
+      angle_wall = nint(angle_c(i,j)*I_Angle_size) + 1
       do a=1,NAngle ; if (En(i,j,a) > 0.0) then
         ! reindex to 0 -> Nangle-1 for trig
         a0 = a - 1
@@ -2592,6 +2629,146 @@ subroutine reflect(En, NAngle, CS, G, LB)
   ! enddo ; enddo ; enddo
 
 end subroutine reflect
+
+subroutine turning_latitude(En, NAngle, freq2, CS, G, LB)
+  type(ocean_grid_type),  intent(in)    :: G  !< The ocean's grid structure
+  integer,                intent(in)    :: NAngle !< The number of wave orientations in the
+                                              !! discretized wave energy spectrum.
+  real, dimension(G%isd:G%ied,G%jsd:G%jed,NAngle), &
+                          intent(inout) :: En !< The internal gravity wave energy density as a
+                                              !! function of space and angular resolution
+                                              !! [H Z2 T-2 ~> m3 s-2 or J m-2].
+  type(int_tide_CS),      intent(in)    :: CS !< Internal tide control structure
+  type(loop_bounds_type), intent(in)    :: LB !< A structure with the active energy loop bounds.
+  real, intent(in)                      :: freq2 !< The square of the internal tide frequency [T-2 ~> s-2]
+
+  ! Local variables
+  real, dimension(G%isd:G%ied,G%jsd:G%jed) :: angle_c
+                                           ! angle of boundary wrt equator [rad]
+  real, dimension(1:Nangle) :: En_reflected ! Energy reflected [H Z2 T-2 ~> m3 s-2 or J m-2].
+
+  real    :: TwoPi                         ! 2*pi = 6.2831853... [nondim]
+  real    :: Pi_2                          ! pi/2 [nondim]
+  real    :: Angle_size                    ! size of beam wedge [rad]
+  real    :: I_Angle_size                  ! inverse of size of beam wedge [rad-1]
+  real    :: f2
+
+  integer :: angle_wall                    ! angle-bin of coast/ridge/shelf wrt equator
+  integer :: angle_wall0                   ! angle-bin of coast/ridge/shelf wrt equator
+  integer :: angle_r                       ! angle-bin of reflected ray wrt equator
+  integer :: angle_r0                      ! angle-bin of reflected ray wrt equator
+  integer :: angle_to_wall                 ! angle-bin relative to wall
+  integer :: a, a0                         ! loop index for angles
+  integer :: i, j
+  integer :: Nangle_d2            ! Nangle / 2
+  integer :: Nangle_d4p1          ! Nangle / 4 + 1
+  integer :: Nangle_3d4p1         ! 3*Nangle / 4 + 1
+  integer :: isc, iec, jsc, jec   ! start and end local indices on PE
+                                  ! (values exclude halos)
+  integer :: ish, ieh, jsh, jeh   ! start and end local indices on data domain
+                                  ! leaving out outdated halo points (march in)
+
+  isc = G%isc  ; iec = G%iec  ; jsc = G%jsc  ; jec = G%jec
+  ish = LB%ish ; ieh = LB%ieh ; jsh = LB%jsh ; jeh = LB%jeh
+
+  TwoPi = 8.0*atan(1.0)
+  Angle_size = TwoPi / (real(NAngle))
+  I_Angle_size = 1.0 / Angle_size
+  Nangle_d2 = (Nangle / 2)
+  Nangle_d4p1 = (Nangle / 4) + 1
+  Nangle_3d4p1 = (3 * Nangle / 4) + 1
+
+
+  ! init local arrays
+  angle_c(:,:) = CS%nullangle
+  angle_wall = 0
+  angle_wall0 =0
+  angle_r = 0
+  angle_r0 = 0
+  angle_to_wall = 0
+
+  do j=jsh,jeh ; do i=ish,ieh
+    ! init
+    angle_wall = 0
+    angle_wall0 = 0
+    angle_r = 0
+    angle_r0 = 0
+    angle_to_wall = 0
+
+    f2 = max(abs(G%Coriolis2Bu(I-1,J)), abs(G%Coriolis2Bu(I,J)), &
+             abs(G%Coriolis2Bu(I-1,J-1)), abs(G%Coriolis2Bu(I,J-1)))
+
+    if (G%CoriolisBu(I,J) < 0. ) then
+      if (f2 - freq2 >= 0.) then
+        angle_c(i,j) = 0.5 * TwoPi
+      endif
+    else
+      if (f2 - freq2 >= 0.) then
+        angle_c(i,j) = 0.
+      endif
+    endif
+  enddo ; enddo
+
+  En_reflected(:) = 0.0
+
+  do j=jsh,jeh ; do i=ish,ieh
+    ! init
+    angle_wall = 0
+    angle_wall0 = 0
+    angle_r = 0
+    angle_r0 = 0
+    angle_to_wall = 0
+
+    if (angle_c(i,j) /= CS%nullangle) then
+      ! refection angle is given in rad, convert to the discrete angle
+      angle_wall = nint(angle_c(i,j)*I_Angle_size) + 1
+      do a=1,NAngle ; if (En(i,j,a) > 0.0) then
+
+        if (.not. CS%reflect_critical_lat) then
+
+          ! turn parallel to critical lat
+          if ((a > Nangle_d4p1) .and. (a < Nangle_3d4p1)) then
+            angle_r0 = Nangle_d2
+          else
+            angle_r0 = 0
+          endif
+          angle_r = angle_r0 + 1 !re-index to 1 -> Nangle
+
+          if (a /= angle_r) then
+            En_reflected(angle_r) = En(i,j,a)
+            En(i,j,a) = 0.
+          endif
+
+        else
+
+          ! reindex to 0 -> Nangle-1 for trig
+          a0 = a - 1
+          angle_wall0 = angle_wall - 1
+          ! compute relative angle from wall and use cyclic properties
+          ! to ensure it is bounded by 0 -> Nangle-1
+          angle_to_wall = mod((a0 - angle_wall0) + Nangle, Nangle)
+
+          ! do reflection
+          if ((0 < angle_to_wall) .and. (angle_to_wall < Nangle_d2)) then
+            angle_r0 = mod(2*angle_wall0 - a0 + Nangle, Nangle)
+            angle_r = angle_r0 + 1 !re-index to 1 -> Nangle
+
+            if (a /= angle_r) then
+              En_reflected(angle_r) = En(i,j,a)
+              En(i,j,a) = 0.
+            endif
+          endif
+        endif
+      endif ; enddo ! a-loop
+
+      do a=1,NAngle
+        En(i,j,a) = En(i,j,a) + En_reflected(a)
+        En_reflected(a) = 0.0  ! reset values
+      enddo ! a-loop
+    endif
+  enddo ; enddo ! i- and j-loops
+
+end subroutine turning_latitude
 
 !> Moves energy across lines of partial reflection to prevent
 !! reflection of energy that is supposed to get across.
@@ -2716,13 +2893,12 @@ subroutine correct_halo_rotation(En, test, G, NAngle, halo)
     i_first = ieh+1 ; i_last = ish-1
     do i=ish,ieh
       a_shift(i) = 0
-      if (test(i,j,1) /= 1.0) then
+      if (test(i,j,2) < 0.5) then
         if (i<i_first) i_first = i
         if (i>i_last) i_last = i
-
-        if (test(i,j,1) == -1.0) then ; a_shift(i) = nAngle/2
-        elseif (test(i,j,2) == 1.0) then ; a_shift(i) = -nAngle/4
-        elseif (test(i,j,2) == -1.0) then ; a_shift(i) = nAngle/4
+        if (test(i,j,2) < -0.5) then ; a_shift(i) = 0.5*nAngle
+        elseif (test(i,j,1) > 0.5) then ; a_shift(i) = -0.25*nAngle
+        elseif (test(i,j,1) < -0.5) then ; a_shift(i) = 0.25*nAngle
         else
           write(mesg,'("Unrecognized rotation test vector ",2ES9.2," at ",F7.2," E, ",&
                        &F7.2," N; i,j=",2i4)') &
@@ -2748,6 +2924,70 @@ subroutine correct_halo_rotation(En, test, G, NAngle, halo)
     endif
   enddo
 end subroutine correct_halo_rotation
+
+
+!> Rotates points in the halos where required to accommodate
+!! changes in grid orientation, such as at the tripolar fold.
+subroutine correct_halo_rotation_2d(En, test, G, NAngle, halo)
+  type(ocean_grid_type),      intent(in)    :: G    !< The ocean's grid structure
+  real, dimension(:,:,:), intent(inout) :: En   !< The internal gravity wave energy density as a
+                                       !! function of space, angular orientation, frequency,
+                                       !! and vertical mode [H Z2 T-2 ~> m3 s-2 or J m-2].
+  real, dimension(SZI_(G),SZJ_(G),2), &
+                              intent(in)    :: test !< An x-unit vector that has been passed through
+                                       !! the halo updates, to enable the rotation of the
+                                       !! wave energies in the halo region to be corrected [nondim].
+  integer,                    intent(in)    :: NAngle !< The number of wave orientations in the
+                                                      !! discretized wave energy spectrum.
+  integer,                    intent(in)    :: halo   !< The halo size over which to do the calculations
+  ! Local variables
+  real, dimension(G%isd:G%ied,NAngle) :: En2d ! A zonal row of the internal gravity wave energy density
+                                              ! in a frequency band and mode [H Z2 T-2 ~> m3 s-2 or J m-2].
+  integer, dimension(G%isd:G%ied) :: a_shift
+  integer :: i_first, i_last, a_new
+  integer :: a, i, j, ish, ieh, jsh, jeh
+  integer :: id_g, jd_g
+  character(len=160) :: mesg  ! The text of an error message
+  ish = G%isc-halo ; ieh = G%iec+halo ; jsh = G%jsc-halo ; jeh = G%jec+halo
+
+  ! top rows
+  do j=jsh,jeh
+  !do j= G%jec+1,jeh
+    i_first = ieh+1 ; i_last = ish-1 ! init
+    do i=ish,ieh
+      id_g = i + G%idg_offset ; jd_g = j + G%jdg_offset ! for debugging
+
+      a_shift(i) = 0
+      if (test(i,j,2) < 0.5) then
+        if (i<i_first) i_first = i
+        if (i>i_last) i_last = i
+        if (test(i,j,2) < -0.5) then ; a_shift(i) = 0.5*nAngle
+        elseif (test(i,j,1) > 0.5) then ; a_shift(i) = -0.25*nAngle
+        elseif (test(i,j,1) < -0.5) then ; a_shift(i) = 0.25*nAngle
+        else
+          write(mesg,'("Unrecognized rotation test vector ",2ES9.2," at ",F7.2," E, ",&
+                       &F7.2," N; i,j=",2i4)') &
+                test(i,j,1), test(i,j,2), G%GeoLonT(i,j), G%GeoLatT(i,j), i, j
+          call MOM_error(FATAL, mesg)
+        endif
+      endif
+    enddo
+
+    if (i_first <= i_last) then
+      ! At least one point in this row needs to be rotated.
+        do a=1,nAngle ; do i=i_first,i_last ; if (a_shift(i) /= 0) then
+          a_new = a + a_shift(i)
+          if (a_new < 1) a_new = a_new + nAngle
+          if (a_new > nAngle) a_new = a_new - nAngle
+          En2d(i,a_new) = En(i,j,a)
+        endif ; enddo ; enddo
+        do a=1,nAngle ; do i=i_first,i_last ; if (a_shift(i) /= 0) then
+          En(i,j,a) = En2d(i,a)
+        endif ; enddo ; enddo
+    endif
+  enddo
+end subroutine correct_halo_rotation_2d
+
 
 !> Calculates left/right edge values for PPM reconstruction in x-direction.
 subroutine PPM_reconstruction_x(h_in, h_l, h_r, G, LB, simple_2nd, adv_limiter)
@@ -3315,6 +3555,13 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "INTERNAL_TIDES_ONLY_INIT_FORCING", CS%init_forcing_only, &
                  "If true, internal tides ray tracing only applies forcing at first step (debugging).", &
                  default=.false.)
+  call get_param(param_file, mdl, "TURN_CRITICAL_LAT", CS%turn_critical_lat, &
+                 "If true, internal tides rays turn at the critical latitude.", &
+                 default=.true.)
+  call get_param(param_file, mdl, "REFLECT_CRITICAL_LAT", CS%reflect_critical_lat, &
+                 "If true, internal tides rays reflect at the critical latitude. "//&
+                 "If false, rays turn parallel to the critical latitude", &
+                 default=.true.)
   call get_param(param_file, mdl, "INTERNAL_TIDES_FORCE_POS_EN", CS%force_posit_En, &
                  "If true, force energy to be positive by removing subroundoff negative values.", &
                  default=.true.)
