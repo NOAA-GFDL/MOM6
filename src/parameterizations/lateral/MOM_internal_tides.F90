@@ -1492,7 +1492,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
   real :: hmin                  ! A minimum allowable thickness [H ~> m or kg m-2]
   real :: h_rmn                 ! Remaining thickness in k-loop [H ~> m or kg m-2]
   real :: frac                  ! A fraction of thicknesses [nondim]
-  real :: I_h_bot               ! inverse of Bottom boundary layer thickness [H-1 ~> m-1 or kg-1 m2]
+  real :: I_h_bot               ! inverse of Bottom boundary layer thickness [H-1 ~> m-1 or m2 kg-1]
 
   real :: verif_N,   &          ! profile verification [nondim]
           verif_N2,  &          ! profile verification [nondim]
