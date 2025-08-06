@@ -24,7 +24,7 @@ use MOM_io, only            : set_axis_info, get_axis_info, stdout
 use MOM_restart, only       : register_restart_field, MOM_restart_CS, restart_init, save_restart
 use MOM_restart, only       : lock_check, restart_registry_lock
 use MOM_spatial_means, only : global_area_integral
-use MOM_string_functions, only: extract_real
+use MOM_string_functions, only: extract_real, uppercase
 use MOM_time_manager, only  : time_type, time_type_to_real, operator(+), operator(/), operator(-)
 use MOM_unit_scaling, only  : unit_scale_type
 use MOM_variables, only     : surface, thermo_var_ptrs, vertvisc_type
@@ -154,6 +154,7 @@ type, public :: int_tide_CS ; private
   type(time_type), pointer :: Time => NULL() !< A pointer to the model's clock.
   type(group_pass_type) :: pass_En !< Pass 5d array Energy as a group of 3d arrays
   character(len=200) :: inputdir !< directory to look for coastline angle file
+  integer :: itides_adv_limiter !< The type of limiter to use for the energy advection scheme
   real, allocatable, dimension(:,:,:,:) :: decay_rate_2d !< rate at which internal tide energy is
                                                          !! lost to the interior ocean internal wave field
                                                          !! as a function of longitude, latitude, frequency
@@ -259,6 +260,13 @@ type :: loop_bounds_type ; private
   integer :: ish, ieh, jsh, jeh
   !>@}
 end type loop_bounds_type
+
+!>@{ Enumeration values for numerical schemes
+integer, parameter :: LIMITER_ADV_MINMOD = 1
+integer, parameter :: LIMITER_ADV_POSITIVE = 2
+character*(20), parameter :: LIMITER_ADV_MINMOD_STRING = "MINMOD"
+character*(20), parameter :: LIMITER_ADV_POSITIVE_STRING = "POSITIVE"
+!>@}
 
 contains
 
@@ -2267,7 +2275,8 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, res
         EnL(i,j) = En(i,j,a) ; EnR(i,j) = En(i,j,a)
       enddo ; enddo
     else
-      call PPM_reconstruction_x(En(:,:,a), EnL, EnR, G, LB, simple_2nd=CS%simple_2nd)
+      call PPM_reconstruction_x(En(:,:,a), EnL, EnR, G, LB, &
+                                simple_2nd=CS%simple_2nd, adv_limiter=CS%itides_adv_limiter)
     endif
 
     do j=jsh,jeh
@@ -2349,7 +2358,8 @@ subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB, res
         EnL(i,j) = En(i,j,a) ; EnR(i,j) = En(i,j,a)
       enddo ; enddo
     else
-      call PPM_reconstruction_y(En(:,:,a), EnL, EnR, G, LB, simple_2nd=CS%simple_2nd)
+      call PPM_reconstruction_y(En(:,:,a), EnL, EnR, G, LB, &
+                                simple_2nd=CS%simple_2nd, adv_limiter=CS%itides_adv_limiter)
     endif
 
     do J=jsh-1,jeh
@@ -2740,7 +2750,7 @@ subroutine correct_halo_rotation(En, test, G, NAngle, halo)
 end subroutine correct_halo_rotation
 
 !> Calculates left/right edge values for PPM reconstruction in x-direction.
-subroutine PPM_reconstruction_x(h_in, h_l, h_r, G, LB, simple_2nd)
+subroutine PPM_reconstruction_x(h_in, h_l, h_r, G, LB, simple_2nd, adv_limiter)
   type(ocean_grid_type),            intent(in)  :: G    !< The ocean's grid structure.
   real, dimension(SZI_(G),SZJ_(G)), intent(in)  :: h_in !< Energy density in a sector (2D)
                                                         !! [H Z2 T-2 ~> m3 s-2 or J m-2]
@@ -2752,6 +2762,8 @@ subroutine PPM_reconstruction_x(h_in, h_l, h_r, G, LB, simple_2nd)
   logical,                          intent(in)  :: simple_2nd !< If true, use the arithmetic mean
                                                         !! energy densities as default edge values
                                                         !! for a simple 2nd order scheme.
+  integer,                          intent(in)  :: adv_limiter !< The type of limiter used
+
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))  :: slp ! The slope in energy density times the cell width
                                            ! [H Z2 T-2 ~> m3 s-2 or J m-2]
@@ -2815,11 +2827,17 @@ subroutine PPM_reconstruction_x(h_in, h_l, h_r, G, LB, simple_2nd)
     enddo ; enddo
   endif
 
-  call PPM_limit_pos(h_in, h_l, h_r, 0.0, G, isl, iel, jsl, jel)
+  select case(adv_limiter)
+    case (LIMITER_ADV_POSITIVE)
+      call PPM_limit_pos(h_in, h_l, h_r, 0.0, G, isl, iel, jsl, jel)
+    case (LIMITER_ADV_MINMOD)
+      call minmod_limiter(h_in, h_l, h_r, G, isl, iel, jsl, jel)
+  end select
+
 end subroutine PPM_reconstruction_x
 
 !> Calculates left/right edge valus for PPM reconstruction in y-direction.
-subroutine PPM_reconstruction_y(h_in, h_l, h_r, G, LB, simple_2nd)
+subroutine PPM_reconstruction_y(h_in, h_l, h_r, G, LB, simple_2nd, adv_limiter)
   type(ocean_grid_type),            intent(in)  :: G    !< The ocean's grid structure.
   real, dimension(SZI_(G),SZJ_(G)), intent(in)  :: h_in !< Energy density in a sector (2D)
                                                         !! [H Z2 T-2 ~> m3 s-2 or J m-2]
@@ -2831,6 +2849,8 @@ subroutine PPM_reconstruction_y(h_in, h_l, h_r, G, LB, simple_2nd)
   logical,                          intent(in)  :: simple_2nd !< If true, use the arithmetic mean
                                                         !! energy densities as default edge values
                                                         !! for a simple 2nd order scheme.
+  integer,                          intent(in)  :: adv_limiter !< The type of limiter used
+
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))  :: slp ! The slope in energy density times the cell width
                                            ! [H Z2 T-2 ~> m3 s-2 or J m-2]
@@ -2892,7 +2912,13 @@ subroutine PPM_reconstruction_y(h_in, h_l, h_r, G, LB, simple_2nd)
     enddo ; enddo
   endif
 
-  call PPM_limit_pos(h_in, h_l, h_r, 0.0, G, isl, iel, jsl, jel)
+  select case(adv_limiter)
+    case (LIMITER_ADV_POSITIVE)
+      call PPM_limit_pos(h_in, h_l, h_r, 0.0, G, isl, iel, jsl, jel)
+    case (LIMITER_ADV_MINMOD)
+      call minmod_limiter(h_in, h_l, h_r, G, isl, iel, jsl, jel)
+  end select
+
 end subroutine PPM_reconstruction_y
 
 !> Limits the left/right edge values of the PPM reconstruction
@@ -2940,6 +2966,42 @@ subroutine PPM_limit_pos(h_in, h_L, h_R, h_min, G, iis, iie, jis, jie)
     endif
   enddo ; enddo
 end subroutine PPM_limit_pos
+
+!> Limits the left/right edge values using the simple minmod limiter
+!! written in a way that avoids branching in favor of intrinsics
+subroutine minmod_limiter(h_in, h_L, h_R, G, iis, iie, jis, jie)
+  type(ocean_grid_type),            intent(in)     :: G     !< The ocean's grid structure.
+  real, dimension(SZI_(G),SZJ_(G)), intent(in)     :: h_in  !< Energy density in each sector (2D)
+                                                            !! [H Z2 T-2 ~> m3 s-2 or J m-2]
+  real, dimension(SZI_(G),SZJ_(G)), intent(inout)  :: h_L   !< Left edge value of reconstruction
+                                                            !!  [H Z2 T-2 ~> m3 s-2 or J m-2]
+  real, dimension(SZI_(G),SZJ_(G)), intent(inout)  :: h_R   !< Right edge value of reconstruction
+                                                            !! [H Z2 T-2 ~> m3 s-2 or J m-2]
+  integer,                          intent(in)     :: iis   !< Start i-index for computations
+  integer,                          intent(in)     :: iie   !< End i-index for computations
+  integer,                          intent(in)     :: jis   !< Start j-index for computations
+  integer,                          intent(in)     :: jie   !< End j-index for computations
+  ! Local variables
+  real :: sign_h_L, sign_h_R, sign_h_in  ! the signs of the edge and center values
+  real :: sign_h_L_in, sign_h_R_in       ! products of signs, detect crossing the zero line
+  integer :: i, j
+
+  do j=jis,jie ; do i=iis,iie
+
+    sign_h_L = sign(1.0d0, h_L(i,j))
+    sign_h_R = sign(1.0d0, h_R(i,j))
+    sign_h_in = sign(1.0d0, h_in(i,j))
+
+    sign_h_L_in = sign_h_L * sign_h_in
+    sign_h_R_in = sign_h_R * sign_h_in
+
+    ! if opposite signs, goes to zero else take the min of edge and centers values
+    h_L(i,j) = (0.5 * (sign_h_L_in + 1.0)) * (sign_h_L * min(abs(h_L(i,j)), abs(h_in(i,j))))
+    h_R(i,j) = (0.5 * (sign_h_R_in + 1.0)) * (sign_h_R * min(abs(h_R(i,j)), abs(h_in(i,j))))
+
+  enddo ; enddo
+
+end subroutine minmod_limiter
 
 subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
   type(ocean_grid_type), intent(in) :: G          !< The ocean's grid structure
@@ -3131,6 +3193,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   character(len=200) :: refl_pref_file, refl_dbl_file, trans_file
   character(len=200) :: h2_file, decay_file
   character(len=80)  :: rough_var ! Input file variable names
+  character(len=80)  :: tmpstr
 
   character(len=240), dimension(:), allocatable :: energy_fractions
   character(len=240) :: periods
@@ -3291,6 +3354,24 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
                  "1st-order upwind advection.  This scheme is highly "//&
                  "continuity solver.  This scheme is highly "//&
                  "diffusive but may be useful for debugging.", default=.false.)
+  call get_param(param_file, mdl, "INTERNAL_TIDE_ADV_LIMITER", tmpstr, &
+                 "Choose the limiter scheme used for the internal tide advection scheme, "//&
+                 "available schemes are: \n"//&
+                 "\t POSITIVE - a positive definite scheme similar to the continuity solver. \n"//&
+                 "\t MINMOD - the simplest limiter.", default=LIMITER_ADV_MINMOD_STRING)
+
+  tmpstr = uppercase(tmpstr)
+  select case (tmpstr)
+    case (LIMITER_ADV_POSITIVE_STRING)
+      CS%itides_adv_limiter = LIMITER_ADV_POSITIVE
+    case (LIMITER_ADV_MINMOD_STRING)
+      CS%itides_adv_limiter = LIMITER_ADV_MINMOD
+    case default
+      call MOM_mesg('internal_tide_init: Advection limiter ="'//trim(tmpstr)//'"', 0)
+      call MOM_error(FATAL, "internal_tide_init: Unrecognized setting "// &
+            "#define INTERNAL_TIDE_ADV_LIMITER "//trim(tmpstr)//" found in input file.")
+  end select
+
   call get_param(param_file, mdl, "INTERNAL_TIDE_BACKGROUND_DRAG", CS%apply_background_drag, &
                  "If true, the internal tide ray-tracing advection uses a background drag "//&
                  "term as a sink.", default=.false.)
