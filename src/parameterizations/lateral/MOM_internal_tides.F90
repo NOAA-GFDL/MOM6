@@ -24,7 +24,7 @@ use MOM_io, only            : set_axis_info, get_axis_info, stdout
 use MOM_restart, only       : register_restart_field, MOM_restart_CS, restart_init, save_restart
 use MOM_restart, only       : lock_check, restart_registry_lock
 use MOM_spatial_means, only : global_area_integral
-use MOM_string_functions, only: extract_real
+use MOM_string_functions, only: extract_real, uppercase
 use MOM_time_manager, only  : time_type, time_type_to_real, operator(+), operator(/), operator(-)
 use MOM_unit_scaling, only  : unit_scale_type
 use MOM_variables, only     : surface, thermo_var_ptrs, vertvisc_type
@@ -154,7 +154,7 @@ type, public :: int_tide_CS ; private
   type(time_type), pointer :: Time => NULL() !< A pointer to the model's clock.
   type(group_pass_type) :: pass_En !< Pass 5d array Energy as a group of 3d arrays
   character(len=200) :: inputdir !< directory to look for coastline angle file
-  character(len=20) :: itides_adv_limiter !< The type of limiter to use for the energy advection scheme
+  integer :: itides_adv_limiter !< The type of limiter to use for the energy advection scheme
   real, allocatable, dimension(:,:,:,:) :: decay_rate_2d !< rate at which internal tide energy is
                                                          !! lost to the interior ocean internal wave field
                                                          !! as a function of longitude, latitude, frequency
@@ -260,6 +260,13 @@ type :: loop_bounds_type ; private
   integer :: ish, ieh, jsh, jeh
   !>@}
 end type loop_bounds_type
+
+!>@{ Enumeration values for numerical schemes
+integer, parameter :: LIMITER_ADV_MINMOD = 1
+integer, parameter :: LIMITER_ADV_POSITIVE = 2
+character*(20), parameter :: LIMITER_ADV_MINMOD_STRING = "MINMOD"
+character*(20), parameter :: LIMITER_ADV_POSITIVE_STRING = "POSITIVE"
+!>@}
 
 contains
 
@@ -2755,7 +2762,7 @@ subroutine PPM_reconstruction_x(h_in, h_l, h_r, G, LB, simple_2nd, adv_limiter)
   logical,                          intent(in)  :: simple_2nd !< If true, use the arithmetic mean
                                                         !! energy densities as default edge values
                                                         !! for a simple 2nd order scheme.
-  character(len=20),                intent(in)  :: adv_limiter !< The type of limiter used
+  integer,                          intent(in)  :: adv_limiter !< The type of limiter used
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))  :: slp ! The slope in energy density times the cell width
@@ -2820,10 +2827,10 @@ subroutine PPM_reconstruction_x(h_in, h_l, h_r, G, LB, simple_2nd, adv_limiter)
     enddo ; enddo
   endif
 
-  select case(trim(adv_limiter))
-    case ("positive")
+  select case(adv_limiter)
+    case (LIMITER_ADV_POSITIVE)
       call PPM_limit_pos(h_in, h_l, h_r, 0.0, G, isl, iel, jsl, jel)
-    case ("minmod")
+    case (LIMITER_ADV_MINMOD)
       call minmod_limiter(h_in, h_l, h_r, G, isl, iel, jsl, jel)
   end select
 
@@ -2842,7 +2849,7 @@ subroutine PPM_reconstruction_y(h_in, h_l, h_r, G, LB, simple_2nd, adv_limiter)
   logical,                          intent(in)  :: simple_2nd !< If true, use the arithmetic mean
                                                         !! energy densities as default edge values
                                                         !! for a simple 2nd order scheme.
-  character(len=20),                intent(in)  :: adv_limiter !< The type of limiter used
+  integer,                          intent(in)  :: adv_limiter !< The type of limiter used
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))  :: slp ! The slope in energy density times the cell width
@@ -2905,10 +2912,10 @@ subroutine PPM_reconstruction_y(h_in, h_l, h_r, G, LB, simple_2nd, adv_limiter)
     enddo ; enddo
   endif
 
-  select case(trim(adv_limiter))
-    case ("positive")
+  select case(adv_limiter)
+    case (LIMITER_ADV_POSITIVE)
       call PPM_limit_pos(h_in, h_l, h_r, 0.0, G, isl, iel, jsl, jel)
-    case ("minmod")
+    case (LIMITER_ADV_MINMOD)
       call minmod_limiter(h_in, h_l, h_r, G, isl, iel, jsl, jel)
   end select
 
@@ -3186,6 +3193,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   character(len=200) :: refl_pref_file, refl_dbl_file, trans_file
   character(len=200) :: h2_file, decay_file
   character(len=80)  :: rough_var ! Input file variable names
+  character(len=80)  :: tmpstr
 
   character(len=240), dimension(:), allocatable :: energy_fractions
   character(len=240) :: periods
@@ -3346,11 +3354,24 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
                  "1st-order upwind advection.  This scheme is highly "//&
                  "continuity solver.  This scheme is highly "//&
                  "diffusive but may be useful for debugging.", default=.false.)
-  call get_param(param_file, mdl, "INTERNAL_TIDE_ADV_LIMITER", CS%itides_adv_limiter, &
+  call get_param(param_file, mdl, "INTERNAL_TIDE_ADV_LIMITER", tmpstr, &
                  "Choose the limiter scheme used for the internal tide advection scheme, "//&
-                 "available schemes are: "//&
-                 "1) 'positive' : a positive definite scheme from the continuity solver. "//&
-                 "2) 'minmod' : the simplest limiter.", default="minmod")
+                 "available schemes are: \n"//&
+                 "\t POSITIVE - a positive definite scheme similar to the continuity solver. \n"//&
+                 "\t MINMOD - the simplest limiter.", default=LIMITER_ADV_MINMOD_STRING)
+
+  tmpstr = uppercase(tmpstr)
+  select case (tmpstr)
+    case (LIMITER_ADV_POSITIVE_STRING)
+      CS%itides_adv_limiter = LIMITER_ADV_POSITIVE
+    case (LIMITER_ADV_MINMOD_STRING)
+      CS%itides_adv_limiter = LIMITER_ADV_MINMOD
+    case default
+      call MOM_mesg('internal_tide_init: Advection limiter ="'//trim(tmpstr)//'"', 0)
+      call MOM_error(FATAL, "internal_tide_init: Unrecognized setting "// &
+            "#define INTERNAL_TIDE_ADV_LIMITER "//trim(tmpstr)//" found in input file.")
+  end select
+
   call get_param(param_file, mdl, "INTERNAL_TIDE_BACKGROUND_DRAG", CS%apply_background_drag, &
                  "If true, the internal tide ray-tracing advection uses a background drag "//&
                  "term as a sink.", default=.false.)
