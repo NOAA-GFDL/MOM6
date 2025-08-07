@@ -154,6 +154,9 @@ type, public :: MOM_dyn_split_RK2b_CS ; private
                                                       !! effective summed open face areas as a function
                                                       !! of barotropic flow.
 
+  logical :: BT_adj_corr_mass_src !< If true, recalculates the barotropic mass source after
+                                  !! predictor step. This should make little difference in the
+                                  !! deep ocean but appears to help for vanished layers.
   logical :: split_bottom_stress  !< If true, provide the bottom stress
                                   !! calculated by the vertical viscosity to the
                                   !! barotropic solver.
@@ -811,9 +814,11 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   ! used in the next call to btstep.  This call is at this point so that
   ! hp can be changed if CS%begw /= 0.
   ! eta_cor = ...                 (hidden inside CS%barotropic_CSp)
-  call cpu_clock_begin(id_clock_btcalc)
-  call bt_mass_source(hp, eta_pred, .false., G, GV, CS%barotropic_CSp)
-  call cpu_clock_end(id_clock_btcalc)
+  if (CS%BT_adj_corr_mass_src) then
+    call cpu_clock_begin(id_clock_btcalc)
+    call bt_mass_source(hp, eta_pred, .false., G, GV, CS%barotropic_CSp)
+    call cpu_clock_end(id_clock_btcalc)
+  endif
 
   if (CS%begw /= 0.0) then
     ! hp <- (1-begw)*h_in + begw*hp
@@ -1350,6 +1355,11 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
   call get_param(param_file, mdl, "SPLIT_BOTTOM_STRESS", CS%split_bottom_stress, &
                  "If true, provide the bottom stress calculated by the "//&
                  "vertical viscosity to the barotropic solver.", default=.false.)
+  call get_param(param_file, mdl, "BT_ADJ_CORR_MASS_SRC", CS%BT_adj_corr_mass_src, &
+                 "If true, recalculates the barotropic mass source after "//&
+                 "predictor step. This should make little difference in the "//&
+                 "deep ocean but appears to help for vanished layers. If false, "//&
+                 "uses the same mass source as from the predictor step.", default=.true.)
   ! call get_param(param_file, mdl, "FPMIX", CS%fpmix, &
   !                "If true, apply profiles of momentum flux magnitude and direction.", &
   !                default=.false.)
