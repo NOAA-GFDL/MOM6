@@ -2517,7 +2517,7 @@ logical function register_diag_field_expand_cmor(dm_id, module_name, field_name,
   type(diag_ctrl), pointer :: diag_cs => null()
   type(diag_type), pointer :: this_diag => null()
   integer :: fms_id, fms_xyave_id
-  character(len=256) :: posted_cmor_units, posted_cmor_standard_name, posted_cmor_long_name, cm_string, msg
+  character(len=256) :: posted_cmor_units, posted_cmor_standard_name, posted_cmor_long_name, cm_string
 
   MOM_missing_value = axes%diag_cs%missing_value
   if (present(missing_value)) MOM_missing_value = missing_value
@@ -2550,7 +2550,7 @@ logical function register_diag_field_expand_cmor(dm_id, module_name, field_name,
   endif
   this_diag => null()
   if (fms_id /= DIAG_FIELD_NOT_FOUND .or. fms_xyave_id /= DIAG_FIELD_NOT_FOUND) then
-    call add_diag_to_list(diag_cs, dm_id, fms_id, this_diag, axes, module_name, field_name, msg)
+    call add_diag_to_list(diag_cs, dm_id, fms_id, this_diag, axes, module_name, field_name)
     this_diag%fms_xyave_diag_id = fms_xyave_id
     !Encode and save the cell methods for this diag
     call add_xyz_method(this_diag, axes, x_cell_method, y_cell_method, v_cell_method, v_extensive)
@@ -2599,7 +2599,7 @@ logical function register_diag_field_expand_cmor(dm_id, module_name, field_name,
     endif
     this_diag => null()
     if (fms_id /= DIAG_FIELD_NOT_FOUND .or. fms_xyave_id /= DIAG_FIELD_NOT_FOUND) then
-      call add_diag_to_list(diag_cs, dm_id, fms_id, this_diag, axes, module_name, field_name, msg)
+      call add_diag_to_list(diag_cs, dm_id, fms_id, this_diag, axes, module_name, field_name)
       this_diag%fms_xyave_diag_id = fms_xyave_id
       !Encode and save the cell methods for this diag
       call add_xyz_method(this_diag, axes, x_cell_method, y_cell_method, v_cell_method, v_extensive)
@@ -2719,7 +2719,7 @@ integer function register_diag_field_expand_axes(module_name, field_name, axes, 
 end function register_diag_field_expand_axes
 
 !> Create a diagnostic type and attached to list
-subroutine add_diag_to_list(diag_cs, dm_id, fms_id, this_diag, axes, module_name, field_name, msg)
+subroutine add_diag_to_list(diag_cs, dm_id, fms_id, this_diag, axes, module_name, field_name)
   type(diag_ctrl),        pointer       :: diag_cs !< Diagnostics mediator control structure
   integer,                intent(inout) :: dm_id !< The diag_mediator ID for this diagnostic group
   integer,                intent(in)    :: fms_id !< The FMS diag_manager ID for this diagnostic
@@ -2729,13 +2729,12 @@ subroutine add_diag_to_list(diag_cs, dm_id, fms_id, this_diag, axes, module_name
   character(len=*),       intent(in)    :: module_name !< Name of this module, usually
                                                        !! "ocean_model" or "ice_shelf_model"
   character(len=*),       intent(in)    :: field_name !< Name of diagnostic
-  character(len=*),       intent(in)    :: msg !< Message for errors
 
   ! If the diagnostic is needed obtain a diag_mediator ID (if needed)
   if (dm_id == -1) dm_id = get_new_diag_id(diag_cs)
   ! Create a new diag_type to store links in
   call alloc_diag_with_id(dm_id, diag_cs, this_diag)
-  call assert(associated(this_diag), trim(msg)//': diag_type allocation failed')
+  call assert(associated(this_diag), 'add_diag_to_list: allocation failed for '//trim(field_name))
   ! Record FMS id, masks and conversion factor, in diag_type
   this_diag%fms_diag_id = fms_id
   this_diag%debug_str = trim(module_name)//"-"//trim(field_name)
