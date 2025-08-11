@@ -2923,8 +2923,9 @@ subroutine find_coupling_coef(a_cpl, hvel, do_i, h_harm, bbl_thick, kv_bbl, z_i,
   endif
 end subroutine find_coupling_coef
 
-!> Velocity components which exceed a threshold for physically reasonable values
-!! are truncated. Optionally, any column with excessive velocities may be sent
+!> Velocity components which exceed a threshold for physically reasonable values are truncated,
+!! and the running sum of the number of trunctionas within the non-symmetric memory computational
+!! domain is incremmented.  Optionally, any column with excessive velocities may be sent
 !! to a diagnostic reporting subroutine.
 subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS)
   type(ocean_grid_type),   intent(in)    :: G      !< Ocean grid structure
@@ -2959,7 +2960,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
 
   maxvel = CS%maxvel
   truncvel = 0.9*maxvel
-  H_report = 6.0 * GV%Angstrom_H
+  H_report = 3.0 * GV%Angstrom_H
 
   if (len_trim(CS%u_trunc_file) > 0) then
     !$OMP parallel do default(shared) private(trunc_any,CFL)
@@ -2999,16 +3000,19 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         do k=1,nz ; do I=Isq,Ieq
           if ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
             u(I,j,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
-            if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+            if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
+                (CS%h_u(I,j,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
           elseif ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i,j) > CS%CFL_trunc) then
             u(I,j,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dy_Cu(I,j)))
-            if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+            if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
+                (CS%h_u(I,j,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
           endif
         enddo ; enddo
       else
         do k=1,nz ; do I=Isq,Ieq ; if (abs(u(I,j,k)) > maxvel) then
           u(I,j,k) = SIGN(truncvel,u(I,j,k))
-          if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+          if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
+              (CS%h_u(I,j,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
         endif ; enddo ; enddo
       endif ; endif
     enddo ! j-loop
@@ -3019,10 +3023,12 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         if (abs(u(I,j,k)) < CS%vel_underflow) then ; u(I,j,k) = 0.0
         elseif ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
           u(I,j,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
-          if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+          if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
+              (CS%h_u(I,j,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
         elseif ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i,j) > CS%CFL_trunc) then
           u(I,j,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dy_Cu(I,j)))
-          if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+          if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
+              (CS%h_u(I,j,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
         endif
       enddo ; enddo ; enddo
     else
@@ -3031,7 +3037,8 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         if (abs(u(I,j,k)) < CS%vel_underflow) then ; u(I,j,k) = 0.0
         elseif (abs(u(I,j,k)) > maxvel) then
           u(I,j,k) = SIGN(truncvel, u(I,j,k))
-          if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+          if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
+              (CS%h_u(I,j,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
         endif
       enddo ; enddo ; enddo
     endif
@@ -3083,16 +3090,19 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         do k=1,nz ; do i=is,ie
           if ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j+1) < -CS%CFL_trunc) then
             v(i,J,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i,j+1) / (dt * G%dx_Cv(i,J)))
-            if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+            if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
+                (CS%h_v(i,J,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
           elseif ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j) > CS%CFL_trunc) then
             v(i,J,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dx_Cv(i,J)))
-            if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+            if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
+                (CS%h_v(i,J,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
           endif
         enddo ; enddo
       else
         do k=1,nz ; do i=is,ie ; if (abs(v(i,J,k)) > maxvel) then
           v(i,J,k) = SIGN(truncvel,v(i,J,k))
-          if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+          if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
+              (CS%h_v(i,J,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
         endif ; enddo ; enddo
       endif ; endif
     enddo ! J-loop
@@ -3103,10 +3113,12 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         if (abs(v(i,J,k)) < CS%vel_underflow) then ; v(i,J,k) = 0.0
         elseif ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j+1) < -CS%CFL_trunc) then
           v(i,J,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i,j+1) / (dt * G%dx_Cv(i,J)))
-          if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+          if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
+              (CS%h_v(i,J,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
         elseif ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j) > CS%CFL_trunc) then
           v(i,J,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dx_Cv(i,J)))
-          if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+          if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
+              (CS%h_v(i,J,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
         endif
       enddo ; enddo ; enddo
     else
@@ -3115,7 +3127,8 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         if (abs(v(i,J,k)) < CS%vel_underflow) then ; v(i,J,k) = 0.0
         elseif (abs(v(i,J,k)) > maxvel) then
           v(i,J,k) = SIGN(truncvel, v(i,J,k))
-          if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+          if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
+              (CS%h_v(i,J,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
         endif
       enddo ; enddo ; enddo
     endif
