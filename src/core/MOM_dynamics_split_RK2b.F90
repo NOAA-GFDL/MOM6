@@ -492,10 +492,6 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   call cpu_clock_end(id_clock_pass)
   !--- end set up for group halo pass
 
-  if (associated(CS%OBC)) then ; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, GV, US, tv, h, CS%update_OBC_CSp, Time_local)
-  endif ; endif
-
   ! This calculates the transports and averaged thicknesses that will be used for the
   ! predictor version of the Coriolis scheme.
   call cpu_clock_begin(id_clock_continuity)
@@ -1455,7 +1451,7 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
 !  Accel_diag%u_accel_bt => CS%u_accel_bt ; Accel_diag%v_accel_bt => CS%v_accel_bt
 !  Accel_diag%u_av => CS%u_av ; Accel_diag%v_av => CS%v_av
 
-  call continuity_init(Time, G, GV, US, param_file, diag, CS%continuity_CSp)
+  call continuity_init(Time, G, GV, US, param_file, diag, CS%continuity_CSp, CS%OBC)
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
   if (CS%calculate_SAL) call SAL_init(h, tv, G, GV, US, param_file, CS%SAL_CSp, restart_CS)

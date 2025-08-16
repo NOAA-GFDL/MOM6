@@ -1,4 +1,4 @@
-!> Provides functions for some diabatic processes such as fraxil, brine rejection,
+!> Provides functions for some diabatic processes such as frazil, brine rejection,
 !! tendency due to surface flux divergence.
 module MOM_diabatic_aux
 

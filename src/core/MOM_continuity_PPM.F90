@@ -2413,19 +2413,12 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
       if (segment%direction == OBC_DIRECTION_E) then
         I=segment%HI%IsdB
         if (associated(segment%h_Reg)) then
-          if (allocated(segment%h_Reg%h_res)) then
-            do j=segment%HI%jsd,segment%HI%jed
-              h_W(i+1,j) = segment%h_Reg%h_res(i,j,k)
-              h_E(i+1,j) = segment%h_Reg%h_res(i,j,k)
-              h_W(i,j) = segment%h_Reg%h_res(i,j,k)
-              h_E(i,j) = segment%h_Reg%h_res(i,j,k)
-            enddo
-          else
-            write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with ", &
-                         & "badly configured h_res.")') &
-                         stencil + max(G%jsd-jsl,jel-G%jed)
-            call MOM_error(FATAL,mesg)
-          endif
+          do j=segment%HI%jsd,segment%HI%jed
+            h_W(i+1,j) = segment%h_Reg%h_res(i,j,k)
+            h_E(i+1,j) = segment%h_Reg%h_res(i,j,k)
+            h_W(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_E(i,j) = segment%h_Reg%h_res(i,j,k)
+          enddo
         else
           do j=segment%HI%jsd,segment%HI%jed
             h_W(i+1,j) = h_in(i,j)
@@ -2437,19 +2430,12 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
       elseif (segment%direction == OBC_DIRECTION_W) then
         I=segment%HI%IsdB
         if (associated(segment%h_Reg)) then
-          if (allocated(segment%h_Reg%h_res)) then
-            do j=segment%HI%jsd,segment%HI%jed
-              h_W(i,j) = segment%h_Reg%h_res(i,j,k)
-              h_E(i,j) = segment%h_Reg%h_res(i,j,k)
-              h_W(i+1,j) = segment%h_Reg%h_res(i,j,k)
-              h_E(i+1,j) = segment%h_Reg%h_res(i,j,k)
-            enddo
-          else
-            write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with ", &
-                         & "badly configured h_res.")') &
-                         stencil + max(G%jsd-jsl,jel-G%jed)
-            call MOM_error(FATAL,mesg)
-          endif
+          do j=segment%HI%jsd,segment%HI%jed
+            h_W(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_E(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_W(i+1,j) = segment%h_Reg%h_res(i,j,k)
+            h_E(i+1,j) = segment%h_Reg%h_res(i,j,k)
+          enddo
         else
           do j=segment%HI%jsd,segment%HI%jed
             h_W(i,j) = h_in(i+1,j)
@@ -2579,19 +2565,12 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_
       if (segment%direction == OBC_DIRECTION_N) then
         J=segment%HI%JsdB
         if (associated(segment%h_Reg)) then
-          if (allocated(segment%h_Reg%h_res)) then
-            do i=segment%HI%isd,segment%HI%ied
-              h_S(i,j+1) = segment%h_Reg%h_res(i,j,k)
-              h_N(i,j+1) = segment%h_Reg%h_res(i,j,k)
-              h_S(i,j) = segment%h_Reg%h_res(i,j,k)
-              h_N(i,j) = segment%h_Reg%h_res(i,j,k)
-            enddo
-          else
-            write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with ", &
-                         & "badly configured h_res.")') &
-                         stencil + max(G%jsd-jsl,jel-G%jed)
-            call MOM_error(FATAL,mesg)
-          endif
+          do i=segment%HI%isd,segment%HI%ied
+            h_S(i,j+1) = segment%h_Reg%h_res(i,j,k)
+            h_N(i,j+1) = segment%h_Reg%h_res(i,j,k)
+            h_S(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_N(i,j) = segment%h_Reg%h_res(i,j,k)
+          enddo
         else
           do i=segment%HI%isd,segment%HI%ied
             h_S(i,j+1) = h_in(i,j)
@@ -2603,19 +2582,12 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_
       elseif (segment%direction == OBC_DIRECTION_S) then
         J=segment%HI%JsdB
         if (associated(segment%h_Reg)) then
-          if (allocated(segment%h_Reg%h_res)) then
-            do i=segment%HI%isd,segment%HI%ied
-              h_S(i,j) = segment%h_Reg%h_res(i,j,k)
-              h_N(i,j) = segment%h_Reg%h_res(i,j,k)
-              h_S(i,j+1) = segment%h_Reg%h_res(i,j,k)
-              h_N(i,j+1) = segment%h_Reg%h_res(i,j,k)
-            enddo
-          else
-            write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with ", &
-                         & "badly configured h_res.")') &
-                         stencil + max(G%jsd-jsl,jel-G%jed)
-            call MOM_error(FATAL,mesg)
-          endif
+          do i=segment%HI%isd,segment%HI%ied
+            h_S(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_N(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_S(i,j+1) = segment%h_Reg%h_res(i,j,k)
+            h_N(i,j+1) = segment%h_Reg%h_res(i,j,k)
+          enddo
         else
           do i=segment%HI%isd,segment%HI%ied
             h_S(i,j) = h_in(i,j+1)
@@ -2737,22 +2709,32 @@ function ratio_max(a, b, maxrat) result(ratio)
 end function ratio_max
 
 !> Initializes continuity_ppm_cs
-subroutine continuity_PPM_init(Time, G, GV, US, param_file, diag, CS)
+subroutine continuity_PPM_init(Time, G, GV, US, param_file, diag, CS, OBC)
   type(time_type), target, intent(in)    :: Time !< The current model time.
   type(ocean_grid_type),   intent(in)    :: G    !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)    :: GV   !< Vertical grid structure.
-  type(unit_scale_type),   intent(in)    :: US  !< A dimensional unit scaling type
+  type(unit_scale_type),   intent(in)    :: US   !< A dimensional unit scaling type
   type(param_file_type),   intent(in)    :: param_file !< A structure indicating
                   !! the open file to parse for model parameter values.
   type(diag_ctrl), target, intent(inout) :: diag !< A structure that is used to
                   !! regulate diagnostic output.
   type(continuity_PPM_CS), intent(inout) :: CS   !< Module's control structure.
+  type(ocean_OBC_type),    pointer       :: OBC  !< Open boundaries control structure.
+  logical :: local_open_BC
+  type(OBC_segment_type), pointer :: segment => NULL()
+  integer :: n
 
   !> This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_continuity_PPM" ! This module's name.
+  character(len=256) :: mesg
 
   CS%initialized = .true.
+
+  local_open_BC = .false.
+  if (associated(OBC)) then
+    local_open_BC = OBC%open_u_BCs_exist_globally
+  endif
 
 ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, "")
@@ -2816,6 +2798,19 @@ subroutine continuity_PPM_init(Time, G, GV, US, param_file, diag, CS)
   id_clock_reconstruct = cpu_clock_id('(Ocean continuity reconstruction)', grain=CLOCK_ROUTINE)
   id_clock_update = cpu_clock_id('(Ocean continuity update)', grain=CLOCK_ROUTINE)
   id_clock_correct = cpu_clock_id('(Ocean continuity correction)', grain=CLOCK_ROUTINE)
+
+  if (local_open_BC) then
+    do n=1, OBC%number_of_segments
+      segment => OBC%segment(n)
+      if (associated(segment%h_Reg)) then
+        if (.not. allocated(segment%h_Reg%h_res)) then
+          write(mesg,'("In MOM_continuity_PPM, continuity_PPM_init called with ", &
+                & "badly configured h_res.")')
+          call MOM_error(FATAL, mesg)
+        endif
+      endif
+    enddo
+  endif
 
 end subroutine continuity_PPM_init
 

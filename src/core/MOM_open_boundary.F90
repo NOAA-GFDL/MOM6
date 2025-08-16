@@ -2423,8 +2423,8 @@ subroutine setup_OBC_thickness_reservoirs(G, GV, OBC, restart_CS)
 
   ! Local variables
   type(OBC_segment_type), pointer :: segment => NULL()
-  real :: I_scale         ! The inverse of the scaling factor for the tracers.
-                          ! For salinity the units would be [ppt S-1 ~> 1]
+  real :: I_scale         ! The inverse of the scaling factor for the thicknesses.
+                          ! [m Z-1 ~> 1]
   logical :: set_h_res_x, set_h_res_y
   character(len=12) :: x_var_name, y_var_name
   integer :: i, j, k, n

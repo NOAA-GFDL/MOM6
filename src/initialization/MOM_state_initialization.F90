@@ -507,11 +507,6 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   ! The thicknesses in halo points might be needed to initialize the velocities.
   if (new_sim) call pass_var(h, G%Domain)
 
-  if (associated(OBC)) then
-    if (OBC%use_h_res) &
-      call fill_thickness_segments(G, GV, US, OBC, h)
-  endif
-
   ! Initialize velocity components, u and v
   call get_param(PF, mdl, "VELOCITY_CONFIG", config, &
        "A string that determines how the initial velocities "//&
@@ -742,6 +737,9 @@ subroutine MOM_initialize_OBCs(h, tv, OBC, Time, G, GV, US, PF, restart_CS, trac
       call qchksum(G%mask2dBu, 'MOM_initialize_OBCs: mask2dBu ', G%HI)
     endif
     if (debug_OBC) call open_boundary_test_extern_h(G, GV, OBC, h)
+
+    if (OBC%use_h_res) &
+      call fill_thickness_segments(G, GV, US, OBC, h)
   endif
 
   call callTree_leave('MOM_initialize_OBCs()')
