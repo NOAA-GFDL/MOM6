@@ -1,4 +1,4 @@
-!> Implements the general purpose ANN.
+!> Implements the general purpose Artificial Neural Network (ANN).
 module MOM_ANN
 
 ! This file is part of MOM6. See LICENSE.md for the license

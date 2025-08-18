@@ -721,7 +721,7 @@ subroutine compute_stress_ANN_collocated(G, GV, CS)
       vort_xy_h(i,j,k) = 0.25 * ( (CS%vort_xy(I-1,J-1,k) + CS%vort_xy(I,J,k)) &
                                 + (CS%vort_xy(I-1,J,k) + CS%vort_xy(I,J-1,k)) )
 
-      sqr_h(i,j) = (CS%sh_xx(i,j,k)**2 + sh_xy_h(i,j,k)**2 + vort_xy_h(i,j,k)**2) * G%mask2dT(i,j)
+      sqr_h(i,j) = (((CS%sh_xx(i,j,k)**2) + (sh_xy_h(i,j,k)**2)) + (vort_xy_h(i,j,k)**2)) * G%mask2dT(i,j)
     enddo; enddo
 
     do j=js,je ; do i=is,ie
@@ -887,7 +887,7 @@ subroutine compute_stress_divergence(u, v, h, diffu, diffv, dx2h, dy2h, dx2q, dy
     do j=js,je ; do I=Isq,Ieq
       h_u = 0.5 * (G%mask2dT(i,j)*h(i,j,k) + G%mask2dT(i+1,j)*h(i+1,j,k)) + h_neglect
       fx =  ((G%IdyCu(I,j)*(Mxx(i+1,j) - Mxx(i,j)) + &
-              G%IdxCu(I,j)*(dx2q(I,J)*Mxy(I,J) - dx2q(I,J-1)*Mxy(I,J-1))) * &
+              G%IdxCu(I,j)*((dx2q(I,J)*Mxy(I,J)) - (dx2q(I,J-1)*Mxy(I,J-1)))) * &
               G%IareaCu(I,j)) / h_u
       diffu(I,j,k) = diffu(I,j,k) + fx
       if (save_ZB2020u) &
@@ -898,7 +898,7 @@ subroutine compute_stress_divergence(u, v, h, diffu, diffv, dx2h, dy2h, dx2q, dy
     do J=Jsq,Jeq ; do i=is,ie
       h_v = 0.5 * (G%mask2dT(i,j)*h(i,j,k) + G%mask2dT(i,j+1)*h(i,j+1,k)) + h_neglect
       fy =  ((G%IdxCv(i,J)*(Myy(i,j+1) - Myy(i,j)) + &
-              G%IdyCv(i,J)*(dy2q(I,J)*Mxy(I,J) - dy2q(I-1,J)*Mxy(I-1,J))) * &
+              G%IdyCv(i,J)*((dy2q(I,J)*Mxy(I,J)) - (dy2q(I-1,J)*Mxy(I-1,J)))) * &
               G%IareaCv(i,J)) / h_v
       diffv(i,J,k) = diffv(i,J,k) + fy
       if (save_ZB2020v) &
