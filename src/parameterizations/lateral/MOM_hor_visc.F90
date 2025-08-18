@@ -969,8 +969,8 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
         if (CS%use_circulation) then
           do J=js_vort,je_vort ; do I=is_vort,ie_vort
             vort_xy(I,J) = G%mask2dBu(I,J) * G%IareaBu(I,J) * (  &
-              (v(i+1,J,k)*G%dyCv(i+1,J) - v(i,J,k)*G%dyCv(i,J))  &
-            - (u(I,j+1,k)*G%dxCu(I,j+1) - u(I,j,k)*G%dxCu(I,j))  &
+              ((v(i+1,J,k)*G%dyCv(i+1,J)) - (v(i,J,k)*G%dyCv(i,J)))  &
+            - ((u(I,j+1,k)*G%dxCu(I,j+1)) - (u(I,j,k)*G%dxCu(I,j)))  &
              )
           enddo ; enddo
         else
