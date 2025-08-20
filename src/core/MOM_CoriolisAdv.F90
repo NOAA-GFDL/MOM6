@@ -217,7 +217,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   real :: vol_neglect            ! A volume so small that is expected to be
                                  ! lost in roundoff [H L2 ~> m3 or kg].
   real :: area_neglect           ! An area so small that is expected to be
-                                 ! lost in roundoff [H L2 ~> m3 or kg].
+                                 ! lost in roundoff [L2 ~> m2].
   real :: temp1, temp2           ! Temporary variables [L2 T-2 ~> m2 s-2].
   real :: eps_vel                ! A tiny, positive velocity [L T-1 ~> m s-1].
 
@@ -242,11 +242,10 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   real :: QUHeff,QVHeff ! More temporary variables [H L2 T-2 ~> m3 s-2 or kg s-2].
   integer :: i, j, k, n, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
   logical :: Stokes_VF
-  real :: u_v, v_u, q_v, q_u ! u_v is the u velocity at v point, v_u is the v velocity at u point
-  real :: h_v, h_u      ! h_v is the thickness at v point, h_u is the thickness at u point
+  real :: u_v, v_u      ! u_v is the u velocity at v point, v_u is the v velocity at u point [L T-1 ~> m s-1]
+  real :: q_v, q_u      ! PV at the u and v points [H-1 T-1 ~> m-1 s-1 or m2 kg-1 s-1]
+  real :: h_v, h_u      ! h_v is the thickness at v point, h_u is the thickness at u point [H ~> m or kg m-2]
   integer :: seventh_order, fifth_order, third_order, second_order ! Order of accuracy for the WENO calculations
-  real :: Ih_sum        ! Sum of inverse thickness at PV points [H-1 ~> m-1]
-  real :: Ih_third, Ih_fifth, Ih_seventh  ! Sum of inverse thickness at at 3rd-, 5th-, and 7th-WENO scheme points
   real :: psi           ! Ratio of PV gradient for the Koren limiter [nondim]
   real :: u_q8(8) ! Eight-point zonal velocity at WENO stencils [L T-1 ~> m s-1]
   real :: u_q6(6) ! Six-point zonal velocity at WENO stencils [L T-1 ~> m s-1]
