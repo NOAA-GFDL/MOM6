@@ -22,7 +22,7 @@ use MOM_wave_interface, only : wave_parameters_CS
 
 implicit none ; private
 
-public CorAdCalc, CoriolisAdv_init, CoriolisAdv_end
+public CorAdCalc, CoriolisAdv_init, CoriolisAdv_end, CoriolisAdv_stencil
 
 #include <MOM_memory.h>
 
@@ -76,9 +76,6 @@ type, public :: CoriolisAdv_CS ; private
                              !! relative to the other one is used.  This is only
                              !! available at present if Coriolis scheme is
                              !! SADOURNY75_ENERGY.
-  logical, public :: USE_WENO !< If WENOVI7TH_PV_ENSTRO and WENOVI7TH_ENSTRO schemes are used,
-                              !! this will be passed to RK2 modules to enlarge the halo update size.
-  integer, public :: WENO_stencil  !< The size of WENO stencil
   logical :: weno_velocity_smooth !< If true, use velocity to compute the smoothness indicator for WENO
   type(time_type), pointer :: Time !< A pointer to the ocean model's clock.
   type(diag_ctrl), pointer :: diag !< A structure that is used to regulate the timing of diagnostic output.
@@ -275,14 +272,14 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   h_tiny = GV%Angstrom_H  ! Perhaps this should be set to h_neglect instead.
 
 
-  stencil = CS%WENO_stencil
-  if (CS%Coriolis_Scheme == wenovi7th_PV_ENSTRO .or. &
-       CS%Coriolis_Scheme == wenovi5th_PV_ENSTRO) then
-    Isq = Isq - stencil + 1
-    Ieq = Ieq + stencil - 2
-    Jsq = Jsq - stencil + 1
-    Jeq = Jeq + stencil - 2
-  endif
+  stencil = 2
+  if (CS%Coriolis_Scheme == wenovi7th_PV_ENSTRO) stencil = 4
+  if (CS%Coriolis_Scheme == wenovi5th_PV_ENSTRO) stencil = 3
+
+  Isq = Isq - stencil + 2
+  Ieq = Ieq + stencil - 2
+  Jsq = Jsq - stencil + 2
+  Jeq = Jeq + stencil - 2
   !$OMP parallel do default(private) shared(Isq,Ieq,Jsq,Jeq,G,Area_h)
   do j=Jsq-1,Jeq+2 ; do I=Isq-1,Ieq+2
     Area_h(i,j) = G%mask2dT(i,j) * G%areaT(i,j)
@@ -314,13 +311,10 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
                   (Area_h(i+1,j) + Area_h(i,j+1))
   enddo ; enddo
 
-  if (CS%Coriolis_Scheme == wenovi7th_PV_ENSTRO .or. &
-        CS%Coriolis_Scheme == wenovi5th_PV_ENSTRO) then
-    Isq = Isq + stencil - 1
-    Ieq = Ieq - stencil + 2
-    Jsq = Jsq + stencil - 1
-    Jeq = Jeq - stencil + 2
-  endif
+  Isq = Isq + stencil - 2
+  Ieq = Ieq - stencil + 2
+  Jsq = Jsq + stencil - 2
+  Jeq = Jeq - stencil + 2
 
   Stokes_VF = .false.
   if (present(Waves)) then ; if (associated(Waves)) then
@@ -332,13 +326,10 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   !$OMP                        area_neglect, pbv, Stokes_VF)
   do k=1,nz
 
-    if (CS%Coriolis_Scheme == wenovi7th_PV_ENSTRO .or. &
-         CS%Coriolis_Scheme == wenovi5th_PV_ENSTRO) then
-      Isq = Isq - stencil + 1
-      Ieq = Ieq + stencil - 2
-      Jsq = Jsq - stencil + 1
-      Jeq = Jeq + stencil - 2
-    endif
+    Isq = Isq - stencil + 2
+    Ieq = Ieq + stencil - 2
+    Jsq = Jsq - stencil + 2
+    Jeq = Jeq + stencil - 2
     ! Here the second order accurate layer potential vorticities, q,
     ! are calculated.  hq is  second order accurate in space.  Relative
     ! vorticity is second order accurate everywhere with free slip b.c.s,
@@ -555,13 +546,10 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
       endif
     endif
 
-    if (CS%Coriolis_Scheme == wenovi7th_PV_ENSTRO .or. &
-         CS%Coriolis_Scheme == wenovi5th_PV_ENSTRO) then
-      Isq = Isq + stencil - 1
-      Ieq = Ieq - stencil + 2
-      Jsq = Jsq + stencil - 1
-      Jeq = Jeq - stencil + 2
-    endif
+    Isq = Isq + stencil - 2
+    Ieq = Ieq - stencil + 2
+    Jsq = Jsq + stencil - 2
+    Jeq = Jeq - stencil + 2
 
     if (CS%id_rv > 0) then
       do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
@@ -1865,6 +1853,16 @@ subroutine weno_seven_reconstruction_3(q4, p3)
 
 end subroutine weno_seven_reconstruction_3
 
+function CoriolisAdv_stencil(CS) result(stencil)
+  type(CoriolisAdv_CS), intent(in)  :: CS  !< Control structure for MOM_CoriolisAdv
+  integer :: stencil  !< The halo stencil size for the Coriolis advection scheme
+
+  stencil = 2
+  if (CS%Coriolis_Scheme == wenovi7th_PV_ENSTRO) stencil = 4
+  if (CS%Coriolis_Scheme == wenovi5th_PV_ENSTRO) stencil = 3
+
+end function CoriolisAdv_stencil
+
 !> Initializes the control structure for MOM_CoriolisAdv
 subroutine CoriolisAdv_init(Time, G, GV, US, param_file, diag, AD, CS)
   type(time_type), target, intent(in)    :: Time !< Current model time
@@ -1947,20 +1945,11 @@ subroutine CoriolisAdv_init(Time, G, GV, US, param_file, diag, AD, CS)
             "#define CORIOLIS_SCHEME "//trim(tmpstr)//" found in input file.")
   end select
 
-  CS%USE_WENO = .false. ! Set it to be true only if 5th- or 7th-oder WENO schemes are used
-  CS%WENO_stencil = 0
   if (CS%Coriolis_Scheme == wenovi7th_PV_ENSTRO .or. &
           CS%Coriolis_Scheme == wenovi5th_PV_ENSTRO .or. CS%Coriolis_Scheme == wenovi3rd_PV_ENSTRO) then
     call get_param(param_file, mdl, "WENO_VELOCITY_SMOOTH", CS%weno_velocity_smooth, &
             "If true, use velocity to compute weighting for WENO. ", &
                   default=.false.)
-    if (CS%Coriolis_Scheme == wenovi7th_PV_ENSTRO) then
-      CS%WENO_stencil = 4
-      CS%USE_WENO = .true.
-    elseif (CS%Coriolis_Scheme == wenovi5th_PV_ENSTRO) then
-      CS%WENO_stencil = 3
-      CS%USE_WENO = .true.
-    endif
   endif
 
   if (CS%Coriolis_Scheme == AL_BLEND) then
