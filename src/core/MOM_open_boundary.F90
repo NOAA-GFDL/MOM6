@@ -789,13 +789,13 @@ subroutine open_boundary_config(G, US, param_file, OBC)
                  "is entering the domain.", units="m", default=0.0, scale=US%m_to_L)
     endif
 
-    do l = 1, OBC%number_of_segments
-      OBC%segment(l)%Th_InvLscale_in = 0.0
-      if (Lscale_in>0.) OBC%segment(l)%Th_InvLscale_in =  1.0/Lscale_in
-      OBC%segment(l)%Th_InvLscale_out = 0.0
-      if (Lscale_out>0.) OBC%segment(l)%Th_InvLscale_out =  1.0/Lscale_out
+    do n = 1, OBC%number_of_segments
+      OBC%segment(n)%Th_InvLscale_in = 0.0
+      if (Lscale_in>0.) OBC%segment(n)%Th_InvLscale_in =  1.0/Lscale_in
+      OBC%segment(n)%Th_InvLscale_out = 0.0
+      if (Lscale_out>0.) OBC%segment(n)%Th_InvLscale_out =  1.0/Lscale_out
       if (Lscale_in>0. .or. Lscale_out>0.) then
-        if (OBC%segment(l)%is_E_or_W_2) then
+        if (OBC%segment(n)%is_E_or_W_2) then
           OBC%thickness_x_reservoirs_used = .true.
           OBC%use_h_res = .true.
         else
