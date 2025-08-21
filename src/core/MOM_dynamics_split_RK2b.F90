@@ -59,6 +59,8 @@ use MOM_MEKE_types,            only : MEKE_type
 use MOM_open_boundary,         only : ocean_OBC_type, radiation_open_bdry_conds
 use MOM_open_boundary,         only : open_boundary_zero_normal_flow, open_boundary_query
 use MOM_open_boundary,         only : open_boundary_test_extern_h, update_OBC_ramp
+use MOM_open_boundary,         only : copy_thickness_reservoirs
+use MOM_open_boundary,         only : update_segment_thickness_reservoirs
 use MOM_PressureForce,         only : PressureForce, PressureForce_CS
 use MOM_PressureForce,         only : PressureForce_init
 use MOM_set_visc,              only : set_viscous_ML, set_visc_CS
@@ -73,7 +75,7 @@ use MOM_vert_friction,         only : vertvisc_init, vertvisc_end, vertvisc_CS
 use MOM_vert_friction,         only : updateCFLtruncationValue, vertFPmix
 use MOM_verticalGrid,          only : verticalGrid_type, get_thickness_units
 use MOM_verticalGrid,          only : get_flux_units, get_tr_flux_units
-use MOM_wave_interface,        only: wave_parameters_CS, Stokes_PGF
+use MOM_wave_interface,        only : wave_parameters_CS, Stokes_PGF
 
 implicit none ; private
 
@@ -490,10 +492,6 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   call cpu_clock_end(id_clock_pass)
   !--- end set up for group halo pass
 
-  if (associated(CS%OBC)) then ; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, GV, US, tv, h, CS%update_OBC_CSp, Time_local)
-  endif ; endif
-
   ! This calculates the transports and averaged thicknesses that will be used for the
   ! predictor version of the Coriolis scheme.
   call cpu_clock_begin(id_clock_continuity)
@@ -537,6 +535,9 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   call disable_averaging(CS%diag)
   if (showCallTree) call callTree_wayPoint("done with PressureForce (step_MOM_dyn_split_RK2b)")
 
+  if (associated(CS%OBC)) then ; if (CS%OBC%update_OBC) then
+    call update_OBC_data(CS%OBC, G, GV, US, tv, h, CS%update_OBC_CSp, Time_local)
+  endif ; endif
   if (associated(CS%OBC) .and. CS%debug_OBC) &
     call open_boundary_zero_normal_flow(CS%OBC, G, GV, CS%PFu, CS%PFv)
 
@@ -660,6 +661,9 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   enddo ; enddo ; enddo
   call cpu_clock_end(id_clock_mom_update)
   call do_group_pass(CS%pass_uv_inst, G%Domain, clock=id_clock_pass)
+
+  if (associated(CS%OBC)) &
+    call copy_thickness_reservoirs(CS%OBC, G, GV)
 
 ! u_accel_bt = layer accelerations due to barotropic solver
   call cpu_clock_begin(id_clock_continuity)
@@ -792,6 +796,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   call do_group_pass(CS%pass_hp_uv, G%Domain, clock=id_clock_pass)
 
   if (associated(CS%OBC)) then
+
     if (CS%debug) &
       call uvchksum("Pre OBC avg [uv]", u_av, v_av, G%HI, haloshift=1, symmetric=sym, unscale=US%L_T_to_m_s)
 
@@ -1044,6 +1049,10 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
       vhtr(i,J,k) = vhtr(i,J,k) + vh(i,J,k)*dt
     enddo ; enddo
   enddo
+
+  if (associated(CS%OBC)) then
+    call update_segment_thickness_reservoirs(G, GV, uhtr, vhtr, h, CS%OBC)
+  endif
 
   !  if (CS%fpmix) then
   !    if (CS%id_uold > 0) call post_data(CS%id_uold, uold, CS%diag)
@@ -1442,7 +1451,7 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
 !  Accel_diag%u_accel_bt => CS%u_accel_bt ; Accel_diag%v_accel_bt => CS%v_accel_bt
 !  Accel_diag%u_av => CS%u_av ; Accel_diag%v_av => CS%v_av
 
-  call continuity_init(Time, G, GV, US, param_file, diag, CS%continuity_CSp)
+  call continuity_init(Time, G, GV, US, param_file, diag, CS%continuity_CSp, CS%OBC)
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
   if (CS%calculate_SAL) call SAL_init(h, tv, G, GV, US, param_file, CS%SAL_CSp, restart_CS)

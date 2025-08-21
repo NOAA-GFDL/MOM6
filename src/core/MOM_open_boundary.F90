@@ -57,15 +57,20 @@ public register_OBC, OBC_registry_init
 public register_file_OBC, file_OBC_end
 public segment_tracer_registry_init
 public segment_tracer_registry_end
+public segment_thickness_reservoir_init
 public register_segment_tracer
 public register_temp_salt_segments
 public register_obgc_segments
 public fill_temp_salt_segments
 public fill_obgc_segments
+public fill_thickness_segments
 public set_obgc_segments_props
 public setup_OBC_tracer_reservoirs
+public setup_OBC_thickness_reservoirs
 public open_boundary_register_restarts
+public copy_thickness_reservoirs
 public update_segment_tracer_reservoirs
+public update_segment_thickness_reservoirs
 public set_initialized_OBC_tracer_reservoirs
 public update_OBC_ramp
 public remap_OBC_fields
@@ -112,10 +117,10 @@ type, public :: OBC_segment_data_type
                                             !! for salinity.
   real              :: resrv_lfac_in = 1.   !< The reservoir inverse length scale factor for the inward
                                             !! direction per field [nondim].  The general 1/Lscale_in is
-                                            !! multiplied by this factor for a specific tracer.
+                                            !! multiplied by this factor for a specific tracer or thickness.
   real              :: resrv_lfac_out= 1.   !< The reservoir inverse length scale factor for the outward
                                             !! direction per field [nondim].  The general 1/Lscale_out is
-                                            !! multiplied by this factor for a specific tracer.
+                                            !! multiplied by this factor for a specific tracer or thickness.
 end type OBC_segment_data_type
 
 !> Tracer on OBC segment data structure, for putting into a segment tracer registry.
@@ -134,6 +139,20 @@ type, public :: OBC_segment_tracer_type
   integer                    :: ntr_index = -1        !< index of segment tracer in the global tracer registry
   integer                    :: fd_index = -1         !< index of segment tracer in the input fields
 end type OBC_segment_tracer_type
+
+!> Thickness on OBC segment data structure, with a reservoir
+type, public :: OBC_segment_thickness_type
+  real, allocatable          :: h(:,:,:)              !< layer thickness array in rescaled units, [Z ~> m].
+  real                       :: OBC_inflow_conc = 0.0 !< layer thickness for generic inflows in rescaled units,
+                                                      !! [Z ~> m].
+  character(len=32)          :: name                  !< thickness name used for error messages
+  real, allocatable          :: h_res(:,:,:)          !< thickness reservoir array in rescaled units,
+                                                      !! [Z ~> m].
+  real                       :: scale                 !< A scaling factor for converting the units of input
+                                                      !! data, [Z m-1 ~> 1].
+  logical                    :: is_initialized        !< reservoir values have been set when True
+  integer                    :: fd_index = -1         !< index of segment thickness in the input fields
+end type OBC_segment_thickness_type
 
 !> Registry type for tracers on segments
 type, public :: segment_tracer_registry_type
@@ -202,6 +221,7 @@ type, public :: OBC_segment_type
   logical :: on_pe          !< true if any portion of the segment is located in this PE's data domain
   logical :: temp_segment_data_exists !< true if temperature data arrays are present
   logical :: salt_segment_data_exists !< true if salinity data arrays are present
+  logical :: thickness_segment_data_exists !< true if thickness data arrays are present
   real, allocatable :: Cg(:,:)  !< The external gravity wave speed [L T-1 ~> m s-1]
                                 !! at OBC-points.
   real, allocatable :: Htot(:,:)  !< The total column thickness [H ~> m or kg m-2] at OBC-points.
@@ -254,6 +274,7 @@ type, public :: OBC_segment_type
                                               !! discretized at the corner (PV) points.
   real, allocatable :: nudged_tangential_grad(:,:,:)  !< The layer dvdx or dudy towards which nudging
                                               !! can occur [T-1 ~> s-1].
+  type(OBC_segment_thickness_type), pointer  :: h_Reg=> NULL()!< A pointer to the thickness for the segment.
   type(segment_tracer_registry_type), pointer  :: tr_Reg=> NULL()!< A pointer to the tracer registry for the segment.
   type(hor_index_type) :: HI !< Horizontal index ranges
   real :: Tr_InvLscale_out                                  !< An effective inverse length scale for restoring
@@ -262,6 +283,13 @@ type, public :: OBC_segment_type
                                                             !! is exiting the domain [L-1 ~> m-1]
   real :: Tr_InvLscale_in                                   !< An effective inverse length scale for restoring
                                                             !! the tracer concentration towards an externally
+                                                            !! imposed value when flow is entering [L-1 ~> m-1]
+  real :: Th_InvLscale_out                                  !< An effective inverse length scale for restoring
+                                                            !! the layer thickness in a fictitious
+                                                            !! reservoir towards interior values when flow
+                                                            !! is exiting the domain [L-1 ~> m-1]
+  real :: Th_InvLscale_in                                   !< An effective inverse length scale for restoring
+                                                            !! the layer thickness towards an externally
                                                             !! imposed value when flow is entering [L-1 ~> m-1]
 end type OBC_segment_type
 
@@ -317,6 +345,8 @@ type, public :: ocean_OBC_type
                                                       !! true for those with x reservoirs (needed for restarts).
   logical, allocatable :: tracer_y_reservoirs_used(:) !< Dimensioned by the number of tracers, set globally,
                                                       !! true for those with y reservoirs (needed for restarts).
+  logical :: thickness_x_reservoirs_used = .false.    !< True for thichness reservoirs in x (needed for restarts).
+  logical :: thickness_y_reservoirs_used = .false.    !< True for thichness reservoirs in y (needed for restarts).
   integer                       :: ntr = 0            !< number of tracers
   integer :: n_tide_constituents = 0                  !< Number of tidal constituents to add to the boundary.
   logical :: add_tide_constituents = .false.          !< If true, add tidal constituents to the boundary elevation
@@ -391,9 +421,14 @@ type, public :: ocean_OBC_type
                                             !! in unscaled units [conc]
   real, allocatable :: tres_y(:,:,:,:)      !< Array storage of tracer reservoirs for restarts,
                                             !! in unscaled units [conc]
-  logical :: debug                         !< If true, write verbose checksums for debugging purposes.
-  integer :: nk_OBC_debug = 0              !< The number of layers of OBC segment data to write out
-                                           !! in full when DEBUG_OBCS is true.
+  real, allocatable :: h_res_x(:,:,:)       !< Array storage of thickness reservoirs for restarts,
+                                            !! [Z ~> m]
+  real, allocatable :: h_res_y(:,:,:)       !< Array storage of thickness reservoirs for restarts,
+                                            !! [Z ~> m]
+  logical :: use_h_res = .false.            !< If true, use thickness reservoirs
+  logical :: debug                          !< If true, write verbose checksums for debugging purposes.
+  integer :: nk_OBC_debug = 0               !< The number of layers of OBC segment data to write out
+                                            !! in full when DEBUG_OBCS is true.
   real :: silly_h  !< A silly value of thickness outside of the domain that can be used to test
                    !! the independence of the OBCs to this external data [Z ~> m].
   real :: silly_u  !< A silly value of velocity outside of the domain that can be used to test
@@ -740,6 +775,36 @@ subroutine open_boundary_config(G, US, param_file, OBC)
       if (Lscale_out>0.) OBC%segment(n)%Tr_InvLscale_out =  1.0/Lscale_out
     enddo
 
+    Lscale_in = 0.
+    Lscale_out = 0.
+    if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
+      call get_param(param_file, mdl, "OBC_THICKNESS_RESERVOIR_LENGTH_SCALE_OUT ", Lscale_out, &
+                 "An effective length scale for restoring the layer thickness "//&
+                 "at the boundaries to externally imposed values when the flow "//&
+                 "is exiting the domain.", units="m", default=0.0, scale=US%m_to_L)
+
+      call get_param(param_file, mdl, "OBC_THICKNESS_RESERVOIR_LENGTH_SCALE_IN ", Lscale_in, &
+                 "An effective length scale for restoring the layer thickness "//&
+                 "at the boundaries to values from the interior when the flow "//&
+                 "is entering the domain.", units="m", default=0.0, scale=US%m_to_L)
+    endif
+
+    do n = 1, OBC%number_of_segments
+      OBC%segment(n)%Th_InvLscale_in = 0.0
+      if (Lscale_in>0.) OBC%segment(n)%Th_InvLscale_in =  1.0/Lscale_in
+      OBC%segment(n)%Th_InvLscale_out = 0.0
+      if (Lscale_out>0.) OBC%segment(n)%Th_InvLscale_out =  1.0/Lscale_out
+      if (Lscale_in>0. .or. Lscale_out>0.) then
+        if (OBC%segment(n)%is_E_or_W_2) then
+          OBC%thickness_x_reservoirs_used = .true.
+          OBC%use_h_res = .true.
+        else
+          OBC%thickness_y_reservoirs_used = .true.
+          OBC%use_h_res = .true.
+        endif
+      endif
+    enddo
+
     call get_param(param_file, mdl, "REMAPPING_SCHEME", OBC%remappingScheme, &
           default=remappingDefaultScheme, do_not_log=.true.)
     call get_param(param_file, mdl, "OBC_REMAPPING_SCHEME", OBC%remappingScheme, &
@@ -914,6 +979,7 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
 
     segment%temp_segment_data_exists = .false.
     segment%salt_segment_data_exists = .false.
+    segment%thickness_segment_data_exists = .false.
 !!
 ! CODE HERE FOR OTHER OPTIONS (CLAMPED, NUDGED,..)
 !!
@@ -1015,6 +1081,7 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
 
         if (segment%field(m)%name == 'TEMP') segment%temp_segment_data_exists = .true.
         if (segment%field(m)%name == 'SALT') segment%salt_segment_data_exists = .true.
+        if (segment%field(m)%name == 'DZ') segment%thickness_segment_data_exists = .true.
 
       else  ! This data is not being read from a file.
         segment%field(m)%value = segment%field(m)%scale * value
@@ -1909,7 +1976,6 @@ subroutine parse_segment_data_str(segment_str, idx, var, value, filename, fieldn
 987 call MOM_error(FATAL,'Error while parsing segment data specification! '//trim(segment_str))
 end subroutine parse_segment_data_str
 
-
 !> Parse all the OBC_SEGMENT_%%%_DATA strings again
 !! to see which need tracer reservoirs (all pes need to know).
 subroutine parse_for_tracer_reservoirs(OBC, PF, use_temperature)
@@ -2031,6 +2097,19 @@ subroutine open_boundary_halo_update(G, OBC)
       call pass_var(OBC%tres_y(:,:,:,m), G%Domain, position=NORTH_FACE)
     enddo
   endif
+  if (allocated(OBC%h_res_x) .and. allocated(OBC%h_res_y)) then
+    do m=1,OBC%ntr
+      call pass_vector(OBC%h_res_x(:,:,:), OBC%h_res_y(:,:,:), G%Domain, To_All+Scalar_Pair)
+    enddo
+  elseif (allocated(OBC%h_res_x)) then
+    do m=1,OBC%ntr
+      call pass_var(OBC%h_res_x(:,:,:), G%Domain, position=EAST_FACE)
+    enddo
+  elseif (allocated(OBC%h_res_y)) then
+    do m=1,OBC%ntr
+      call pass_var(OBC%h_res_y(:,:,:), G%Domain, position=NORTH_FACE)
+    enddo
+  endif
 
 end subroutine open_boundary_halo_update
 
@@ -2081,6 +2160,8 @@ subroutine open_boundary_dealloc(OBC)
   if (allocated(OBC%cff_normal_v)) deallocate(OBC%cff_normal_v)
   if (allocated(OBC%tres_x)) deallocate(OBC%tres_x)
   if (allocated(OBC%tres_y)) deallocate(OBC%tres_y)
+  if (allocated(OBC%h_res_x)) deallocate(OBC%h_res_x)
+  if (allocated(OBC%h_res_y)) deallocate(OBC%h_res_y)
   if (associated(OBC%remap_z_CS)) deallocate(OBC%remap_z_CS)
   if (associated(OBC%remap_h_CS)) deallocate(OBC%remap_h_CS)
   deallocate(OBC)
@@ -2333,6 +2414,71 @@ subroutine setup_OBC_tracer_reservoirs(G, GV, OBC, restart_CS)
 
 end subroutine setup_OBC_tracer_reservoirs
 
+!> Initialize the thickness reservoirs values, perhaps only if they have not been set via a restart file.
+subroutine setup_OBC_thickness_reservoirs(G, GV, OBC, restart_CS)
+  type(ocean_grid_type),          intent(in)    :: G   !< Ocean grid structure
+  type(verticalGrid_type),        intent(in)    :: GV  !< The ocean's vertical grid structure
+  type(ocean_OBC_type), target,   intent(inout) :: OBC !< Open boundary control structure
+  type(MOM_restart_CS), optional, intent(in)    :: restart_CS !< MOM restart control structure
+
+  ! Local variables
+  type(OBC_segment_type), pointer :: segment => NULL()
+  real :: I_scale         ! The inverse of the scaling factor for the thicknesses.
+                          ! [m Z-1 ~> 1]
+  logical :: set_h_res_x, set_h_res_y
+  character(len=12) :: x_var_name, y_var_name
+  integer :: i, j, k, n
+
+  set_h_res_x = allocated(OBC%h_res_x) .and. OBC%thickness_x_reservoirs_used
+  set_h_res_y = allocated(OBC%h_res_y) .and. OBC%thickness_y_reservoirs_used
+
+  if (present(restart_CS)) then
+    ! Set the names of the reservoirs for the layer thickness in the restart file, and inquire
+    ! whether they have been initialized
+    if (modulo(G%HI%turns, 2) == 0) then
+      write(x_var_name,'("h_res_x")')
+      write(y_var_name,'("h_res_y")')
+    else
+      write(x_var_name,'("h_res_y")')
+      write(y_var_name,'("h_res_x")')
+    endif
+    if (set_h_res_x) set_h_res_x = .not.query_initialized(OBC%h_res_x, x_var_name, restart_CS)
+    if (set_h_res_y) set_h_res_y = .not.query_initialized(OBC%h_res_y, y_var_name, restart_CS)
+  endif
+
+  do n=1,OBC%number_of_segments
+    segment => OBC%segment(n)
+    if (associated(segment%h_Reg)) then ; if (allocated(segment%h_Reg%h_res)) then
+      I_scale = 1.0 ; if (segment%h_Reg%scale /= 0.0) I_scale = 1.0 / segment%h_Reg%scale
+
+      if (segment%is_E_or_W .and. set_h_res_x) then
+        I = segment%HI%IsdB
+        if (segment%h_Reg%is_initialized) then
+          do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
+            OBC%h_res_x(I,j,k) = I_scale * segment%h_Reg%h_res(i,j,k)
+          enddo ; enddo
+        else
+          do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
+            OBC%h_res_x(I,j,k) = I_scale * segment%h_Reg%h(i,j,k)
+          enddo ; enddo
+        endif
+      elseif (segment%is_N_or_S .and. set_h_res_y) then
+        J = segment%HI%JsdB
+        if (segment%h_Reg%is_initialized) then
+          do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
+            OBC%h_res_y(i,J,k) = I_scale * segment%h_Reg%h_res(i,J,k)
+          enddo ; enddo
+        else
+          do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
+            OBC%h_res_y(i,J,k) = I_scale * segment%h_Reg%h(i,J,k)
+          enddo ; enddo
+        endif
+      endif
+    endif ; endif
+  enddo
+
+end subroutine setup_OBC_thickness_reservoirs
+
 !> Record that the tracer reservoirs have been initialized so that their values are not reset later.
 subroutine set_initialized_OBC_tracer_reservoirs(G, OBC, restart_CS)
   type(ocean_grid_type),          intent(in)    :: G   !< Ocean grid structure
@@ -2357,6 +2503,56 @@ subroutine set_initialized_OBC_tracer_reservoirs(G, OBC, restart_CS)
 
 end subroutine set_initialized_OBC_tracer_reservoirs
 
+!> Fill segment%h_Reg from restart fields.
+subroutine copy_thickness_reservoirs(OBC, G, GV)
+  type(ocean_grid_type),          intent(inout) :: G     !< Ocean grid structure
+  type(verticalGrid_type),        intent(in)    :: GV    !< The ocean's vertical grid structure
+  type(ocean_OBC_type),           pointer       :: OBC   !< Open boundary control structure
+  ! Local variables
+  type(OBC_segment_type), pointer :: segment => NULL()
+  integer :: i, j, k, n
+  logical :: sym
+
+  if (.not.associated(OBC)) return
+
+  if (.not.(OBC%thickness_x_reservoirs_used .or. OBC%thickness_y_reservoirs_used)) &
+    return
+
+  ! Now thickness reservoirs
+  do n=1,OBC%number_of_segments
+    segment=>OBC%segment(n)
+    if (associated(segment%h_Reg)) then
+      if (segment%is_E_or_W) then
+        I = segment%HI%IsdB
+        if (allocated(segment%h_Reg%h_res)) then
+          do k=1,GV%ke
+            do j=segment%HI%jsd,segment%HI%jed
+              segment%h_Reg%h_res(I,j,k) = segment%h_Reg%scale * OBC%h_res_x(I,j,k)
+            enddo
+          enddo
+        endif
+      else
+        J = segment%HI%JsdB
+        if (allocated(segment%h_Reg%h_res)) then
+          do k=1,GV%ke
+            do i=segment%HI%isd,segment%HI%ied
+              segment%h_Reg%h_res(i,J,k) = segment%h_Reg%scale * OBC%h_res_y(i,J,k)
+            enddo
+          enddo
+        endif
+      endif
+    endif
+  enddo
+
+  if (OBC%debug) then
+    sym = G%Domain%symmetric
+    if (allocated(OBC%h_res_x) .and. allocated(OBC%h_res_y)) then
+        call uvchksum("radiation_OBCs: OBC%h_res_[xy]", OBC%h_res_x(:,:,:), OBC%h_res_y(:,:,:), G%HI, &
+                      haloshift=0, symmetric=sym, scalar_pair=.true., unscale=1.0)
+    endif
+  endif
+
+end subroutine copy_thickness_reservoirs
 
 !> Apply radiation conditions to 3D u,v at open boundaries
 subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US, dt)
@@ -2409,7 +2605,6 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
     return
 
   if (OBC%debug) call chksum_OBC_segments(OBC, G, GV, US, OBC%nk_OBC_debug)
-
 
   eps = 1.0e-20*US%m_s_to_L_T**2
 
@@ -3855,7 +4050,7 @@ subroutine deallocate_OBC_segment_data(segment)
   if (allocated(segment%tangential_grad)) deallocate(segment%tangential_grad)
 
   if (associated(segment%tr_Reg)) call segment_tracer_registry_end(segment%tr_Reg)
-
+  if (associated(segment%h_Reg)) call segment_thickness_registry_end(segment%h_Reg)
 
 end subroutine deallocate_OBC_segment_data
 
@@ -4520,6 +4715,20 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
         enddo ; enddo
       endif
 
+      ! Set the thickness reservoir data.
+      if (OBC%thickness_x_reservoirs_used .or. OBC%thickness_y_reservoirs_used) then
+        do k=1,nz; do j=js_obc2, je_obc; do i=is_obc2,ie_obc
+          segment%h_Reg%h(i,j,k) = segment%h(i,j,k)
+        enddo ; enddo ; enddo
+        if (.not. segment%h_Reg%is_initialized) then
+          ! If the thickness reservoir has not yet been initialized, then set to external value.
+          do k=1,nz; do j=js_obc2, je_obc; do i=is_obc2,ie_obc
+            segment%h_Reg%h_res(i,j,k) = segment%h_Reg%h(i,j,k)
+          enddo ; enddo ; enddo
+          segment%h_Reg%is_initialized=.true.
+        endif
+      endif
+
       ! Set the inflow and reservoir data for tracers.
       if ((trim(segment%field(m)%name) == 'TEMP') .or. (trim(segment%field(m)%name) == 'SALT') .or. &
          (trim(segment%field(m)%genre) == 'obgc')) then
@@ -4713,6 +4922,80 @@ subroutine segment_tracer_registry_init(param_file, segment)
 
 end subroutine segment_tracer_registry_init
 
+!> Initialize all the segment thickness reservoirs.
+subroutine segment_thickness_reservoir_init(GV, US, OBC, param_file)
+  type(param_file_type),  intent(in)    :: param_file !< open file to parse for model parameters
+  type(verticalGrid_type), intent(in)   :: GV         !< ocean vertical grid structure
+  type(unit_scale_type),  intent(in)    :: US         !< Unit scaling type
+  type(ocean_OBC_type),   pointer       :: OBC        !< Open boundary structure
+! real,         optional, intent(in)    :: OBC_scalar !< If present, use scalar value for segment tracer
+!                                                     !! inflow concentration, including any rescaling to
+!                                                     !! put the tracer concentration into its internal units,
+!                                                     !! like [S ~> ppt] for salinity.
+! logical,      optional, intent(in)    :: OBC_array  !< If true, use array values for segment tracer
+!                                                     !! inflow concentration.
+! Local variables
+  real :: rescale ! A multiplicatively corrected scaling factor, in units like [S ppt-1 ~> 1] for
+                  ! salinity, or other various units depending on what rescaling has occurred previously.
+  integer :: nseg, m, isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
+  integer :: fd_id
+  character(len=256) :: mesg    ! Message for error messages.
+  character(len=32) :: name
+  type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
+  integer, save :: init_calls = 0
+
+! This include declares and sets the variable "version".
+# include "version_variable.h"
+  character(len=40)  :: mdl = "segment_thickness_reservoir_init" ! This routine's name.
+
+  if (.not. associated(OBC)) return
+
+  do nseg=1, OBC%number_of_segments
+    segment=>OBC%segment(nseg)
+    if (.not. segment%on_pe) cycle
+
+    if (associated(segment%h_Reg)) &
+         call MOM_error(FATAL,"segment_thickness_reservoir_init: thickness array was previously allocated")
+    allocate(segment%h_Reg)
+
+    isd = segment%HI%isd ; ied = segment%HI%ied
+    jsd = segment%HI%jsd ; jed = segment%HI%jed
+    IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
+    JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
+
+    fd_id = -1
+    do m=1,segment%num_fields
+      if (lowercase(segment%field(m)%name) == lowercase(segment%h_Reg%name)) fd_id = m
+    enddo
+    segment%h_Reg%scale = US%Z_to_m
+    do m=1,segment%num_fields
+      if (uppercase(segment%field(m)%name) == uppercase(segment%h_Reg%name)) then
+        if (.not. segment%field(m)%use_IO) then
+          rescale = 1.0
+          if ((segment%field(m)%scale /= 0.0) .and. (segment%field(m)%scale /= 1.0)) &
+            rescale = 1.0 / segment%field(m)%scale
+          segment%field(m)%value = rescale * segment%field(m)%value
+        endif
+      endif
+    enddo
+
+    if (segment%is_E_or_W) then
+      allocate(segment%h_Reg%h(IsdB:IedB,jsd:jed,1:GV%ke), source=0.0)
+      allocate(segment%h_Reg%h_res(IsdB:IedB,jsd:jed,1:GV%ke), source=0.0)
+    elseif (segment%is_N_or_S) then
+      allocate(segment%h_Reg%h(isd:ied,JsdB:JedB,1:GV%ke), source=0.0)
+      allocate(segment%h_Reg%h_res(isd:ied,JsdB:JedB,1:GV%ke), source=0.0)
+    endif
+    segment%h_Reg%is_initialized = .false.
+
+    init_calls = init_calls + 1
+
+    ! Read all relevant parameters and write them to the model log.
+    if (init_calls == 1) call log_version(param_file, mdl, version, "")
+  enddo
+
+end subroutine segment_thickness_reservoir_init
+
 !> Register a tracer array that is active on an OBC segment, potentially also specifying how the
 !! tracer inflow values are specified.
 subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, &
@@ -4818,6 +5101,19 @@ subroutine segment_tracer_registry_end(Reg)
     deallocate(Reg)
   endif
 end subroutine segment_tracer_registry_end
+
+!> Clean up the segment thickness object
+subroutine segment_thickness_registry_end(Reg)
+  type(OBC_segment_thickness_type), pointer :: Reg        !< pointer to thickness reservoir
+
+! Local variables
+
+  if (associated(Reg)) then
+    if (allocated(Reg%h)) deallocate(Reg%h)
+    if (allocated(Reg%h_res)) deallocate(Reg%h_res)
+    deallocate(Reg)
+  endif
+end subroutine segment_thickness_registry_end
 
 !> Registers the temperature and salinity in the segment tracer registry.
 subroutine register_temp_salt_segments(GV, US, OBC, tr_Reg, param_file)
@@ -5062,6 +5358,60 @@ subroutine fill_temp_salt_segments(G, GV, US, OBC, tv)
   enddo
 
 end subroutine fill_temp_salt_segments
+
+!> Set the value of temperatures and salinities on OBC segments
+subroutine fill_thickness_segments(G, GV, US, OBC, h)
+  type(ocean_grid_type),   intent(in)    :: G   !< Ocean grid structure
+  type(verticalGrid_type), intent(in)    :: GV  !< ocean vertical grid structure
+  type(unit_scale_type),   intent(in)    :: US  !< Unit scaling
+  type(ocean_OBC_type),    pointer       :: OBC !< Open boundary structure
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(in) :: h   !< Layer thicknesses [H ~> m or kg m-2]
+
+  integer :: isd, ied, IsdB, IedB, jsd, jed, JsdB, JedB, n, nz
+  integer :: i, j, k
+  type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
+
+  if (.not. associated(OBC)) return
+  ! Both temperature and salinity fields
+
+  nz = GV%ke
+
+  do n=1, OBC%number_of_segments
+    segment => OBC%segment(n)
+    if (.not. segment%on_pe) cycle
+
+    isd = segment%HI%isd ; ied = segment%HI%ied
+    jsd = segment%HI%jsd ; jed = segment%HI%jed
+    IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
+    JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
+
+    ! Fill with thickness
+    if (segment%is_E_or_W) then
+      I=segment%HI%IsdB
+      do k=1,nz ; do j=segment%HI%jsd,segment%HI%jed
+        if (segment%direction == OBC_DIRECTION_W) then
+          segment%h_Reg%h(I,j,k) = h(i+1,j,k)
+        else
+          segment%h_Reg%h(I,j,k) = h(i,j,k)
+        endif
+      enddo ; enddo
+    else
+      J=segment%HI%JsdB
+      do k=1,nz ; do i=segment%HI%isd,segment%HI%ied
+        if (segment%direction == OBC_DIRECTION_S) then
+          segment%h_Reg%h(i,J,k) = h(i,j+1,k)
+        else
+          segment%h_Reg%h(i,J,k) = h(i,j,k)
+        endif
+      enddo ; enddo
+    endif
+    if (.not.segment%h_Reg%is_initialized) then
+      segment%h_Reg%h_res(:,:,:) = segment%h_Reg%h(:,:,:)
+      segment%h_Reg%is_initialized = .true.
+    endif
+  enddo
+
+end subroutine fill_thickness_segments
 
 !> Find the region outside of all open boundary segments and
 !! make sure it is set to land mask. Gonna need to know global land
@@ -5366,6 +5716,31 @@ subroutine open_boundary_register_restarts(HI, GV, US, OBC, Reg, param_file, res
                                restart_CS, conversion=US%L_T_to_m_s**2)
   endif
 
+  if (OBC%thickness_x_reservoirs_used) then
+    allocate(OBC%h_res_x(HI%isdB:HI%iedB,HI%jsd:HI%jed,GV%ke), source=0.0)
+    if (modulo(HI%turns, 2) /= 0) then
+      write(var_name,'("h_res_y")')
+      call register_restart_field(OBC%h_res_x(:,:,:), var_name, .false., restart_CS, &
+               longname="Layer thickness for NS OBCs", units="Conc", hor_grid='v')
+    else
+      write(var_name,'("h_res_x")')
+      call register_restart_field(OBC%h_res_x(:,:,:), var_name, .false., restart_CS, &
+               longname="Layer thickness for EW OBCs", units="Conc", hor_grid='u')
+    endif
+  endif
+  if (OBC%thickness_y_reservoirs_used) then
+    allocate(OBC%h_res_y(HI%isd:HI%ied,HI%jsdB:HI%jedB,GV%ke), source=0.0)
+    if (modulo(HI%turns, 2) /= 0) then
+      write(var_name,'("h_res_x")')
+      call register_restart_field(OBC%h_res_y(:,:,:), var_name, .false., restart_CS, &
+               longname="Layer thickness for EW OBCs", units="Conc", hor_grid='u')
+    else
+      write(var_name,'("h_res_y")')
+      call register_restart_field(OBC%h_res_y(:,:,:), var_name, .false., restart_CS, &
+               longname="Layer thickness for NS OBCs", units="Conc", hor_grid='v')
+    endif
+  endif
+
   if (Reg%ntr == 0) return
   if (.not. allocated(OBC%tracer_x_reservoirs_used)) then
     OBC%ntr = Reg%ntr
@@ -5418,7 +5793,7 @@ subroutine open_boundary_register_restarts(HI, GV, US, OBC, Reg, param_file, res
 end subroutine open_boundary_register_restarts
 
 !> Update the OBC tracer reservoirs after the tracers have been updated.
-subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
+subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, Reg)
   type(ocean_grid_type),                      intent(in) :: G   !< The ocean's grid structure
   type(verticalGrid_type),                    intent(in) :: GV  !<  Ocean vertical grid structure
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in) :: uhr !< accumulated volume/mass flux through
@@ -5428,7 +5803,6 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in) :: h   !< layer thickness after advection
                                                                 !! [H ~> m or kg m-2]
   type(ocean_OBC_type),                       pointer    :: OBC !< Open boundary structure
-  real,                                       intent(in) :: dt  !< time increment [T ~> s]
   type(tracer_registry_type),                 pointer    :: Reg !< pointer to tracer registry
 
   ! Local variable
@@ -5549,6 +5923,129 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, dt, Reg)
 
 end subroutine update_segment_tracer_reservoirs
 
+!> Update the OBC thickness reservoirs after the thicknesses have been updated.
+subroutine update_segment_thickness_reservoirs(G, GV, uhr, vhr, h, OBC)
+  type(ocean_grid_type),                      intent(in) :: G   !< The ocean's grid structure
+  type(verticalGrid_type),                    intent(in) :: GV  !<  Ocean vertical grid structure
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in) :: uhr !< accumulated volume/mass flux through
+                                                                !! the zonal face [H L2 ~> m3 or kg]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in) :: vhr !< accumulated volume/mass flux through
+                                                                !! the meridional face [H L2 ~> m3 or kg]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in) :: h   !< layer thickness after advection
+                                                                !! [H ~> m or kg m-2]
+  type(ocean_OBC_type),                       pointer    :: OBC !< Open boundary structure
+
+  ! Local variable
+  type(OBC_segment_type), pointer :: segment=>NULL()
+  real :: u_L_in, u_L_out ! The zonal distance moved in or out of a cell, normalized by the reservoir
+                          ! length scale [nondim]
+  real :: v_L_in, v_L_out ! The meridional distance moved in or out of a cell, normalized by the reservoir
+                          ! length scale [nondim]
+  real :: fac1            ! The denominator of the expression for tracer updates [nondim]
+  real :: I_scale         ! The inverse of the scaling factor for the tracers.
+                          ! For salinity the units would be [ppt S-1 ~> 1]
+  integer :: i, j, k, m, n, nz, fd_id
+  integer :: ishift, idir, jshift, jdir
+  real :: resrv_lfac_out  ! The reservoir inverse length scale scaling factor for the outward
+                          ! direction per field [nondim]
+  real :: resrv_lfac_in   ! The reservoir inverse length scale scaling factor for the inward
+                          ! direction per field [nondim]
+  real :: b_in, b_out     ! The 0 and 1 switch for tracer reservoirs
+                          ! 1 if the length scale of reservoir is zero [nondim]
+  real :: a_in, a_out     ! The 0 and 1(-1) switch for reservoir source weights
+                          ! e.g. a_in is -1 only if b_in ==1 and uhr or vhr is inward
+                          ! e.g. a_out is 1 only if b_out==1 and uhr or vhr is outward
+                          ! It's clear that a_in and a_out cannot be both non-zero [nondim]
+  nz = GV%ke
+
+  if (associated(OBC)) then ; if (OBC%OBC_pe) then ; do n=1,OBC%number_of_segments
+    segment=>OBC%segment(n)
+    if (.not. associated(segment%h_Reg)) cycle
+    b_in  = 0.0; if (segment%Tr_InvLscale_in  == 0.0) b_in  = 1.0
+    b_out = 0.0; if (segment%Tr_InvLscale_out == 0.0) b_out = 1.0
+    if (segment%is_E_or_W) then
+      I = segment%HI%IsdB
+      do j=segment%HI%jsd,segment%HI%jed
+        ! ishift+I corresponds to the nearest interior tracer cell index
+        ! idir switches the sign of the flow so that positive is into the reservoir
+        if (segment%direction == OBC_DIRECTION_W) then
+          ishift = 1 ; idir = -1
+        else
+          ishift = 0 ; idir = 1
+        endif
+        ! Can keep this or take it out, either way
+        if (G%mask2dT(I+ishift,j) == 0.0) cycle
+        ! Update the reservoir thickness concentration implicitly using a Backward-Euler timestep
+        fd_id = segment%h_Reg%fd_index
+        if (fd_id == -1) then
+          resrv_lfac_out = 1.0
+          resrv_lfac_in  = 1.0
+        else
+          resrv_lfac_out = segment%field(fd_id)%resrv_lfac_out
+          resrv_lfac_in  = segment%field(fd_id)%resrv_lfac_in
+        endif
+        I_scale = 1.0 ; if (segment%h_Reg%scale /= 0.0) I_scale = 1.0 / segment%h_Reg%scale
+        if (allocated(segment%h_Reg%h_res)) then ; do k=1,nz
+          ! Calculate weights. Both a and u_L are nondim. Adding them together has no meaning.
+          ! However, since they cannot be both non-zero, adding them works like a switch.
+          ! When InvLscale_out is 0 and outflow, only interior data is applied to reservoirs
+          ! When InvLscale_in is 0 and inflow, only nudged data is applied to reservoirs
+          a_out = b_out * max(0.0, sign(1.0, idir*uhr(I,j,k)))
+          a_in  = b_in  * min(0.0, sign(1.0, idir*uhr(I,j,k)))
+          u_L_out = max(0.0, (idir*uhr(I,j,k))*segment%Th_InvLscale_out*resrv_lfac_out / &
+                    ((h(i+ishift,j,k) + GV%H_subroundoff)*G%dyCu(I,j)))
+          u_L_in  = min(0.0, (idir*uhr(I,j,k))*segment%Th_InvLscale_in*resrv_lfac_in  / &
+                    ((h(i+ishift,j,k) + GV%H_subroundoff)*G%dyCu(I,j)))
+          fac1 = (1.0 - (a_out - a_in)) + ((u_L_out + a_out) - (u_L_in + a_in))
+          segment%h_Reg%h_res(I,j,k) = (1.0/fac1) * &
+                            ((1.0-a_out+a_in)*segment%h_Reg%h_res(I,j,k)+ &
+                            ((u_L_out+a_out)*h(i+ishift,j,k) - &
+                             (u_L_in+a_in)*segment%h_Reg%h(I,j,k)))
+          if (allocated(OBC%h_res_x)) OBC%h_res_x(I,j,k) = I_scale * segment%h_Reg%h_res(I,j,k)
+        enddo ; endif
+      enddo
+    elseif (segment%is_N_or_S) then
+      J = segment%HI%JsdB
+      do i=segment%HI%isd,segment%HI%ied
+        ! jshift+J corresponds to the nearest interior tracer cell index
+        ! jdir switches the sign of the flow so that positive is into the reservoir
+        if (segment%direction == OBC_DIRECTION_S) then
+          jshift = 1 ; jdir = -1
+        else
+          jshift = 0 ; jdir = 1
+        endif
+        ! Can keep this or take it out, either way
+        if (G%mask2dT(i,j+jshift) == 0.0) cycle
+        ! Update the reservoir tracer concentration implicitly using a Backward-Euler timestep
+        fd_id = segment%h_Reg%fd_index
+        if (fd_id == -1) then
+          resrv_lfac_out = 1.0
+          resrv_lfac_in  = 1.0
+        else
+          resrv_lfac_out = segment%field(fd_id)%resrv_lfac_out
+          resrv_lfac_in  = segment%field(fd_id)%resrv_lfac_in
+        endif
+        I_scale = 1.0 ; if (segment%h_Reg%scale /= 0.0) I_scale = 1.0 / segment%h_Reg%scale
+        if (allocated(segment%h_Reg%h_res)) then ; do k=1,nz
+          a_out = b_out * max(0.0, sign(1.0, jdir*vhr(i,J,k)))
+          a_in  = b_in  * min(0.0, sign(1.0, jdir*vhr(i,J,k)))
+          v_L_out = max(0.0, (jdir*vhr(i,J,k))*segment%Th_InvLscale_out*resrv_lfac_out / &
+                    ((h(i,j+jshift,k) + GV%H_subroundoff)*G%dxCv(i,J)))
+          v_L_in  = min(0.0, (jdir*vhr(i,J,k))*segment%Th_InvLscale_in*resrv_lfac_in  / &
+                    ((h(i,j+jshift,k) + GV%H_subroundoff)*G%dxCv(i,J)))
+          fac1 = (1.0 - (a_out - a_in)) + ((v_L_out + a_out) - (v_L_in + a_in))
+          segment%h_Reg%h_res(i,J,k) = (1.0/fac1) * &
+                            ((1.0-a_out+a_in)*segment%h_Reg%h_res(i,J,k) + &
+                            ((v_L_out+a_out)*h(i,j+jshift,k) - &
+                             (v_L_in+a_in)*segment%h_Reg%h(i,J,k)))
+          if (allocated(OBC%h_res_y)) OBC%h_res_y(i,J,k) = I_scale * segment%h_Reg%h_res(i,J,k)
+        enddo ; endif
+      enddo
+    endif
+  enddo ; endif ; endif
+
+end subroutine update_segment_thickness_reservoirs
+
 !> Vertically remap the OBC tracer reservoirs and radiation rates that are filtered in time.
 subroutine remap_OBC_fields(G, GV, h_old, h_new, OBC, PCM_cell)
   type(ocean_grid_type),                     intent(in) :: G     !< The ocean's grid structure
@@ -5622,6 +6119,28 @@ subroutine remap_OBC_fields(G, GV, h_old, h_new, OBC, PCM_cell)
 
         endif ; enddo
 
+        ! Vertically remap the reservoir thicknesses?
+        if (associated(segment%h_Reg)) then
+          if (allocated(segment%h_Reg%h_res)) then
+            I_scale = 1.0 ; if (segment%h_Reg%scale /= 0.0) I_scale = 1.0 / segment%h_Reg%scale
+
+            if (present(PCM_cell)) then
+              call remapping_core_h(OBC%remap_h_CS, nz, h1, segment%h_Reg%h_res(I,j,:), nz, h2, tr_column, &
+                                    PCM_cell=PCM)
+            else
+              call remapping_core_h(OBC%remap_h_CS, nz, h1, segment%h_Reg%h_res(I,j,:), nz, h2, tr_column)
+            endif
+
+            ! Possibly underflow any very tiny tracer concentrations to 0?
+
+            ! Update tracer concentrations
+            segment%h_Reg%h_res(I,j,:) = tr_column(:)
+            if (allocated(OBC%h_res_x)) then ; do k=1,nz
+              OBC%h_res_x(I,j,k) = I_scale * segment%h_Reg%h_res(I,j,k)
+            enddo ; endif
+          endif
+        endif
+
         if (segment%radiation .and. (OBC%gamma_uv < 1.0)) then
           call remapping_core_h(OBC%remap_h_CS, nz, h1, segment%rx_norm_rad(I,j,:), nz, h2, r_norm_col, &
                                 PCM_cell=PCM)
@@ -5688,6 +6207,28 @@ subroutine remap_OBC_fields(G, GV, h_old, h_new, OBC, PCM_cell)
           enddo ; endif
 
         endif ; enddo
+
+        ! Vertically remap the reservoir thicknesses?
+        if (associated(segment%h_Reg)) then
+          if (allocated(segment%h_Reg%h_res)) then
+            I_scale = 1.0 ; if (segment%h_Reg%scale /= 0.0) I_scale = 1.0 / segment%h_Reg%scale
+
+            if (present(PCM_cell)) then
+              call remapping_core_h(OBC%remap_h_CS, nz, h1, segment%h_Reg%h_res(i,J,:), nz, h2, tr_column, &
+                                    PCM_cell=PCM)
+            else
+              call remapping_core_h(OBC%remap_h_CS, nz, h1, segment%h_Reg%h_res(i,J,:), nz, h2, tr_column)
+            endif
+
+            ! Possibly underflow any very tiny tracer concentrations to 0?
+
+            ! Update tracer concentrations
+            segment%h_Reg%h_res(i,J,:) = tr_column(:)
+            if (allocated(OBC%h_res_y)) then ; do k=1,nz
+              OBC%h_res_y(i,J,k) = I_scale * segment%h_Reg%h_res(i,J,k)
+            enddo ; endif
+          endif
+        endif
 
         if (segment%radiation .and. (OBC%gamma_uv < 1.0)) then
           call remapping_core_h(OBC%remap_h_CS, nz, h1, segment%ry_norm_rad(i,J,:), nz, h2, r_norm_col, &
@@ -6361,6 +6902,44 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
   if (allocated(segment_in%nudged_tangential_grad)) &
       call rotate_array(segment_in%nudged_tangential_grad, turns, segment%nudged_tangential_grad)
 
+  if (associated(segment_in%h_Reg)) then
+    isd = segment%HI%isd ; ied = segment%HI%ied ; IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
+    jsd = segment%HI%jsd ; jed = segment%HI%jed ; JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
+
+    if (.not.associated(segment%h_Reg)) allocate(segment%h_Reg)
+
+    ! segment_in already points to the rotated fields in the registry.
+    segment%h_Reg%name = segment_in%h_Reg%name
+    segment%h_Reg%fd_index = segment_in%h_Reg%fd_index
+    segment%h_Reg%scale = segment_in%h_Reg%scale
+    segment%h_Reg%OBC_inflow_conc = segment_in%h_Reg%OBC_inflow_conc
+
+    if (allocated(segment_in%h_Reg%h)) then
+      if (.not.allocated(segment%h_Reg%h)) then
+        ke = size(segment_in%h_Reg%h, 3)
+        if (segment%is_E_or_W) then
+          allocate(segment%h_Reg%h(IsdB:IedB,jsd:jed,1:ke), source=0.0)
+        elseif (segment%is_N_or_S) then
+          allocate(segment%h_Reg%h(isd:ied,JsdB:JedB,1:ke), source=0.0)
+        endif
+      endif
+      call rotate_array(segment_in%h_Reg%h, turns, segment%h_Reg%h)
+    endif
+
+    if (allocated(segment_in%h_Reg%h_res)) then
+      if (.not.allocated(segment%h_Reg%h_res)) then
+        ke = size(segment_in%h_Reg%h_res, 3)
+        if (segment%is_E_or_W) then
+          allocate(segment%h_Reg%h_res(IsdB:IedB,jsd:jed,1:ke), source=0.0)
+        elseif (segment%is_N_or_S) then
+          allocate(segment%h_Reg%h_res(isd:ied,JsdB:JedB,1:ke), source=0.0)
+        endif
+      endif
+      call rotate_array(segment_in%h_Reg%h_res, turns, segment%h_Reg%h_res)
+    endif
+    segment%h_Reg%is_initialized = segment_in%h_Reg%is_initialized
+  endif
+
   ! Change the sign of the normal or tangential velocities or transports that have been read in from
   ! a file, depending on the orientation of the face and the number of quarter turns of the grid.
   flip_normal_vel_sign = .false. ; flip_tang_vel_sign = .false.
@@ -6399,6 +6978,7 @@ subroutine rotate_OBC_segment_data(segment_in, segment, turns)
 
   segment%temp_segment_data_exists = segment_in%temp_segment_data_exists
   segment%salt_segment_data_exists = segment_in%salt_segment_data_exists
+  segment%thickness_segment_data_exists = segment_in%thickness_segment_data_exists
 end subroutine rotate_OBC_segment_data
 
 
@@ -6588,6 +7168,8 @@ subroutine write_OBC_info(OBC, G, GV, US)
 !    if (segment%is_E_or_W_2)    call MOM_mesg("  is_E_or_W_2", verb=1)
     if (segment%temp_segment_data_exists) call MOM_mesg("  temp_segment_data_exists", verb=1)
     if (segment%salt_segment_data_exists) call MOM_mesg("  salt_segment_data_exists", verb=1)
+    if (segment%thickness_segment_data_exists) call MOM_mesg("  thickness_segment_data_exists", &
+        verb=1)
 
     write(mesg, '("  Tr_InvLscale_out ", ES16.6)') segment%Tr_InvLscale_out*US%m_to_L
     call MOM_mesg(mesg, verb=1)
