@@ -526,7 +526,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
     do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
       hArea_q = (hArea_u(I,j) + hArea_u(I,j+1)) + (hArea_v(i,J) + hArea_v(i+1,J))
       Ih_q(I,J) = Area_q(I,J) / (hArea_q + vol_neglect)
-      h_q(I,J) = (hArea_q) / (Area_q(I,J) + area_neglect)
+      h_q(I,J) = (hArea_q) / max(Area_q(I,J), area_neglect)
       q(I,J) = abs_vort(I,J) * Ih_q(I,J)
     enddo; enddo
 
@@ -1408,11 +1408,12 @@ subroutine UP3_reconstruction(q4,u,qr)
   real, intent(in)    :: u                !< Velocity or thickness flux on point i-1/2
                                           !! [l t-1 ~> m s-1] or [l2 t-1 ~> m2 s-1]
   real, intent(inout) :: qr               !< Reconstruction of tracer q at point i-1/2 [A ~> a]
+  real, parameter :: C1_6 = 1.0/6.0       ! The ratio of 1/6 [nondim]
 
   if (u>0.) then
-    qr = (-q4(1) + 5.*q4(2) + 2.*q4(3))/6.
+    qr = (-q4(1) + 5.*q4(2) + 2.*q4(3)) * C1_6
   else
-    qr = (2.*q4(2) + 5.*q4(3) - q4(4))/6.
+    qr = (2.*q4(2) + 5.*q4(3) - q4(4)) * C1_6
   endif
 
 end subroutine UP3_reconstruction
@@ -1425,16 +1426,18 @@ subroutine UP3_Koren_limiter_reconstruction(q4,u,qr)
   real, intent(in)    :: u                !< Velocity or thickness flux on point i-1/2
                                           !! [L T-1 ~> m s-1] or [L2 T-1 ~> m2 s-1]
   real, intent(inout) :: qr               !< Reconstruction of tracer q on point i-1/2 [A ~> a]
-  real                :: theta       ! Ratio of gradient [nondim]
-  real                :: psi         ! Limiter function [nondim]
+  real                :: theta            ! Ratio of gradient [nondim]
+  real                :: psi              ! Limiter function [nondim]
+  real, parameter     :: C1_3 = 1.0/3.0   ! The ratio of 1/3 [nondim]
+  real, parameter     :: C1_6 = 1.0/6.0   ! The ratio of 1/6 [nondim]
 
   if (u>0.) then
     theta = (q4(2) - q4(1))/(q4(3) - q4(2) + 1e-20)
-    psi = max(0., min(1., 1/3. + 1/6.*theta, theta)) ! limiter introduced by Koren (1993)
+    psi = max(0., min(1., C1_3 + C1_6*theta, theta)) ! limiter introduced by Koren (1993)
     qr = q4(2) + psi*(q4(3) - q4(2))
   else
     theta = (q4(4) - q4(3))/(q4(3) - q4(2) + 1e-20)
-    psi = max(0., min(1., 1/3. + 1/6.*theta, theta))
+    psi = max(0., min(1., C1_3 + C1_6*theta, theta))
     qr = q4(3) + psi*(q4(2) - q4(3))
   endif
 
@@ -1507,7 +1510,7 @@ subroutine weno_three_h_weight_reconstruction(q4, h4, u4, &
 !    vr = min(max(q4(3), q4(2)), vr) ; vr = max(min(q4(3), q4(2)), vr) !Impose a monotonicity limiter
     hr = min(max(h4(3), h4(2)), hr) ; hr = max(min(h4(3), h4(2)), hr) ! A monotonicity limiter
 
-    qr = vr / (hr + h_tiny)
+    qr = vr / max(hr, h_tiny)
 
 end subroutine weno_three_h_weight_reconstruction
 
@@ -1617,7 +1620,7 @@ subroutine weno_five_h_weight_reconstruction(q6, h6, u6, &
 !    vr = min(max(q6(3), q6(4)), vr) ; vr = max(min(q6(3), q6(4)), vr) !Impose a monotonicity limiter
     hr = min(max(h6(3), h6(4)), hr) ; hr = max(min(h6(3), h6(4)), hr) !Impose a monotonicity limiter
 
-    qr = vr / (hr + h_tiny)
+    qr = vr / max(hr, h_tiny)
 
 end subroutine weno_five_h_weight_reconstruction
 
@@ -1754,7 +1757,7 @@ subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
     endif
   endif
 
-  tau = abs(b0 + 3 * b1 - 3 * b2 - b3)
+  tau = abs((b0 - b3) + 3 * (b1 - b2))
   w0  = C4_35  * (1 + (tau / (b0 + 1e-20))**2)
   w1  = C18_35 * (1 + (tau / (b1 + 1e-20))**2)
   w2  = C12_35 * (1 + (tau / (b2 + 1e-20))**2)
@@ -1772,7 +1775,7 @@ subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
 !  vr = min(max(q4, q5), vr) ; vr = max(min(q4, q5), vr)
   hr = min(max(h8(4), h8(5)), hr) ; hr = max(min(h8(4), h8(5)), hr) ! Impose a monotonicity limiter
 
-  qr = vr / (hr + h_tiny)
+  qr = vr / max(hr, h_tiny)
 
 
 end subroutine weno_seven_h_weight_reconstruction
