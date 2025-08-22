@@ -270,15 +270,12 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   eps_vel = 1.0e-10*US%m_s_to_L_T
   h_tiny = GV%Angstrom_H  ! Perhaps this should be set to h_neglect instead.
 
+  stencil = CoriolisAdv_stencil(CS)
 
-  stencil = 2
-  if (CS%Coriolis_Scheme == wenovi7th_PV_ENSTRO) stencil = 4
-  if (CS%Coriolis_Scheme == wenovi5th_PV_ENSTRO) stencil = 3
-
-  Isq = Isq - stencil + 2
-  Ieq = Ieq + stencil - 2
-  Jsq = Jsq - stencil + 2
-  Jeq = Jeq + stencil - 2
+  Isq = G%IscB - stencil + 2
+  Ieq = G%IecB + stencil - 2
+  Jsq = G%JscB - stencil + 2
+  Jeq = G%JecB + stencil - 2
   !$OMP parallel do default(private) shared(Isq,Ieq,Jsq,Jeq,G,Area_h)
   do j=Jsq-1,Jeq+2 ; do I=Isq-1,Ieq+2
     Area_h(i,j) = G%mask2dT(i,j) * G%areaT(i,j)
@@ -310,10 +307,6 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
                   (Area_h(i+1,j) + Area_h(i,j+1))
   enddo ; enddo
 
-  Isq = Isq + stencil - 2
-  Ieq = Ieq - stencil + 2
-  Jsq = Jsq + stencil - 2
-  Jeq = Jeq - stencil + 2
 
   Stokes_VF = .false.
   if (present(Waves)) then ; if (associated(Waves)) then
@@ -325,10 +318,10 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   !$OMP                        area_neglect, pbv, Stokes_VF)
   do k=1,nz
 
-    Isq = Isq - stencil + 2
-    Ieq = Ieq + stencil - 2
-    Jsq = Jsq - stencil + 2
-    Jeq = Jeq + stencil - 2
+    Isq = G%IscB - stencil + 2
+    Ieq = G%IecB + stencil - 2
+    Jsq = G%JscB - stencil + 2
+    Jeq = G%JecB + stencil - 2
     ! Here the second order accurate layer potential vorticities, q,
     ! are calculated.  hq is  second order accurate in space.  Relative
     ! vorticity is second order accurate everywhere with free slip b.c.s,
@@ -545,10 +538,10 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
       endif
     endif
 
-    Isq = Isq + stencil - 2
-    Ieq = Ieq - stencil + 2
-    Jsq = Jsq + stencil - 2
-    Jeq = Jeq - stencil + 2
+    Isq = G%IscB
+    Ieq = G%IecB
+    Jsq = G%JscB
+    Jeq = G%JecB
 
     if (CS%id_rv > 0) then
       do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
@@ -778,7 +771,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
         ! compute the masking to make sure that inland values are not used
         if (seventh_order == 1) then
           ! all values are valid, we use seventh order reconstruction
-          u_q8 = (u(I,j-4:j+3,k) + u(I,j-3:j+4,k)) * 0.5
+          u_q8(:) = (u(I,j-4:j+3,k) + u(I,j-3:j+4,k)) * 0.5
           call weno_seven_h_weight_reconstruction(abs_vort(I,J-4:J+3), &
                                          h_q(I,J-4:J+3), &
                                          u_q8, &
@@ -787,7 +780,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
         elseif (fifth_order == 1) then
           ! all values are valid, we use fifth order reconstruction
-          u_q6 = (u(I,j-3:j+2,k) + u(I,j-2:j+3,k)) * 0.5
+          u_q6(:) = (u(I,j-3:j+2,k) + u(I,j-2:j+3,k)) * 0.5
           call weno_five_h_weight_reconstruction(abs_vort(I,J-3:J+2), &
                                         h_q(I,J-3:J+2), &
                                         u_q6, &
@@ -796,7 +789,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
         elseif (third_order == 1) then
           ! only the middle values are valid, we use third order reconstruction
-          u_q4 = (u(I,j-2:j+1,k) + u(I,j-1:j+2,k)) * 0.5
+          u_q4(:) = (u(I,j-2:j+1,k) + u(I,j-1:j+2,k)) * 0.5
           call weno_three_h_weight_reconstruction(abs_vort(I,J-2:J+1), &
                                          h_q(I,J-2:J+1), &
                                          u_q4, &
@@ -822,7 +815,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
         if (fifth_order == 1) then
           ! all values are valid, we use fifth order reconstruction
-          u_q6 = (u(I,j-3:j+2,k) + u(I,j-2:j+3,k)) * 0.5
+          u_q6(:) = (u(I,j-3:j+2,k) + u(I,j-2:j+3,k)) * 0.5
           call weno_five_h_weight_reconstruction(abs_vort(I,J-3:J+2), &
                                         h_q(I,J-3:J+2), &
                                         u_q6, &
@@ -831,7 +824,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
         elseif (third_order == 1) then
           ! only the middle values are valid, we use third order reconstruction
-          u_q4 = (u(I,j-2:j+1,k) + u(I,j-1:j+2,k)) * 0.5
+          u_q4(:) = (u(I,j-2:j+1,k) + u(I,j-1:j+2,k)) * 0.5
           call weno_three_h_weight_reconstruction(abs_vort(I,J-2:J+1), &
                                          h_q(I,J-2:J+1), &
                                          u_q4, &
@@ -856,7 +849,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
         if (third_order == 1) then
           ! only the middle values are valid, we use third order reconstruction
-          u_q4 = (u(I,j-2:j+1,k) + u(I,j-1:j+2,k)) * 0.5
+          u_q4(:) = (u(I,j-2:j+1,k) + u(I,j-1:j+2,k)) * 0.5
           call weno_three_h_weight_reconstruction(abs_vort(I,J-2:J+1), &
                                          h_q(I,J-2:J+1), &
                                          u_q4, &
@@ -1013,7 +1006,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
         ! compute the masking to make sure that inland values are not used
         if (seventh_order == 1) then
-          v_q8 = (v(i-4:i+3,J,k) + v(i-3:i+4,J,k)) * 0.5
+          v_q8(:) = (v(i-4:i+3,J,k) + v(i-3:i+4,J,k)) * 0.5
           ! all values are valid, we use seventh order reconstruction
           call weno_seven_h_weight_reconstruction(abs_vort(I-4:I+3,J), &
                                          h_q(I-4:I+3,J), &
@@ -1022,7 +1015,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
           CAv(i,J,k) = - (q_v * u_v)
 
         elseif (fifth_order == 1) then
-          v_q6 = (v(i-3:i+2,J,k) + v(i-2:i+3,J,k)) * 0.5
+          v_q6(:) = (v(i-3:i+2,J,k) + v(i-2:i+3,J,k)) * 0.5
           ! all values are valid, we use fifth order reconstruction
           call weno_five_h_weight_reconstruction(abs_vort(I-3:I+2,J), &
                                         h_q(I-3:I+2,J), &
@@ -1031,7 +1024,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
           CAv(i,J,k) = - (q_v * u_v)
 
         elseif (third_order == 1) then
-          v_q4 = (v(i-2:i+1,J,k) + v(i-1:i+2,J,k)) * 0.5
+          v_q4(:) = (v(i-2:i+1,J,k) + v(i-1:i+2,J,k)) * 0.5
 !          ! only the middle values are valid, we use third order reconstruction
           call weno_three_h_weight_reconstruction(abs_vort(I-2:I+1,J), &
                                                  h_q(I-2:I+1,J), &
@@ -1059,7 +1052,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
         ! compute the masking to make sure that inland values are not used
         if (fifth_order == 1) then
-          v_q6 = (v(i-3:i+2,J,k) + v(i-2:i+3,J,k)) * 0.5
+          v_q6(:) = (v(i-3:i+2,J,k) + v(i-2:i+3,J,k)) * 0.5
           ! all values are valid, we use fifth order reconstruction
           call weno_five_h_weight_reconstruction(abs_vort(I-3:I+2,J), &
                                         h_q(I-3:I+2,J), &
@@ -1068,7 +1061,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
           CAv(i,J,k) = - (q_v * u_v)
 
         elseif (third_order == 1) then
-          v_q4 = (v(i-2:i+1,J,k) + v(i-1:i+2,J,k)) * 0.5
+          v_q4(:) = (v(i-2:i+1,J,k) + v(i-1:i+2,J,k)) * 0.5
 !          ! only the middle values are valid, we use third order reconstruction
           call weno_three_h_weight_reconstruction(abs_vort(I-2:I+1,J), &
                                                  h_q(I-2:I+1,J), &
@@ -1096,7 +1089,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
         ! compute the masking to make sure that inland values are not used
         if (third_order == 1) then
-          v_q4 = (v(i-2:i+1,J,k) + v(i-1:i+2,J,k)) * 0.5
+          v_q4(:) = (v(i-2:i+1,J,k) + v(i-1:i+2,J,k)) * 0.5
 !          ! only the middle values are valid, we use third order reconstruction
           call weno_three_h_weight_reconstruction(abs_vort(I-2:I+1,J), &
                                                  h_q(I-2:I+1,J), &
@@ -1409,12 +1402,12 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
 
 end subroutine gradKE
 
-!> reconstruct the scalar (e.g., pv, vorticity) onto point i-1/2 using a third-order upwind scheme
+!> Reconstruct the scalar (e.g., pv, vorticity) onto point i-1/2 using a third-order upwind scheme
 subroutine UP3_reconstruction(q4,u,qr)
   real, intent(in)    :: q4(4)            !< Tracer values on points i-2, i-1, i, i+1 [A ~> a]
-  real, intent(in)    :: u                !< Relocity or thickness flux on point i-1/2
+  real, intent(in)    :: u                !< Velocity or thickness flux on point i-1/2
                                           !! [l t-1 ~> m s-1] or [l2 t-1 ~> m2 s-1]
-  real, intent(inout) :: qr               !< Reconstructin of point i-1/2 [A ~> a]
+  real, intent(inout) :: qr               !< Reconstruction of tracer q at point i-1/2 [A ~> a]
 
   if (u>0.) then
     qr = (-q4(1) + 5.*q4(2) + 2.*q4(3))/6.
@@ -1431,7 +1424,7 @@ subroutine UP3_Koren_limiter_reconstruction(q4,u,qr)
   real, intent(in)    :: q4(4)            !< Tracer values on points i-2, i-1, i, i+1 [A ~> a]
   real, intent(in)    :: u                !< Velocity or thickness flux on point i-1/2
                                           !! [L T-1 ~> m s-1] or [L2 T-1 ~> m2 s-1]
-  real, intent(inout) :: qr               !< Reconstructin on point i-1/2 [A ~> a]
+  real, intent(inout) :: qr               !< Reconstruction of tracer q on point i-1/2 [A ~> a]
   real                :: theta       ! Ratio of gradient [nondim]
   real                :: psi         ! Limiter function [nondim]
 
@@ -1460,7 +1453,7 @@ subroutine weno_three_h_weight_reconstruction(q4, h4, u4, &
     real, intent(in)    :: h_tiny  !< A tiny thickness to prevent division by zero [L ~> m]
     real, intent(in)    :: u              !< Velocity or thickness flux on point i-1/2
                                           !! [L T-1 ~> m s-1] or [L2 T-1 ~> m2 s-1]
-    real, intent(inout) :: qr             !< Reconstructin on point i-1/2 [A ~> a]
+    real, intent(inout) :: qr             !< Reconstruction of tracer q on point i-1/2 [A ~> a]
     logical, intent(in) :: velocity_smoothing !< If true, use velocity to compute smoothness indicator
     real :: vr                            ! Reconstruction of hq [A ~> a]
     real :: hr                            ! Reconstruction of h [L ~> m]
@@ -1470,6 +1463,8 @@ subroutine weno_three_h_weight_reconstruction(q4, h4, u4, &
     real :: tau                           ! Temporary variables [nondim]
     real :: w0, w1                        ! Weights [nondim]
     real :: s                             ! Temporary variables [nondim]
+    real, parameter :: C2_3 = 2.0/3.0     ! The ratio of 2/3 [nondim]
+    real, parameter :: C1_3 = 1.0/3.0     ! The ratio of 1/3 [nondim]
 
     if (u>0.) then
       call weno_three_reconstruction_0(q4(2:3), c0) ! Reconstruction in the second upwind stencil
@@ -1500,8 +1495,8 @@ subroutine weno_three_h_weight_reconstruction(q4, h4, u4, &
     endif
 
     tau = abs(b0-b1)
-    w0  = 2./3. * (1 + (tau / (b0 + 1e-20))**2)
-    w1  = 1./3. * (1 + (tau / (b1 + 1e-20))**2)
+    w0  = C2_3 * (1 + (tau / (b0 + 1e-20))**2)
+    w1  = C1_3 * (1 + (tau / (b1 + 1e-20))**2)
 
     s = 1. / (w0 + w1)
     w0 = w0 * s
@@ -1519,7 +1514,7 @@ end subroutine weno_three_h_weight_reconstruction
 !> Compute weights for the two-point stencil of the third-order WENO scheme
 subroutine weno_three_weight(q2, w0)
     real, intent(in) :: q2(2)    !< Tracer values on the two-point stencil [A ~> a]
-    real, intent(inout) :: w0    !< Weight for this stencil [A ~> a]
+    real, intent(inout) :: w0    !< Weight for this stencil [A2 ~> a2]
 
     w0 = q2(1) * q2(1) - 2 * q2(1) * q2(2) + q2(2) * q2(2)
 
@@ -1528,7 +1523,7 @@ end subroutine weno_three_weight
 !> Reconstruction in the second upwind stencil of the third-order WENO scheme
 subroutine weno_three_reconstruction_0(q2, w0)
     real, intent(in) :: q2(2)    !< Tracer values on the two-point stencil [A ~> a]
-    real, intent(inout) :: w0    !< Reconstruction of the quantity [A ~> a]
+    real, intent(inout) :: w0    !< Reconstruction of the quantity [A2 ~> a2]
 
     w0 = (q2(1) + q2(2)) * 0.5
 
@@ -1558,7 +1553,7 @@ subroutine weno_five_h_weight_reconstruction(q6, h6, u6, &
     real, intent(in)    :: u                      !< Velocity or thickness flux on point i-1/2
                                                   !! [L T-1 ~> m s-1] or [L2 T-1 ~> m2 s-1]
     logical, intent(in) :: velocity_smoothing     !< If ture, use velocity to compute the smoothness indicator
-    real, intent(inout) :: qr                     !< Reconstructin on point i-1/2 [A ~> a]
+    real, intent(inout) :: qr                     !< Reconstruction of tracer q on point i-1/2 [A ~> a]
     real :: vr                                    ! Reconstruction of hq [A ~> a]
     real :: hr                                    ! Reconstruction of h [L ~> m]
     real :: c0, c1, c2                            ! Intermediate reconstruction of hq[A ~> a]
@@ -1567,6 +1562,9 @@ subroutine weno_five_h_weight_reconstruction(q6, h6, u6, &
     real :: tau                                   ! Temporary variables [nondim]
     real :: w0, w1, w2                            ! Weights [nondim]
     real :: s                                     ! Temporary variables [nondim]
+    real, parameter :: C3_10 = 3.0/10.0           ! The ratio of 3/10 [nondim]
+    real, parameter :: C3_5 = 3.0/5.0             ! The ratio of 3/5 [nondim]
+    real, parameter :: C1_10 = 1.0/10.0           ! The ratio of 1/10 [nondim]
 
     if (u>0.) then
       call weno_five_reconstruction_0(q6(3:5), c0) ! Reconstruction in the third upwind stencil
@@ -1605,9 +1603,9 @@ subroutine weno_five_h_weight_reconstruction(q6, h6, u6, &
     endif
 
     tau = abs(b0 - b2)
-    w0  = 3./10. * (1 + (tau / (b0 + 1e-20))**2)
-    w1  = 3./5.  * (1 + (tau / (b1 + 1e-20))**2)
-    w2  = 1./10. * (1 + (tau / (b2 + 1e-20))**2)
+    w0  = C3_10 * (1 + (tau / (b0 + 1e-20))**2)
+    w1  = C3_5  * (1 + (tau / (b1 + 1e-20))**2)
+    w2  = C1_10 * (1 + (tau / (b2 + 1e-20))**2)
 
     s = 1. / (w0 + w1 + w2)
     w0 = w0 * s
@@ -1626,7 +1624,7 @@ end subroutine weno_five_h_weight_reconstruction
 !> Compute weights for the third upwind stencil of the fifth-order WENO scheme
 subroutine weno_five_weight_0(q3, w0)
   real, intent(in) :: q3(3)       !< Tracer values on the three-point stencil [A ~> a]
-  real, intent(inout) :: w0       !< Weight for this stencil [A ~> a]
+  real, intent(inout) :: w0       !< Weight for this stencil [A2 ~> a2]
 
   w0 = q3(1) * (10 * q3(1) - 31 * q3(2) + 11 * q3(3)) + &
        q3(2) * (25 * q3(2) - 19 * q3(3)) + 4 * q3(3) * q3(3)
@@ -1636,7 +1634,7 @@ end subroutine weno_five_weight_0
 !> Compute weights for the second upwind stencil of the fifth-order WENO scheme
 subroutine weno_five_weight_1(q3, w1)
   real, intent(in) :: q3(3)        !< Tracer values on the three-point stencil [A ~> a]
-  real, intent(inout) :: w1        !< Weight for this stencil [A ~> a]
+  real, intent(inout) :: w1        !< Weight for this stencil [A2 ~> a2]
 
   w1 = q3(1) * (4 * q3(1) - 13 * q3(2) + 5 * q3(3)) + &
        q3(2) * (13 * q3(2) - 13 * q3(3)) + 4 * q3(3) * q3(3)
@@ -1646,7 +1644,7 @@ end subroutine weno_five_weight_1
 !> Compute weights for the first upwind stencil of the fifth-order WENO scheme
 subroutine weno_five_weight_2(q3, w2)
   real, intent(in) :: q3(3)        !< Tracer values on the three-point stencil [A ~> a]
-  real, intent(inout) :: w2        !< Weight for this stencil [A ~> a]
+  real, intent(inout) :: w2        !< Weight for this stencil [A2 ~> a2]
 
   w2 = q3(1) * (4 * q3(1) - 19 * q3(2) + 11 * q3(3)) + &
        q3(2) * (25 * q3(2) - 31 * q3(3)) + 10 * q3(3) * q3(3)
@@ -1657,8 +1655,9 @@ end subroutine weno_five_weight_2
 subroutine weno_five_reconstruction_0(q3, p0)
   real, intent(in) :: q3(3)        !< Tracer values on three points [A ~> a]
   real, intent(inout) :: p0        !< Reconstruction of the quantity [A ~> a]
+  real, parameter :: C1_6 = 1.0/6.0 ! One sixth [nondim]
 
-  p0 = (2*q3(1) + 5*q3(2) - q3(3)) / 6.
+  p0 = (2*q3(1) + 5*q3(2) - q3(3)) * C1_6
 
 end subroutine weno_five_reconstruction_0
 
@@ -1666,8 +1665,9 @@ end subroutine weno_five_reconstruction_0
 subroutine weno_five_reconstruction_1(q3, p1)
   real, intent(in) :: q3(3)         !< Tracer values on the three-point stencil [A ~> a]
   real, intent(inout) :: p1         !< Reconstruction of the quantity [A ~> a]
+  real, parameter :: C1_6 = 1.0/6.0 ! One sixth [nondim]
 
-  p1 = (-q3(1) + 5*q3(2) + 2*q3(3)) / 6.
+  p1 = (-q3(1) + 5*q3(2) + 2*q3(3)) * C1_6
 
 end subroutine weno_five_reconstruction_1
 
@@ -1675,8 +1675,9 @@ end subroutine weno_five_reconstruction_1
 subroutine weno_five_reconstruction_2(q3, p2)
   real, intent(in) :: q3(3)          !< Tracer values on the three-point stencil [A ~> a]
   real, intent(inout) :: p2          !< Reconstruction of the quantity [A ~> a]
+  real, parameter :: C1_6 = 1.0/6.0  ! One sixth [nondim]
 
-  p2 = (2*q3(1) - 7*q3(2) + 11*q3(3)) / 6.
+  p2 = (2*q3(1) - 7*q3(2) + 11*q3(3)) * C1_6
 
 end subroutine weno_five_reconstruction_2
 
@@ -1695,7 +1696,7 @@ subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
   real, intent(in)    :: u    !< Velocity or thickness flux on point i-1/2
                               !! [L T-1 ~> m s-1] or [L2 T-1 ~> m2 s-1]
   logical, intent(in) :: velocity_smoothing !< If true, use velocity to compute the smoothness indicator
-  real, intent(inout) :: qr   !< Reconstructin on point i-1/2 [A ~> a]
+  real, intent(inout) :: qr   !< Reconstruction of tracer q on point i-1/2 [A ~> a]
   real :: vr                  ! Reconstruction of hq [A ~> a]
   real :: hr                  ! Reconstruction of h [L ~> m]
   real :: c0, c1, c2, c3      ! Intermediate reconstruction of hq [A ~> a]
@@ -1704,6 +1705,10 @@ subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
   real :: tau                 ! Temporary variables [nondim]
   real :: w0, w1, w2, w3      ! Weights [nondim]
   real :: s                   ! Temporary variables [nondim]
+  real, parameter :: C4_35 = 4.0/35.0 ! The ratio of 4/35 [nondim]
+  real, parameter :: C18_35 = 18.0/35.0 ! The ratio of 18/35 [nondim]
+  real, parameter :: C12_35 = 12.0/35.0 ! The ratio of 12/35 [nondim]
+  real, parameter :: C1_35 = 1.0/35.0   ! The ratio of 1/35 [nondim]
 
   if (u>0.) then
     call weno_seven_reconstruction_0(q8(4:7), c0) ! Reconstruction in the fourth upwind stencil
@@ -1750,10 +1755,10 @@ subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
   endif
 
   tau = abs(b0 + 3 * b1 - 3 * b2 - b3)
-  w0  = 4./35.  * (1 + (tau / (b0 + 1e-20))**2)
-  w1  = 18./35. * (1 + (tau / (b1 + 1e-20))**2)
-  w2  = 12./35. * (1 + (tau / (b2 + 1e-20))**2)
-  w3  = 1./35.  * (1 + (tau / (b3 + 1e-20))**2)
+  w0  = C4_35  * (1 + (tau / (b0 + 1e-20))**2)
+  w1  = C18_35 * (1 + (tau / (b1 + 1e-20))**2)
+  w2  = C12_35 * (1 + (tau / (b2 + 1e-20))**2)
+  w3  = C1_35  * (1 + (tau / (b3 + 1e-20))**2)
 
   s = 1. / (w0 + w1 + w2 + w3)
   w0 = w0 * s
@@ -1775,7 +1780,7 @@ end subroutine weno_seven_h_weight_reconstruction
 !> Compute weights for the fourth upwind stencil of the seventh-order WENO scheme
 subroutine weno_seven_weight_0(q4, w0)
   real, intent(in) :: q4(4)          !< Tracer values on the four-point stencil [A ~> a]
-  real, intent(inout) :: w0          !< Weight for this stencil [A ~> a]
+  real, intent(inout) :: w0          !< Weight for this stencil [A2 ~> a2]
 
   w0 = q4(1) * (2.107 * q4(1) - 9.402 * q4(2) + 7.042 * q4(3) - 1.854 * q4(4)) + &
      q4(2) * (11.003 * q4(2) - 17.246 * q4(3) + 4.642 * q4(4)) + &
@@ -1786,7 +1791,7 @@ end subroutine weno_seven_weight_0
 !> Compute weights for the third upwind stencil of the seventh-order WENO scheme
 subroutine weno_seven_weight_1(q4, w1)
   real, intent(in) :: q4(4)          !< Tracer values on the four-point stencil [A ~> a]
-  real, intent(inout) :: w1          !< Weight for this stencil [A ~> a]
+  real, intent(inout) :: w1          !< Weight for this stencil [A2 ~> a2]
 
   w1 = q4(1) * (0.547 * q4(1) - 2.522 * q4(2) + 1.922 * q4(3) - 0.494 * q4(4)) + &
      q4(2) * (3.443 * q4(2) - 5.966 * q4(3) + 1.602 * q4(4)) + &
@@ -1797,7 +1802,7 @@ end subroutine weno_seven_weight_1
 !> Compute weights for the second upwind stencil of the seventh-order WENO scheme
 subroutine weno_seven_weight_2(q4, w2)
   real, intent(in) :: q4(4)           !< Tracer values on the four-point stencil [A ~> a]
-  real, intent(inout) :: w2           !< Weight for this stencil [A ~> a]
+  real, intent(inout) :: w2           !< Weight for this stencil [A2 ~> a2]
 
   w2 = q4(1) * (0.267 * q4(1) - 1.642 * q4(2) + 1.602 * q4(3) - 0.494 * q4(4)) + &
      q4(2) * (2.843 * q4(2) - 5.966 * q4(3) + 1.922 * q4(4)) + &
@@ -1808,7 +1813,7 @@ end subroutine weno_seven_weight_2
 !> Compute weights for the first upwind stencil of the seventh-order WENO scheme
 subroutine weno_seven_weight_3(q4, w3)
   real, intent(in) :: q4(4)           !< Tracer values on the four-point stencil [A ~> a]
-  real, intent(inout) :: w3           !< Weight for this stencil [A ~> a]
+  real, intent(inout) :: w3           !< Weight for this stencil [A2 ~> a2]
 
   w3 = q4(1) * (0.547  * q4(1) - 3.882 * q4(2) + 4.642 * q4(3) - 1.854 * q4(4)) + &
      q4(2) * (7.043 * q4(2) - 17.246 * q4(3) + 7.042 * q4(4)) + &
@@ -1820,8 +1825,9 @@ end subroutine weno_seven_weight_3
 subroutine weno_seven_reconstruction_0(q4, p0)
   real, intent(in) :: q4(4)            !< Tracer values on the four-point stencil [A ~> a]
   real, intent(inout) :: p0            !< Reconstruction of the quantity [A ~> a]
+  real, parameter :: C1_24 = 1.0/24.0  ! One twenty fourth [nondim]
 
-  p0 = (6 * q4(1) + 26 * q4(2) - 10 * q4(3) + 2 * q4(4)) / 24.0
+  p0 = (6 * q4(1) + 26 * q4(2) - 10 * q4(3) + 2 * q4(4)) * C1_24
 
 end subroutine weno_seven_reconstruction_0
 
@@ -1829,8 +1835,9 @@ end subroutine weno_seven_reconstruction_0
 subroutine weno_seven_reconstruction_1(q4, p1)
   real, intent(in) :: q4(4)            !< Tracer values on the four-point stencil [A ~> a]
   real, intent(inout) :: p1            !< Reconstruction of the quantity [A ~> a]
+  real, parameter :: C1_24 = 1.0/24.0  ! One twenty fourth [nondim]
 
-  p1 = (-2 * q4(1) + 14 * q4(2) + 14 * q4(3) - 2 * q4(4)) / 24.0
+  p1 = (-2 * q4(1) + 14 * q4(2) + 14 * q4(3) - 2 * q4(4)) * C1_24
 
 end subroutine weno_seven_reconstruction_1
 
@@ -1838,8 +1845,9 @@ end subroutine weno_seven_reconstruction_1
 subroutine weno_seven_reconstruction_2(q4, p2)
   real, intent(in) :: q4(4)             !< Tracer values on the four-point stencil [A ~> a]
   real, intent(inout) :: p2             !< Reconstruction of the quantity [A ~> a]
+  real, parameter :: C1_24 = 1.0/24.0   ! One twenty fourth [nondim]
 
-  p2 = (2 * q4(1) - 10 * q4(2) + 26 * q4(3) + 6 * q4(4)) / 24.0
+  p2 = (2 * q4(1) - 10 * q4(2) + 26 * q4(3) + 6 * q4(4)) * C1_24
 
 end subroutine weno_seven_reconstruction_2
 
@@ -1847,8 +1855,9 @@ end subroutine weno_seven_reconstruction_2
 subroutine weno_seven_reconstruction_3(q4, p3)
   real, intent(in) :: q4(4)            !< Tracer values on the four-point stencil [A ~> a]
   real, intent(inout) :: p3            !< Reconstruction of the quantity [A ~> a]
+  real, parameter :: C1_24 = 1.0/24.0  ! One twenty fourth [nondim]
 
-  p3 = (-6 * q4(1) + 26 * q4(2) - 46 * q4(3) + 50 * q4(4)) / 24.0
+  p3 = (-6 * q4(1) + 26 * q4(2) - 46 * q4(3) + 50 * q4(4)) * C1_24
 
 end subroutine weno_seven_reconstruction_3
 

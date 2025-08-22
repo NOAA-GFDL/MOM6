@@ -1655,7 +1655,6 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
         call pass_var(CS%h_av, G%Domain, halo=cor_stencil, clock=id_clock_pass_init)
      !     call pass_var(CS%h_av, G%Domain, clock=id_clock_pass_init)
       else
-        ! The computation domain size might need to be increased for the WENO schemes
         do k=1,nz ; do j=jsd,jed ; do i=isd,ied ; h_tmp(i,j,k) = h(i,j,k) ; enddo ; enddo ; enddo
         call continuity(CS%u_av, CS%v_av, h, h_tmp, uh, vh, dt, G, GV, US, CS%continuity_CSp, CS%OBC, pbv)
         call pass_var(h_tmp, G%Domain, clock=id_clock_pass_init)
