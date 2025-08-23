@@ -1432,17 +1432,34 @@ subroutine UP3_Koren_limiter_reconstruction(q4,u,qr)
   real, parameter     :: C1_6 = 1.0/6.0   ! The ratio of 1/6 [nondim]
 
   if (u>0.) then
-    theta = (q4(2) - q4(1))/(q4(3) - q4(2) + 1e-20)
-    psi = max(0., min(1., C1_3 + C1_6*theta, theta)) ! limiter introduced by Koren (1993)
-    qr = q4(2) + psi*(q4(3) - q4(2))
+    if (q4(3) == q4(2)) then
+      qr = q4(2)
+    else 
+      theta = (q4(2) - q4(1))/(q4(3) - q4(2))
+      psi = max(0., min(1., C1_3 + C1_6*theta, theta)) ! limiter introduced by Koren (1993)
+      qr = q4(2) + psi*(q4(3) - q4(2))
+    endif
   else
-    theta = (q4(4) - q4(3))/(q4(3) - q4(2) + 1e-20)
-    psi = max(0., min(1., C1_3 + C1_6*theta, theta))
-    qr = q4(3) + psi*(q4(2) - q4(3))
+    if (q4(3) == q4(2)) then
+      qr = q4(3)
+    else
+      theta = (q4(4) - q4(3))/(q4(3) - q4(2))
+      psi = max(0., min(1., C1_3 + C1_6*theta, theta))
+      qr = q4(3) + psi*(q4(2) - q4(3))
+    endif
   endif
 
 end subroutine UP3_Koren_limiter_reconstruction
 
+!> Compute the factor for the WENO weights
+function fac_fn(tau, b) result(fac)
+  real, intent(in)  :: tau  !< Difference of the smoothness indicator [A ~> a]
+  real, intent(in)  :: b    !< The smoothness indicator [A ~> a]
+  real :: fac               !< The factor for the weight [nondim]
+
+  fac = (1 + tau / b)**2; if (b == 0.) fac = 1.0e40
+
+end function fac_fn
 
 
 !> Reconstruct the tracer (e.g., PV, vorticity) onto the point i-1/2 using a third-order WENO scheme
@@ -1463,7 +1480,7 @@ subroutine weno_three_h_weight_reconstruction(q4, h4, u4, &
     real :: c0, c1                        ! Intermediate reconstruction of q [A ~> a]
     real :: d0, d1                        ! Intermediate reconstruction of h [L ~> m]
     real :: b0, b1                        ! Smoothness indicator [A ~> a]
-    real :: tau                           ! Temporary variables [nondim]
+    real :: tau                           ! Difference of smoothness indicator [A ~> a]
     real :: w0, w1                        ! Weights [nondim]
     real :: s                             ! Temporary variables [nondim]
     real, parameter :: C2_3 = 2.0/3.0     ! The ratio of 2/3 [nondim]
@@ -1498,8 +1515,8 @@ subroutine weno_three_h_weight_reconstruction(q4, h4, u4, &
     endif
 
     tau = abs(b0-b1)
-    w0  = C2_3 * (1 + (tau / (b0 + 1e-20))**2)
-    w1  = C1_3 * (1 + (tau / (b1 + 1e-20))**2)
+    w0  = C2_3 * fac_fn(tau, b0) 
+    w1  = C1_3 * fac_fn(tau, b1)
 
     s = 1. / (w0 + w1)
     w0 = w0 * s
@@ -1562,7 +1579,7 @@ subroutine weno_five_h_weight_reconstruction(q6, h6, u6, &
     real :: c0, c1, c2                            ! Intermediate reconstruction of hq[A ~> a]
     real :: d0, d1, d2                            ! Intermediate reconstruction of h [L ~> m]
     real :: b0, b1, b2                            ! Smoothness indicator [A ~> a]
-    real :: tau                                   ! Temporary variables [nondim]
+    real :: tau                                   ! Difference of smoothness indicators [A ~> a]
     real :: w0, w1, w2                            ! Weights [nondim]
     real :: s                                     ! Temporary variables [nondim]
     real, parameter :: C3_10 = 3.0/10.0           ! The ratio of 3/10 [nondim]
@@ -1606,9 +1623,9 @@ subroutine weno_five_h_weight_reconstruction(q6, h6, u6, &
     endif
 
     tau = abs(b0 - b2)
-    w0  = C3_10 * (1 + (tau / (b0 + 1e-20))**2)
-    w1  = C3_5  * (1 + (tau / (b1 + 1e-20))**2)
-    w2  = C1_10 * (1 + (tau / (b2 + 1e-20))**2)
+    w0  = C3_10 * fac_fn(tau, b0)
+    w1  = C3_5  * fac_fn(tau, b1)
+    w2  = C1_10 * fac_fn(tau, b2)
 
     s = 1. / (w0 + w1 + w2)
     w0 = w0 * s
@@ -1705,7 +1722,7 @@ subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
   real :: c0, c1, c2, c3      ! Intermediate reconstruction of hq [A ~> a]
   real :: d0, d1, d2, d3      ! Intermediate reconstruction of h [L ~> m]
   real :: b0, b1, b2, b3      ! Smoothness indicator [A ~> a]
-  real :: tau                 ! Temporary variables [nondim]
+  real :: tau                 ! Difference of smoothness indicators [A ~> a]
   real :: w0, w1, w2, w3      ! Weights [nondim]
   real :: s                   ! Temporary variables [nondim]
   real, parameter :: C4_35 = 4.0/35.0 ! The ratio of 4/35 [nondim]
@@ -1758,10 +1775,10 @@ subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
   endif
 
   tau = abs((b0 - b3) + 3 * (b1 - b2))
-  w0  = C4_35  * (1 + (tau / (b0 + 1e-20))**2)
-  w1  = C18_35 * (1 + (tau / (b1 + 1e-20))**2)
-  w2  = C12_35 * (1 + (tau / (b2 + 1e-20))**2)
-  w3  = C1_35  * (1 + (tau / (b3 + 1e-20))**2)
+  w0  = C4_35  * fac_fn(tau, b0)
+  w1  = C18_35 * fac_fn(tau, b1)
+  w2  = C12_35 * fac_fn(tau, b2)
+  w3  = C1_35  * fac_fn(tau, b3)
 
   s = 1. / (w0 + w1 + w2 + w3)
   w0 = w0 * s
