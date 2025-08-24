@@ -878,7 +878,7 @@ subroutine EFP_list_sum_across_PEs(EFPs, nval, errors)
     do n=1,ni ; EFPs(i)%v(n) = ints(n,i) ; enddo
     if (present(errors)) errors(i) = overflow_error
     if (overflow_error) then
-      write (mesg,'("EFP_list_sum_across_PEs error at ",i6," val was ",ES12.6, ", prec_error = ",ES12.6)') &
+      write (mesg,'("EFP_list_sum_across_PEs error at ",i0," val was ",ES12.6, ", prec_error = ",ES12.6)') &
              i, EFP_to_real(EFPs(i)), real(prec_error)
       call MOM_error(WARNING, mesg)
     endif

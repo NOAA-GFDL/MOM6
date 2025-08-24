@@ -898,7 +898,7 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
     segstr = ''
     call get_param(PF, mdl, segnam, segstr)
     if (segstr == '') then
-      write(mesg,'("No OBC_SEGMENT_XXX_DATA string for OBC segment ",I3)') n
+      write(mesg,'("No OBC_SEGMENT_XXX_DATA string for OBC segment ",I0)') n
       call MOM_error(FATAL, mesg)
     endif
 
@@ -969,7 +969,7 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
           call MOM_error(FATAL," Unable to open OBC file " // trim(filename))
 
         if (OBC%brushcutter_mode .and. (modulo(siz(1),2) == 0 .or. modulo(siz(2),2) == 0)) then
-          write(mesg,'("Brushcutter mode sizes ", I6, I6)') siz(1), siz(2)
+          write(mesg,'("Brushcutter mode sizes ", I0, I0)') siz(1), siz(2)
           call MOM_error(WARNING, mesg // " " // trim(filename) // " " // trim(fieldname))
           call MOM_error(FATAL,'segment data are not on the supergrid')
         endif
@@ -1060,7 +1060,7 @@ subroutine initialize_segment_data(G, GV, US, OBC, PF)
         segment%v_values_needed .or. segment%vamp_values_needed .or. segment%vphase_values_needed .or. &
         segment%t_values_needed .or. segment%s_values_needed .or. segment%g_values_needed .or. &
         segment%z_values_needed .or. segment%zamp_values_needed .or. segment%zphase_values_needed ) then
-      write(mesg,'("Values needed for OBC segment ",I3)') n
+      write(mesg,'("Values needed for OBC segment ",I0)') n
       call MOM_error(FATAL, mesg)
     endif
   enddo
@@ -1798,10 +1798,10 @@ subroutine parse_segment_str(ni_global, nj_global, segment_str, l, m, n, action_
 
   ! checking if the number of provided OBC types is less than or equal to 8
   if (extract_word(segment_str,',',3+size(action_str))/="") then
-    write(max_words, '(I3)') size(action_str)
+    write(max_words, '(I0)') size(action_str)
     call MOM_error(FATAL, "MOM_open_boundary.F90, parse_segment_str: "// &
                    "Number of OBC descriptor words in '" // trim(segment_str) // "' is too large. " // &
-                   "There can be at most " // trim(adjustl(max_words)) // " descriptor words.")
+                   "There can be at most " // trim(max_words) // " descriptor words.")
   endif
 
   ! Type of open boundary condition
@@ -4611,7 +4611,7 @@ subroutine register_OBC(name, param_file, Reg)
   if (.not. associated(Reg)) call OBC_registry_init(param_file, Reg)
 
   if (Reg%nobc>=MAX_FIELDS_) then
-    write(mesg,'("Increase MAX_FIELDS_ in MOM_memory.h to at least ",I3," to allow for &
+    write(mesg, '("Increase MAX_FIELDS_ in MOM_memory.h to at least ",I0," to allow for &
         &all the open boundaries being registered via register_OBC.")') Reg%nobc+1
     call MOM_error(FATAL,"MOM register_OBC: "//mesg)
   endif
@@ -4644,9 +4644,8 @@ subroutine OBC_registry_init(param_file, Reg)
 
   init_calls = init_calls + 1
   if (init_calls > 1) then
-    write(mesg,'("OBC_registry_init called ",I3, &
-      &" times with different registry pointers.")') init_calls
-    if (is_root_pe()) call MOM_error(WARNING,"MOM_open_boundary"//mesg)
+    write(mesg,'("OBC_registry_init called ",I0," times with different registry pointers.")') init_calls
+    if (is_root_pe()) call MOM_error(WARNING,"MOM_open_boundary: "//trim(mesg))
   endif
 
 end subroutine OBC_registry_init
@@ -4750,7 +4749,7 @@ subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, &
   call segment_tracer_registry_init(param_file, segment)
 
   if (segment%tr_Reg%ntseg>=MAX_FIELDS_) then
-    write(mesg,'("Increase MAX_FIELDS_ in MOM_memory.h to at least ",I3," to allow for &
+    write(mesg,'("Increase MAX_FIELDS_ in MOM_memory.h to at least ",I0," to allow for &
         &all the tracers being registered via register_segment_tracer.")') segment%tr_Reg%ntseg+1
     call MOM_error(FATAL,"MOM register_segment_tracer: "//mesg)
   endif
@@ -5169,7 +5168,7 @@ subroutine mask_outside_OBCs(G, US, param_file, OBC)
   do j=G%jsd,G%jed ; do i=G%isd,G%ied
     if (color(i,j) /= color2(i,j)) then
       fatal_error = .True.
-      write(mesg,'("MOM_open_boundary: problem with OBC segments specification at ",I5,",",I5," during\n", &
+      write(mesg,'("MOM_open_boundary: problem with OBC segments specification at ",I0,",",I0," during\n", &
           &"the masking of the outside grid points.")') i, j
       call MOM_error(WARNING,"MOM mask_outside_OBCs: "//mesg, all_print=.true.)
     endif
@@ -5377,7 +5376,7 @@ subroutine open_boundary_register_restarts(HI, GV, US, OBC, Reg, param_file, res
     ! This would be coming from user code such as DOME.
     if (OBC%ntr /= Reg%ntr) then
 !        call MOM_error(FATAL, "open_boundary_register_restarts: Inconsistent value for ntr")
-      write(mesg,'("Inconsistent values for ntr ", I8," and ",I8,".")') OBC%ntr, Reg%ntr
+      write(mesg,'("Inconsistent values for ntr ", I0," and ",I0,".")') OBC%ntr, Reg%ntr
       call MOM_error(WARNING, 'open_boundary_register_restarts: '//mesg)
     endif
   endif
@@ -5854,13 +5853,13 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment, fld, at_node)
   ! call sum_across_PEs(contractions)
   ! if ((contractions > 0) .and. (is_root_pe())) then
   !    write(mesg,'("Thickness OBCs were contracted ",'// &
-  !         '"to fit topography in ",I8," places.")') contractions
+  !         '"to fit topography in ",I0," places.")') contractions
   !    call MOM_error(WARNING, 'adjustEtaToFitBathymetry: '//mesg)
   ! endif
   ! call sum_across_PEs(dilations)
   ! if ((dilations > 0) .and. (is_root_pe())) then
   !    write(mesg,'("Thickness OBCs were dilated ",'// &
-  !         '"to fit topography in ",I8," places.")') dilations
+  !         '"to fit topography in ",I0," places.")') dilations
   !    call MOM_error(WARNING, 'adjustEtaToFitBathymetry: '//mesg)
   ! endif
 
@@ -6452,7 +6451,7 @@ subroutine write_OBC_info(OBC, G, GV, US)
 
   turns = modulo(G%HI%turns, 4)
 
-  write(mesg, '("OBC has ", I3, " segments.")') OBC%number_of_segments
+  write(mesg, '("OBC has ", I0, " segments.")') OBC%number_of_segments
   call MOM_mesg(mesg, verb=1)
   !  call MOM_error(WARNING, mesg)
 
@@ -6502,7 +6501,7 @@ subroutine write_OBC_info(OBC, G, GV, US)
   if (OBC%debug) call MOM_mesg("debug", verb=1)
   if (OBC%ramp) call MOM_mesg("ramp", verb=1)
   if (OBC%ramping_is_activated) call MOM_mesg("ramping_is_activated", verb=1)
-  write(mesg, '("n_tide_constituents ", I3)') OBC%n_tide_constituents
+  write(mesg, '("n_tide_constituents ", I0)') OBC%n_tide_constituents
   call MOM_mesg(mesg, verb=1)
   if (OBC%n_tide_constituents > 0) then
     do c=1,OBC%n_tide_constituents
@@ -6528,18 +6527,18 @@ subroutine write_OBC_info(OBC, G, GV, US)
     dir = segment%direction
 
     unrot_dir = rotate_OBC_segment_direction(dir, -turns)
-    write(mesg, '(" Segment ", I3, " has direction ", I3)') n, unrot_dir
-    if (unrot_dir == OBC_DIRECTION_N)  write(mesg, '(" Segment ", I3, " is Northern")') n
-    if (unrot_dir == OBC_DIRECTION_S)  write(mesg, '(" Segment ", I3, " is Southern")') n
-    if (unrot_dir == OBC_DIRECTION_E)  write(mesg, '(" Segment ", I3, " is Eastern")') n
-    if (unrot_dir == OBC_DIRECTION_W)  write(mesg, '(" Segment ", I3, " is Western")') n
+    write(mesg, '(" Segment ", I0, " has direction ", I0)') n, unrot_dir
+    if (unrot_dir == OBC_DIRECTION_N)  write(mesg, '(" Segment ", I0, " is Northern")') n
+    if (unrot_dir == OBC_DIRECTION_S)  write(mesg, '(" Segment ", I0, " is Southern")') n
+    if (unrot_dir == OBC_DIRECTION_E)  write(mesg, '(" Segment ", I0, " is Eastern")') n
+    if (unrot_dir == OBC_DIRECTION_W)  write(mesg, '(" Segment ", I0, " is Western")') n
     call MOM_mesg(mesg, verb=1)
 
-    ! write(mesg, '("  range: ", 4I3)') segment%Is_obc, segment%Ie_obc, segment%Js_obc, segment%Je_obc
+    ! write(mesg, '("  range:", 4(x,I0))') segment%Is_obc, segment%Ie_obc, segment%Js_obc, segment%Je_obc
     if (modulo(turns, 2) == 0) then
-      write(mesg, '("  size: ", 4I3)') 1+abs(segment%Ie_obc-segment%Is_obc), 1+abs(segment%Je_obc-segment%Js_obc)
+      write(mesg, '("  size:", 2(x,I0))') 1+abs(segment%Ie_obc-segment%Is_obc), 1+abs(segment%Je_obc-segment%Js_obc)
     else
-      write(mesg, '("  size: ", 4I3)') 1+abs(segment%Je_obc-segment%Js_obc), 1+abs(segment%Ie_obc-segment%Is_obc)
+      write(mesg, '("  size:", 2(x,I0))') 1+abs(segment%Je_obc-segment%Js_obc), 1+abs(segment%Ie_obc-segment%Is_obc)
     endif
     call MOM_mesg(mesg, verb=1)
 
@@ -6624,8 +6623,8 @@ subroutine chksum_OBC_segments(OBC, G, GV, US, nk)
     segment => OBC%segment(n_seg)
     dir = segment%direction
 
-    write(segno, '(I3)') n
-    sn = '('//trim(adjustl(segno))//')'
+    write(segno, '(I0)') n
+    sn = '('//trim(segno)//')'
 
     ! Turn each segment and write it as though it is an eastern face.
     norm = 0.0 ; tang = 0.0
