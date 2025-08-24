@@ -278,7 +278,7 @@ subroutine set_up_oda_incupd_field(sp_val, G, GV, CS)
 
   CS%fldno = CS%fldno + 1
   if (CS%fldno > MAX_FIELDS_) then
-    write(mesg,'("Increase MAX_FIELDS_ to at least ",I3," in MOM_memory.h or decrease &
+    write(mesg,'("Increase MAX_FIELDS_ to at least ",I0," in MOM_memory.h or decrease &
            &the number of fields increments in the call to &
            &initialize_oda_incupd." )') CS%fldno
     call MOM_error(FATAL,"set_up_oda_incupd_field: "//mesg)

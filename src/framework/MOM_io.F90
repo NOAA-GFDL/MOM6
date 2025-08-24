@@ -777,7 +777,7 @@ function num_timelevels(filename, varname, min_dims) result(n_time)
 
   if (present(min_dims)) then
     if (ndims < min_dims-1) then
-      write(msg, '(I3)') min_dims
+      write(msg, '(I0)') min_dims
       call MOM_error(WARNING, "num_timelevels: variable "//trim(varname)//" in file "//&
           trim(filename)//" has fewer than min_dims = "//trim(msg)//" dimensions.")
       n_time = -1
@@ -3072,7 +3072,7 @@ function ensembler(name, ens_no_in) result(en_nm)
     ens_no = get_ensemble_id()
   endif
 
-  write(ens_num_char, '(I10)') ens_no ; ens_num_char = adjustl(ens_num_char)
+  write(ens_num_char, '(I0)') ens_no
   do
     is = index(en_nm,"%E")
     if (is == 0) exit

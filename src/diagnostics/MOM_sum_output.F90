@@ -853,10 +853,8 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
   elseif (reday < 1.0e11) then ; write(day_str, '(F15.3)') reday
   else ;                         write(day_str, '(ES15.9)') reday ; endif
 
-  if     (n < 1000000)   then ; write(n_str, '(I6)')  n
-  elseif (n < 10000000)  then ; write(n_str, '(I7)')  n
-  elseif (n < 100000000) then ; write(n_str, '(I8)')  n
-  else                        ; write(n_str, '(I10)') n ; endif
+  if (n < 1000000) then ; write(n_str, '(I6)') n
+  else                  ; write(n_str, '(I0)') n ; endif
 
   date_str = trim(mesg_intro)//trim(day_str)
   if (date_stamped) &
