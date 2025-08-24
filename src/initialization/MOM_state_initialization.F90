@@ -593,9 +593,9 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
     if ( use_temperature ) call hchksum(tv%T, "MOM_initialize_state: T ", G%HI, haloshift=1, unscale=US%C_to_degC)
     if ( use_temperature ) call hchksum(tv%S, "MOM_initialize_state: S ", G%HI, haloshift=1, unscale=US%S_to_ppt)
     if ( use_temperature .and. debug_layers) then ; do k=1,nz
-      write(mesg,'("MOM_IS: T[",I2,"]")') k
+      write(mesg,'("MOM_IS: T[",I0,"]")') k
       call hchksum(tv%T(:,:,k), mesg, G%HI, haloshift=1, unscale=US%C_to_degC)
-      write(mesg,'("MOM_IS: S[",I2,"]")') k
+      write(mesg,'("MOM_IS: S[",I0,"]")') k
       call hchksum(tv%S(:,:,k), mesg, G%HI, haloshift=1, unscale=US%S_to_ppt)
     enddo ; endif
   endif
@@ -877,7 +877,7 @@ subroutine initialize_thickness_from_file(h, depth_tot, G, GV, US, param_file, f
 
       if ((inconsistent > 0) .and. (is_root_pe())) then
         write(mesg,'("Thickness initial conditions are inconsistent ",'// &
-                 '"with topography in ",I8," places.")') inconsistent
+                 '"with topography in ",I0," places.")') inconsistent
         call MOM_error(WARNING, mesg)
       endif
     endif
@@ -922,7 +922,7 @@ subroutine adjustEtaToFitBathymetry(G, GV, US, eta, h, ht, dZ_ref_eta)
   call sum_across_PEs(contractions)
   if ((contractions > 0) .and. (is_root_pe())) then
     write(mesg,'("Thickness initial conditions were contracted ",'// &
-               '"to fit topography in ",I8," places.")') contractions
+               '"to fit topography in ",I0," places.")') contractions
     call MOM_error(WARNING, 'adjustEtaToFitBathymetry: '//mesg)
   endif
 
@@ -960,7 +960,7 @@ subroutine adjustEtaToFitBathymetry(G, GV, US, eta, h, ht, dZ_ref_eta)
   call sum_across_PEs(dilations)
   if ((dilations > 0) .and. (is_root_pe())) then
     write(mesg,'("Thickness initial conditions were dilated ",'// &
-               '"to fit topography in ",I8," places.")') dilations
+               '"to fit topography in ",I0," places.")') dilations
     call MOM_error(WARNING, 'adjustEtaToFitBathymetry: '//mesg)
   endif
 
@@ -3023,7 +3023,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
 
       if ((inconsistent > 0) .and. (is_root_pe())) then
         write(mesg, '("Thickness initial conditions are inconsistent ",'// &
-                    '"with topography in ",I5," places.")') inconsistent
+                    '"with topography in ",I0," places.")') inconsistent
         call MOM_error(WARNING, mesg)
       endif
     endif

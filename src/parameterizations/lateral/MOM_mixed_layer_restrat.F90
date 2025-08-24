@@ -364,7 +364,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
     do j=js,je ; do i=is,ie
       if ((G%mask2dT(i,j) > 0.0) .and. (mle_fl_2d(i,j) < 0.0)) then
         write(mesg,'(" Time_interp negative MLE frontal-length scale of ",(1pe12.4)," at i,j = ",&
-                  & 2(i3), "lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
+                  & I0,", ",I0," lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
                   mle_fl_2d(i,j), i, j, G%geoLonT(i,j), G%geoLatT(i,j)
         call MOM_error(FATAL, "MOM_mixed_layer_restrat mixedlayer_restrat_OM4: "//trim(mesg))
       endif

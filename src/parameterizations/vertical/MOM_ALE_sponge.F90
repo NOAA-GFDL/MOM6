@@ -728,7 +728,7 @@ subroutine set_up_ALE_sponge_field_fixed(sp_val, G, GV, f_ptr, CS,  &
 
   CS%fldno = CS%fldno + 1
   if (CS%fldno > MAX_FIELDS_) then
-    write(mesg,'("Increase MAX_FIELDS_ to at least ",I3," in MOM_memory.h or decrease &
+    write(mesg,'("Increase MAX_FIELDS_ to at least ",I0," in MOM_memory.h or decrease &
            &the number of fields to be damped in the call to &
            &initialize_ALE_sponge." )') CS%fldno
     call MOM_error(FATAL,"set_up_ALE_sponge_field: "//mesg)
@@ -794,7 +794,7 @@ subroutine set_up_ALE_sponge_field_varying(filename, fieldname, Time, G, GV, US,
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   CS%fldno = CS%fldno + 1
   if (CS%fldno > MAX_FIELDS_) then
-    write(mesg, '("Increase MAX_FIELDS_ to at least ",I3," in MOM_memory.h or decrease "//&
+    write(mesg, '("Increase MAX_FIELDS_ to at least ",I0," in MOM_memory.h or decrease "//&
         &"the number of fields to be damped in the call to initialize_ALE_sponge." )') CS%fldno
     call MOM_error(FATAL,"set_up_ALE_sponge_field: "//mesg)
   endif

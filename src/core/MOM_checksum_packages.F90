@@ -376,7 +376,7 @@ subroutine MOM_state_stats(mesg, u, v, h, Temp, Salt, G, GV, US, allowChange, pe
         write(0,'(a,2f12.5)') 'x,y=', G%geoLonT(i,j), G%geoLatT(i,j)
         write(0,'(a3,3a12)') 'k','h','Temp','Salt'
         do k = 1, nz
-          write(0,'(i3,3es12.4)') k, h(i,j,k), T_scale*Temp(i,j,k), S_scale*Salt(i,j,k)
+          write(0,'(I0," ",3es12.4)') k, h(i,j,k), T_scale*Temp(i,j,k), S_scale*Salt(i,j,k)
         enddo
         stop 'Extremum detected'
       endif
@@ -389,7 +389,7 @@ subroutine MOM_state_stats(mesg, u, v, h, Temp, Salt, G, GV, US, allowChange, pe
         write(0,'(a,2f12.5)') 'x,y=',G%geoLonT(i,j),G%geoLatT(i,j)
         write(0,'(a3,3a12)') 'k','h','Temp','Salt'
         do k = 1, nz
-          write(0,'(i3,3es12.4)') k, h(i,j,k), T_scale*Temp(i,j,k), S_scale*Salt(i,j,k)
+          write(0,'(I0," ",3es12.4)') k, h(i,j,k), T_scale*Temp(i,j,k), S_scale*Salt(i,j,k)
         enddo
         stop 'Negative thickness detected'
       endif

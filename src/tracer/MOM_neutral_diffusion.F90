@@ -1750,7 +1750,7 @@ subroutine find_neutral_surface_positions_discontinuous(CS, nk, &
                                      Tr(kl_right, ki_right), Sr(kl_right, ki_right), Pres_r(kl_right,ki_right), &
                                      Tl(kl_left, ki_left),   Sl(kl_left, ki_left)  , Pres_l(kl_left,ki_left),   &
                                      dRho)
-      if (CS%debug) write(stdout,'(A,I2,A,E12.4,A,I2,A,I2,A,I2,A,I2)') &
+      if (CS%debug) write(stdout,'(A,I0,A,E12.4,A,I0,A,I0,A,I0,A,I0)') &
           "k_surface=",k_surface, "  dRho=",CS%R_to_kg_m3*dRho, &
           "kl_left=",kl_left, "  ki_left=",ki_left, "  kl_right=",kl_right, "  ki_right=",ki_right
       ! Which column has the lighter surface for the current indexes, kr and kl
@@ -1783,8 +1783,8 @@ subroutine find_neutral_surface_positions_discontinuous(CS, nk, &
         KoL(k_surface) = kl_left
 
         if (CS%debug) then
-          write(stdout,'(A,I2)') "Searching left layer ", kl_left
-          write(stdout,'(A,I2,1X,I2)') "Searching from right: ", kl_right, ki_right
+          write(stdout,'(A,I0)') "Searching left layer ", kl_left
+          write(stdout,'(A,I0,1X,I0)') "Searching from right: ", kl_right, ki_right
           write(stdout,*) "Temp/Salt Reference: ", Tr(kl_right,ki_right), Sr(kl_right,ki_right)
           write(stdout,*) "Temp/Salt Top L: ", Tl(kl_left,1), Sl(kl_left,1)
           write(stdout,*) "Temp/Salt Bot L: ", Tl(kl_left,2), Sl(kl_left,2)
@@ -1806,8 +1806,8 @@ subroutine find_neutral_surface_positions_discontinuous(CS, nk, &
         KoR(k_surface) = kl_right
 
         if (CS%debug) then
-          write(stdout,'(A,I2)') "Searching right layer ", kl_right
-          write(stdout,'(A,I2,1X,I2)') "Searching from left: ", kl_left, ki_left
+          write(stdout,'(A,I0)') "Searching right layer ", kl_right
+          write(stdout,'(A,I0,1X,I0)') "Searching from left: ", kl_left, ki_left
           write(stdout,*) "Temp/Salt Reference: ", Tl(kl_left,ki_left), Sl(kl_left,ki_left)
           write(stdout,*) "Temp/Salt Top L: ", Tr(kl_right,1), Sr(kl_right,1)
           write(stdout,*) "Temp/Salt Bot L: ", Tr(kl_right,2), Sr(kl_right,2)
@@ -1819,7 +1819,7 @@ subroutine find_neutral_surface_positions_discontinuous(CS, nk, &
       else
         stop 'Else what?'
       endif
-      if (CS%debug)  write(stdout,'(A,I3,A,ES16.6,A,I2,A,ES16.6)') "KoL:", KoL(k_surface), " PoL:", PoL(k_surface), &
+      if (CS%debug)  write(stdout,'(A,I3,A,ES16.6,A,I0,A,ES16.6)') "KoL:", KoL(k_surface), " PoL:", PoL(k_surface), &
                      "     KoR:", KoR(k_surface), " PoR:", PoR(k_surface)
     endif
     ! Effective thickness
@@ -3225,11 +3225,11 @@ logical function test_data1d(verbose, nk, Po, Ptrue, title)
     do k = 1,nk
       if (Po(k) /= Ptrue(k)) then
         test_data1d = .true.
-        write(stdunit,'(a,i2,2(1x,a,f20.16),1x,a,1pe22.15,1x,a)') &
+        write(stdunit,'(a,I0,2(1x,a,f20.16),1x,a,1pe22.15,1x,a)') &
               'k=',k,'Po=',Po(k),'Ptrue=',Ptrue(k),'err=',Po(k)-Ptrue(k),'WRONG!'
       else
         if (verbose) &
-          write(stdunit,'(a,i2,2(1x,a,f20.16),1x,a,1pe22.15)') &
+          write(stdunit,'(a,I0,2(1x,a,f20.16),1x,a,1pe22.15)') &
                 'k=',k,'Po=',Po(k),'Ptrue=',Ptrue(k),'err=',Po(k)-Ptrue(k)
       endif
     enddo
@@ -3260,10 +3260,10 @@ logical function test_data1di(verbose, nk, Po, Ptrue, title)
     do k = 1,nk
       if (Po(k) /= Ptrue(k)) then
         test_data1di = .true.
-        write(stdunit,'(a,i2,2(1x,a,i5),1x,a)') 'k=',k,'Io=',Po(k),'Itrue=',Ptrue(k),'WRONG!'
+        write(stdunit,'(a,I0,2(1x,a,i5),1x,a)') 'k=',k,'Io=',Po(k),'Itrue=',Ptrue(k),'WRONG!'
       else
         if (verbose) &
-          write(stdunit,'(a,i2,2(1x,a,i5))') 'k=',k,'Io=',Po(k),'Itrue=',Ptrue(k)
+          write(stdunit,'(a,I0,2(1x,a,i5))') 'k=',k,'Io=',Po(k),'Itrue=',Ptrue(k)
       endif
     enddo
   endif

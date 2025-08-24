@@ -2800,7 +2800,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
 
     ! This might need to be moved outside of the OMP do loop directives.
     if (CS%debug_bt) then
-      write(mesg,'("BT vel update ",I4)') n
+      write(mesg,'("BT vel update ",I0)') n
       debug_halo = 0 ; if  (CS%debug_wide_halos) debug_halo = iev - ie
       call uvchksum(trim(mesg)//" PF[uv]", PFu, PFv, CS%debug_BT_HI, haloshift=debug_halo, &
                     symmetric=.true., unscale=US%L_T_to_m_s*US%s_to_T)
@@ -2888,7 +2888,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
     endif
 
     if (CS%debug_bt) then
-      write(mesg,'("BT step ",I4)') n
+      write(mesg,'("BT step ",I0)') n
       call uvchksum(trim(mesg)//" [uv]bt", ubt, vbt, CS%debug_BT_HI, haloshift=debug_halo, &
                     symmetric=.true., unscale=US%L_T_to_m_s)
       call hchksum(eta, trim(mesg)//" eta", CS%debug_BT_HI, haloshift=debug_halo, unscale=GV%H_to_MKS)

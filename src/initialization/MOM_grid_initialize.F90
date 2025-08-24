@@ -756,14 +756,14 @@ subroutine set_grid_metrics_mercator(G, param_file, US)
     y_q = find_root(Int_dj_dy, dy_dj, GP, jd, 0.0, -1.0*PI_2, PI_2, itt2)
     G%gridLatB(J) = y_q*180.0/PI
     ! if (is_root_pe()) &
-    !   write(stdout, '("J, y_q = ",I4,ES14.4," itts = ",I4)')  j, y_q, itt2
+    !   write(stdout, '("J, y_q = ",I0,", ",ES14.4," itts = ",I0)')  j, y_q, itt2
   enddo
   do j=G%jsg,G%jeg
     jd = fnRef + (j - jRef) - 0.5
     y_h = find_root(Int_dj_dy, dy_dj, GP, jd, 0.0, -1.0*PI_2, PI_2, itt1)
     G%gridLatT(j) = y_h*180.0/PI
     ! if (is_root_pe()) &
-    !   write(stdout, '("j, y_h = ",I4,ES14.4," itts = ",I4)')  j, y_h, itt1
+    !   write(stdout, '("j, y_h = ",I0,", ",ES14.4," itts = ",I0)')  j, y_h, itt1
   enddo
   do J=JsdB+J_off,JedB+J_off
     jd = fnRef + (J - jRef)
@@ -963,7 +963,7 @@ function find_root( fn, dy_df, GP, fnval, y1, ymin, ymax, ittmax)
     fnbot = fn(ybot,GP) - fnval
 
     if ((itt > 50) .and. (fnbot > 0.0)) then
-      write(warnmesg, '("PE ",I2," unable to find bottom bound for grid function. &
+      write(warnmesg, '("PE ",I0," unable to find bottom bound for grid function. &
         &x = ",ES10.4,", xmax = ",ES10.4,", fn = ",ES10.4,", dfn_dx = ",ES10.4,&
         &", seeking fn = ",ES10.4," - fn = ",ES10.4,".")') &
           pe_here(),ybot,ymin,fn(ybot,GP),dy_df(ybot,GP),fnval, fnbot
@@ -983,7 +983,7 @@ function find_root( fn, dy_df, GP, fnval, y1, ymin, ymax, ittmax)
     fntop = fn(ytop,GP) - fnval
 
     if ((itt > 50) .and. (fntop < 0.0)) then
-      write(warnmesg, '("PE ",I2," unable to find top bound for grid function. &
+      write(warnmesg, '("PE ",I0," unable to find top bound for grid function. &
         &x = ",ES10.4,", xmax = ",ES10.4,", fn = ",ES10.4,", dfn_dx = ",ES10.4, &
         &", seeking fn = ",ES10.4," - fn = ",ES10.4,".")') &
           pe_here(),ytop,ymax,fn(ytop,GP),dy_df(ytop,GP),fnval,fntop
@@ -994,7 +994,7 @@ function find_root( fn, dy_df, GP, fnval, y1, ymin, ymax, ittmax)
   ! Find the root using a bracketed variant of Newton's method, starting
   ! with a false-positon method first guess.
   if ((fntop < 0.0) .or. (fnbot > 0.0) .or. (ytop < ybot)) then
-    write(warnmesg, '("PE ",I2," find_root failed to bracket function. y = ",&
+    write(warnmesg, '("PE ",I0," find_root failed to bracket function. y = ",&
               &2ES10.4,", fn = ",2ES10.4,".")') pe_here(),ybot,ytop,fnbot,fntop
     call MOM_error(FATAL, warnmesg)
   endif
