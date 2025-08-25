@@ -119,6 +119,10 @@ type, public :: barotropic_CS ; private
   real, allocatable, dimension(:,:) :: lin_drag_u
           !< A spatially varying linear drag coefficient acting on the zonal barotropic flow
           !! [H T-1 ~> m s-1 or kg m-2 s-1].
+  real, allocatable, dimension(:,:) :: lin_drag_uv
+          !< A spatially varying linear drag coefficient acting on the zonal barotropic flow.
+          !! This represents the optional, off-diagonal component of the wave drag tensor
+          !! [H T-1 ~> m s-1 or kg m-2 s-1].
   real, allocatable, dimension(:,:) :: ubt_IC
           !< The barotropic solvers estimate of the zonal velocity that will be the initial
           !! condition for the next call to btstep [L T-1 ~> m s-1].
@@ -127,7 +131,11 @@ type, public :: barotropic_CS ; private
   real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_) :: IDatv
           !< Inverse of the basin depth at v grid points [Z-1 ~> m-1].
   real, allocatable, dimension(:,:) :: lin_drag_v
-          !< A spatially varying linear drag coefficient acting on the zonal barotropic flow
+          !< A spatially varying linear drag coefficient acting on the meridional barotropic flow
+          !! [H T-1 ~> m s-1 or kg m-2 s-1].
+  real, allocatable, dimension(:,:) :: lin_drag_vu
+          !< A spatially varying linear drag coefficient acting on the meridional barotropic flow.
+          !! This represents the optional, off-diagonal component of the wave drag tensor
           !! [H T-1 ~> m s-1 or kg m-2 s-1].
   real, allocatable, dimension(:,:) :: vbt_IC
           !< The barotropic solvers estimate of the zonal velocity that will be the initial
@@ -264,8 +272,11 @@ type, public :: barotropic_CS ; private
                              !!   HARMONIC, ARITHMETIC, HYBRID, and FROM_BT_CONT
   logical :: strong_drag     !< If true, use a stronger estimate of the retarding
                              !! effects of strong bottom drag.
-  logical :: linear_wave_drag  !< If true, apply a linear drag to the barotropic
+  logical :: linear_wave_drag  !< If true, apply a linear drag in the scalar form to the barotropic
                              !! velocities, using rates set by lin_drag_u & _v
+                             !! divided by the depth of the ocean.
+  logical :: tensor_wave_drag  !< If true, apply a linear drag in the tensor form to the barotropic
+                             !! velocities, using rates set by lin_drag_u, _v, and _uv
                              !! divided by the depth of the ocean.
   logical :: linearized_BT_PV  !< If true, the PV and interface thicknesses used
                              !! in the barotropic Coriolis calculation is time
@@ -606,6 +617,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
                   ! that introduced directly into the barotropic solver rather than coming in via
                   ! the visc_rem_u arrays from the layered equations [T-1 ~> s-1].
                   ! This is nonzero mostly for a barotropic tidal body drag.
+    Rayleigh_uv, & ! Same as Rayleigh_u but corresponding to the off-diagonal component if
+                  ! the wave drag parameterization is in the tensor form [T-1 ~> s-1].
     DCor_u, &     ! An averaged total thickness at u points [H ~> m or kg m-2].
     Datu          ! Basin depth at u-velocity grid points times the y-grid
                   ! spacing [H L ~> m2 or kg m-1].
@@ -633,6 +646,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
                   ! that introduced directly into the barotropic solver rather than coming
                   ! in via the visc_rem_v arrays from the layered equations [T-1 ~> s-1].
                   ! This is nonzero mostly for a barotropic tidal body drag.
+    Rayleigh_vu, & ! Same as Rayleigh_v but corresponding to the off-diagonal component if
+                  ! the wave drag parameterization is in the tensor form [T-1 ~> s-1].
     DCor_v, &     ! An averaged total thickness at v points [H ~> m or kg m-2].
     Datv          ! Basin depth at v-velocity grid points times the x-grid
                   ! spacing [H L ~> m2 or kg m-1].
@@ -851,6 +866,9 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   if (CS%linear_wave_drag) &
     call create_group_pass(CS%pass_eta_bt_rem, Rayleigh_u, Rayleigh_v, &
                     CS%BT_Domain, To_All+Scalar_Pair)
+  if (CS%tensor_wave_drag) &
+    call create_group_pass(CS%pass_eta_bt_rem, Rayleigh_uv, Rayleigh_vu, &
+                    CS%BT_Domain, To_All+Scalar_Pair)
 
   ! The following halo update is not needed without wide halos.  RWH
   if (((G%isd > CS%isdw) .or. (G%jsd > CS%jsdw)) .or. (Isq <= is-1) .or. (Jsq <= js-1)) &
@@ -1061,6 +1079,16 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     !$OMP parallel do default(shared)
     do J=CS%jsdw-1,CS%jedw ; do i=CS%isdw,CS%iedw
       Rayleigh_v(i,J) = 0.0
+    enddo ; enddo
+  endif
+  if (CS%tensor_wave_drag) then
+    !$OMP parallel do default(shared)
+    do j=CS%jsdw,CS%jedw ; do I=CS%isdw-1,CS%iedw
+      Rayleigh_uv(I,j) = 0.0
+    enddo ; enddo
+    !$OMP parallel do default(shared)
+    do J=CS%jsdw-1,CS%jedw ; do i=CS%isdw,CS%iedw
+      Rayleigh_vu(i,J) = 0.0
     enddo ; enddo
   endif
 
@@ -1595,6 +1623,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       bt_rem_u(I,j) = bt_rem_u(I,j) * (Htot / (Htot + CS%lin_drag_u(I,j) * dtbt))
 
       Rayleigh_u(I,j) = CS%lin_drag_u(I,j) / Htot
+
+      if (CS%lin_drag_uv(I,j) > 0.0) Rayleigh_uv(I,j) = CS%lin_drag_uv(I,j) / Htot
     endif ; enddo ; enddo
     !$OMP do
     do J=js-1,je ; do i=is,ie ; if (CS%lin_drag_v(i,J) > 0.0) then
@@ -1604,6 +1634,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       bt_rem_v(i,J) = bt_rem_v(i,J) * (Htot / (Htot + CS%lin_drag_v(i,J) * dtbt))
 
       Rayleigh_v(i,J) = CS%lin_drag_v(i,J) / Htot
+
+      if (CS%lin_drag_vu(i,J) > 0.0) Rayleigh_vu(i,J) = CS%lin_drag_vu(i,J) / Htot
     endif ; enddo ; enddo
   endif
 
@@ -1884,7 +1916,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   call btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL_v, eta_IC, &
                 eta_PF_1, d_eta_PF, eta_src, dyn_coef_eta, uhbtav, vhbtav, u_accel_bt, v_accel_bt, &
                 f_4_u, f_4_v, bt_rem_u, bt_rem_v, &
-                BT_force_u, BT_force_v, Cor_ref_u, Cor_ref_v, Rayleigh_u, Rayleigh_v, &
+                BT_force_u, BT_force_v, Cor_ref_u, Cor_ref_v, Rayleigh_u, Rayleigh_v, Rayleigh_uv, Rayleigh_vu, &
                 eta_PF, gtot_E, gtot_W, gtot_N, gtot_S, SpV_col_avg, dgeo_de, &
                 eta_sum, eta_wtd, ubt_wtd, vbt_wtd, Coru_avg, PFu_avg, LDu_avg, Corv_avg, PFv_avg, &
                 LDv_avg, use_BT_cont, interp_eta_PF, find_etaav, dt, dtbt, nstep, nfilter, &
@@ -2261,7 +2293,7 @@ end subroutine btstep
 subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL_v, eta_IC, &
                 eta_PF_1, d_eta_PF, eta_src, dyn_coef_eta, uhbtav, vhbtav, u_accel_bt, v_accel_bt, &
                 f_4_u, f_4_v, bt_rem_u, bt_rem_v, &
-                BT_force_u, BT_force_v, Cor_ref_u, Cor_ref_v, Rayleigh_u, Rayleigh_v, &
+                BT_force_u, BT_force_v, Cor_ref_u, Cor_ref_v, Rayleigh_u, Rayleigh_v, Rayleigh_uv, Rayleigh_vu, &
                 eta_PF, gtot_E, gtot_W, gtot_N, gtot_S, SpV_col_avg, dgeo_de, &
                 eta_sum, eta_wtd, ubt_wtd, vbt_wtd, Coru_avg, PFu_avg, LDu_avg, Corv_avg, PFv_avg, &
                 LDv_avg, use_BT_cont, interp_eta_PF, find_etaav, dt, dtbt, nstep, nfilter, &
@@ -2355,6 +2387,12 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
     Rayleigh_v    !< A Rayleigh drag timescale operating at v-points for drag parameterizations
                   !! that introduced directly into the barotropic solver rather than coming
                   !! in via the visc_rem_v arrays from the layered equations [T-1 ~> s-1]
+  real, dimension(SZIBW_(CS),SZJW_(CS)), intent(in) :: &
+    Rayleigh_uv   !< Same as Rayleigh_u but corresponding to the off-diagonal component if
+                  !! the wave drag parameterization is in the tensor form [T-1 ~> s-1]
+  real, dimension(SZIW_(CS),SZJBW_(CS)), intent(in) :: &
+    Rayleigh_vu   !< Same as Rayleigh_v but corresponding to the off-diagonal component if
+                  !! the wave drag parameterization is in the tensor form [T-1 ~> s-1]
   real, dimension(SZIW_(CS),SZJW_(CS)), intent(inout) :: &
     eta_PF        !< The 2-D eta field (either SSH anomaly or column mass anomaly) that was used to
                   !! calculate the input pressure gradient accelerations [H ~> m or kg m-2]
@@ -2691,22 +2729,22 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
     if (v_first) then
       ! On odd-steps, update v first.
       call btloop_update_v(dtbt, ubt, vbt, v_accel_bt, Cor_v, PFv, isv-1, iev+1, jsv-1, jev, &
-                           f_4_v, bt_rem_v, BT_force_v, Cor_ref_v, Rayleigh_v, &
+                           f_4_v, bt_rem_v, BT_force_v, Cor_ref_v, Rayleigh_v, Rayleigh_vu, &
                            wt_accel(n), G, US, CS)
 
       ! Now update the zonal velocity.
       call btloop_update_u(dtbt, ubt, vbt, u_accel_bt, Cor_u, PFu, isv-1, iev, jsv, jev, &
-                           f_4_u, bt_rem_u, BT_force_u, Cor_ref_u, Rayleigh_u, &
+                           f_4_u, bt_rem_u, BT_force_u, Cor_ref_u, Rayleigh_u, Rayleigh_uv, &
                            wt_accel(n), G, US, CS)
 
     else
       ! On even steps, update u first.
       call btloop_update_u(dtbt, ubt, vbt, u_accel_bt, Cor_u, PFu, isv-1, iev, jsv-1, jev+1, &
-                           f_4_u, bt_rem_u, BT_force_u, Cor_ref_u, Rayleigh_u, &
+                           f_4_u, bt_rem_u, BT_force_u, Cor_ref_u, Rayleigh_u, Rayleigh_uv, &
                            wt_accel(n), G, US, CS)
       ! Now update the meridional velocity.
       call btloop_update_v(dtbt, ubt, vbt, v_accel_bt, Cor_v, PFv, isv, iev, jsv-1, jev, &
-                           f_4_v, bt_rem_v, BT_force_v, Cor_ref_v, Rayleigh_v, &
+                           f_4_v, bt_rem_v, BT_force_v, Cor_ref_v, Rayleigh_v, Rayleigh_vu, &
                            wt_accel(n), G, US, CS, Cor_bracket_bug=CS%use_old_coriolis_bracket_bug)
     endif
 
@@ -2931,6 +2969,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
         !$OMP end do nowait
       endif
 
+      ! This does not include contribution from off-diagonal components of a wave drag tensor.
       if (CS%linear_wave_drag) then
         if ((CS%id_LDu_bt > 0) .or. (associated(ADp%bt_lwd_u))) then
           !$OMP do
@@ -3350,7 +3389,7 @@ end subroutine btloop_add_dyn_PF
 !> Update meridional velocity.
 subroutine btloop_update_v(dtbt, ubt, vbt, v_accel_bt, &
                            Cor_v, PFv, is_v, ie_v, Js_v, Je_v, f_4_v, &
-                           bt_rem_v, BT_force_v, Cor_ref_v, Rayleigh_v, &
+                           bt_rem_v, BT_force_v, Cor_ref_v, Rayleigh_v, Rayleigh_vu, &
                            wt_accel_n, G, US, CS, Cor_bracket_bug)
   type(ocean_grid_type),   intent(inout) :: G     !< The ocean's grid structure.
   type(barotropic_CS),     intent(inout) :: CS    !< Barotropic control structure
@@ -3390,6 +3429,9 @@ subroutine btloop_update_v(dtbt, ubt, vbt, v_accel_bt, &
     Rayleigh_v    !< A Rayleigh drag timescale operating at v-points for drag parameterizations
                   !! that introduced directly into the barotropic solver rather than coming
                   !! in via the visc_rem_v arrays from the layered equations [T-1 ~> s-1]
+  real, dimension(SZIW_(CS),SZJBW_(CS)), intent(in) :: &
+    Rayleigh_vu   !< Same as Rayleigh_v but corresponding to the off-diagonal component if
+                  !! the wave drag parameterization is in the tensor form [T-1 ~> s-1]
   real,    intent(in) :: wt_accel_n  !< The raw or relative weights of each of the barotropic timesteps
                   !! in determining the average accelerations [nondim]
   real,    intent(in) :: dtbt !< The barotropic time step [T ~> s].
@@ -3400,6 +3442,7 @@ subroutine btloop_update_v(dtbt, ubt, vbt, v_accel_bt, &
   ! Local variables
   logical :: use_bracket_bug
   integer :: i, j
+  real :: Drag_v  !< Linear wave drag applied to the u-velocity [L T-2 ~> m s-2]
 
   use_bracket_bug = .false. ; if (present(Cor_bracket_bug)) use_bracket_bug = Cor_bracket_bug
 
@@ -3442,12 +3485,21 @@ subroutine btloop_update_v(dtbt, ubt, vbt, v_accel_bt, &
     enddo ; enddo
   endif
 
+  if (CS%tensor_wave_drag) then
+    !$OMP do schedule(static)
+    do J=Js_v,Je_v ; do i=is_v,ie_v
+      Drag_v = .25 * (ubt(I-1,j) + ubt(I,j+1) + ubt(I,j) + ubt(I-1,j+1)) * Rayleigh_vu(i,J)
+      vbt(i,J) = vbt(i,J) - bt_rem_v(i,J) * dtbt * Drag_v
+      v_accel_bt(i,J) = v_accel_bt(i,J) - wt_accel_n * Drag_v
+    enddo ; enddo
+  endif
+
 end subroutine btloop_update_v
 
 !> Update zonal velocity.
 subroutine btloop_update_u(dtbt, ubt, vbt, u_accel_bt, &
                            Cor_u, PFu, Is_u, Ie_u, js_u, je_u, f_4_u, &
-                           bt_rem_u, BT_force_u, Cor_ref_u, Rayleigh_u, &
+                           bt_rem_u, BT_force_u, Cor_ref_u, Rayleigh_u, Rayleigh_uv, &
                            wt_accel_n, G, US, CS)
   type(ocean_grid_type),   intent(inout) :: G     !< The ocean's grid structure.
   type(barotropic_CS),     intent(inout) :: CS    !< Barotropic control structure
@@ -3488,6 +3540,9 @@ subroutine btloop_update_u(dtbt, ubt, vbt, u_accel_bt, &
     Rayleigh_u    !< A Rayleigh drag timescale operating at u-points for drag parameterizations
                   !! that introduced directly into the barotropic solver rather than coming
                   !! in via the visc_rem_u arrays from the layered equations [T-1 ~> s-1].
+  real, dimension(SZIBW_(CS),SZJW_(CS)), intent(in) :: &
+    Rayleigh_uv   !< Same as Rayleigh_u but corresponding to the off-diagonal component if
+                  !! the wave drag parameterization is in the tensor form [T-1 ~> s-1]
   real,    intent(in) :: wt_accel_n  !< The raw or relative weights of each of the barotropic timesteps
                                   !! in determining the average accelerations [nondim]
   type(unit_scale_type),   intent(in)  :: US      !< A dimensional unit scaling type
@@ -3495,6 +3550,7 @@ subroutine btloop_update_u(dtbt, ubt, vbt, u_accel_bt, &
   ! Local variables
   real :: vel_prev    ! The previous velocity [L T-1 ~> m s-1].
   integer :: i, j
+  real :: Drag_u  !< Linear wave drag applied to the v-velocity [L T-2 ~> m s-2]
 
   !$OMP do schedule(static)
   do j=js_u,je_u ; do I=Is_u,Ie_u
@@ -3521,6 +3577,15 @@ subroutine btloop_update_u(dtbt, ubt, vbt, u_accel_bt, &
       u_accel_bt(I,j) = u_accel_bt(I,j) + wt_accel_n * (Cor_u(I,j) + PFu(I,j))
     enddo ; enddo
     !$OMP end do nowait
+  endif
+
+  if (CS%tensor_wave_drag) then
+    !$OMP do schedule(static)
+    do j=js_u,je_u ; do I=Is_u,Ie_u
+      Drag_u = .25 * (vbt(i+1,J) + vbt(i,J-1) + vbt(i,J) + vbt(i+1,J-1)) * Rayleigh_uv(I,j)
+      ubt(I,j) = ubt(I,j) - bt_rem_u(I,j) * dtbt * Drag_u
+      u_accel_bt(I,j) = u_accel_bt(I,j) - wt_accel_n * Drag_u
+    enddo ; enddo
   endif
 
 end subroutine btloop_update_u
@@ -5491,6 +5556,10 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                                        ! name in wave_drag_file.
   character(len=80)  :: wave_drag_v    ! The wave drag piston velocity variable
                                        ! name in wave_drag_file.
+  character(len=80)  :: wave_drag_uv   ! The wave drag piston velocity variable
+                                       ! name in wave_drag_file.
+  character(len=80)  :: wave_drag_vu   ! The wave drag piston velocity variable
+                                       ! name in wave_drag_file.
   real :: mean_SL     ! The mean sea level that is used along with the bathymetry to estimate the
                       ! geometry when LINEARIZED_BT_CORIOLIS is true or BT_NONLIN_STRESS is false [Z ~> m].
   real :: Z_to_H      ! A local unit conversion factor [H Z-1 ~> nondim or kg m-3]
@@ -5785,6 +5854,18 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   call get_param(param_file, mdl, "BT_WAVE_DRAG_V", wave_drag_v, &
                  "The name of the variable in BT_WAVE_DRAG_FILE with the "//&
                  "barotropic linear wave drag piston velocities at v points.", &
+                 default="", do_not_log=.not.CS%linear_wave_drag)
+  call get_param(param_file, mdl, "BT_WAVE_DRAG_UV", wave_drag_uv, &
+                 "The name of the variable in BT_WAVE_DRAG_FILE with the "//&
+                 "barotropic linear wave drag piston velocities at u points. "// &
+                 "This is the off-diagonal component of the wave drag tensor. "// &
+                 "If unspecified, the wave drag will be in the scalar form.", &
+                 default="", do_not_log=.not.CS%linear_wave_drag)
+  call get_param(param_file, mdl, "BT_WAVE_DRAG_VU", wave_drag_vu, &
+                 "The name of the variable in BT_WAVE_DRAG_FILE with the "//&
+                 "barotropic linear wave drag piston velocities at v points. "// &
+                 "This is the off-diagonal component of the wave drag tensor. "// &
+                 "If unspecified, the wave drag will be in the scalar form.", &
                  default="", do_not_log=.not.CS%linear_wave_drag)
   call get_param(param_file, mdl, "BT_WAVE_DRAG_SCALE", wave_drag_scale, &
                  "A scaling factor for the barotropic linear wave drag "//&
@@ -6131,9 +6212,13 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
     call do_group_pass(pass_q_D_Cor, CS%BT_Domain)
   endif
 
+  CS%tensor_wave_drag = .false.
+
   if (CS%linear_wave_drag) then
     allocate(CS%lin_drag_u(IsdB:IedB,jsd:jed), source=0.0)
     allocate(CS%lin_drag_v(isd:ied,JsdB:JedB), source=0.0)
+    allocate(CS%lin_drag_uv(IsdB:IedB,jsd:jed), source=0.0)
+    allocate(CS%lin_drag_vu(isd:ied,JsdB:JedB), source=0.0)
 
     if (len_trim(wave_drag_file) > 0) then
       inputdir = "." ;  call get_param(param_file, mdl, "INPUTDIR", inputdir)
@@ -6146,6 +6231,17 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
         call MOM_read_data(wave_drag_file, wave_drag_v, CS%lin_drag_v, G%Domain, &
                            position=NORTH_FACE, scale=wave_drag_scale*GV%m_to_H*US%T_to_s)
         call pass_vector(CS%lin_drag_u, CS%lin_drag_v, G%domain, direction=To_All+SCALAR_PAIR)
+
+        ! Read off-diagonal components if the wave drag is in the tensor form
+        if (len_trim(wave_drag_uv) > 0 .and. len_trim(wave_drag_vu) > 0) then
+          CS%tensor_wave_drag = .true.
+
+          call MOM_read_data(wave_drag_file, wave_drag_uv, CS%lin_drag_uv, G%Domain, &
+                             position=EAST_FACE, scale=wave_drag_scale*GV%m_to_H*US%T_to_s)
+          call MOM_read_data(wave_drag_file, wave_drag_vu, CS%lin_drag_vu, G%Domain, &
+                             position=NORTH_FACE, scale=wave_drag_scale*GV%m_to_H*US%T_to_s)
+          call pass_vector(CS%lin_drag_uv, CS%lin_drag_vu, G%domain, direction=To_All+SCALAR_PAIR)
+        endif ! (len_trim(wave_drag_uv) > 0 .and. len_trim(wave_drag_vu) > 0)
       else
         allocate(lin_drag_h(isd:ied,jsd:jed), source=0.0)
 
@@ -6475,6 +6571,8 @@ subroutine barotropic_end(CS)
   if (allocated(CS%vbt_IC)) deallocate(CS%vbt_IC)
   if (allocated(CS%lin_drag_u)) deallocate(CS%lin_drag_u)
   if (allocated(CS%lin_drag_v)) deallocate(CS%lin_drag_v)
+  if (allocated(CS%lin_drag_uv)) deallocate(CS%lin_drag_uv)
+  if (allocated(CS%lin_drag_vu)) deallocate(CS%lin_drag_vu)
 
   if (associated(CS%debug_BT_HI)) deallocate(CS%debug_BT_HI)
   call deallocate_MOM_domain(CS%BT_domain)
