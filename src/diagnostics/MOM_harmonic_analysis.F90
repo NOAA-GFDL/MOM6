@@ -13,7 +13,7 @@ use MOM_error_handler, only : MOM_mesg, MOM_error, NOTE
 
 implicit none ; private
 
-public HA_init, HA_register, HA_accum_FtF, HA_accum_FtSSH
+public HA_init, HA_register, HA_accum
 
 #include <MOM_memory.h>
 
@@ -25,6 +25,7 @@ type, private :: HA_type
   character(len=1)  :: grid                  !< The grid on which the field is defined ('h', 'q', 'u', or 'v')
   real :: old_time = -1.0                    !< The time of the previous accumulating step [T ~> s]
   real, allocatable :: ref(:,:)              !< The initial field in arbitrary units [A]
+  real, allocatable :: FtF(:,:)              !< Accumulator of (F' * F) [nondim]
   real, allocatable :: FtSSH(:,:,:)          !< Accumulator of (F' * SSH_in) in arbitrary units [A]
   !>@{ Lower and upper bounds of input data
   integer :: is, ie, js, je
@@ -49,7 +50,6 @@ type, public :: harmonic_analysis_CS ; private
     phase0, &                                !< The phase of a tidal constituent at time 0 [rad]
     tide_fn, &                               !< Amplitude modulation of tides by nodal cycle [nondim].
     tide_un                                  !< Phase modulation of tides by nodal cycle [rad].
-  real, allocatable :: FtF(:,:)              !< Accumulator of (F' * F) for all fields [nondim]
   integer :: nc                              !< The number of tidal constituents in use
   integer :: length                          !< Number of fields of which harmonic analysis is to be performed
   character(len=16)  :: const_name(MAX_CONSTITUENTS) !< The name of each constituent
@@ -146,8 +146,6 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
   CS%length     =  0
   CS%US         =  US
 
-  allocate(CS%FtF(2*nc+1,2*nc+1), source=0.0)
-
   ! Initialize CS%list
   allocate(CS%list)
   CS%list%this  =  ha1
@@ -177,60 +175,11 @@ subroutine HA_register(key, grid, CS)
 
 end subroutine HA_register
 
-!> This subroutine accumulates the temporal basis functions in FtF.
-!! The tidal constituents are those used in MOM_tidal_forcing, plus the mean (of zero frequency).
-!! Only the main diagonal and entries below it are calculated, which are needed for Cholesky decomposition.
-subroutine HA_accum_FtF(Time, CS)
-  type(time_type),            intent(in)    :: Time    !< The current model time
-  type(harmonic_analysis_CS), intent(inout) :: CS      !< Control structure of the MOM_harmonic_analysis module
-
-  ! Local variables
-  real :: now                                          !< The relative time compared with tidal reference [T ~> s]
-  real :: cosomegat, sinomegat, ccosomegat, ssinomegat !< The components of the phase [nondim]
-  integer :: nc, c, icos, isin, cc, iccos, issin
-
-  ! Exit the accumulator in the following cases
-  if (.not. CS%HAready) return
-  if (CS%length == 0) return
-  if (Time < CS%time_start) return
-  if (Time > CS%time_end) return
-
-  nc  = CS%nc
-  now = CS%US%s_to_T * time_type_to_real(Time - CS%time_ref)
-
-  !< First entry, corresponding to the zero frequency constituent (mean)
-  CS%FtF(1,1) = CS%FtF(1,1) + 1.0
-
-  do c=1,nc
-    icos = 2*c
-    isin = 2*c+1
-    cosomegat = CS%tide_fn(c) * cos(CS%freq(c) * now + (CS%phase0(c) + CS%tide_un(c)))
-    sinomegat = CS%tide_fn(c) * sin(CS%freq(c) * now + (CS%phase0(c) + CS%tide_un(c)))
-
-    ! First column, corresponding to the zero frequency constituent (mean)
-    CS%FtF(icos,1) = CS%FtF(icos,1) + cosomegat
-    CS%FtF(isin,1) = CS%FtF(isin,1) + sinomegat
-
-    do cc=1,c
-      iccos = 2*cc
-      issin = 2*cc+1
-      ccosomegat = CS%tide_fn(cc) * cos(CS%freq(cc) * now + (CS%phase0(cc) + CS%tide_un(cc)))
-      ssinomegat = CS%tide_fn(cc) * sin(CS%freq(cc) * now + (CS%phase0(cc) + CS%tide_un(cc)))
-
-      ! Interior of the matrix, corresponding to the products of cosine and sine terms
-      CS%FtF(icos,iccos) = CS%FtF(icos,iccos) + cosomegat * ccosomegat
-      CS%FtF(icos,issin) = CS%FtF(icos,issin) + cosomegat * ssinomegat
-      CS%FtF(isin,iccos) = CS%FtF(isin,iccos) + sinomegat * ccosomegat
-      CS%FtF(isin,issin) = CS%FtF(isin,issin) + sinomegat * ssinomegat
-    enddo ! cc=1,c
-  enddo ! c=1,nc
-
-end subroutine HA_accum_FtF
-
-!> This subroutine accumulates the temporal basis functions in FtSSH and then calls HA_write to compute
+!> This subroutine accumulates the temporal basis functions in FtF and FtSSH and then calls HA_write to compute
 !! harmonic constants and write results. The tidal constituents are those used in MOM_tidal_forcing, plus the
-!! mean (of zero frequency).
-subroutine HA_accum_FtSSH(key, data, Time, G, CS)
+!! mean (of zero frequency). For FtF, only the main diagonal and entries below it are calculated, which are needed
+!! for Cholesky decomposition.
+subroutine HA_accum(key, data, Time, G, CS)
   character(len=*),           intent(in) :: key  !< Name of the current field
   real, dimension(:,:),       intent(in) :: data !< Input data of which harmonic analysis is to be performed [A]
   type(time_type),            intent(in) :: Time !< The current model time
@@ -242,8 +191,8 @@ subroutine HA_accum_FtSSH(key, data, Time, G, CS)
   type(HA_node), pointer :: tmp
   real :: now                                    !< The relative time compared with the tidal reference [T ~> s]
   real :: dt                                     !< The current time step size of the accumulator [T ~> s]
-  real :: cosomegat, sinomegat                   !< The components of the phase [nondim]
-  integer :: nc, i, j, k, c, icos, isin, is, ie, js, je
+  real :: cosomegat, sinomegat, ccosomegat, ssinomegat !< The components of the phase [nondim]
+  integer :: nc, i, j, k, c, cc, icos, isin, iccos, issin, is, ie, js, je
   character(len=128) :: mesg
 
   ! Exit the accumulator in the following cases
@@ -264,7 +213,7 @@ subroutine HA_accum_FtSSH(key, data, Time, G, CS)
   nc  = CS%nc
   now = CS%US%s_to_T * time_type_to_real(Time - CS%time_ref)
 
-  ! Additional processing at the initial accumulating step
+  !!! Additional processing at the initial accumulating step !!!
   if (ha1%old_time < 0.0) then
     ha1%old_time = now
 
@@ -278,6 +227,7 @@ subroutine HA_accum_FtSSH(key, data, Time, G, CS)
     ha1%je = UBOUND(data,2) ; je = ha1%je
 
     allocate(ha1%ref(is:ie,js:je), source=0.0)
+    allocate(ha1%FtF(2*nc+1,2*nc+1), source=0.0)
     allocate(ha1%FtSSH(is:ie,js:je,2*nc+1), source=0.0)
     ha1%ref(:,:) = data(:,:)
   endif
@@ -287,6 +237,35 @@ subroutine HA_accum_FtSSH(key, data, Time, G, CS)
 
   is = ha1%is ; ie = ha1%ie ; js = ha1%js ; je = ha1%je
 
+  !!! Accumulator of FtF !!!
+  !< First entry, corresponding to the zero frequency constituent (mean)
+  ha1%FtF(1,1) = ha1%FtF(1,1) + 1.0
+
+  do c=1,nc
+    icos = 2*c
+    isin = 2*c+1
+    cosomegat = CS%tide_fn(c) * cos(CS%freq(c) * now + (CS%phase0(c) + CS%tide_un(c)))
+    sinomegat = CS%tide_fn(c) * sin(CS%freq(c) * now + (CS%phase0(c) + CS%tide_un(c)))
+
+    ! First column, corresponding to the zero frequency constituent (mean)
+    ha1%FtF(icos,1) = ha1%FtF(icos,1) + cosomegat
+    ha1%FtF(isin,1) = ha1%FtF(isin,1) + sinomegat
+
+    do cc=1,c
+      iccos = 2*cc
+      issin = 2*cc+1
+      ccosomegat = CS%tide_fn(cc) * cos(CS%freq(cc) * now + (CS%phase0(cc) + CS%tide_un(cc)))
+      ssinomegat = CS%tide_fn(cc) * sin(CS%freq(cc) * now + (CS%phase0(cc) + CS%tide_un(cc)))
+
+      ! Interior of the matrix, corresponding to the products of cosine and sine terms
+      ha1%FtF(icos,iccos) = ha1%FtF(icos,iccos) + cosomegat * ccosomegat
+      ha1%FtF(icos,issin) = ha1%FtF(icos,issin) + cosomegat * ssinomegat
+      ha1%FtF(isin,iccos) = ha1%FtF(isin,iccos) + sinomegat * ccosomegat
+      ha1%FtF(isin,issin) = ha1%FtF(isin,issin) + sinomegat * ssinomegat
+    enddo ! cc=1,c
+  enddo ! c=1,nc
+
+  !!! Accumulator of FtSSH !!!
   !< First entry, corresponding to the zero frequency constituent (mean)
   do j=js,je ; do i=is,ie
     ha1%FtSSH(i,j,1) = ha1%FtSSH(i,j,1) + (data(i,j) - ha1%ref(i,j))
@@ -304,7 +283,7 @@ subroutine HA_accum_FtSSH(key, data, Time, G, CS)
     enddo ; enddo
   enddo ! c=1,nc
 
-  ! Compute harmonic constants and write output as Time approaches CS%time_end
+  !!! Compute harmonic constants and write output as Time approaches CS%time_end !!!
   ! This guarantees that HA_write will be called before Time becomes larger than CS%time_end
   if (time_type_to_real(CS%time_end - Time) <= dt) then
     call HA_write(ha1, Time, G, CS)
@@ -318,7 +297,7 @@ subroutine HA_accum_FtSSH(key, data, Time, G, CS)
     deallocate(ha1%FtSSH)
   endif
 
-end subroutine HA_accum_FtSSH
+end subroutine HA_accum
 
 !> This subroutine computes the harmonic constants and write output for the current field
 subroutine HA_write(ha1, Time, G, CS)
@@ -342,7 +321,7 @@ subroutine HA_write(ha1, Time, G, CS)
   allocate(FtSSHw(is:ie,js:je,2*nc+1), source=0.0)
 
   ! Compute the harmonic coefficients
-  call HA_solver(ha1, nc, CS%FtF, FtSSHw)
+  call HA_solver(ha1, nc, ha1%FtF, FtSSHw)
 
   ! Output file name
   call get_date(Time, year, month, day, hour, minute, second)

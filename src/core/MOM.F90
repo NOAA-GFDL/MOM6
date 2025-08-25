@@ -96,7 +96,7 @@ use MOM_forcing_type,          only : copy_common_forcing_fields, set_derived_fo
 use MOM_forcing_type,          only : homogenize_forcing, homogenize_mech_forcing
 use MOM_grid,                  only : ocean_grid_type, MOM_grid_init, MOM_grid_end
 use MOM_grid,                  only : set_first_direction
-use MOM_harmonic_analysis,     only : HA_accum_FtF, HA_accum_FtSSH, harmonic_analysis_CS
+use MOM_harmonic_analysis,     only : HA_accum, harmonic_analysis_CS
 use MOM_hor_index,             only : hor_index_type, hor_index_init
 use MOM_hor_index,             only : rotate_hor_index
 use MOM_interface_heights,     only : find_eta, calc_derived_thermo, thickness_to_dz
@@ -946,8 +946,6 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
         enddo ; enddo
       endif
 
-      if (associated(CS%HA_CSp)) call HA_accum_FtF(Time_Local, CS%HA_CSp)
-
       call step_MOM_dynamics(forces, CS%p_surf_begin, CS%p_surf_end, dt, &
                              dt_tradv_here, bbl_time_int, CS, &
                              Time_local, Waves=Waves)
@@ -1066,7 +1064,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
       ssh(i,j) = CS%ssh_rint(i,j)*I_wt_ssh
       CS%ave_ssh_ibc(i,j) = ssh(i,j)
     enddo ; enddo
-    if (associated(CS%HA_CSp)) call HA_accum_FtSSH('ssh', ssh, Time_local, G, CS%HA_CSp)
+    if (associated(CS%HA_CSp)) call HA_accum('ssh', ssh, Time_local, G, CS%HA_CSp)
     if (do_dyn) then
       call adjust_ssh_for_p_atm(CS%tv, G, GV, US, CS%ave_ssh_ibc, forces%p_surf_SSH, &
                                 CS%calc_rho_for_sea_lev)
