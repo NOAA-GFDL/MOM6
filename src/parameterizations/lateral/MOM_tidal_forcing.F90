@@ -566,7 +566,7 @@ subroutine tidal_forcing_init(Time, G, US, param_file, CS, HA_CS)
   enddo
 
   if (present(HA_CS)) then
-    call HA_init(Time, US, param_file, CS%time_ref, CS%nc, CS%freq, CS%phase0, CS%const_name, &
+    call HA_init(Time, US, param_file, CS%nc, CS%freq, CS%phase0, &
                  CS%tide_fn, CS%tide_un, HA_CS)
   endif
 

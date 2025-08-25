@@ -1,7 +1,8 @@
 !> Inline harmonic analysis (conventional)
 module MOM_harmonic_analysis
 
-use MOM_time_manager,  only : time_type, real_to_time, time_type_to_real, get_date, increment_date, &
+use MOM_time_manager,  only : time_type, real_to_time, time_type_to_real, &
+                              set_date, get_date, increment_date, &
                               operator(+), operator(-), operator(<), operator(>), operator(>=)
 use MOM_grid,          only : ocean_grid_type
 use MOM_unit_scaling,  only : unit_scale_type
@@ -52,7 +53,7 @@ type, public :: harmonic_analysis_CS ; private
     tide_un                                  !< Phase modulation of tides by nodal cycle [rad].
   integer :: nc                              !< The number of tidal constituents in use
   integer :: length                          !< Number of fields of which harmonic analysis is to be performed
-  character(len=16)  :: const_name(MAX_CONSTITUENTS) !< The name of each constituent
+  character(len=2), allocatable, dimension(:) :: const_name !< The name of each constituent
   character(len=255) :: path                 !< Path to directory where output will be written
   type(unit_scale_type)  :: US               !< A dimensional unit scaling type
   type(HA_node), pointer :: list => NULL()   !< A linked list for storing the HA info of different fields
@@ -62,9 +63,8 @@ contains
 
 !> This subroutine sets static variables used by this module and initializes CS%list.
 !! THIS MUST BE CALLED AT THE END OF tidal_forcing_init.
-subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name, tide_fn, tide_un, CS)
+subroutine HA_init(Time, US, param_file, nc, freq, phase0, tide_fn, tide_un, CS)
   type(time_type),       intent(in)  :: Time        !< The current model time
-  type(time_type),       intent(in)  :: time_ref    !< Reference time (t = 0) used to calculate tidal forcing
   type(unit_scale_type), intent(in)  :: US          !< A dimensional unit scaling type
   type(param_file_type), intent(in)  :: param_file  !< A structure to parse for run-time parameters
   real, intent(in) :: freq(MAX_CONSTITUENTS)        !< The frequency of a tidal constituent [T-1 ~> s-1]
@@ -72,10 +72,17 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
   real, intent(in) :: tide_fn(MAX_CONSTITUENTS)     !< Amplitude modulation of tides by nodal cycle [nondim].
   real, intent(in) :: tide_un(MAX_CONSTITUENTS)     !< Phase modulation of tides by nodal cycle [rad].
   integer,               intent(in)  :: nc          !< The number of tidal constituents in use
-  character(len=16),     intent(in)  :: const_name(MAX_CONSTITUENTS) !< The name of each constituent
   type(harmonic_analysis_CS), intent(out) :: CS     !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
+  logical :: tides                                  !< True if tidal forcing module is enabled
+  logical :: use_eq_phase                           !< If true, tidal forcing is phase-shifted to match
+                                                    !! equilibrium tide. Set to false if providing tidal phases
+                                                    !! that have already been shifted by the
+                                                    !! astronomical/equilibrium argument.
+  integer, dimension(3) :: tide_ref_date            !< Reference date (t = 0) for tidal forcing (year, month, day).
+  character(len=2) :: const_name(MAX_CONSTITUENTS)  !< The name of each constituent
+
   type(HA_type) :: ha1                              !< A temporary, null field used for initializing CS%list
   real :: HA_start_time                             !< Start time of harmonic analysis [T ~> s]
   real :: HA_end_time                               !< End time of harmonic analysis [T ~> s]
@@ -83,6 +90,37 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
   character(len=40)  :: mdl="MOM_harmonic_analysis" !< This module's name
   character(len=255) :: mesg
   integer :: year, month, day, hour, minute, second
+
+  call get_param(param_file, mdl, "TIDES", tides, &
+      "If true, apply tidal momentum forcing.", default=.false., do_not_log=.true.)
+
+  call get_param(param_file, mdl, "TIDE_REF_DATE", tide_ref_date, &
+      "Reference date to use for tidal calculations and equilibrium phase.", &
+      old_name="OBC_TIDE_REF_DATE", defaults=(/0, 0, 0/), do_not_log=tides)
+
+  call get_param(param_file, mdl, "TIDE_USE_EQ_PHASE", use_eq_phase, &
+      "If true, add the equilibrium phase argument to the specified tidal phases.", &
+      old_name="OBC_TIDE_ADD_EQ_PHASE", default=.false., do_not_log=tides)
+
+  call get_param(param_file, mdl, "HA_CONSTITUENTS", const_name, &
+      "Names of tidal constituents to be harmonically analyzed. "//&
+      "They don't have to be the same as those used in MOM_tidal_forcing.", &
+      fail_if_missing=.true.)
+
+  if (sum(tide_ref_date) == 0) then  ! tide_ref_date defaults to 0.
+    CS%time_ref = set_date(1, 1, 1, 0, 0, 0)
+  else
+    if (.not. use_eq_phase) then
+      ! Using a reference date but not using phase relative to equilibrium.
+      ! This makes sense as long as either phases are overridden, or
+      ! correctly simulating tidal phases is not desired.
+      call MOM_mesg('Tidal phases will *not* be corrected with equilibrium arguments.')
+    endif
+    CS%time_ref = set_date(tide_ref_date(1), tide_ref_date(2), tide_ref_date(3), 0, 0, 0)
+  endif
+
+  allocate(CS%const_name(nc))
+  read(const_name, *) CS%const_name
 
   ! Determine CS%time_start and CS%time_end
   call get_param(param_file, mdl, "HA_START_TIME", HA_start_time, &
@@ -137,13 +175,11 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
                  "Path to output files for runtime harmonic analysis.", default="./")
 
   ! Populate some parameters of the control structure
-  CS%time_ref   =  time_ref
   CS%freq       =  freq
   CS%phase0     =  phase0
   CS%tide_fn    =  tide_fn
   CS%tide_un    =  tide_un
   CS%nc         =  nc
-  CS%const_name =  const_name
   CS%length     =  0
   CS%US         =  US
 
