@@ -123,8 +123,7 @@ logical function register_Kelvin_OBC(param_file, CS, US, OBC_Reg)
                  "The timescale with which the inflowing open boundary velocities are nudged toward "//&
                  "their intended values with the Kelvin wave test case, or a negative value to keep "//&
                  "the value that is set when the OBC segments are initialized.", &
-                 units="s", default=1.0/(0.3*86400.), scale=US%s_to_T)
-                 !### Change the default nudging timescale to -1. or another value?
+                 units="s", default=-1.0, scale=US%s_to_T)
   call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
                  default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
   call get_param(param_file, mdl, "KELVIN_SET_OBC_INDEXING_BUGS", CS%indexing_bugs, &
@@ -233,7 +232,7 @@ subroutine Kelvin_set_OBC_data(OBC, CS, G, GV, US, h, Time)
   real    :: normal_sign ! A variable that corrects the sign of normal velocities for rotation [nondim]
   real    :: trans_sign  ! A variable that corrects the sign of transverse velocities for rotation [nondim]
   type(OBC_segment_type), pointer :: segment => NULL()
-  integer :: unrot_dir ! The unrotated direction of the segmetn
+  integer :: unrot_dir ! The unrotated direction of the segment
   integer :: turns    ! Number of index quarter turns
   integer :: i, j, k, n, is, ie, js, je, isd, ied, jsd, jed, nz
   integer :: IsdB, IedB, JsdB, JedB, isq, ieq, jsq, jeq, is_vel, ie_vel, js_vel, je_vel
