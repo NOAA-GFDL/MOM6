@@ -172,6 +172,7 @@ type, public :: MOM_dyn_split_RK2_CS ; private
                                   !! of restart files.
   logical :: calculate_SAL        !< If true, calculate self-attraction and loading.
   logical :: use_tides            !< If true, tidal forcing is enabled.
+  logical :: use_HA               !< If true, perform inline harmonic analysis.
   logical :: remap_aux            !< If true, apply ALE remapping to all of the auxiliary 3-D
                                   !! variables that are needed to reproduce across restarts,
                                   !! similarly to what is done with the primary state variables.
@@ -1434,6 +1435,8 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
                  "If true, apply tidal momentum forcing.", default=.false.)
   call get_param(param_file, mdl, "CALCULATE_SAL", CS%calculate_SAL, &
                  "If true, calculate self-attraction and loading.", default=CS%use_tides)
+  call get_param(param_file, mdl, "USE_HA", CS%use_HA, &
+                 "If true, perform inline harmonic analysis.", default=.false.)
   call get_param(param_file, mdl, "BE", CS%be, &
                  "If SPLIT is true, BE determines the relative weighting "//&
                  "of a  2nd-order Runga-Kutta baroclinic time stepping "//&
@@ -1564,8 +1567,13 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
   if (CS%calculate_SAL) call SAL_init(h, tv, G, GV, US, param_file, CS%SAL_CSp, restart_CS)
   if (CS%use_tides) then
-    call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp, CS%HA_CSp)
-    HA_CSp => CS%HA_CSp
+    if (CS%use_HA) then
+      call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp, CS%HA_CSp)
+      HA_CSp => CS%HA_CSp
+    else
+      call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
+      HA_CSp => NULL()
+    endif
   else
     HA_CSp => NULL()
   endif
