@@ -79,6 +79,7 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
   type(HA_type) :: ha1                              !< A temporary, null field used for initializing CS%list
   real :: HA_start_time                             !< Start time of harmonic analysis [T ~> s]
   real :: HA_end_time                               !< End time of harmonic analysis [T ~> s]
+  logical :: HA_ssh, HA_ubt, HA_vbt
   character(len=40)  :: mdl="MOM_harmonic_analysis" !< This module's name
   character(len=255) :: mesg
   integer :: year, month, day, hour, minute, second
@@ -150,6 +151,17 @@ subroutine HA_init(Time, US, param_file, time_ref, nc, freq, phase0, const_name,
   allocate(CS%list)
   CS%list%this  =  ha1
   nullify(CS%list%next)
+
+  ! Register variables/fields to be analyzed
+  call get_param(param_file, mdl, "HA_SSH", HA_ssh, &
+                 "If true, perform harmonic analysis of sea serface height.", default=.false.)
+  if (HA_ssh) call HA_register('ssh', 'h', CS)
+  call get_param(param_file, mdl, "HA_UBT", HA_ubt, &
+                 "If true, perform harmonic analysis of zonal barotropic velocity.", default=.false.)
+  if (HA_ubt) call HA_register('ubt', 'u', CS)
+  call get_param(param_file, mdl, "HA_VBT", HA_vbt, &
+                 "If true, perform harmonic analysis of meridional barotropic velocity.", default=.false.)
+  if (HA_vbt) call HA_register('vbt', 'v', CS)
 
 end subroutine HA_init
 

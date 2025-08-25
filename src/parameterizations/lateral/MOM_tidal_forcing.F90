@@ -10,7 +10,7 @@ use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING
 use MOM_file_parser,   only : get_param, log_version, param_file_type
 use MOM_grid,          only : ocean_grid_type
 use MOM_harmonic_analysis, &
-                       only : HA_init, HA_register, harmonic_analysis_CS
+                       only : HA_init, harmonic_analysis_CS
 use MOM_io,            only : field_exists, file_exists, MOM_read_data
 use MOM_time_manager,  only : set_date, time_type, time_type_to_real, operator(-)
 use MOM_unit_scaling,  only : unit_scale_type
@@ -261,7 +261,6 @@ subroutine tidal_forcing_init(Time, G, US, param_file, CS, HA_CS)
                                               !! calculating tidal forcing.
   type(time_type) :: nodal_time               !< Model time to calculate nodal modulation for.
   type(astro_longitudes) :: nodal_longitudes  !< Solar and lunar longitudes for tidal forcing
-  logical :: HA_ssh, HA_ubt, HA_vbt
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_tidal_forcing" ! This module's name.
@@ -569,15 +568,6 @@ subroutine tidal_forcing_init(Time, G, US, param_file, CS, HA_CS)
   if (present(HA_CS)) then
     call HA_init(Time, US, param_file, CS%time_ref, CS%nc, CS%freq, CS%phase0, CS%const_name, &
                  CS%tide_fn, CS%tide_un, HA_CS)
-    call get_param(param_file, mdl, "HA_SSH", HA_ssh, &
-                   "If true, perform harmonic analysis of sea serface height.", default=.false.)
-    if (HA_ssh) call HA_register('ssh', 'h', HA_CS)
-    call get_param(param_file, mdl, "HA_UBT", HA_ubt, &
-                   "If true, perform harmonic analysis of zonal barotropic velocity.", default=.false.)
-    if (HA_ubt) call HA_register('ubt', 'u', HA_CS)
-    call get_param(param_file, mdl, "HA_VBT", HA_vbt, &
-                   "If true, perform harmonic analysis of meridional barotropic velocity.", default=.false.)
-    if (HA_vbt) call HA_register('vbt', 'v', HA_CS)
   endif
 
   id_clock_tides = cpu_clock_id('(Ocean tides)', grain=CLOCK_MODULE)
