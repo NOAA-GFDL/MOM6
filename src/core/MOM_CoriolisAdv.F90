@@ -315,7 +315,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
   !$OMP parallel do default(private) shared(u,v,h,uh,vh,CAu,CAv,G,GV,CS,AD,Area_h,Area_q,&
   !$OMP                        RV,PV,is,ie,js,je,Isq,Ieq,Jsq,Jeq,nz,vol_neglect,h_tiny,OBC,eps_vel, &
-  !$OMP                        area_neglect, pbv, Stokes_VF)
+  !$OMP                        area_neglect, pbv, Stokes_VF, stencil)
   do k=1,nz
 
     Isq = G%IscB - stencil + 2
@@ -1519,7 +1519,7 @@ subroutine weno_three_h_weight_reconstruction(q4, h4, u4, &
     w1  = C1_3 * fac_fn(tau, b1)
 
     s = 1. / (w0 + w1)
-    w0 = w0 * s
+    w0 = w0 * s   ! Weights of stencils
     w1 = w1 * s
 
     vr = w0 * c0 + w1 * c1
@@ -1531,10 +1531,10 @@ subroutine weno_three_h_weight_reconstruction(q4, h4, u4, &
 
 end subroutine weno_three_h_weight_reconstruction
 
-!> Compute weights for the two-point stencil of the third-order WENO scheme
+!> Compute the smoothness indicator for the two-point stencil of the third-order WENO scheme
 subroutine weno_three_weight(q2, w0)
     real, intent(in) :: q2(2)    !< Tracer values on the two-point stencil [A ~> a]
-    real, intent(inout) :: w0    !< Weight for this stencil [A2 ~> a2]
+    real, intent(inout) :: w0    !< Smoothness indicator for this stencil [A2 ~> a2]
 
     w0 = q2(1) * q2(1) - 2 * q2(1) * q2(2) + q2(2) * q2(2)
 
@@ -1628,7 +1628,7 @@ subroutine weno_five_h_weight_reconstruction(q6, h6, u6, &
     w2  = C1_10 * fac_fn(tau, b2)
 
     s = 1. / (w0 + w1 + w2)
-    w0 = w0 * s
+    w0 = w0 * s   ! Weights of stencils
     w1 = w1 * s
     w2 = w2 * s
 
@@ -1641,30 +1641,30 @@ subroutine weno_five_h_weight_reconstruction(q6, h6, u6, &
 
 end subroutine weno_five_h_weight_reconstruction
 
-!> Compute weights for the third upwind stencil of the fifth-order WENO scheme
+!> Compute the smoothness indicator for the third upwind stencil of the fifth-order WENO scheme
 subroutine weno_five_weight_0(q3, w0)
   real, intent(in) :: q3(3)       !< Tracer values on the three-point stencil [A ~> a]
-  real, intent(inout) :: w0       !< Weight for this stencil [A2 ~> a2]
+  real, intent(inout) :: w0       !< Smoothness indicator for this stencil [A2 ~> a2]
 
   w0 = q3(1) * (10 * q3(1) - 31 * q3(2) + 11 * q3(3)) + &
        q3(2) * (25 * q3(2) - 19 * q3(3)) + 4 * q3(3) * q3(3)
 
 end subroutine weno_five_weight_0
 
-!> Compute weights for the second upwind stencil of the fifth-order WENO scheme
+!> Compute the smoothness indicator for the second upwind stencil of the fifth-order WENO scheme
 subroutine weno_five_weight_1(q3, w1)
   real, intent(in) :: q3(3)        !< Tracer values on the three-point stencil [A ~> a]
-  real, intent(inout) :: w1        !< Weight for this stencil [A2 ~> a2]
+  real, intent(inout) :: w1        !< Smoothness indicator for this stencil [A2 ~> a2]
 
   w1 = q3(1) * (4 * q3(1) - 13 * q3(2) + 5 * q3(3)) + &
        q3(2) * (13 * q3(2) - 13 * q3(3)) + 4 * q3(3) * q3(3)
 
 end subroutine weno_five_weight_1
 
-!> Compute weights for the first upwind stencil of the fifth-order WENO scheme
+!> Compute the smoothness indicator for the first upwind stencil of the fifth-order WENO scheme
 subroutine weno_five_weight_2(q3, w2)
   real, intent(in) :: q3(3)        !< Tracer values on the three-point stencil [A ~> a]
-  real, intent(inout) :: w2        !< Weight for this stencil [A2 ~> a2]
+  real, intent(inout) :: w2        !< Smoothness indicator for this stencil [A2 ~> a2]
 
   w2 = q3(1) * (4 * q3(1) - 19 * q3(2) + 11 * q3(3)) + &
        q3(2) * (25 * q3(2) - 31 * q3(3)) + 10 * q3(3) * q3(3)
@@ -1781,7 +1781,7 @@ subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
   w3  = C1_35  * fac_fn(tau, b3)
 
   s = 1. / (w0 + w1 + w2 + w3)
-  w0 = w0 * s
+  w0 = w0 * s   ! Weights of the stencils
   w1 = w1 * s
   w2 = w2 * s
   w3 = w3 * s
@@ -1797,44 +1797,48 @@ subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
 
 end subroutine weno_seven_h_weight_reconstruction
 
-!> Compute weights for the fourth upwind stencil of the seventh-order WENO scheme
+!> Compute the smoothness indicator for the fourth upwind stencil of the seventh-order WENO scheme
 subroutine weno_seven_weight_0(q4, w0)
   real, intent(in) :: q4(4)          !< Tracer values on the four-point stencil [A ~> a]
-  real, intent(inout) :: w0          !< Weight for this stencil [A2 ~> a2]
+  real, intent(inout) :: w0          !< Smoothness indicator for this stencil [A2 ~> a2]
 
+  ! Coefficients from Balsara and Shu (2000). The division by 1000 will be normalized out by fac_fn
   w0 = q4(1) * (2.107 * q4(1) - 9.402 * q4(2) + 7.042 * q4(3) - 1.854 * q4(4)) + &
      q4(2) * (11.003 * q4(2) - 17.246 * q4(3) + 4.642 * q4(4)) + &
      q4(3) * (7.043 * q4(3) - 3.882 * q4(4)) + 0.547 * q4(4) * q4(4)
 
 end subroutine weno_seven_weight_0
 
-!> Compute weights for the third upwind stencil of the seventh-order WENO scheme
+!> Compute the smoothness indicator for the third upwind stencil of the seventh-order WENO scheme
 subroutine weno_seven_weight_1(q4, w1)
   real, intent(in) :: q4(4)          !< Tracer values on the four-point stencil [A ~> a]
-  real, intent(inout) :: w1          !< Weight for this stencil [A2 ~> a2]
+  real, intent(inout) :: w1          !< Smoothness indicator for this stencil [A2 ~> a2]
 
+  ! Coefficients from Balsara and Shu (2000). The division by 1000 will be normalized out by fac_fn
   w1 = q4(1) * (0.547 * q4(1) - 2.522 * q4(2) + 1.922 * q4(3) - 0.494 * q4(4)) + &
      q4(2) * (3.443 * q4(2) - 5.966 * q4(3) + 1.602 * q4(4)) + &
      q4(3) * (2.843 * q4(3) - 1.642 * q4(4)) + 0.267 * q4(4) * q4(4)
 
 end subroutine weno_seven_weight_1
 
-!> Compute weights for the second upwind stencil of the seventh-order WENO scheme
+!> Compute the smoothness indicator for the second upwind stencil of the seventh-order WENO scheme
 subroutine weno_seven_weight_2(q4, w2)
   real, intent(in) :: q4(4)           !< Tracer values on the four-point stencil [A ~> a]
-  real, intent(inout) :: w2           !< Weight for this stencil [A2 ~> a2]
+  real, intent(inout) :: w2           !< Smoothness indicator for this stencil [A2 ~> a2]
 
+  ! Coefficients from Balsara and Shu (2000). The division by 1000 will be normalized out by fac_fn
   w2 = q4(1) * (0.267 * q4(1) - 1.642 * q4(2) + 1.602 * q4(3) - 0.494 * q4(4)) + &
      q4(2) * (2.843 * q4(2) - 5.966 * q4(3) + 1.922 * q4(4)) + &
      q4(3) * (3.443 * q4(3) - 2.522 * q4(4)) + 0.547 * q4(4) * q4(4)
 
 end subroutine weno_seven_weight_2
 
-!> Compute weights for the first upwind stencil of the seventh-order WENO scheme
+!> Compute smoothness indicator for the first upwind stencil of the seventh-order WENO scheme
 subroutine weno_seven_weight_3(q4, w3)
   real, intent(in) :: q4(4)           !< Tracer values on the four-point stencil [A ~> a]
-  real, intent(inout) :: w3           !< Weight for this stencil [A2 ~> a2]
+  real, intent(inout) :: w3           !< Smoothness indicator for this stencil [A2 ~> a2]
 
+  ! Coefficients from Balsara and Shu (2000). The division by 1000 will be normalized out by fac_fn
   w3 = q4(1) * (0.547  * q4(1) - 3.882 * q4(2) + 4.642 * q4(3) - 1.854 * q4(4)) + &
      q4(2) * (7.043 * q4(2) - 17.246 * q4(3) + 7.042 * q4(4)) + &
      q4(3) * (11.003 * q4(3) - 9.402 * q4(4)) + 2.107 * q4(4) * q4(4)
