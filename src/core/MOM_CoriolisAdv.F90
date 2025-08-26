@@ -1434,7 +1434,7 @@ subroutine UP3_Koren_limiter_reconstruction(q4,u,qr)
   if (u>0.) then
     if (q4(3) == q4(2)) then
       qr = q4(2)
-    else 
+    else
       theta = (q4(2) - q4(1))/(q4(3) - q4(2))
       psi = max(0., min(1., C1_3 + C1_6*theta, theta)) ! limiter introduced by Koren (1993)
       qr = q4(2) + psi*(q4(3) - q4(2))
@@ -1515,7 +1515,7 @@ subroutine weno_three_h_weight_reconstruction(q4, h4, u4, &
     endif
 
     tau = abs(b0-b1)
-    w0  = C2_3 * fac_fn(tau, b0) 
+    w0  = C2_3 * fac_fn(tau, b0)
     w1  = C1_3 * fac_fn(tau, b1)
 
     s = 1. / (w0 + w1)
