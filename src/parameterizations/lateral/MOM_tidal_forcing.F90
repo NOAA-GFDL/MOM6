@@ -9,8 +9,6 @@ use MOM_domains,       only : pass_var
 use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING
 use MOM_file_parser,   only : get_param, log_version, param_file_type
 use MOM_grid,          only : ocean_grid_type
-use MOM_harmonic_analysis, &
-                       only : HA_init, harmonic_analysis_CS
 use MOM_io,            only : field_exists, file_exists, MOM_read_data
 use MOM_time_manager,  only : set_date, time_type, time_type_to_real, operator(-)
 use MOM_unit_scaling,  only : unit_scale_type
@@ -235,13 +233,12 @@ end subroutine nodal_fu
 !! while fields like the background viscosities are 2-D arrays.
 !! ALLOC is a macro defined in MOM_memory.h for allocate or nothing with
 !! static memory.
-subroutine tidal_forcing_init(Time, G, US, param_file, CS, HA_CS)
+subroutine tidal_forcing_init(Time, G, US, param_file, CS)
   type(time_type),        intent(in)    :: Time !< The current model time.
   type(ocean_grid_type),  intent(inout) :: G    !< The ocean's grid structure.
   type(unit_scale_type),  intent(in)    :: US   !< A dimensional unit scaling type
   type(param_file_type),  intent(in)    :: param_file !< A structure to parse for run-time parameters.
   type(tidal_forcing_CS), intent(inout) :: CS   !< Tidal forcing control structure
-  type(harmonic_analysis_CS), optional, intent(out) :: HA_CS !< Control structure for harmonic analysis
 
   ! Local variables
   real, dimension(SZI_(G), SZJ_(G)) :: &
@@ -564,11 +561,6 @@ subroutine tidal_forcing_init(Time, G, US, param_file, CS, HA_CS)
       CS%tide_un(c) = 0.0
     endif
   enddo
-
-  if (present(HA_CS)) then
-    call HA_init(Time, US, param_file, CS%nc, CS%freq, CS%phase0, &
-                 CS%tide_fn, CS%tide_un, HA_CS)
-  endif
 
   id_clock_tides = cpu_clock_id('(Ocean tides)', grain=CLOCK_MODULE)
 

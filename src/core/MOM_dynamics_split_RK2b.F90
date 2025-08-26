@@ -49,7 +49,7 @@ use MOM_CoriolisAdv,           only : CorAdCalc, CoriolisAdv_CS
 use MOM_CoriolisAdv,           only : CoriolisAdv_init, CoriolisAdv_end
 use MOM_debugging,             only : check_redundant
 use MOM_grid,                  only : ocean_grid_type
-use MOM_harmonic_analysis,     only : harmonic_analysis_CS
+use MOM_harmonic_analysis,     only : HA_init, harmonic_analysis_CS
 use MOM_hor_index,             only : hor_index_type
 use MOM_hor_visc,              only : horizontal_viscosity, hor_visc_CS
 use MOM_hor_visc,              only : hor_visc_init, hor_visc_end
@@ -1315,6 +1315,7 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
 
   integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed, nz
   integer :: IsdB, IedB, JsdB, JedB
+  integer :: nc           ! Number of tidal constituents to be harmonically analyzed
   is   = G%isc  ; ie   = G%iec  ; js   = G%jsc  ; je   = G%jec ; nz = GV%ke
   isd  = G%isd  ; ied  = G%ied  ; jsd  = G%jsd  ; jed  = G%jed
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
@@ -1337,6 +1338,10 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
                  "If true, calculate self-attraction and loading.", default=CS%use_tides)
   call get_param(param_file, mdl, "USE_HA", CS%use_HA, &
                  "If true, perform inline harmonic analysis.", default=.false.)
+  call get_param(param_file, mdl, "HA_N_CONST", nc, &
+                 "Number of tidal constituents to be harmonically analyzed.", &
+                 default=0, do_not_log=.not.CS%use_HA)
+  if (nc<=0) CS%use_HA = .false.
   call get_param(param_file, mdl, "BE", CS%be, &
                  "If SPLIT is true, BE determines the relative weighting "//&
                  "of a  2nd-order Runga-Kutta baroclinic time stepping "//&
@@ -1449,14 +1454,10 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
   if (CS%calculate_SAL) call SAL_init(h, tv, G, GV, US, param_file, CS%SAL_CSp, restart_CS)
-  if (CS%use_tides) then
-    if (CS%use_HA) then
-      call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp, CS%HA_CSp)
-      HA_CSp => CS%HA_CSp
-    else
-      call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
-      HA_CSp => NULL()
-    endif
+  if (CS%use_tides) call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
+  if (CS%use_HA) then
+    call HA_init(Time, G, US, param_file, nc, CS%HA_CSp)
+    HA_CSp => CS%HA_CSp
   else
     HA_CSp => NULL()
   endif
