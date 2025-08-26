@@ -1456,7 +1456,7 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
   if (CS%calculate_SAL) call SAL_init(h, tv, G, GV, US, param_file, CS%SAL_CSp, restart_CS)
   if (CS%use_tides) call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
   if (CS%use_HA) then
-    call HA_init(Time, G, US, param_file, nc, CS%HA_CSp)
+    call HA_init(Time, US, param_file, nc, CS%HA_CSp)
     HA_CSp => CS%HA_CSp
   else
     HA_CSp => NULL()

@@ -1,15 +1,15 @@
 !> Inline harmonic analysis (conventional)
 module MOM_harmonic_analysis
 
-use MOM_time_manager,  only : time_type, real_to_time, time_type_to_real, &
-                              set_date, get_date, increment_date, &
-                              operator(+), operator(-), operator(<), operator(>), operator(>=)
+use MOM_time_manager,  only : time_type, real_to_time, time_type_to_real
+use MOM_time_manager,  only : set_date, get_date, increment_date
+use MOM_time_manager,  only : operator(+), operator(-), operator(<), operator(>), operator(>=)
 use MOM_grid,          only : ocean_grid_type
 use MOM_unit_scaling,  only : unit_scale_type
 use MOM_file_parser,   only : param_file_type, get_param
-use MOM_io,            only : file_exists, open_ASCII_file, READONLY_FILE, close_file, &
-                              MOM_infra_file, vardesc, MOM_field, &
-                              var_desc, create_MOM_file, SINGLE_FILE, MOM_write_field
+use MOM_io,            only : file_exists, open_ASCII_file, READONLY_FILE, close_file
+use MOM_io,            only : MOM_infra_file, vardesc, MOM_field
+use MOM_io,            only : var_desc, create_MOM_file, SINGLE_FILE, MOM_write_field
 use MOM_error_handler, only : MOM_mesg, MOM_error, NOTE
 use MOM_tidal_forcing, only : astro_longitudes, astro_longitudes_init, eq_phase, nodal_fu, tidal_frequency
 
@@ -54,7 +54,6 @@ type, public :: harmonic_analysis_CS ; private
   integer :: length                          !< Number of fields of which harmonic analysis is to be performed
   character(len=4), allocatable, dimension(:) :: const_name !< The name of each constituent
   character(len=255) :: path                 !< Path to directory where output will be written
-  type(ocean_grid_type)  :: G                !< The ocean's grid structure
   type(unit_scale_type)  :: US               !< A dimensional unit scaling type
   type(HA_node), pointer :: list => NULL()   !< A linked list for storing the HA info of different fields
 end type harmonic_analysis_CS
@@ -63,9 +62,8 @@ contains
 
 !> This subroutine sets static variables used by this module and initializes CS%list.
 !! THIS MUST BE CALLED AT THE END OF tidal_forcing_init.
-subroutine HA_init(Time, G, US, param_file, nc, CS)
+subroutine HA_init(Time, US, param_file, nc, CS)
   type(time_type),       intent(in)  :: Time        !< The current model time
-  type(ocean_grid_type), intent(in)  :: G           !< The ocean's grid structure
   type(unit_scale_type), intent(in)  :: US          !< A dimensional unit scaling type
   type(param_file_type), intent(in)  :: param_file  !< A structure to parse for run-time parameters
   integer,               intent(in)  :: nc          !< The number of tidal constituents in use
@@ -164,7 +162,28 @@ subroutine HA_init(Time, G, US, param_file, nc, CS)
                    CS%freq(c), "Frequency of the "//trim(CS%const_name(c))//&
                    " constituent. This is used if USE_HA is true and "//trim(CS%const_name(c))//&
                    " is in HA_CONSTITUENTS.", units="rad s-1", scale=US%T_to_s, default=0.0)
-    if (CS%freq(c)<=0.0) CS%freq(c) = tidal_frequency(trim(CS%const_name(c)))
+    if (CS%freq(c)<=0.0) then
+      select case (trim(CS%const_name(c)))
+        case ('M4')
+          CS%freq(c) = tidal_frequency('M2') * 2
+        case ('M6')
+          CS%freq(c) = tidal_frequency('M2') * 3
+        case ('M8')
+          CS%freq(c) = tidal_frequency('M2') * 4
+        case ('S4')
+          CS%freq(c) = tidal_frequency('S2') * 2
+        case ('S6')
+          CS%freq(c) = tidal_frequency('S2') * 3
+        case ('MK3')
+          CS%freq(c) = tidal_frequency('M2') + tidal_frequency('K1')
+        case ('MS4')
+          CS%freq(c) = tidal_frequency('M2') + tidal_frequency('S2')
+        case ('MN4')
+          CS%freq(c) = tidal_frequency('M2') + tidal_frequency('N2')
+        case default
+          CS%freq(c) = tidal_frequency(trim(CS%const_name(c)))
+      end select
+    endif
 
     call get_param(param_file, mdl, "HA_"//trim(CS%const_name(c))//"_PHASE_T0", CS%phase0(c), &
                    "Phase of the "//trim(CS%const_name(c))//" tidal constituent at time 0. "//&
@@ -236,7 +255,6 @@ subroutine HA_init(Time, G, US, param_file, nc, CS)
   ! Populate some parameters of the control structure
   CS%nc         =  nc
   CS%length     =  0
-  CS%G          =  G
   CS%US         =  US
 
   ! Initialize CS%list
@@ -283,10 +301,11 @@ end subroutine HA_register
 !! harmonic constants and write results. The tidal constituents are those used in MOM_tidal_forcing, plus the
 !! mean (of zero frequency). For FtF, only the main diagonal and entries below it are calculated, which are needed
 !! for Cholesky decomposition.
-subroutine HA_accum(key, data, Time, CS)
+subroutine HA_accum(key, data, Time, G, CS)
   character(len=*),           intent(in) :: key  !< Name of the current field
   real, dimension(:,:),       intent(in) :: data !< Input data of which harmonic analysis is to be performed [A]
   type(time_type),            intent(in) :: Time !< The current model time
+  type(ocean_grid_type),      intent(in) :: G    !< The ocean's grid structure
   type(harmonic_analysis_CS), intent(inout) :: CS   !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
@@ -389,7 +408,7 @@ subroutine HA_accum(key, data, Time, CS)
   !!! Compute harmonic constants and write output as Time approaches CS%time_end !!!
   ! This guarantees that HA_write will be called before Time becomes larger than CS%time_end
   if (time_type_to_real(CS%time_end - Time) <= dt) then
-    call HA_write(ha1, Time, CS)
+    call HA_write(ha1, Time, G, CS)
 
     write(mesg,*) "MOM_harmonic_analysis: harmonic analysis done, key = ", trim(ha1%key)
     call MOM_error(NOTE, trim(mesg))
@@ -403,9 +422,10 @@ subroutine HA_accum(key, data, Time, CS)
 end subroutine HA_accum
 
 !> This subroutine computes the harmonic constants and write output for the current field
-subroutine HA_write(ha1, Time, CS)
+subroutine HA_write(ha1, Time, G, CS)
   type(HA_type), pointer,     intent(in) :: ha1    !< Control structure for the current field
   type(time_type),            intent(in) :: Time   !< The current model time
+  type(ocean_grid_type),      intent(in) :: G      !< The ocean's grid structure
   type(harmonic_analysis_CS), intent(in) :: CS     !< Control structure of the MOM_harmonic_analysis module
 
   ! Local variables
@@ -442,7 +462,7 @@ subroutine HA_write(ha1, Time, CS)
 
   ! Create output file
   call create_MOM_file(cdf, trim(filename), cdf_vars, &
-                       2*nc+1, cdf_fields, SINGLE_FILE, 86400.0, G=CS%G)
+                       2*nc+1, cdf_fields, SINGLE_FILE, 86400.0, G=G)
 
   ! Add the initial field back to the mean state
   do j=js,je ; do i=is,ie
@@ -450,10 +470,10 @@ subroutine HA_write(ha1, Time, CS)
   enddo ; enddo
 
   ! Write data
-  call MOM_write_field(cdf, cdf_fields(1), CS%G%domain, FtSSHw(:,:,1), 0.0)
+  call MOM_write_field(cdf, cdf_fields(1), G%domain, FtSSHw(:,:,1), 0.0)
   do k=1,nc
-    call MOM_write_field(cdf, cdf_fields(2*k  ), CS%G%domain, FtSSHw(:,:,2*k  ), 0.0)
-    call MOM_write_field(cdf, cdf_fields(2*k+1), CS%G%domain, FtSSHw(:,:,2*k+1), 0.0)
+    call MOM_write_field(cdf, cdf_fields(2*k  ), G%domain, FtSSHw(:,:,2*k  ), 0.0)
+    call MOM_write_field(cdf, cdf_fields(2*k+1), G%domain, FtSSHw(:,:,2*k+1), 0.0)
   enddo
 
   call cdf%flush()
