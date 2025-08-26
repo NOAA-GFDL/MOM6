@@ -314,8 +314,9 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   endif ; endif
 
   !$OMP parallel do default(private) shared(u,v,h,uh,vh,CAu,CAv,G,GV,CS,AD,Area_h,Area_q,&
-  !$OMP                        RV,PV,is,ie,js,je,Isq,Ieq,Jsq,Jeq,nz,vol_neglect,h_tiny,OBC,eps_vel, &
-  !$OMP                        area_neglect, pbv, Stokes_VF, stencil)
+  !$OMP                        RV,PV,is,ie,js,je,nz,vol_neglect,h_tiny,OBC,eps_vel, &
+  !$OMP                        area_neglect, pbv, Stokes_VF, stencil) &
+  !$OMP private(Isq,Ieq,Jsq,Jeq)
   do k=1,nz
 
     Isq = G%IscB - stencil + 2
@@ -1457,7 +1458,7 @@ function fac_fn(tau, b) result(fac)
   real, intent(in)  :: b    !< The smoothness indicator [A ~> a]
   real :: fac               !< The factor for the weight [nondim]
 
-  fac = (1 + tau / b)**2; if (b == 0.) fac = 1.0e40
+  fac = 1.0e40; if (abs(b) > 1.0e-20*tau) fac = (1 + tau / b)**2
 
 end function fac_fn
 
