@@ -208,8 +208,11 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
 
   ! Local variables
   integer :: ke ! Number of levels
-  integer :: np ! Number of profiles, for HYBRID_MAP
-  integer :: n_sigma ! Number of shallow dz's, for HYBRID_MAP or HYBRID_3D
+  integer :: n_sigma  ! Number of shallow dz's, for HYBRID_MAP or HYBRID_3D
+  integer :: np       ! Number of profiles,    for HYBRID_MAP
+  integer :: nceiling ! ceiling  of map index, for HYBRID_MAP
+  integer :: nfloor   ! floor    of map index, for HYBRID_MAP
+  real ::    nfrac    ! fraction of map index, for HYBRID_MAP
   character(len=80)  :: string, string2, varName ! Temporary strings
   character(len=40)  :: coord_units, coord_res_param ! Temporary strings
   character(len=MAX_PARAM_LENGTH) :: param_name
@@ -393,6 +396,9 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                  "               by a comma or space, for map, sigma-2 and dz.\n"//&
                  "               Map is a spatial index array with, maxval(map)=N,\n"//&
                  "               and the others are 2D arrays containing N profiles.\n"//&
+                 "               Map typically contains integer values, but it can\n"//&
+                 "               contain real values, I+w, which imply using\n"//&
+                 "               the weighted sum of profiles I and I+1.\n"//&
                  "               Dz can be FNC1:string which is used everywhere.\n"//&
                  "               e.g. HYBRID_MAP:vgrid.nc,map,sigma2,dz",&
                  default=trim(string2))
@@ -607,11 +613,10 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     call MOM_read_data(trim(fileName), trim(varName), index_map, G%Domain)
     call pass_var(index_map, G%Domain, halo=1)
     !find maximum index
-    tmpReal = 1
+    np = 1
     do j=G%jsc, G%jec ; do i=G%isc, G%iec
-      tmpReal = max(tmpReal,index_map(i,j))
+      np = max(np,ceiling(index_map(i,j)))
     enddo ; enddo
-    np = tmpReal
     call max_across_PEs(np)
     write(string2,"(i3)") np
     call MOM_error(NOTE, &
@@ -632,14 +637,24 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     endif
     do i=G%isc-1,G%iec+1; do j=G%jsc-1,G%jec+1
       if (G%mask2dT(i,j)>0.) then
-        if (nint(index_map(i,j))<1 .or. nint(index_map(i,j))>np) then
+        nfloor = floor(index_map(i,j))
+        nceiling = ceiling(index_map(i,j))
+        if (nfloor<1 .or. nceiling>np) then
           write(0,'(a,2i5,a,g20.6)') 'HYBRID_MAP: i,j=',i,j,'index_map(i,j)=', index_map(i,j)
           call MOM_error(FATAL, trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
             "index_map out of range")
         endif
-        do k=1,ke+1
-          rho_target_3d(i,j,k) = rho_target_2d(k,nint(index_map(i,j)))
-        enddo
+        if (nfloor == nceiling) then
+          do k=1,ke+1
+            rho_target_3d(i,j,k) = rho_target_2d(k,nfloor)
+          enddo
+        else
+          nfrac = index_map(i,j) - nfloor  !between 0.0 and 1.0
+          do k=1,ke+1
+            rho_target_3d(i,j,k) = (1.0-nfrac)*rho_target_2d(k,nfloor) + &
+                                        nfrac *rho_target_2d(k,nceiling)
+          enddo
+        endif !integer:else
       endif !mask2dT
     enddo; enddo
     varName = trim( extractWord(trim(string(12:)), 4) )
@@ -686,12 +701,19 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       endif
       do i=G%isc-1,G%iec+1; do j=G%jsc-1,G%jec+1
         if (G%mask2dT(i,j)>0.) then
-          if (nint(index_map(i,j))<1 .or. nint(index_map(i,j))>np) then
-            write(0,'(a,2i5,a,g20.6)') 'HYBRID_MAP: i,j=',i,j,'index_map(i,j)=',index_map(i,j)
-            call MOM_error(FATAL, trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
-              "index_map out of range")
-          endif
-          dz_3d(i,j,:) = dz_2d(:,nint(index_map(i,j)))
+          nfloor = floor(index_map(i,j))
+          nceiling = ceiling(index_map(i,j))
+          if (nfloor == nceiling) then
+            do k=1,ke
+              dz_3d(i,j,k) = dz_2d(k,nfloor)
+            enddo
+          else
+            nfrac = index_map(i,j) - nfloor  !between 0.0 and 1.0
+            do k=1,ke
+              dz_3d(i,j,k) = (1.0-nfrac)*dz_2d(k,nfloor) + &
+                                  nfrac *dz_2d(k,nceiling)
+            enddo
+          endif !integer:else
         endif !mask2dT
       enddo; enddo
     endif !dz
