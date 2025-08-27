@@ -623,8 +623,10 @@ subroutine calc_slope_functions(h, uh, vh, tv, dt, G, GV, US, CS, OBC)
   type(verticalGrid_type),                   intent(in)    :: GV !< Vertical grid structure
   type(unit_scale_type),                     intent(in)    :: US !< A dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(inout) :: h  !< Layer thickness [H ~> m or kg m-2]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)),intent(inout) :: uh !< Layer thickness times u [L2 H T-1 ~> m3 s-1 or kg s-1]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)),intent(inout) :: vh !< Layer thickness times v [L2 H T-1 ~> m3 s-1 or kg s-1]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)),intent(inout) :: uh !< Layer thickness
+                                                                 !times u [L2 H T-1 ~> m3 s-1 or kg s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)),intent(inout) :: vh !< Layer thickness
+                                                                 !times v [L2 H T-1 ~> m3 s-1 or kg s-1]
   type(thermo_var_ptrs),                     intent(in)    :: tv !< Thermodynamic variables
   real,                                      intent(in)    :: dt !< Time increment [T ~> s]
   type(VarMix_CS),                           intent(inout) :: CS !< Variable mixing control structure
@@ -1153,8 +1155,10 @@ subroutine calc_slope_functions_with_gradient_model(h, G, GV, US, CS, e, uh, vh)
   type(ocean_grid_type),                       intent(inout) :: G  !< Ocean grid structure
   type(verticalGrid_type),                     intent(in)    :: GV !< Vertical grid structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),   intent(inout) :: h  !< Layer thickness [H ~> m or kg m-2]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)),  intent(in) :: uh    !< Interface height times u [L2 H T-1 ~> m3 s-1 or kg s-1]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)),  intent(in) :: vh    !< Interface height times v [L2 G T-1 ~> m3 s-1 or kg s-1]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)),  intent(in)    :: uh !< Interface height times u
+                                                                   ![L2 H T-1 ~> m3 s-1 or kg s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)),  intent(in)    :: vh !< Interface height time v
+                                                                   ![L2 H T-1 ~> m3 s-1 or kg s-1]
   type(unit_scale_type),                       intent(in)    :: US !< A dimensional unit scaling type
   type(VarMix_CS),                             intent(inout) :: CS !< Variable mixing control structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(in)    :: e  !< Interface position [Z ~> m]
