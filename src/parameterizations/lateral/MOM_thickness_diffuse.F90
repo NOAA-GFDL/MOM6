@@ -340,8 +340,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
       if (CS%grad_Khani_scale > 0.0) then
       !$OMP do
         do k=1,nz ; do j=js,je ; do I=is-1,ie
-          KH_u(I,j,k) = 1.0 * CS%grad_Khani_scale * VarMix%L2grad_u(I,j) * VarMix%UH_grad(I,j,k)
-          !! print*, "KH_u =  ", KH_u(I,j,k)
+          KH_u(I,j,k) = CS%grad_Khani_scale * VarMix%L2grad_u(I,j) * VarMix%UH_grad(I,j,k)
         enddo ; enddo ; enddo
       endif
     endif
@@ -457,8 +456,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
       if (CS%grad_Khani_scale > 0.0) then
       !$OMP do
         do k=1,nz ; do J=js-1,je ; do i=is,ie
-          KH_v(i,J,k) = 1.0 * CS%grad_Khani_scale * VarMix%L2grad_v(i,J) * VarMix%VH_grad(i,J,k)
-          !! print*, "KH_v =", KH_v(i,J,k)
+          KH_v(i,J,k) =  CS%grad_Khani_scale * VarMix%L2grad_v(i,J) * VarMix%VH_grad(i,J,k)
         enddo ; enddo ; enddo
       endif
     endif
