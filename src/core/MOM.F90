@@ -1191,8 +1191,8 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
     u => NULL(), & ! u : zonal velocity component [L T-1 ~> m s-1]
     v => NULL(), & ! v : meridional velocity component [L T-1 ~> m s-1]
     h => NULL(), & ! h : layer thickness [H ~> m or kg m-2]
-    uh => NULL(), & ! uh : layer thickness times u [UH ~> m2 s-1 or kg m-1 s-1]
-    vh => NULL()   ! vh : layer thickness times v [VH ~> m2 s-1 or kg m-1 s-1]
+    uh => NULL(), & ! uh : layer thickness times u [L2 H T-1 ~> m3 s-1 or kg s-1]
+    vh => NULL()    ! vh : layer thickness times v [L2 H T-1 ~> m3 s-1 or kg s-1]
 
   logical :: calc_dtbt  ! Indicates whether the dynamically adjusted
                         ! barotropic time step needs to be updated.
