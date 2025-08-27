@@ -623,8 +623,8 @@ subroutine calc_slope_functions(h, uh, vh, tv, dt, G, GV, US, CS, OBC)
   type(verticalGrid_type),                   intent(in)    :: GV !< Vertical grid structure
   type(unit_scale_type),                     intent(in)    :: US !< A dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(inout) :: h  !< Layer thickness [H ~> m or kg m-2]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)),intent(inout) :: uh !< Layer thickness times u [UH ~> m2 s-1 or kg m-1 s-1]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)),intent(inout) :: vh !< Layer thickness times v [VH ~> m2 s-1 or kg m-1 s-1]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)),intent(inout) :: uh !< Layer thickness times u [L2 H T-1 ~> m3 s-1 or kg s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)),intent(inout) :: vh !< Layer thickness times v [L2 H T-1 ~> m3 s-1 or kg s-1]
   type(thermo_var_ptrs),                     intent(in)    :: tv !< Thermodynamic variables
   real,                                      intent(in)    :: dt !< Time increment [T ~> s]
   type(VarMix_CS),                           intent(inout) :: CS !< Variable mixing control structure
@@ -658,10 +658,6 @@ subroutine calc_slope_functions(h, uh, vh, tv, dt, G, GV, US, CS, OBC)
       call calc_slope_functions_using_just_e(h, G, GV, US, CS, e)
     endif
   endif
-
-!!  if (CS%use_gradient_model) then
-!!    call calc_slope_functions_with_gradient_model(h, G, GV, US, CS, e, uh, vh)
-!!  endif
 
   if (query_averaging_enabled(CS%diag)) then
     if (CS%id_dzu > 0) call post_data(CS%id_dzu, dzu, CS%diag)
@@ -1055,7 +1051,6 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e)
 
   !$OMP parallel do default(shared) private(E_x,E_y,S2,Hdn,Hup,H_geom,N2)
 
-
   do k=nz,CS%VarMix_Ktop,-1
 
     ! Calculate the interface slopes E_x and E_y and u- and v- points respectively
@@ -1158,8 +1153,8 @@ subroutine calc_slope_functions_with_gradient_model(h, G, GV, US, CS, e, uh, vh)
   type(ocean_grid_type),                       intent(inout) :: G  !< Ocean grid structure
   type(verticalGrid_type),                     intent(in)    :: GV !< Vertical grid structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),   intent(inout) :: h  !< Layer thickness [H ~> m or kg m-2]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)),  intent(in) :: uh    !< Interface height times u [ZU ~> m2 s-1]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)),  intent(in) :: vh    !< Interface height times v [ZU ~> m2 s-1]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)),  intent(in) :: uh    !< Interface height times u [L2 H T-1 ~> m3 s-1 or kg s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)),  intent(in) :: vh    !< Interface height times v [L2 G T-1 ~> m3 s-1 or kg s-1]
   type(unit_scale_type),                       intent(in)    :: US !< A dimensional unit scaling type
   type(VarMix_CS),                             intent(inout) :: CS !< Variable mixing control structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(in)    :: e  !< Interface position [Z ~> m]
@@ -1167,22 +1162,22 @@ subroutine calc_slope_functions_with_gradient_model(h, G, GV, US, CS, e, uh, vh)
   ! Local variables
   !real :: dz_tot(SZI_(G),SZJ_(G)) ! The total thickness of the water columns [Z ~> m]
   ! real :: dz(SZI_(G),SZJ_(G),SZK_(GV)) ! The vertical distance across each layer [Z ~> m]
-  real :: Ux_Hx(SZIB_(G), SZJ_(G))  ! X-slope of U and H  [T-1 ~> s-1]
-  real :: Uy_Hy(SZI_(G), SZJB_(G))  ! Y-slope of U and H  [T-1 ~> s-1]
-  real :: Vx_Hx(SZIB_(G), SZJ_(G))  ! X-slope of V and H  [T-1 ~> s-1]
-  real :: Vy_Hy(SZI_(G), SZJB_(G))  ! Y-slope of V and H  [T-1 ~> s-1]
+  real :: Ux_Hx(SZIB_(G), SZJ_(G))  ! X-slope of U and H  [H L-1 T-1 ~> s-1 or kg m-3 s-1]
+  real :: Uy_Hy(SZI_(G), SZJB_(G))  ! Y-slope of U and H  [H L-1 T-1 ~> s-1 or kg m-3 s-1]
+  real :: Vx_Hx(SZIB_(G), SZJ_(G))  ! X-slope of V and H  [H L-1 T-1 ~> s-1 or kg m-3 s-1]
+  real :: Vy_Hy(SZI_(G), SZJB_(G))  ! Y-slope of V and H  [H L-1 T-1 ~> s-1 or kg m-3 s-1]
   real :: H_cutoff      ! Local estimate of a minimum thickness for masking [H ~> m or kg m-2]
   !real :: dZ_cutoff     ! A minimum water column depth for masking [H ~> m or kg m-2]
   real :: h_neglect     ! A thickness that is so small it is usually lost
                         ! in roundoff and can be neglected [H ~> m or kg m-2].
-  real :: graduh        ! Gradient model frequency, zonal transport [T-1 ~> s-1]
-  real :: gradvh        ! Gradient model frequency, merid transport [T-1 ~> s-1]
+!  real :: graduh        ! Gradient model frequency, zonal transport [T-1 ~> s-1]
+!  real :: gradvh        ! Gradient model frequency, merid transport [T-1 ~> s-1]
   real :: Hup, Hdn      ! Thickness from above, below [H ~> m or kg m-2]
   real :: H_geom        ! The geometric mean of Hup*Hdn [H ~> m or kg m-2].
   !logical :: use_dztot  ! If true, use the total water column thickness rather than the
                         ! bathymetric depth for certain calculations.
-  real    :: UH_grad_local(SZIB_(G), SZJ_(G),SZK_(GV))  ! The depth integral of grad slopes for UH at u-points
-  real    :: VH_grad_local(SZI_(G), SZJB_(G),SZK_(GV))  ! The depth integral of grad slopes for VH at v-points
+!  real    :: UH_grad_local(SZIB_(G), SZJ_(G),SZK_(GV))  ! The depth integral of grad slopes for UH at u-points
+!  real    :: VH_grad_local(SZI_(G), SZJB_(G),SZK_(GV))  ! The depth integral of grad slopes for VH at v-points
   real    :: Lgrid      ! Grid lengthscale for the gradient model [H ~> m]
   integer :: is, ie, js, je, nz
   integer :: i, j, k
@@ -1205,13 +1200,11 @@ subroutine calc_slope_functions_with_gradient_model(h, G, GV, US, CS, e, uh, vh)
 
   ! Set the length scale at u-points for the gradient model
   do j=js,je ; do I=is-1,ie
-    Lgrid = sqrt(G%dxCu(I,j)**2 + G%dyCu(I,j)**2)
-    CS%L2grad_u(I,j) = 1.0 * Lgrid**2
+    CS%L2grad_u(I,j) = (G%dxCu(I,j)**2) + (G%dyCu(I,j)**2)
   enddo ; enddo
   ! Set length scale at v-points for the gradient model
   do J=js-1,je ; do i=is,ie
-    Lgrid = sqrt(G%dxCv(i,J)**2 + G%dyCv(i,J)**2)
-    CS%L2grad_v(i,J) = 1.0 * Lgrid**2
+    CS%L2grad_v(i,J) = (G%dxCv(i,J)**2) + (G%dyCv(i,J)**2)
   enddo ; enddo
 
   do k=nz,CS%VarMix_Ktop,-1
@@ -1241,33 +1234,14 @@ subroutine calc_slope_functions_with_gradient_model(h, G, GV, US, CS, e, uh, vh)
     enddo ; enddo
 
     do j=js,je ; do I=is-1,ie
-      graduh = Ux_Hx(I,j) + 0.25 * ( (Uy_Hy(I,j) + Uy_Hy(I+1,j-1)) + (Uy_Hy(I,j-1) + Uy_Hy(I+1,j)) )
-      UH_grad_local(I,j,k) = graduh
+      CS%UH_grad(I,j,k) = Ux_Hx(I,j) + 0.25 * ( (Uy_Hy(I,j) + Uy_Hy(I+1,j-1)) + (Uy_Hy(I,j-1) + Uy_Hy(I+1,j)) )
     enddo ; enddo
 
     do J=js-1,je ; do i=is,ie
-      gradvh = 0.25 * ( (Vx_Hx(i,J) + Vx_Hx(i-1,J+1)) + (Vx_Hx(i-1,J) + Vx_Hx(i,J+1)) ) + Vy_Hy(i,J)
-      VH_grad_local(i,J,k) = gradvh
+      CS%VH_grad(i,J,k) = 0.25 * ( (Vx_Hx(i,J) + Vx_Hx(i-1,J+1)) + (Vx_Hx(i-1,J) + Vx_Hx(i,J+1)) ) + Vy_Hy(i,J)
     enddo ; enddo
 
   enddo ! k
-
-  !$OMP parallel do default(shared)
-  do j=js,je
-
-    do k=nz,CS%VarMix_Ktop,-1 ; do I=is-1,ie
-      CS%UH_grad(I,j,k) = UH_grad_local(I,j,k)
-    enddo ; enddo
-
-  enddo
-  !$OMP parallel do default(shared)
-  do J=js-1,je
-
-    do k=nz,CS%VarMix_Ktop,-1 ; do i=is,ie
-      CS%VH_grad(i,J,k) = VH_grad_local(i,J,k)
-    enddo ; enddo
-
-  enddo
 
 end subroutine calc_slope_functions_with_gradient_model
 
