@@ -16,6 +16,7 @@ use MOM_hor_index,     only : hor_index_type
 use MOM_io,            only : file_exists, get_var_sizes, read_variable
 use MOM_io,            only : vardesc, var_desc
 use MOM_safe_alloc,    only : safe_alloc_ptr
+use MOM_spatial_means, only : global_area_mean
 use MOM_time_manager,  only : time_type, operator(+), operator(/)
 use MOM_unit_scaling,  only : unit_scale_type
 use MOM_variables,     only : thermo_var_ptrs, surface
@@ -66,6 +67,7 @@ type, public :: wave_parameters_CS ; private
   logical, public :: Stokes_DDT = .false.   !< Developmental:
                                             !! True if Stokes d/dt is used
   logical, public :: Passive_Stokes_DDT = .false.   !< Keeps Stokes_DDT on, but doesn't affect dynamics
+  logical :: Homogenize_Surfbands !< True to homogenize surface band Stokes drift in the horizontal
 
   real, allocatable, dimension(:,:,:), public :: &
     Us_x               !< 3d zonal Stokes drift profile [L T-1 ~> m s-1]
@@ -441,6 +443,11 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
                  "A layer thickness below which the cell-center Stokes drift is used instead of "//&
                  "the cell average.  This is only used if WAVE_INTERFACE_ANSWER_DATE < 20230101.", &
                  units="m", default=0.1, scale=US%m_to_Z, do_not_log=(CS%answer_date>=20230101))
+    call get_param(param_file, mdl, "HOMOGENIZE_SURFBANDS", CS%Homogenize_Surfbands, &
+                 "A logical which causes the code to horizontally homogenize the surface band "//&
+                 "Stokes drift, which is needed in column mode to avoid round-off differences. "//&
+                 "At present it only works with DATAOVERRIDE, and is not coded for COUPLER.",&
+                 default=.false.)
     call get_param(param_file, mdl, "SURFBAND_SOURCE", TMPSTRING2, &
                  "Choice of SURFACE_BANDS data mode, valid options include: \n"//&
                  " DATAOVERRIDE  - Read from NetCDF using FMS DataOverride. \n"//&
@@ -1071,6 +1078,7 @@ subroutine Surface_Bands_by_data_override(Time, G, GV, US, CS)
   character(len=48) :: dim_name(4)  ! The names of the dimensions of the variable.
   character(len=20) :: varname      ! The name of an input variable for data override.
   real :: PI       ! 3.1415926535... [nondim]
+  real :: avgx, avgy
   logical :: wavenumber_exists
   integer :: ndims, b, i, j
 
@@ -1151,6 +1159,14 @@ subroutine Surface_Bands_by_data_override(Time, G, GV, US, CS)
         endif
       enddo
     enddo
+    if (CS%Homogenize_Surfbands) then
+      avgx = global_area_mean(temp_x, G)
+      avgy = global_area_mean(temp_y, G)
+      do j = G%jsd,G%jed ; do i = G%Isd,G%Ied ; if (G%mask2dT(i,j) > 0.0) then
+          temp_y(i,j) = avgy
+          temp_x(i,j) = avgx
+      endif ; enddo ; enddo
+    endif
 
     ! Interpolate to u/v grids
     do j = G%jsc,G%jec
