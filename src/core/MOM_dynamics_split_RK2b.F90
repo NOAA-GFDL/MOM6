@@ -46,7 +46,7 @@ use MOM_boundary_update,       only : update_OBC_data, update_OBC_CS
 use MOM_continuity,            only : continuity, continuity_CS
 use MOM_continuity,            only : continuity_init, continuity_stencil
 use MOM_CoriolisAdv,           only : CorAdCalc, CoriolisAdv_CS
-use MOM_CoriolisAdv,           only : CoriolisAdv_init, CoriolisAdv_end
+use MOM_CoriolisAdv,           only : CoriolisAdv_init, CoriolisAdv_end, CoriolisAdv_stencil
 use MOM_debugging,             only : check_redundant
 use MOM_grid,                  only : ocean_grid_type
 use MOM_harmonic_analysis,     only : harmonic_analysis_CS
@@ -263,6 +263,7 @@ type, public :: MOM_dyn_split_RK2b_CS ; private
   type(group_pass_type) :: pass_hp_uv    !< Structure for group halo pass
   type(group_pass_type) :: pass_hp_uhvh  !< Structure for group halo pass
   type(group_pass_type) :: pass_h_uv     !< Structure for group halo pass
+  type(group_pass_type) :: pass_h        !< Structure for group halo pass
 
 end type MOM_dyn_split_RK2b_CS
 
@@ -402,6 +403,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
 
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
   integer :: cont_stencil, obc_stencil
+  integer :: cor_stencil
 
   is  = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec ; nz = GV%ke
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
@@ -466,6 +468,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
 
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   obc_stencil = 2
+  cor_stencil = CoriolisAdv_stencil(CS%CoriolisAdv)
   if (associated(CS%OBC)) then
     if (CS%OBC%oblique_BCs_exist_globally) obc_stencil = 3
   endif
@@ -476,16 +479,17 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   call create_group_pass(CS%pass_uvp, up, vp, G%Domain, halo=max(1,cont_stencil))
   call create_group_pass(CS%pass_uv_inst, u_inst, v_inst, G%Domain, halo=max(2,cont_stencil))
 
-  call create_group_pass(CS%pass_hp_uv, hp, G%Domain, halo=2)
-  call create_group_pass(CS%pass_hp_uv, u_av, v_av, G%Domain, halo=max(2,obc_stencil))
-  call create_group_pass(CS%pass_hp_uv, uh(:,:,:), vh(:,:,:), G%Domain, halo=max(2,obc_stencil))
+  call create_group_pass(CS%pass_hp_uv, hp, G%Domain, halo=cor_stencil)
+  call create_group_pass(CS%pass_hp_uv, u_av, v_av, G%Domain, halo=max(cor_stencil,obc_stencil))
+  call create_group_pass(CS%pass_hp_uv, uh(:,:,:), vh(:,:,:), G%Domain, halo=max(cor_stencil,obc_stencil))
 
-  call create_group_pass(CS%pass_hp_uhvh, hp, G%Domain, halo=2)
-  call create_group_pass(CS%pass_hp_uhvh, uh(:,:,:), vh(:,:,:), G%Domain, halo=max(2,obc_stencil))
+  call create_group_pass(CS%pass_hp_uhvh, hp, G%Domain, halo=cor_stencil)
+  call create_group_pass(CS%pass_hp_uhvh, uh(:,:,:), vh(:,:,:), G%Domain, halo=max(cor_stencil,obc_stencil))
 
-  call create_group_pass(CS%pass_h_uv, h, G%Domain, halo=max(2,cont_stencil))
-  call create_group_pass(CS%pass_h_uv, u_av, v_av, G%Domain, halo=max(2,obc_stencil))
-  call create_group_pass(CS%pass_h_uv, uh(:,:,:), vh(:,:,:), G%Domain, halo=max(2,obc_stencil))
+  call create_group_pass(CS%pass_h, h, g%domain, halo=max(cor_stencil,cont_stencil))
+  call create_group_pass(CS%pass_h_uv, h, G%Domain, halo=max(cor_stencil,cont_stencil))
+  call create_group_pass(CS%pass_h_uv, u_av, v_av, G%Domain, halo=max(cor_stencil,obc_stencil))
+  call create_group_pass(CS%pass_h_uv, uh(:,:,:), vh(:,:,:), G%Domain, halo=max(cor_stencil,obc_stencil))
 
   call cpu_clock_end(id_clock_pass)
   !--- end set up for group halo pass
@@ -541,14 +545,15 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
     call open_boundary_zero_normal_flow(CS%OBC, G, GV, CS%PFu, CS%PFv)
 
   if (G%nonblocking_updates) then
-    call complete_group_pass(CS%pass_hp_uhvh, G%Domain, clock=id_clock_pass)
+    call complete_group_pass(CS%pass_hp_uv, G%Domain, clock=id_clock_pass)
     call start_group_pass(CS%pass_eta, G%Domain, clock=id_clock_pass)
   else
-    call do_group_pass(CS%pass_hp_uhvh, G%Domain, clock=id_clock_pass)
+    call do_group_pass(CS%pass_hp_uv, G%Domain, clock=id_clock_pass)
   endif
 
+  call do_group_pass(CS%pass_h, G%Domain, clock=id_clock_pass)
   !$OMP parallel do default(shared)
-  do k=1,nz ; do j=js-2,je+2 ; do i=is-2,ie+2
+  do k=1,nz ; do j=js-cor_stencil,je+cor_stencil ; do i=is-cor_stencil,ie+cor_stencil
     h_av(i,j,k) = 0.5*(h(i,j,k) + hp(i,j,k))
   enddo ; enddo ; enddo
 
@@ -803,7 +808,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
 
   ! h_av = (h + hp)/2
   !$OMP parallel do default(shared)
-  do k=1,nz ; do j=js-2,je+2 ; do i=is-2,ie+2
+  do k=1,nz ; do j=js-cor_stencil,je+cor_stencil ; do i=is-cor_stencil,ie+cor_stencil
     h_av(i,j,k) = 0.5*(h(i,j,k) + hp(i,j,k))
   enddo ; enddo ; enddo
 

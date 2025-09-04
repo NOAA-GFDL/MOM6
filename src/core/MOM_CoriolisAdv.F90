@@ -315,7 +315,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
   !$OMP parallel do default(private) shared(u,v,h,uh,vh,CAu,CAv,G,GV,CS,AD,Area_h,Area_q,&
   !$OMP                        RV,PV,is,ie,js,je,nz,vol_neglect,h_tiny,OBC,eps_vel, &
-  !$OMP                        area_neglect, pbv, Stokes_VF, stencil) 
+  !$OMP                        area_neglect, pbv, Stokes_VF, stencil)
 
   do k=1,nz
 

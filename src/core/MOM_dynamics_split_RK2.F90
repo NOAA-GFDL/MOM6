@@ -1039,10 +1039,6 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   do k=1,nz ; do j=js-cor_stencil,je+cor_stencil ; do i=is-cor_stencil,ie+cor_stencil
     h_av(i,j,k) = h(i,j,k)
   enddo ; enddo ; enddo
-!    !$OMP parallel do default(shared)
-!    do k=1,nz ; do j=js-2,je+2 ; do i=is-2,ie+2
-!      h_av(i,j,k) = h(i,j,k)
-!    enddo ; enddo ; enddo
 
   call do_group_pass(CS%pass_visc_rem, G%Domain, clock=id_clock_pass)
   if (G%nonblocking_updates) then
@@ -1082,10 +1078,6 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   do k=1,nz ; do j=js-cor_stencil,je+cor_stencil ; do i=is-cor_stencil,ie+cor_stencil
     h_av(i,j,k) = 0.5*(h_av(i,j,k) + h(i,j,k))
   enddo ; enddo ; enddo
-!    !$OMP parallel do default(shared)
-!    do k=1,nz ; do j=js-2,je+2 ; do i=is-2,ie+2
-!      h_av(i,j,k) = 0.5*(h_av(i,j,k) + h(i,j,k))
-!    enddo ; enddo ; enddo
 
   if (G%nonblocking_updates) &
     call complete_group_pass(CS%pass_av_uvh, G%Domain, clock=id_clock_pass)
@@ -1653,7 +1645,6 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
                    success=read_h2, scale=1.0/GV%H_to_mks)
       if (read_uv .and. read_h2) then
         call pass_var(CS%h_av, G%Domain, halo=cor_stencil, clock=id_clock_pass_init)
-     !     call pass_var(CS%h_av, G%Domain, clock=id_clock_pass_init)
       else
         do k=1,nz ; do j=jsd,jed ; do i=isd,ied ; h_tmp(i,j,k) = h(i,j,k) ; enddo ; enddo ; enddo
         call continuity(CS%u_av, CS%v_av, h, h_tmp, uh, vh, dt, G, GV, US, CS%continuity_CSp, CS%OBC, pbv)
@@ -1662,13 +1653,10 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
           CS%h_av(i,j,k) = 0.5*(h(i,j,k) + h_tmp(i,j,k))
         enddo ; enddo ; enddo
         call pass_var(CS%h_av, G%Domain, halo=cor_stencil, clock=id_clock_pass_init)
- !         call pass_var(CS%h_av, G%Domain, clock=id_clock_pass_init)
 
       endif
       call pass_vector(CS%u_av, CS%v_av, G%Domain, halo=cor_stencil, clock=id_clock_pass_init, complete=.false.)
       call pass_vector(uh, vh, G%Domain, halo=cor_stencil, clock=id_clock_pass_init, complete=.true.)
- !       call pass_vector(CS%u_av, CS%v_av, G%Domain, halo=2, clock=id_clock_pass_init, complete=.false.)
- !       call pass_vector(uh, vh, G%Domain, halo=2, clock=id_clock_pass_init, complete=.true.)
       call CorAdCalc(CS%u_av, CS%v_av, CS%h_av, uh, vh, CS%CAu_pred, CS%CAv_pred, CS%OBC, CS%ADp, &
                      G, GV, US, CS%CoriolisAdv, pbv) !, Waves=Waves)
       CS%CAu_pred_stored = .true.
