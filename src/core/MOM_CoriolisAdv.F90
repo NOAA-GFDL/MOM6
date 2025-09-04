@@ -315,8 +315,8 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
   !$OMP parallel do default(private) shared(u,v,h,uh,vh,CAu,CAv,G,GV,CS,AD,Area_h,Area_q,&
   !$OMP                        RV,PV,is,ie,js,je,nz,vol_neglect,h_tiny,OBC,eps_vel, &
-  !$OMP                        area_neglect, pbv, Stokes_VF, stencil) &
-  !$OMP private(Isq,Ieq,Jsq,Jeq)
+  !$OMP                        area_neglect, pbv, Stokes_VF, stencil) 
+
   do k=1,nz
 
     Isq = G%IscB - stencil + 2
@@ -1259,6 +1259,7 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
   real :: um2a, up2a, vm2a, vp2a ! Temporary variables [L4 T-2 ~> m4 s-2].
   real :: third_order_u, third_order_v  ! Product of mask values to determine the boundary
   integer :: i, j, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz, n
+  real, parameter     :: C1_12 = 1.0/12.0   ! The ratio of 1/12 [nondim]
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
@@ -1305,7 +1306,7 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
                        G%mask2dCu(I,j) * G%mask2dCu(I+1,j))
 
         if (third_order_u == 1) then
-          up = (-u(I-2,j,k) + 7*u(I-1,j,k) + 7*u(I,j,k) - u(I+1,j,k))/12.
+          up = (7.0 * (u(I-1,j,k) + u(I,j,k)) - (u(I-2,j,k) + u(I+1,j,k))) * C1_12
           call UP3_Koren_limiter_reconstruction(u(I-2:I+1,j,k), up, um)
         else
           up = (u(I-1,j,k) + u(I,j,k))*0.5
@@ -1321,7 +1322,7 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
         third_order_v = (G%mask2dCv(i,J-2) * G%mask2dCv(i,J-1)* &
                        G%mask2dCv(i,J) * G%mask2dCv(i,J+1))
         if (third_order_v ==1) then
-          vp = (-v(i,J-2,k) + 7*v(i,J-1,k) + 7*v(i,J,k) - v(i,J+1,k))/12.
+          vp = (7.0 * (v(i,J-1,k) + v(i,J,k)) - (v(i,J-2,k) + v(i,J+1,k))) * C1_12
           call UP3_Koren_limiter_reconstruction(v(i,J-2:J+1,k), vp, vm)
         else
           vp = (v(i,J-1,k) + v(i,J,k))*0.5
@@ -1334,7 +1335,7 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
           endif
         endif
 
-        KE(i,j) = ( um*um + vm*vm )*0.5
+        KE(i,j) = ( (um*um) + (vm*vm) )*0.5
       enddo ; enddo
     else
       do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
@@ -1343,7 +1344,7 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
                        G%mask2dCu(I,j) * G%mask2dCu(I+1,j))
 
         if (third_order_u == 1) then
-          up = (-u(I-2,j,k) + 7*u(I-1,j,k) + 7*u(I,j,k) - u(I+1,j,k))/12.
+          up = (7.0 * (u(I-1,j,k) + u(I,j,k)) - (u(I-2,j,k) + u(I+1,j,k))) * C1_12
           call UP3_reconstruction(u(I-2:I+1,j,k), up, um)
         else
           up = (u(I-1,j,k) + u(I,j,k))*0.5
@@ -1359,7 +1360,7 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
         third_order_v = (G%mask2dCv(i,J-2) * G%mask2dCv(i,J-1)* &
                        G%mask2dCv(i,J) * G%mask2dCv(i,J+1))
         if (third_order_v ==1) then
-          vp = (-v(i,J-2,k) + 7*v(i,J-1,k) + 7*v(i,J,k) - v(i,J+1,k))/12.
+          vp = (7.0 * (v(i,J-1,k) + v(i,J,k)) - (v(i,J-2,k) + v(i,J+1,k))) * C1_12
           call UP3_reconstruction(v(i,J-2:J+1,k), vp, vm)
         else
           vp = (v(i,J-1,k) + v(i,J,k))*0.5
@@ -1372,7 +1373,7 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
           endif
         endif
 
-        KE(i,j) = ( um*um + vm*vm )*0.5
+        KE(i,j) = ( (um*um) + (vm*vm) )*0.5
       enddo ; enddo
     endif
   endif
@@ -1412,9 +1413,9 @@ subroutine UP3_reconstruction(q4,u,qr)
   real, parameter :: C1_6 = 1.0/6.0       ! The ratio of 1/6 [nondim]
 
   if (u>0.) then
-    qr = (-q4(1) + 5.*q4(2) + 2.*q4(3)) * C1_6
+    qr = ((2.*q4(3) + 5.*q4(2)) - q4(1)) * C1_6
   else
-    qr = (2.*q4(2) + 5.*q4(3) - q4(4)) * C1_6
+    qr = ((2.*q4(2) + 5.*q4(3)) - q4(4)) * C1_6
   endif
 
 end subroutine UP3_reconstruction
@@ -1523,8 +1524,8 @@ subroutine weno_three_h_weight_reconstruction(q4, h4, u4, &
     w0 = w0 * s   ! Weights of stencils
     w1 = w1 * s
 
-    vr = w0 * c0 + w1 * c1
-    hr = w0 * d0 + w1 * d1
+    vr = (w0 * c0) + (w1 * c1)
+    hr = (w0 * d0) + (w1 * d1)
 !    vr = min(max(q4(3), q4(2)), vr) ; vr = max(min(q4(3), q4(2)), vr) !Impose a monotonicity limiter
     hr = min(max(h4(3), h4(2)), hr) ; hr = max(min(h4(3), h4(2)), hr) ! A monotonicity limiter
 
@@ -1537,7 +1538,7 @@ subroutine weno_three_weight(q2, w0)
     real, intent(in) :: q2(2)    !< Tracer values on the two-point stencil [A ~> a]
     real, intent(inout) :: w0    !< Smoothness indicator for this stencil [A2 ~> a2]
 
-    w0 = q2(1) * q2(1) - 2 * q2(1) * q2(2) + q2(2) * q2(2)
+    w0 = (q2(1) - q2(2))**2
 
 end subroutine weno_three_weight
 
@@ -1628,13 +1629,13 @@ subroutine weno_five_h_weight_reconstruction(q6, h6, u6, &
     w1  = C3_5  * fac_fn(tau, b1)
     w2  = C1_10 * fac_fn(tau, b2)
 
-    s = 1. / (w0 + w1 + w2)
+    s = 1. / ((w0 + w1) + w2)
     w0 = w0 * s   ! Weights of stencils
     w1 = w1 * s
     w2 = w2 * s
 
-    vr = w0 * c0 + w1 * c1 + w2 * c2
-    hr = w0 * d0 + w1 * d1 + w2 * d2
+    vr = ((w0 * c0) + (w1 * c1)) + (w2 * c2)
+    hr = ((w0 * d0) + (w1 * d1)) + (w2 * d2)
 !    vr = min(max(q6(3), q6(4)), vr) ; vr = max(min(q6(3), q6(4)), vr) !Impose a monotonicity limiter
     hr = min(max(h6(3), h6(4)), hr) ; hr = max(min(h6(3), h6(4)), hr) !Impose a monotonicity limiter
 
@@ -1647,8 +1648,8 @@ subroutine weno_five_weight_0(q3, w0)
   real, intent(in) :: q3(3)       !< Tracer values on the three-point stencil [A ~> a]
   real, intent(inout) :: w0       !< Smoothness indicator for this stencil [A2 ~> a2]
 
-  w0 = q3(1) * (10 * q3(1) - 31 * q3(2) + 11 * q3(3)) + &
-       q3(2) * (25 * q3(2) - 19 * q3(3)) + 4 * q3(3) * q3(3)
+  w0 = (q3(1) * ((10 * q3(1) - 31 * q3(2)) + 11 * q3(3))) + &
+       ((q3(2) * (25 * q3(2) - 19 * q3(3))) + 4 * (q3(3) * q3(3)))
 
 end subroutine weno_five_weight_0
 
@@ -1657,8 +1658,8 @@ subroutine weno_five_weight_1(q3, w1)
   real, intent(in) :: q3(3)        !< Tracer values on the three-point stencil [A ~> a]
   real, intent(inout) :: w1        !< Smoothness indicator for this stencil [A2 ~> a2]
 
-  w1 = q3(1) * (4 * q3(1) - 13 * q3(2) + 5 * q3(3)) + &
-       q3(2) * (13 * q3(2) - 13 * q3(3)) + 4 * q3(3) * q3(3)
+  w1 = (q3(1) * ((4 * q3(1) - 13 * q3(2)) + 5 * q3(3))) + &
+       ((q3(2) * (13 * q3(2) - 13 * q3(3))) + 4 * (q3(3) * q3(3)))
 
 end subroutine weno_five_weight_1
 
@@ -1667,8 +1668,8 @@ subroutine weno_five_weight_2(q3, w2)
   real, intent(in) :: q3(3)        !< Tracer values on the three-point stencil [A ~> a]
   real, intent(inout) :: w2        !< Smoothness indicator for this stencil [A2 ~> a2]
 
-  w2 = q3(1) * (4 * q3(1) - 19 * q3(2) + 11 * q3(3)) + &
-       q3(2) * (25 * q3(2) - 31 * q3(3)) + 10 * q3(3) * q3(3)
+  w2 = (q3(1) * ((4 * q3(1) - 19 * q3(2)) + 11 * q3(3))) + &
+       ((q3(2) * (25 * q3(2) - 31 * q3(3))) + 10 * (q3(3) * q3(3)))
 
 end subroutine weno_five_weight_2
 
@@ -1678,7 +1679,7 @@ subroutine weno_five_reconstruction_0(q3, p0)
   real, intent(inout) :: p0        !< Reconstruction of the quantity [A ~> a]
   real, parameter :: C1_6 = 1.0/6.0 ! One sixth [nondim]
 
-  p0 = (2*q3(1) + 5*q3(2) - q3(3)) * C1_6
+  p0 = ((2*q3(1) + 5*q3(2)) - q3(3)) * C1_6
 
 end subroutine weno_five_reconstruction_0
 
@@ -1688,7 +1689,7 @@ subroutine weno_five_reconstruction_1(q3, p1)
   real, intent(inout) :: p1         !< Reconstruction of the quantity [A ~> a]
   real, parameter :: C1_6 = 1.0/6.0 ! One sixth [nondim]
 
-  p1 = (-q3(1) + 5*q3(2) + 2*q3(3)) * C1_6
+  p1 = ((-q3(1) + 5*q3(2)) + 2*q3(3)) * C1_6
 
 end subroutine weno_five_reconstruction_1
 
@@ -1698,7 +1699,7 @@ subroutine weno_five_reconstruction_2(q3, p2)
   real, intent(inout) :: p2          !< Reconstruction of the quantity [A ~> a]
   real, parameter :: C1_6 = 1.0/6.0  ! One sixth [nondim]
 
-  p2 = (2*q3(1) - 7*q3(2) + 11*q3(3)) * C1_6
+  p2 = ((2*q3(1) - 7*q3(2)) + 11*q3(3)) * C1_6
 
 end subroutine weno_five_reconstruction_2
 
@@ -1781,14 +1782,14 @@ subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
   w2  = C12_35 * fac_fn(tau, b2)
   w3  = C1_35  * fac_fn(tau, b3)
 
-  s = 1. / (w0 + w1 + w2 + w3)
+  s = 1. / ((w0 + w1) + (w2 + w3))
   w0 = w0 * s   ! Weights of the stencils
   w1 = w1 * s
   w2 = w2 * s
   w3 = w3 * s
 
-  vr = w0 * c0 + w1 * c1 + w2 * c2 + w3 * c3
-  hr = w0 * d0 + w1 * d1 + w2 * d2 + w3 * d3
+  vr = ((w0 * c0) + (w1 * c1)) + ((w2 * c2) + (w3 * c3))
+  hr = ((w0 * d0) + (w1 * d1)) + ((w2 * d2) + (w3 * d3))
 
 !  vr = min(max(q4, q5), vr) ; vr = max(min(q4, q5), vr)
   hr = min(max(h8(4), h8(5)), hr) ; hr = max(min(h8(4), h8(5)), hr) ! Impose a monotonicity limiter
@@ -1804,9 +1805,9 @@ subroutine weno_seven_weight_0(q4, w0)
   real, intent(inout) :: w0          !< Smoothness indicator for this stencil [A2 ~> a2]
 
   ! Coefficients from Balsara and Shu (2000). The division by 1000 will be normalized out by fac_fn
-  w0 = q4(1) * (2.107 * q4(1) - 9.402 * q4(2) + 7.042 * q4(3) - 1.854 * q4(4)) + &
-     q4(2) * (11.003 * q4(2) - 17.246 * q4(3) + 4.642 * q4(4)) + &
-     q4(3) * (7.043 * q4(3) - 3.882 * q4(4)) + 0.547 * q4(4) * q4(4)
+  w0 = ((q4(1) * ((2.107 * q4(1) - 9.402 * q4(2)) + (7.042 * q4(3) - 1.854 * q4(4)))) + &
+     (q4(2) * ((11.003 * q4(2) - 17.246 * q4(3)) + 4.642 * q4(4)))) + &
+     ((q4(3) * (7.043 * q4(3) - 3.882 * q4(4))) + 0.547 * (q4(4) * q4(4)))
 
 end subroutine weno_seven_weight_0
 
@@ -1816,9 +1817,9 @@ subroutine weno_seven_weight_1(q4, w1)
   real, intent(inout) :: w1          !< Smoothness indicator for this stencil [A2 ~> a2]
 
   ! Coefficients from Balsara and Shu (2000). The division by 1000 will be normalized out by fac_fn
-  w1 = q4(1) * (0.547 * q4(1) - 2.522 * q4(2) + 1.922 * q4(3) - 0.494 * q4(4)) + &
-     q4(2) * (3.443 * q4(2) - 5.966 * q4(3) + 1.602 * q4(4)) + &
-     q4(3) * (2.843 * q4(3) - 1.642 * q4(4)) + 0.267 * q4(4) * q4(4)
+  w1 = ((q4(1) * ((0.547 * q4(1) - 2.522 * q4(2)) + (1.922 * q4(3) - 0.494 * q4(4)))) + &
+     (q4(2) * ((3.443 * q4(2) - 5.966 * q4(3)) + 1.602 * q4(4)))) + &
+     ((q4(3) * (2.843 * q4(3) - 1.642 * q4(4))) + 0.267 * (q4(4) * q4(4)))
 
 end subroutine weno_seven_weight_1
 
@@ -1828,9 +1829,9 @@ subroutine weno_seven_weight_2(q4, w2)
   real, intent(inout) :: w2           !< Smoothness indicator for this stencil [A2 ~> a2]
 
   ! Coefficients from Balsara and Shu (2000). The division by 1000 will be normalized out by fac_fn
-  w2 = q4(1) * (0.267 * q4(1) - 1.642 * q4(2) + 1.602 * q4(3) - 0.494 * q4(4)) + &
-     q4(2) * (2.843 * q4(2) - 5.966 * q4(3) + 1.922 * q4(4)) + &
-     q4(3) * (3.443 * q4(3) - 2.522 * q4(4)) + 0.547 * q4(4) * q4(4)
+  w2 = ((q4(1) * ((0.267 * q4(1) - 1.642 * q4(2)) + (1.602 * q4(3) - 0.494 * q4(4)))) + &
+     (q4(2) * ((2.843 * q4(2) - 5.966 * q4(3)) + 1.922 * q4(4)))) + &
+     ((q4(3) * (3.443 * q4(3) - 2.522 * q4(4))) + 0.547 * (q4(4) * q4(4)))
 
 end subroutine weno_seven_weight_2
 
@@ -1840,9 +1841,9 @@ subroutine weno_seven_weight_3(q4, w3)
   real, intent(inout) :: w3           !< Smoothness indicator for this stencil [A2 ~> a2]
 
   ! Coefficients from Balsara and Shu (2000). The division by 1000 will be normalized out by fac_fn
-  w3 = q4(1) * (0.547  * q4(1) - 3.882 * q4(2) + 4.642 * q4(3) - 1.854 * q4(4)) + &
-     q4(2) * (7.043 * q4(2) - 17.246 * q4(3) + 7.042 * q4(4)) + &
-     q4(3) * (11.003 * q4(3) - 9.402 * q4(4)) + 2.107 * q4(4) * q4(4)
+  w3 = ((q4(1) * ((0.547  * q4(1) - 3.882 * q4(2)) + (4.642 * q4(3) - 1.854 * q4(4)))) + &
+     (q4(2) * ((7.043 * q4(2) - 17.246 * q4(3)) + 7.042 * q4(4)))) + &
+     ((q4(3) * (11.003 * q4(3) - 9.402 * q4(4))) + 2.107 * (q4(4) * q4(4)))
 
 end subroutine weno_seven_weight_3
 
@@ -1852,7 +1853,7 @@ subroutine weno_seven_reconstruction_0(q4, p0)
   real, intent(inout) :: p0            !< Reconstruction of the quantity [A ~> a]
   real, parameter :: C1_24 = 1.0/24.0  ! One twenty fourth [nondim]
 
-  p0 = (6 * q4(1) + 26 * q4(2) - 10 * q4(3) + 2 * q4(4)) * C1_24
+  p0 = (((6 * q4(1) + 26 * q4(2)) - 10 * q4(3)) + 2 * q4(4)) * C1_24
 
 end subroutine weno_seven_reconstruction_0
 
@@ -1862,7 +1863,7 @@ subroutine weno_seven_reconstruction_1(q4, p1)
   real, intent(inout) :: p1            !< Reconstruction of the quantity [A ~> a]
   real, parameter :: C1_24 = 1.0/24.0  ! One twenty fourth [nondim]
 
-  p1 = (-2 * q4(1) + 14 * q4(2) + 14 * q4(3) - 2 * q4(4)) * C1_24
+  p1 = (14 * (q4(2) + q4(3)) - 2 * (q4(1) + q4(4))) * C1_24
 
 end subroutine weno_seven_reconstruction_1
 
@@ -1872,7 +1873,7 @@ subroutine weno_seven_reconstruction_2(q4, p2)
   real, intent(inout) :: p2             !< Reconstruction of the quantity [A ~> a]
   real, parameter :: C1_24 = 1.0/24.0   ! One twenty fourth [nondim]
 
-  p2 = (2 * q4(1) - 10 * q4(2) + 26 * q4(3) + 6 * q4(4)) * C1_24
+  p2 = (((2 * q4(1) - 10 * q4(2)) + 26 * q4(3)) + 6 * q4(4)) * C1_24
 
 end subroutine weno_seven_reconstruction_2
 
@@ -1882,7 +1883,7 @@ subroutine weno_seven_reconstruction_3(q4, p3)
   real, intent(inout) :: p3            !< Reconstruction of the quantity [A ~> a]
   real, parameter :: C1_24 = 1.0/24.0  ! One twenty fourth [nondim]
 
-  p3 = (-6 * q4(1) + 26 * q4(2) - 46 * q4(3) + 50 * q4(4)) * C1_24
+  p3 = (((-6 * q4(1) + 26 * q4(2)) - 46 * q4(3)) + 50 * q4(4)) * C1_24
 
 end subroutine weno_seven_reconstruction_3
 
