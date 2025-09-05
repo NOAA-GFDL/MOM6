@@ -241,6 +241,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   real :: UHeff, VHeff  ! More temporary variables [H L2 T-1 ~> m3 s-1 or kg s-1].
   real :: QUHeff,QVHeff ! More temporary variables [H L2 T-2 ~> m3 s-2 or kg s-2].
   integer :: i, j, k, n, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
+  integer :: Is_q, Ie_q, Js_q, Je_q  ! The scheme-dependent range of values at which vorticity is set.
   logical :: Stokes_VF
   real :: u_v, v_u      ! u_v is the u velocity at v point, v_u is the v velocity at u point [L T-1 ~> m s-1]
   real :: q_v, q_u      ! PV at the u and v points [H-1 T-1 ~> m-1 s-1 or m2 kg-1 s-1]
@@ -272,27 +273,30 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
   stencil = CoriolisAdv_stencil(CS)
 
-  Isq = G%IscB - stencil + 2
-  Ieq = G%IecB + stencil - 2
-  Jsq = G%JscB - stencil + 2
-  Jeq = G%JecB + stencil - 2
-  !$OMP parallel do default(private) shared(Isq,Ieq,Jsq,Jeq,G,Area_h)
-  do j=Jsq-1,Jeq+2 ; do I=Isq-1,Ieq+2
+  if ((CS%Coriolis_Scheme == wenovi7th_PV_ENSTRO) .or. (CS%Coriolis_Scheme == wenovi5th_PV_ENSTRO) .or. &
+      (CS%Coriolis_Scheme == wenovi3rd_PV_ENSTRO)) then
+    Is_q = is - stencil ; Ie_q = ie + stencil - 1 ; Js_q = js - stencil ; Je_q = je + stencil - 1
+  else
+    Is_q = G%IscB - 1 ; Ie_q = G%IecB + 1 ; Js_q = G%JscB - 1 ; Je_q = G%JecB + 1
+  endif
+
+  !$OMP parallel do default(private) shared(Is_q,Ie_q,Js_q,Je_q,G,Area_h)
+  do j=Js_q,Je_q+1 ; do I=Is_q,Ie_q+1
     Area_h(i,j) = G%mask2dT(i,j) * G%areaT(i,j)
   enddo ; enddo
   if (associated(OBC)) then ; do n=1,OBC%number_of_segments
     if (.not. OBC%segment(n)%on_pe) cycle
     I = OBC%segment(n)%HI%IsdB ; J = OBC%segment(n)%HI%JsdB
-    if (OBC%segment(n)%is_N_or_S .and. (J >= Jsq-1) .and. (J <= Jeq+1)) then
-      do i = max(Isq-1,OBC%segment(n)%HI%isd), min(Ieq+2,OBC%segment(n)%HI%ied)
+    if (OBC%segment(n)%is_N_or_S .and. (J >= Js_q) .and. (J <= Je_q)) then
+      do i = max(Is_q,OBC%segment(n)%HI%isd), min(Ie_q+1,OBC%segment(n)%HI%ied)
         if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
           Area_h(i,j+1) = Area_h(i,j)
         else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
           Area_h(i,j) = Area_h(i,j+1)
         endif
       enddo
-    elseif (OBC%segment(n)%is_E_or_W .and. (I >= Isq-1) .and. (I <= Ieq+1)) then
-      do j = max(Jsq-1,OBC%segment(n)%HI%jsd), min(Jeq+2,OBC%segment(n)%HI%jed)
+    elseif (OBC%segment(n)%is_E_or_W .and. (I >= Is_q) .and. (I <= Ie_q)) then
+      do j = max(Js_q,OBC%segment(n)%HI%jsd), min(Je_q+1,OBC%segment(n)%HI%jed)
         if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
           Area_h(i+1,j) = Area_h(i,j)
         else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
@@ -301,8 +305,8 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
       enddo
     endif
   enddo ; endif
-  !$OMP parallel do default(private) shared(Isq,Ieq,Jsq,Jeq,G,Area_h,Area_q)
-  do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+  !$OMP parallel do default(private) shared(Is_q,Ie_q,Js_q,Je_q,G,Area_h,Area_q)
+  do J=Js_q,Je_q ; do I=Is_q,Ie_q
     Area_q(i,j) = (Area_h(i,j) + Area_h(i+1,j+1)) + &
                   (Area_h(i+1,j) + Area_h(i,j+1))
   enddo ; enddo
@@ -314,15 +318,11 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   endif ; endif
 
   !$OMP parallel do default(private) shared(u,v,h,uh,vh,CAu,CAv,G,GV,CS,AD,Area_h,Area_q,&
-  !$OMP                        RV,PV,is,ie,js,je,nz,vol_neglect,h_tiny,OBC,eps_vel, &
-  !$OMP                        area_neglect, pbv, Stokes_VF, stencil)
+  !$OMP                        RV,PV,is,ie,js,je,Isq,Ieq,Jsq,Jeq,Is_q,Ie_q,Js_q,Je_q,nz,vol_neglect,&
+  !$OMP                        h_tiny,OBC,eps_vel,area_neglect,pbv,Stokes_VF,stencil)
 
   do k=1,nz
 
-    Isq = G%IscB - stencil + 2
-    Ieq = G%IecB + stencil - 2
-    Jsq = G%JscB - stencil + 2
-    Jeq = G%JecB + stencil - 2
     ! Here the second order accurate layer potential vorticities, q,
     ! are calculated.  hq is  second order accurate in space.  Relative
     ! vorticity is second order accurate everywhere with free slip b.c.s,
@@ -330,7 +330,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
     ! First calculate the contributions to the circulation around the q-point.
     if (Stokes_VF) then
       if (CS%id_CAuS>0 .or. CS%id_CAvS>0) then
-        do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+        do J=Js_q,Je_q ; do I=Is_q,Ie_q
           dvSdx(I,J) = (-Waves%us_y(i+1,J,k)*G%dyCv(i+1,J)) - &
                        (-Waves%us_y(i,J,k)*G%dyCv(i,J))
           duSdy(I,J) = (-Waves%us_x(I,j+1,k)*G%dxCu(I,j+1)) - &
@@ -338,28 +338,28 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
         enddo; enddo
       endif
       if (.not. Waves%Passive_Stokes_VF) then
-        do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+        do J=Js_q,Je_q ; do I=Is_q,Ie_q
           dvdx(I,J) = ((v(i+1,J,k)-Waves%us_y(i+1,J,k))*G%dyCv(i+1,J)) - &
                       ((v(i,J,k)-Waves%us_y(i,J,k))*G%dyCv(i,J))
           dudy(I,J) = ((u(I,j+1,k)-Waves%us_x(I,j+1,k))*G%dxCu(I,j+1)) - &
                       ((u(I,j,k)-Waves%us_x(I,j,k))*G%dxCu(I,j))
         enddo; enddo
       else
-        do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+        do J=Js_q,Je_q ; do I=Is_q,Ie_q
           dvdx(I,J) = (v(i+1,J,k)*G%dyCv(i+1,J)) - (v(i,J,k)*G%dyCv(i,J))
           dudy(I,J) = (u(I,j+1,k)*G%dxCu(I,j+1)) - (u(I,j,k)*G%dxCu(I,j))
         enddo; enddo
       endif
     else
-      do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+      do J=Js_q,Je_q ; do I=Is_q,Ie_q
         dvdx(I,J) = (v(i+1,J,k)*G%dyCv(i+1,J)) - (v(i,J,k)*G%dyCv(i,J))
         dudy(I,J) = (u(I,j+1,k)*G%dxCu(I,j+1)) - (u(I,j,k)*G%dxCu(I,j))
       enddo; enddo
     endif
-    do J=Jsq-1,Jeq+1 ; do i=Isq-1,Ieq+2
+    do J=Js_q,Je_q ; do i=Is_q,Ie_q+1
       hArea_v(i,J) = 0.5*((Area_h(i,j) * h(i,j,k)) + (Area_h(i,j+1) * h(i,j+1,k)))
     enddo ; enddo
-    do j=Jsq-1,Jeq+2 ; do I=Isq-1,Ieq+1
+    do j=Js_q,Je_q+1 ; do I=Is_q,Ie_q
       hArea_u(I,j) = 0.5*((Area_h(i,j) * h(i,j,k)) + (Area_h(i+1,j) * h(i+1,j,k)))
     enddo ; enddo
 
@@ -377,7 +377,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
     if (associated(OBC)) then ; do n=1,OBC%number_of_segments
       if (.not. OBC%segment(n)%on_pe) cycle
       I = OBC%segment(n)%HI%IsdB ; J = OBC%segment(n)%HI%JsdB
-      if (OBC%segment(n)%is_N_or_S .and. (J >= Jsq-1) .and. (J <= Jeq+1)) then
+      if (OBC%segment(n)%is_N_or_S .and. (J >= Js_q) .and. (J <= Je_q)) then
         if (OBC%zero_vorticity) then ; do I=OBC%segment(n)%HI%IsdB,OBC%segment(n)%HI%IedB
           dvdx(I,J) = 0. ; dudy(I,J) = 0.
         enddo ; endif
@@ -400,7 +400,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
         enddo ; endif
 
         ! Project thicknesses across OBC points with a no-gradient condition.
-        do i = max(Isq-1,OBC%segment(n)%HI%isd), min(Ieq+2,OBC%segment(n)%HI%ied)
+        do i = max(Is_q,OBC%segment(n)%HI%isd), min(Ie_q+1,OBC%segment(n)%HI%ied)
           if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
             hArea_v(i,J) = 0.5 * (Area_h(i,j) + Area_h(i,j+1)) * h(i,j,k)
           else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
@@ -409,7 +409,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
         enddo
 
         if (CS%Coriolis_En_Dis) then
-          do i = max(Isq-1,OBC%segment(n)%HI%isd), min(Ieq+2,OBC%segment(n)%HI%ied)
+          do i = max(Is_q,OBC%segment(n)%HI%isd), min(Ie_q+1,OBC%segment(n)%HI%ied)
             if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
               vh_center(i,J) = (G%dx_Cv(i,J)*pbv%por_face_areaV(i,J,k)) * v(i,J,k) * h(i,j,k)
             else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
@@ -417,7 +417,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
             endif
           enddo
         endif
-      elseif (OBC%segment(n)%is_E_or_W .and. (I >= Isq-1) .and. (I <= Ieq+1)) then
+      elseif (OBC%segment(n)%is_E_or_W .and. (I >= Is_q) .and. (I <= Ie_q)) then
         if (OBC%zero_vorticity) then ; do J=OBC%segment(n)%HI%JsdB,OBC%segment(n)%HI%JedB
           dvdx(I,J) = 0. ; dudy(I,J) = 0.
         enddo ; endif
@@ -440,7 +440,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
         enddo ; endif
 
         ! Project thicknesses across OBC points with a no-gradient condition.
-        do j = max(Jsq-1,OBC%segment(n)%HI%jsd), min(Jeq+2,OBC%segment(n)%HI%jed)
+        do j = max(Js_q,OBC%segment(n)%HI%jsd), min(Je_q+1,OBC%segment(n)%HI%jed)
           if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
             hArea_u(I,j) = 0.5*(Area_h(i,j) + Area_h(i+1,j)) * h(i,j,k)
           else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
@@ -448,7 +448,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
           endif
         enddo
         if (CS%Coriolis_En_Dis) then
-          do j = max(Jsq-1,OBC%segment(n)%HI%jsd), min(Jeq+2,OBC%segment(n)%HI%jed)
+          do j = max(Js_q,OBC%segment(n)%HI%jsd), min(Je_q+1,OBC%segment(n)%HI%jed)
             if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
               uh_center(I,j) = (G%dy_Cu(I,j)*pbv%por_face_areaU(I,j,k)) * u(I,j,k) * h(i,j,k)
             else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
@@ -464,8 +464,8 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
       ! Now project thicknesses across cell-corner points in the OBCs.  The two
       ! projections have to occur in sequence and can not be combined easily.
       I = OBC%segment(n)%HI%IsdB ; J = OBC%segment(n)%HI%JsdB
-      if (OBC%segment(n)%is_N_or_S .and. (J >= Jsq-1) .and. (J <= Jeq+1)) then
-        do I = max(Isq-1,OBC%segment(n)%HI%IsdB), min(Ieq+1,OBC%segment(n)%HI%IedB)
+      if (OBC%segment(n)%is_N_or_S .and. (J >= Js_q) .and. (J <= Je_q)) then
+        do I = max(Is_q,OBC%segment(n)%HI%IsdB), min(Ie_q,OBC%segment(n)%HI%IedB)
           if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
             if (Area_h(i,j) + Area_h(i+1,j) > 0.0) then
               hArea_u(I,j+1) = hArea_u(I,j) * ((Area_h(i,j+1) + Area_h(i+1,j+1)) / &
@@ -478,8 +478,8 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
             else ; hArea_u(I,j) = 0.0 ; endif
           endif
         enddo
-      elseif (OBC%segment(n)%is_E_or_W .and. (I >= Isq-1) .and. (I <= Ieq+1)) then
-        do J = max(Jsq-1,OBC%segment(n)%HI%JsdB), min(Jeq+1,OBC%segment(n)%HI%JedB)
+      elseif (OBC%segment(n)%is_E_or_W .and. (I >= Is_q) .and. (I <= Ie_q)) then
+        do J = max(Js_q,OBC%segment(n)%HI%JsdB), min(Je_q,OBC%segment(n)%HI%JedB)
           if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
             if (Area_h(i,j) + Area_h(i,j+1) > 0.0) then
               hArea_v(i+1,J) = hArea_v(i,J) * ((Area_h(i+1,j) + Area_h(i+1,j+1)) / &
@@ -497,52 +497,48 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
     enddo ; endif
 
     if (CS%no_slip) then
-      do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+      do J=Js_q,Je_q ; do I=Is_q,Ie_q
         rel_vort(I,J) = (2.0 - G%mask2dBu(I,J)) * (dvdx(I,J) - dudy(I,J)) * G%IareaBu(I,J)
       enddo; enddo
       if (Stokes_VF) then
         if (CS%id_CAuS>0 .or. CS%id_CAvS>0) then
-          do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+          do J=Js_q,Je_q ; do I=Is_q,Ie_q
             stk_vort(I,J) = (2.0 - G%mask2dBu(I,J)) * (dvSdx(I,J) - duSdy(I,J)) * G%IareaBu(I,J)
           enddo; enddo
         endif
       endif
     else
-      do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+      do J=Js_q,Je_q ; do I=Is_q,Ie_q
         rel_vort(I,J) = G%mask2dBu(I,J) * (dvdx(I,J) - dudy(I,J)) * G%IareaBu(I,J)
       enddo; enddo
       if (Stokes_VF) then
         if (CS%id_CAuS>0 .or. CS%id_CAvS>0) then
-          do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+          do J=Js_q,Je_q ; do I=Is_q,Ie_q
             stk_vort(I,J) = (2.0 - G%mask2dBu(I,J)) * (dvSdx(I,J) - duSdy(I,J)) * G%IareaBu(I,J)
           enddo; enddo
         endif
       endif
     endif
 
-    do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+    do J=Js_q,Je_q ; do I=Is_q,Ie_q
       abs_vort(I,J) = G%CoriolisBu(I,J) + rel_vort(I,J)
     enddo ; enddo
 
-    do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+    do J=Js_q,Je_q ; do I=Is_q,Ie_q
       hArea_q = (hArea_u(I,j) + hArea_u(I,j+1)) + (hArea_v(i,J) + hArea_v(i+1,J))
       Ih_q(I,J) = Area_q(I,J) / (hArea_q + vol_neglect)
-      h_q(I,J) = (hArea_q) / max(Area_q(I,J), area_neglect)
+      h_q(I,J) = hArea_q / max(Area_q(I,J), area_neglect)
       q(I,J) = abs_vort(I,J) * Ih_q(I,J)
     enddo; enddo
 
     if (Stokes_VF) then
       if (CS%id_CAuS>0 .or. CS%id_CAvS>0) then
-        do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
+        do J=Js_q,Je_q ; do I=Is_q,Ie_q
           qS(I,J) = stk_vort(I,J) * Ih_q(I,J)
         enddo; enddo
       endif
     endif
 
-    Isq = G%IscB
-    Ieq = G%IecB
-    Jsq = G%JscB
-    Jeq = G%JecB
 
     if (CS%id_rv > 0) then
       do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
