@@ -256,7 +256,7 @@ subroutine step_MOM_dyn_unsplit_RK2(u_in, v_in, h_in, tv, visc, Time_local, dt, 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
   dt_pred = dt * CS%BE
-  cor_stencil = CoriolisAdv_stencil(CS%CoriolisAdv) 
+  cor_stencil = CoriolisAdv_stencil(CS%CoriolisAdv)
 
   h_av(:,:,:) = 0; hp(:,:,:) = 0
   up(:,:,:) = 0
