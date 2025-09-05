@@ -409,7 +409,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
         enddo
 
         if (CS%Coriolis_En_Dis) then
-          do i = max(Is_q,OBC%segment(n)%HI%isd), min(Ie_q+1,OBC%segment(n)%HI%ied)
+          do i = max(Isq,OBC%segment(n)%HI%isd), min(Ieq+1,OBC%segment(n)%HI%ied)
             if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
               vh_center(i,J) = (G%dx_Cv(i,J)*pbv%por_face_areaV(i,J,k)) * v(i,J,k) * h(i,j,k)
             else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
@@ -448,7 +448,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
           endif
         enddo
         if (CS%Coriolis_En_Dis) then
-          do j = max(Js_q,OBC%segment(n)%HI%jsd), min(Je_q+1,OBC%segment(n)%HI%jed)
+          do j = max(Jsq,OBC%segment(n)%HI%jsd), min(Jeq+1,OBC%segment(n)%HI%jed)
             if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
               uh_center(I,j) = (G%dy_Cu(I,j)*pbv%por_face_areaU(I,j,k)) * u(I,j,k) * h(i,j,k)
             else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
@@ -502,7 +502,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
       enddo; enddo
       if (Stokes_VF) then
         if (CS%id_CAuS>0 .or. CS%id_CAvS>0) then
-          do J=Js_q,Je_q ; do I=Is_q,Ie_q
+          do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
             stk_vort(I,J) = (2.0 - G%mask2dBu(I,J)) * (dvSdx(I,J) - duSdy(I,J)) * G%IareaBu(I,J)
           enddo; enddo
         endif
@@ -513,7 +513,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
       enddo; enddo
       if (Stokes_VF) then
         if (CS%id_CAuS>0 .or. CS%id_CAvS>0) then
-          do J=Js_q,Je_q ; do I=Is_q,Ie_q
+          do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
             stk_vort(I,J) = (2.0 - G%mask2dBu(I,J)) * (dvSdx(I,J) - duSdy(I,J)) * G%IareaBu(I,J)
           enddo; enddo
         endif
@@ -533,7 +533,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 
     if (Stokes_VF) then
       if (CS%id_CAuS>0 .or. CS%id_CAvS>0) then
-        do J=Js_q,Je_q ; do I=Is_q,Ie_q
+        do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
           qS(I,J) = stk_vort(I,J) * Ih_q(I,J)
         enddo; enddo
       endif

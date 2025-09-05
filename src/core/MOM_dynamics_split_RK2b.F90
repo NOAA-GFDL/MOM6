@@ -263,7 +263,6 @@ type, public :: MOM_dyn_split_RK2b_CS ; private
   type(group_pass_type) :: pass_hp_uv    !< Structure for group halo pass
   type(group_pass_type) :: pass_hp_uhvh  !< Structure for group halo pass
   type(group_pass_type) :: pass_h_uv     !< Structure for group halo pass
-  type(group_pass_type) :: pass_h        !< Structure for group halo pass
 
 end type MOM_dyn_split_RK2b_CS
 
@@ -485,8 +484,11 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
 
   call create_group_pass(CS%pass_hp_uhvh, hp, G%Domain, halo=cor_stencil)
   call create_group_pass(CS%pass_hp_uhvh, uh(:,:,:), vh(:,:,:), G%Domain, halo=max(cor_stencil,obc_stencil))
+  if (cor_stencil > 2) then
+    call create_group_pass(CS%pass_hp_uhvh, u_av, v_av, G%Domain, halo=max(cor_stencil,obc_stencil))
+    call create_group_pass(CS%pass_hp_uhvh, h, G%Domain, halo=cor_stencil)
+  endif
 
-  call create_group_pass(CS%pass_h, h, g%domain, halo=max(cor_stencil,cont_stencil))
   call create_group_pass(CS%pass_h_uv, h, G%Domain, halo=max(cor_stencil,cont_stencil))
   call create_group_pass(CS%pass_h_uv, u_av, v_av, G%Domain, halo=max(cor_stencil,obc_stencil))
   call create_group_pass(CS%pass_h_uv, uh(:,:,:), vh(:,:,:), G%Domain, halo=max(cor_stencil,obc_stencil))
@@ -545,13 +547,12 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
     call open_boundary_zero_normal_flow(CS%OBC, G, GV, CS%PFu, CS%PFv)
 
   if (G%nonblocking_updates) then
-    call complete_group_pass(CS%pass_hp_uv, G%Domain, clock=id_clock_pass)
+    call complete_group_pass(CS%pass_hp_uhvh, G%Domain, clock=id_clock_pass)
     call start_group_pass(CS%pass_eta, G%Domain, clock=id_clock_pass)
   else
-    call do_group_pass(CS%pass_hp_uv, G%Domain, clock=id_clock_pass)
+    call do_group_pass(CS%pass_hp_uhvh, G%Domain, clock=id_clock_pass)
   endif
 
-  call do_group_pass(CS%pass_h, G%Domain, clock=id_clock_pass)
   !$OMP parallel do default(shared)
   do k=1,nz ; do j=js-cor_stencil,je+cor_stencil ; do i=is-cor_stencil,ie+cor_stencil
     h_av(i,j,k) = 0.5*(h(i,j,k) + hp(i,j,k))

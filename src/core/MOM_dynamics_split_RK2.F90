@@ -495,6 +495,9 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   call create_group_pass(CS%pass_hp_uv, hp, G%Domain, halo=cor_stencil)
   call create_group_pass(CS%pass_hp_uv, u_av, v_av, G%Domain, halo=max(cor_stencil,vel_stencil))
   call create_group_pass(CS%pass_hp_uv, uh(:,:,:), vh(:,:,:), G%Domain, halo=max(cor_stencil,vel_stencil))
+  if (cor_stencil > 2) then
+    call create_group_pass(CS%pass_hp_uv, h, G%Domain, halo=cor_stencil)
+  endif
   call create_group_pass(CS%pass_h, h, g%domain, halo=max(cor_stencil,cont_stencil))
   call create_group_pass(CS%pass_av_uvh, u_av, v_av, g%domain, halo=max(cor_stencil,vel_stencil))
   call create_group_pass(CS%pass_av_uvh, uh(:,:,:), vh(:,:,:), G%Domain, halo=max(cor_stencil,vel_stencil))
@@ -813,7 +816,6 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   endif
 
   ! h_av = (h + hp)/2
-  call do_group_pass(CS%pass_h, G%Domain, clock=id_clock_pass)
   !$OMP parallel do default(shared)
   do k=1,nz ; do j=js-cor_stencil,je+cor_stencil ; do i=is-cor_stencil,ie+cor_stencil
     h_av(i,j,k) = 0.5*(h(i,j,k) + hp(i,j,k))
