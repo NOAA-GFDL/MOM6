@@ -37,8 +37,9 @@ type, public :: CoriolisAdv_CS ; private
                              !! - SADOURNY75_ENSTRO - Sadourny, JAS 1975, Enstrophy
                              !! - ARAKAWA_LAMB81    - Arakawa & Lamb, MWR 1981, Energy & Enstrophy
                              !! - ARAKAWA_LAMB_BLEND - A blend of Arakawa & Lamb with Arakawa & Hsu and Sadourny energy.
+                             !! - WENOVI3RD_PV_ENSTRO    - 3rd-order WENO scheme for PV reconstruction
+                             !! - WENOVI5TH_PV_ENSTRO    - 5th-order WENO scheme for PV reconstruction
                              !! - WENOVI7TH_PV_ENSTRO    - 7th-order WENO scheme for PV reconstruction
-                             !! - WENOVI7TH_ENSTRO       - 7th-order WENO scheme for absolute vorticity reconstruction
                              !! The default, SADOURNY75_ENERGY, is the safest choice then the
                              !! deformation radius is poorly resolved.
   integer :: KE_Scheme       !< KE_SCHEME selects the discretization for
@@ -311,7 +312,6 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
                   (Area_h(i+1,j) + Area_h(i,j+1))
   enddo ; enddo
 
-
   Stokes_VF = .false.
   if (present(Waves)) then ; if (associated(Waves)) then
     Stokes_VF = Waves%Stokes_VF
@@ -320,7 +320,6 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   !$OMP parallel do default(private) shared(u,v,h,uh,vh,CAu,CAv,G,GV,CS,AD,Area_h,Area_q,&
   !$OMP                        RV,PV,is,ie,js,je,Isq,Ieq,Jsq,Jeq,Is_q,Ie_q,Js_q,Je_q,nz,vol_neglect,&
   !$OMP                        h_tiny,OBC,eps_vel,area_neglect,pbv,Stokes_VF,stencil)
-
   do k=1,nz
 
     ! Here the second order accurate layer potential vorticities, q,
@@ -538,7 +537,6 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
         enddo; enddo
       endif
     endif
-
 
     if (CS%id_rv > 0) then
       do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
@@ -1792,7 +1790,6 @@ subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
 
   qr = vr / max(hr, h_tiny)
 
-
 end subroutine weno_seven_h_weight_reconstruction
 
 !> Compute the smoothness indicator for the fourth upwind stencil of the seventh-order WENO scheme
@@ -2042,7 +2039,6 @@ subroutine CoriolisAdv_init(Time, G, GV, US, param_file, diag, AD, CS)
                   default=.True.)
   endif
 
-
   ! Set PV_Adv_Scheme (selects discretization of PV advection)
   call get_param(param_file, mdl, "PV_ADV_SCHEME", tmpstr, &
                  "PV_ADV_SCHEME selects the discretization for PV "//&
@@ -2086,7 +2082,6 @@ subroutine CoriolisAdv_init(Time, G, GV, US, param_file, diag, AD, CS)
   CS%id_CAvS = register_diag_field('ocean_model', 'CAv_Stokes', diag%axesCvL, Time, &
      'Meridional Acceleration from Stokes Vorticity', 'm s-2', conversion=US%L_T2_to_m_s2)
   ! add to AD
-
 
   !CS%id_hf_gKEu = register_diag_field('ocean_model', 'hf_gKEu', diag%axesCuL, Time, &
   !   'Fractional Thickness-weighted Zonal Acceleration from Grad. Kinetic Energy', &
