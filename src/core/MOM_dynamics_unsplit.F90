@@ -74,7 +74,7 @@ use MOM_ALE, only : ALE_CS
 use MOM_barotropic, only : barotropic_CS
 use MOM_boundary_update, only : update_OBC_data, update_OBC_CS
 use MOM_continuity, only : continuity, continuity_init, continuity_CS, continuity_stencil
-use MOM_CoriolisAdv, only : CorAdCalc, CoriolisAdv_init, CoriolisAdv_CS
+use MOM_CoriolisAdv, only : CorAdCalc, CoriolisAdv_init, CoriolisAdv_CS, CoriolisAdv_stencil
 use MOM_debugging, only : check_redundant
 use MOM_grid, only : ocean_grid_type
 use MOM_hor_index, only : hor_index_type
@@ -240,9 +240,11 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
   real :: dt_visc   ! The time step for a part of the update due to viscosity [T ~> s].
   logical :: dyn_p_surf
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
+  integer :: cor_stencil  ! Stencil size for Coriolis schemes [nondim]
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
   dt_pred = dt / 3.0
+  cor_stencil = CoriolisAdv_stencil(CS%CoriolisAdv)
 
   h_av(:,:,:) = 0; hp(:,:,:) = 0
   up(:,:,:) = 0; upp(:,:,:) = 0
@@ -275,7 +277,12 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
   call cpu_clock_begin(id_clock_continuity)
   call continuity(u, v, h, hp, uh, vh, dt*0.5, G, GV, US, CS%continuity_CSp, CS%OBC, pbv)
   call cpu_clock_end(id_clock_continuity)
-  call pass_var(hp, G%Domain, clock=id_clock_pass)
+  if (cor_stencil > 2) then
+    call pass_var(hp, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+    call pass_var(h, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+  else
+    call pass_var(hp, G%Domain, clock=id_clock_pass)
+  endif
   call pass_vector(uh, vh, G%Domain, clock=id_clock_pass)
 
   call enable_averages(0.5*dt, Time_local-real_to_time(0.5*US%T_to_s*dt), CS%diag)
@@ -288,7 +295,7 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
 ! u = u + dt diffu
   call cpu_clock_begin(id_clock_mom_update)
   do k=1,nz
-    do j=js-2,je+2 ; do i=is-2,ie+2
+    do j=js-cor_stencil,je+cor_stencil ; do i=is-cor_stencil,ie+cor_stencil
       h_av(i,j,k) = (h(i,j,k) + hp(i,j,k)) * 0.5
     enddo ; enddo
     do j=js,je ; do I=Isq,Ieq
@@ -305,7 +312,11 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
     enddo ; enddo
   enddo
   call cpu_clock_end(id_clock_mom_update)
-  call pass_vector(u, v, G%Domain, clock=id_clock_pass)
+  if (cor_stencil > 2) then
+    call pass_vector(u, v, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+  else
+    call pass_vector(u, v, G%Domain, clock=id_clock_pass)
+  endif
 
 ! CAu = -(f+zeta)/h_av vh + d/dx KE
   call cpu_clock_begin(id_clock_Cor)
@@ -366,11 +377,16 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
   call cpu_clock_begin(id_clock_continuity)
   call continuity(up, vp, hp, h_av, uh, vh, (0.5*dt), G, GV, US, CS%continuity_CSp, CS%OBC, pbv)
   call cpu_clock_end(id_clock_continuity)
-  call pass_var(h_av, G%Domain, clock=id_clock_pass)
+  if (cor_stencil > 2) then
+    call pass_var(h_av, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+    call pass_vector(up, vp, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+  else
+    call pass_var(h_av, G%Domain, clock=id_clock_pass)
+  endif
   call pass_vector(uh, vh, G%Domain, clock=id_clock_pass)
 
 ! h_av <- (hp + h_av)/2
-  do k=1,nz ; do j=js-2,je+2 ; do i=is-2,ie+2
+  do k=1,nz ; do j=js-cor_stencil,je+cor_stencil ; do i=is-cor_stencil,ie+cor_stencil
     h_av(i,j,k) = (hp(i,j,k) + h_av(i,j,k)) * 0.5
   enddo ; enddo ; enddo
 
@@ -427,7 +443,12 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
   call cpu_clock_begin(id_clock_continuity)
   call continuity(upp, vpp, hp, h, uh, vh, (dt*0.5), G, GV, US, CS%continuity_CSp, CS%OBC, pbv)
   call cpu_clock_end(id_clock_continuity)
-  call pass_var(h, G%Domain, clock=id_clock_pass)
+  if (cor_stencil > 2) then
+    call pass_var(h, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+    call pass_vector(upp, vpp, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+  else
+    call pass_var(h, G%Domain, clock=id_clock_pass)
+  endif
   call pass_vector(uh, vh, G%Domain, clock=id_clock_pass)
   ! Whenever thickness changes let the diag manager know, target grids
   ! for vertical remapping may need to be regenerated.
@@ -459,7 +480,7 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
 
 ! h_av = (h + hp)/2
   do k=1,nz
-    do j=js-2,je+2 ; do i=is-2,ie+2
+    do j=js-cor_stencil,je+cor_stencil ; do i=is-cor_stencil,ie+cor_stencil
       h_av(i,j,k) = 0.5*(h(i,j,k) + hp(i,j,k))
     enddo ; enddo
     do j=js-2,je+2 ; do I=Isq-2,Ieq+2

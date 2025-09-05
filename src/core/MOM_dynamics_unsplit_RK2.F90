@@ -73,7 +73,7 @@ use MOM_ALE, only : ALE_CS
 use MOM_boundary_update, only : update_OBC_data, update_OBC_CS
 use MOM_barotropic, only : barotropic_CS
 use MOM_continuity, only : continuity, continuity_init, continuity_CS, continuity_stencil
-use MOM_CoriolisAdv, only : CorAdCalc, CoriolisAdv_init, CoriolisAdv_CS
+use MOM_CoriolisAdv, only : CorAdCalc, CoriolisAdv_init, CoriolisAdv_CS, CoriolisAdv_stencil
 use MOM_debugging, only : check_redundant
 use MOM_grid, only : ocean_grid_type
 use MOM_hor_index, only : hor_index_type
@@ -252,9 +252,11 @@ subroutine step_MOM_dyn_unsplit_RK2(u_in, v_in, h_in, tv, visc, Time_local, dt, 
   real :: dt_visc   ! The time step for a part of the update due to viscosity [T ~> s]
   logical :: dyn_p_surf
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
+  integer :: cor_stencil  ! Stencil size for Coriolis schemes [nondim]
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
   dt_pred = dt * CS%BE
+  cor_stencil = CoriolisAdv_stencil(CS%CoriolisAdv) 
 
   h_av(:,:,:) = 0; hp(:,:,:) = 0
   up(:,:,:) = 0
@@ -292,12 +294,16 @@ subroutine step_MOM_dyn_unsplit_RK2(u_in, v_in, h_in, tv, visc, Time_local, dt, 
   ! and could/should be optimized out. -AJA
   call continuity(u_in, v_in, h_in, hp, uh, vh, dt_pred, G, GV, US, CS%continuity_CSp, CS%OBC, pbv)
   call cpu_clock_end(id_clock_continuity)
-  call pass_var(hp, G%Domain, clock=id_clock_pass)
-  call pass_vector(uh, vh, G%Domain, clock=id_clock_pass)
+  call pass_var(hp, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+  call pass_vector(uh, vh, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+  if (cor_stencil > 2) then
+    call pass_vector(u_in, v_in, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+    call pass_var(h_in, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+  endif
 
 ! h_av = (h + hp)/2  (used in PV denominator)
   call cpu_clock_begin(id_clock_mom_update)
-  do k=1,nz ; do j=js-2,je+2 ; do i=is-2,ie+2
+  do k=1,nz ; do j=js-cor_stencil,je+cor_stencil ; do i=is-cor_stencil,ie+cor_stencil
     h_av(i,j,k) = (h_in(i,j,k) + hp(i,j,k)) * 0.5
   enddo ; enddo ; enddo
   call cpu_clock_end(id_clock_mom_update)
@@ -362,11 +368,17 @@ subroutine step_MOM_dyn_unsplit_RK2(u_in, v_in, h_in, tv, visc, Time_local, dt, 
   call cpu_clock_begin(id_clock_continuity)
   call continuity(up, vp, h_in, hp, uh, vh, dt, G, GV, US, CS%continuity_CSp, CS%OBC, pbv)
   call cpu_clock_end(id_clock_continuity)
-  call pass_var(hp, G%Domain, clock=id_clock_pass)
-  call pass_vector(uh, vh, G%Domain, clock=id_clock_pass)
+  if (cor_stencil > 2) then
+    call pass_var(hp, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+    call pass_vector(uh, vh, G%Domain, clock=id_clock_pass)
+    call pass_vector(up, vp, G%Domain, halo=cor_stencil, clock=id_clock_pass)
+  else
+    call pass_var(hp, G%Domain, clock=id_clock_pass)
+    call pass_vector(uh, vh, G%Domain, clock=id_clock_pass)
+  endif
 
 ! h_av <- (h + hp)/2   (centered at n-1/2)
-  do k=1,nz ; do j=js-2,je+2 ; do i=is-2,ie+2
+  do k=1,nz ; do j=js-cor_stencil,je+cor_stencil ; do i=is-cor_stencil,ie+cor_stencil
     h_av(i,j,k) = (h_in(i,j,k) + hp(i,j,k)) * 0.5
   enddo ; enddo ; enddo
 
