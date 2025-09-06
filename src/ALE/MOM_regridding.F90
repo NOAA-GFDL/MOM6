@@ -25,15 +25,20 @@ use regrid_consts, only : REGRIDDING_LAYER, REGRIDDING_ZSTAR
 use regrid_consts, only : REGRIDDING_RHO, REGRIDDING_SIGMA
 use regrid_consts, only : REGRIDDING_ARBITRARY, REGRIDDING_SIGMA_SHELF_ZSTAR
 use regrid_consts, only : REGRIDDING_HYCOM1, REGRIDDING_HYBGEN, REGRIDDING_ADAPTIVE
-use regrid_interp, only : interp_CS_type, set_interp_scheme, set_interp_extrap, set_interp_answer_date
+use regrid_interp, only : interp_CS_type
+use regrid_interp, only : set_interp_scheme, set_interp_extrap, set_interp_answer_date
 
-use coord_zlike,  only : init_coord_zlike, zlike_CS, set_zlike_params, build_zstar_column, end_coord_zlike
-use coord_sigma,  only : init_coord_sigma, sigma_CS, set_sigma_params, build_sigma_column, end_coord_sigma
+use coord_zlike,  only : zlike_CS
+use coord_zlike,  only : init_coord_zlike, set_zlike_params, build_zstar_column, end_coord_zlike
+use coord_sigma,  only : sigma_CS
+use coord_sigma,  only : init_coord_sigma, set_sigma_params, build_sigma_column, end_coord_sigma
 use coord_rho,    only : init_coord_rho, rho_CS, set_rho_params, build_rho_column, end_coord_rho
 use coord_rho,    only : old_inflate_layers_1d
-use coord_hycom,  only : init_coord_hycom, hycom_CS, set_hycom_params, build_hycom1_column, end_coord_hycom
+use coord_hycom,  only : hycom_CS
+use coord_hycom,  only : init_coord_hycom, set_hycom_params, build_hycom1_column, end_coord_hycom
 use coord_hycom,  only : init_3d_coord_hycom
-use coord_adapt,  only : init_coord_adapt, adapt_CS, set_adapt_params, build_adapt_column, end_coord_adapt
+use coord_adapt,  only : adapt_CS
+use coord_adapt,  only : init_coord_adapt, set_adapt_params, build_adapt_column, end_coord_adapt
 use MOM_hybgen_regrid, only : hybgen_regrid, hybgen_regrid_CS, init_hybgen_regrid, end_hybgen_regrid
 use MOM_hybgen_regrid, only : write_Hybgen_coord_file
 
@@ -337,11 +342,11 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     if (.not.GV%Boussinesq) remap_answer_date = max(remap_answer_date, 20230701)
     call set_regrid_params(CS, remap_answer_date=remap_answer_date)
     call get_param(param_file, mdl, "REGRIDDING_ANSWER_DATE", regrid_answer_date, &
-                 "The vintage of the expressions and order of arithmetic to use for regridding.  "//&
-                 "Values below 20190101 result in the use of older, less accurate expressions "//&
-                 "that were in use at the end of 2018.  Higher values result in the use of more "//&
-                 "robust and accurate forms of mathematically equivalent expressions.", &
-                 default=default_answer_date, do_not_log=.not.GV%Boussinesq)
+                "The vintage of the expressions and order of arithmetic to use for regridding.  "//&
+                "Values below 20190101 result in the use of older, less accurate expressions "//&
+                "that were in use at the end of 2018.  Higher values result in the use of more "//&
+                "robust and accurate forms of mathematically equivalent expressions.", &
+                default=default_answer_date, do_not_log=.not.GV%Boussinesq)
     if (.not.GV%Boussinesq) regrid_answer_date = max(regrid_answer_date, 20230701)
     call set_regrid_params(CS, regrid_answer_date=regrid_answer_date)
   endif
@@ -421,8 +426,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     endif
     allocate(dz(ke))
     dz(:) = uniformResolution(ke, coord_mode, tmpReal, &
-                              US%R_to_kg_m3*(GV%Rlay(1) + 0.5*(GV%Rlay(1)-GV%Rlay(min(2,ke)))), &
-                              US%R_to_kg_m3*(GV%Rlay(ke) + 0.5*(GV%Rlay(ke)-GV%Rlay(max(ke-1,1)))) )
+                US%R_to_kg_m3*(GV%Rlay(1) + 0.5*(GV%Rlay(1)-GV%Rlay(min(2,ke)))), &
+                US%R_to_kg_m3*(GV%Rlay(ke) + 0.5*(GV%Rlay(ke)-GV%Rlay(max(ke-1,1)))) )
     if (main_parameters) call log_param(param_file, mdl, "!"//coord_res_param, dz, &
                    trim(message), units=trim(coord_units))
   elseif (trim(string)=='PARAM') then
@@ -512,25 +517,25 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     ! The following assumes the FILE: syntax of above but without "FILE:" in the string
     varName = trim( extractWord(trim(string(8:)), 3) )
     if (varname == " ") call MOM_error(FATAL, &
-      trim(mdl)//", initialize_regridding: HYBRID "// &
-      "Too few arguments in ("//trim(string)//")")
+        trim(mdl)//", initialize_regridding: HYBRID "// &
+        "Too few arguments in ("//trim(string)//")")
     fileName = trim( extractWord(trim(string(8:)), 1) )
     if (fileName(1:1)/='.' .and. filename(1:1)/='/') fileName = trim(inputdir) // trim( fileName )
     if (.not. file_exists(fileName)) call MOM_error(FATAL, &
-      trim(mdl)//", initialize_regridding: HYBRID "// &
-      "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
+        trim(mdl)//", initialize_regridding: HYBRID "// &
+        "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
     varName = trim( extractWord(trim(string(8:)), 2) )
     if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
-      trim(mdl)//", initialize_regridding: HYBRID "// &
-      "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
+        trim(mdl)//", initialize_regridding: HYBRID "// &
+        "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
     call MOM_read_data(trim(fileName), trim(varName), rho_target)
     varName = trim( extractWord(trim(string(8:)), 3) )
     if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz
       call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz )
     else ! Read dz from file
       if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
-        trim(mdl)//", initialize_regridding: HYBRID "// &
-        "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
+          trim(mdl)//", initialize_regridding: HYBRID "// &
+          "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
       call MOM_read_data(trim(fileName), trim(varName), dz)
     endif
     if (main_parameters) then
@@ -546,17 +551,17 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     ! The following assumes the FILE: syntax of above but without "FILE:" in the string
     varName = trim( extractWord(trim(string(11:)), 3) )
     if (varname == " ") call MOM_error(FATAL, &
-      trim(mdl)//", initialize_regridding: HYBRID_3D "// &
-      "Too few arguments in ("//trim(string)//")")
+        trim(mdl)//", initialize_regridding: HYBRID_3D "// &
+        "Too few arguments in ("//trim(string)//")")
     fileName = trim( extractWord(trim(string(11:)), 1) )
     if (fileName(1:1)/='.' .and. filename(1:1)/='/') fileName = trim(inputdir) // trim( fileName )
     if (.not. file_exists(fileName)) call MOM_error(FATAL, &
-      trim(mdl)//", initialize_regridding: HYBRID_3D "// &
-      "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
+        trim(mdl)//", initialize_regridding: HYBRID_3D "// &
+        "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
     varName = trim( extractWord(trim(string(11:)), 2) )
     if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
-      trim(mdl)//", initialize_regridding: HYBRID_3D "// &
-      "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
+        trim(mdl)//", initialize_regridding: HYBRID_3D "// &
+        "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
     call MOM_read_data(trim(fileName), trim(varName), rho_target_3d, G%Domain)
     call pass_var(rho_target_3d, G%Domain, halo=1)
     varName = trim( extractWord(trim(string(11:)), 3) )
@@ -581,15 +586,15 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       endif
     else ! Read dz from file
       if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
-        trim(mdl)//", initialize_regridding: HYBRID_3D "// &
-        "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
+          trim(mdl)//", initialize_regridding: HYBRID_3D "// &
+          "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
       call MOM_read_data(trim(fileName), trim(varName), dz_3d, G%Domain)
       call pass_var(dz_3d, G%Domain, halo=1)
       ! set nominal 1-d dz to UNIFORM
       allocate(dz(ke))
       dz(:) = uniformResolution(ke, coord_mode, maximum_depth, &
-                                US%R_to_kg_m3*(GV%Rlay(1) + 0.5*(GV%Rlay(1)-GV%Rlay(min(2,ke)))), &
-                                US%R_to_kg_m3*(GV%Rlay(ke) + 0.5*(GV%Rlay(ke)-GV%Rlay(max(ke-1,1)))) )
+                  US%R_to_kg_m3*(GV%Rlay(1) + 0.5*(GV%Rlay(1)-GV%Rlay(min(2,ke)))), &
+                  US%R_to_kg_m3*(GV%Rlay(ke) + 0.5*(GV%Rlay(ke)-GV%Rlay(max(ke-1,1)))) )
     endif !dz
   elseif (index(trim(string),'HYBRID_MAP:')==1) then
     ke = GV%ke
@@ -599,17 +604,17 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     ! The following assumes the FILE: syntax of above but without "FILE:" in the string
     varName = trim( extractWord(trim(string(12:)), 4) )
     if (varname == " ") call MOM_error(FATAL, &
-      trim(mdl)//", initialize_regridding: HYBRID_3D "// &
-      "Too few arguments in ("//trim(string)//")")
+        trim(mdl)//", initialize_regridding: HYBRID_3D "// &
+        "Too few arguments in ("//trim(string)//")")
     fileName = trim( extractWord(trim(string(12:)), 1) )
     if (fileName(1:1)/='.' .and. filename(1:1)/='/') fileName = trim(inputdir) // trim( fileName )
     if (.not. file_exists(fileName)) call MOM_error(FATAL, &
-      trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
-      "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
+        trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
+        "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
     varName = trim( extractWord(trim(string(12:)), 2) )
     if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
-      trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
-      "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
+        trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
+        "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
     call MOM_read_data(trim(fileName), trim(varName), index_map, G%Domain)
     call pass_var(index_map, G%Domain, halo=1)
     !find maximum index
@@ -620,15 +625,15 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     call max_across_PEs(np)
     write(string2,"(i3)") np
     call MOM_error(NOTE, &
-      trim(mdl)//", initialize_regridding: HYBRID_MAP NP="//trim(string2))
+        trim(mdl)//", initialize_regridding: HYBRID_MAP NP="//trim(string2))
     if (np<1) call MOM_error(FATAL, &
-      trim(mdl)//", initialize_regridding: HYBRID_MAP to small NP from "//trim(varName))
+        trim(mdl)//", initialize_regridding: HYBRID_MAP to small NP from "//trim(varName))
     allocate(dz_2d(ke,np))
     allocate(rho_target_2d(ke+1,np))
     varName = trim( extractWord(trim(string(12:)), 3) )
     if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
-      trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
-      "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
+        trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
+        "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
     ! MOM_read_data can't handle this array
     call read_variable(trim(fileName), trim(varName), rho_target_2d)
     if (main_parameters) then
@@ -642,7 +647,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
         if (nfloor<1 .or. nceiling>np) then
           write(0,'(a,2i5,a,g20.6)') 'HYBRID_MAP: i,j=',i,j,'index_map(i,j)=', index_map(i,j)
           call MOM_error(FATAL, trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
-            "index_map out of range")
+              "index_map out of range")
         endif
         if (nfloor == nceiling) then
           do k=1,ke+1
@@ -679,8 +684,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       endif
     else ! Read dz from file
       if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
-        trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
-        "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
+          trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
+          "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
       ! MOM_read_data can't handle this array
       call read_variable(trim(fileName), trim(varName), dz_2d)
       if (main_parameters) then
@@ -791,7 +796,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     if (ke > size(woa09_dz_approx)) dz(ke) = dz_extra
   else
     call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
-      "Unrecognized coordinate configuration"//trim(string))
+        "Unrecognized coordinate configuration"//trim(string))
   endif
 
   if (main_parameters) then
@@ -810,7 +815,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
             dz(ke) = dz(ke) + ( maximum_depth - tmpReal )
           else
             call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
-              "MAXIMUM_DEPTH was too shallow to adjust bottom layer of DZ!"//trim(string))
+                "MAXIMUM_DEPTH was too shallow to adjust bottom layer of DZ!"//trim(string))
           endif
         endif
       endif !allocated(dz)
@@ -948,7 +953,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
 
   if (coord_is_state_dependent) then
     if (main_parameters) then
-      call get_param(param_file, mdl, create_coord_param(param_prefix, "P_REF", param_suffix), P_Ref, &
+      call get_param(param_file, mdl, create_coord_param(param_prefix, "P_REF", param_suffix), &
+                   P_Ref, &
                    "The pressure that is used for calculating the coordinate "//&
                    "density.  (1 Pa = 1e4 dbar, so 2e7 is commonly used.) "//&
                    "This is only used if USE_EOS and ENABLE_THERMODYNAMICS are true.", &
@@ -961,8 +967,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                      "This is only used for the RHO coordinate.", &
                      units="Pa", default=2.0e7, scale=US%Pa_to_RL2_T2)
     endif
-    call get_param(param_file, mdl, create_coord_param(param_prefix, "REGRID_COMPRESSIBILITY_FRACTION", &
-                                                       param_suffix), tmpReal, &
+    call get_param(param_file, mdl, create_coord_param(param_prefix, &
+                   "REGRID_COMPRESSIBILITY_FRACTION", param_suffix), tmpReal, &
                    "When interpolating potential density profiles we can add "//&
                    "some artificial compressibility solely to make homogeneous "//&
                    "regions appear stratified.", units="nondim", default=0.)
@@ -1045,19 +1051,21 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
         ! Otherwise assume we should look for the file in INPUTDIR
         fileName = trim(inputdir) // trim( extractWord(trim(string(6:80)), 1) )
       endif
-      if (.not. file_exists(fileName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
-        "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
+      if (.not. file_exists(fileName)) call MOM_error(FATAL,trim(mdl)// &
+          ", initialize_regridding: "// &
+          "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
 
       do_sum = .false.
       varName = trim( extractWord(trim(string(6:)), 2) )
-      if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
-        "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
+      if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)// &
+          ", initialize_regridding: "// &
+          "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
       if (len_trim(varName)==0) then
         if (field_exists(fileName,'z_max')) then; varName = 'z_max'
         elseif (field_exists(fileName,'dz')) then; varName = 'dz' ; do_sum = .true.
         elseif (field_exists(fileName,'dz_max')) then; varName = 'dz_max' ; do_sum = .true.
         else ; call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
-          "MAXIMUM_INT_DEPTHS variable not specified and none could be guessed.")
+            "MAXIMUM_INT_DEPTHS variable not specified and none could be guessed.")
         endif
       endif
       if (do_sum) then
@@ -1077,7 +1085,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       call set_regrid_max_depths(CS, z_max, GV%m_to_H)
     else
       call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
-        "Unrecognized MAXIMUM_INT_DEPTH_CONFIG "//trim(string))
+          "Unrecognized MAXIMUM_INT_DEPTH_CONFIG "//trim(string))
     endif
     deallocate(z_max)
     deallocate(dz_max)
@@ -1110,17 +1118,19 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
         ! Otherwise assume we should look for the file in INPUTDIR
         fileName = trim(inputdir) // trim( extractWord(trim(longString(6:200)), 1) )
       endif
-      if (.not. file_exists(fileName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
-        "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(longString)//")")
+      if (.not. file_exists(fileName)) call MOM_error(FATAL,trim(mdl)// &
+          ", initialize_regridding: "// &
+          "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(longString)//")")
 
       varName = trim( extractWord(trim(longString(6:)), 2) )
-      if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
-        "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(longString)//")")
+      if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)// &
+          ", initialize_regridding: "// &
+          "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(longString)//")")
       if (len_trim(varName)==0) then
         if (field_exists(fileName,'h_max')) then; varName = 'h_max'
         elseif (field_exists(fileName,'dz_max')) then; varName = 'dz_max'
         else ; call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
-          "MAXIMUM_INT_DEPTHS variable not specified and none could be guessed.")
+            "MAXIMUM_INT_DEPTHS variable not specified and none could be guessed.")
         endif
       endif
       call MOM_read_data(trim(fileName), trim(varName), h_max)
@@ -1134,7 +1144,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       call set_regrid_max_thickness(CS, h_max, GV%m_to_H)
     else
       call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
-        "Unrecognized MAX_LAYER_THICKNESS_CONFIG "//trim(longString))
+          "Unrecognized MAX_LAYER_THICKNESS_CONFIG "//trim(longString))
     endif
     deallocate(h_max)
   endif
@@ -1394,7 +1404,7 @@ subroutine check_grid_column( nk, h, dzInterface, msg )
       write(0,*) 'k,h,hnew=',k,h(k),h_new
       write(0,*) 'dzI(k+1),dzI(k)=',dzInterface(k+1),dzInterface(k)
       call MOM_error( FATAL, 'MOM_regridding, check_grid_column: '//&
-        'Negative layer thickness implied by re-gridding, '//trim(msg))
+          'Negative layer thickness implied by re-gridding, '//trim(msg))
     endif
     total_h_new = total_h_new + h_new
 
@@ -1409,14 +1419,14 @@ subroutine check_grid_column( nk, h, dzInterface, msg )
     write(0,*) 'Hold,Hnew,Hnew-Hold=',total_h_old,total_h_new,total_h_new-total_h_old
     write(0,*) 'eps,(n)/2*eps*H=',eps,real(nk-1)*0.5*(total_h_old+total_h_new)*eps
     call MOM_error( FATAL, 'MOM_regridding, check_grid_column: '//&
-      'Re-gridding did NOT conserve total thickness to within roundoff '//trim(msg))
+        'Re-gridding did NOT conserve total thickness to within roundoff '//trim(msg))
   endif
 
   ! Check that the top and bottom are intentionally moving
   if (dzInterface(1) /= 0.) call MOM_error( FATAL, &
-    'MOM_regridding, check_grid_column: Non-zero dzInterface at surface! '//trim(msg))
+      'MOM_regridding, check_grid_column: Non-zero dzInterface at surface! '//trim(msg))
   if (dzInterface(nk+1) /= 0.) call MOM_error( FATAL, &
-    'MOM_regridding, check_grid_column: Non-zero dzInterface at bottom! '//trim(msg))
+      'MOM_regridding, check_grid_column: Non-zero dzInterface at bottom! '//trim(msg))
 
 end subroutine check_grid_column
 
@@ -1472,11 +1482,11 @@ subroutine filtered_grid_motion( CS, nk, z_old, z_new, dz_g )
   if (debug) then
     do k=2,CS%nk+1
       if (sgn*(z_new(k)-z_new(k-1)) < -5e-16*(abs(z_new(k))+abs(z_new(k-1))) ) &
-        call MOM_error(FATAL, "filtered_grid_motion: z_new is tangled.")
+          call MOM_error(FATAL, "filtered_grid_motion: z_new is tangled.")
     enddo
     do k=2,nk+1
       if (sgn*(z_old(k)-z_old(k-1)) < -5e-16*(abs(z_old(k))+abs(z_old(k-1))) ) &
-        call MOM_error(FATAL, "filtered_grid_motion: z_old is tangled.")
+          call MOM_error(FATAL, "filtered_grid_motion: z_old is tangled.")
     enddo
     ! ddz_g_s(:) = 0.0 ; ddz_g_d(:) = 0.0
   endif
@@ -1550,9 +1560,9 @@ subroutine filtered_grid_motion( CS, nk, z_old, z_new, dz_g )
 !         ddz_g_d(k) = sgn * (dz0 + 2.0*F0*dzwt / (Bq + sqrt(Bq**2 + 4.0*Aq*F0*dzwt) )) - dz_g(k)
 !
 !         if (abs(ddz_g_s(k)) > 1e-12*(abs(dz_g(k)) + abs(dz_g(k)+ddz_g_s(k)))) &
-!           call MOM_error(WARNING, "filtered_grid_motion: Expect z_output to be tangled (sc).")
+!             call MOM_error(WARNING, "filtered_grid_motion: Expect z_output to be tangled (sc).")
 !         if (abs(ddz_g_d(k) - ddz_g_s(k)) > 1e-12*(abs(dz_g(k)+ddz_g_d(k)) + abs(dz_g(k)+ddz_g_s(k)))) &
-!           call MOM_error(WARNING, "filtered_grid_motion: Expect z_output to be tangled.")
+!             call MOM_error(WARNING, "filtered_grid_motion: Expect z_output to be tangled.")
 !       endif
       endif
 
@@ -1568,7 +1578,7 @@ subroutine filtered_grid_motion( CS, nk, z_old, z_new, dz_g )
     enddo
     do k=2,CS%nk+1
       if (sgn*((z_act(k))-z_act(k-1)) < -1e-15*(abs(z_act(k))+abs(z_act(k-1))) ) &
-        call MOM_error(FATAL, "filtered_grid_motion: z_output is tangled.")
+          call MOM_error(FATAL, "filtered_grid_motion: z_output is tangled.")
     enddo
   endif
 
@@ -1960,7 +1970,8 @@ end subroutine build_rho_grid
 !! \remark { Based on Bleck, 2002: An ocean-ice general circulation model framed in
 !! hybrid isopycnic-Cartesian coordinates, Ocean Modelling 37, 55-88.
 !! http://dx.doi.org/10.1016/S1463-5003(01)00012-9 }
-subroutine build_grid_HyCOM1( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface, remapCS, CS, frac_shelf_h, zScale )
+subroutine build_grid_HyCOM1( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface, remapCS, CS, &
+                              frac_shelf_h, zScale )
   type(ocean_grid_type),                     intent(in)    :: G  !< Grid structure
   type(verticalGrid_type),                   intent(in)    :: GV !< Ocean vertical grid structure
   type(unit_scale_type),                     intent(in)    :: US !< A dimensional unit scaling type
@@ -2142,8 +2153,8 @@ subroutine adjust_interface_motion( CS, nk, h_old, dz_int )
     h_new = h_old(k) + ( dz_int(k) - dz_int(k+1) )
     if (h_new < -3.0*h_err) then
       write(0,*) 'h<0 at k=',k,'h_old=',h_old(k), &
-        'wup=',dz_int(k),'wdn=',dz_int(k+1),'dw_dz=',dz_int(k) - dz_int(k+1), &
-        'h_new=',h_new,'h_err=',h_err
+          'wup=',dz_int(k),'wdn=',dz_int(k+1),'dw_dz=',dz_int(k) - dz_int(k+1), &
+          'h_new=',h_new,'h_err=',h_err
       call MOM_error( FATAL, 'MOM_regridding: adjust_interface_motion() - '//&
                      'implied h<0 is larger than roundoff!')
     endif
@@ -2154,8 +2165,8 @@ subroutine adjust_interface_motion( CS, nk, h_old, dz_int )
       h_new = ( dz_int(k) - dz_int(k+1) )
       if (h_new < -3.0*h_err) then
         write(0,*) 'h<0 at k=',k,'h_old was empty',&
-          'wup=',dz_int(k),'wdn=',dz_int(k+1),'dw_dz=',dz_int(k) - dz_int(k+1), &
-          'h_new=',h_new,'h_err=',h_err
+            'wup=',dz_int(k),'wdn=',dz_int(k+1),'dw_dz=',dz_int(k) - dz_int(k+1), &
+            'h_new=',h_new,'h_err=',h_err
         call MOM_error( FATAL, 'MOM_regridding: adjust_interface_motion() - '//&
                        'implied h<0 is larger than roundoff!')
       endif
@@ -2164,14 +2175,14 @@ subroutine adjust_interface_motion( CS, nk, h_old, dz_int )
   do k = min(CS%nk,nk),2,-1
     h_new = h_old(k) + ( dz_int(k) - dz_int(k+1) )
     if (h_new<CS%min_thickness) &
-      dz_int(k) = ( dz_int(k+1) - h_old(k) ) + CS%min_thickness ! Implies next h_new = min_thickness
+        dz_int(k) = ( dz_int(k+1) - h_old(k) ) + CS%min_thickness ! Implies next h_new = min_thickness
     h_new = h_old(k) + ( dz_int(k) - dz_int(k+1) )
     if (h_new<0.) &
-      dz_int(k) = ( 1. - eps ) * ( dz_int(k+1) - h_old(k) ) ! Backup in case min_thickness==0
+        dz_int(k) = ( 1. - eps ) * ( dz_int(k+1) - h_old(k) ) ! Backup in case min_thickness==0
     h_new = h_old(k) + ( dz_int(k) - dz_int(k+1) )
     if (h_new<0.) then
       write(0,*) 'h<0 at k=',k,'h_old=',h_old(k), &
-        'wup=',dz_int(k),'wdn=',dz_int(k+1),'dw_dz=',dz_int(k) - dz_int(k+1), &
+          'wup=',dz_int(k),'wdn=',dz_int(k+1),'dw_dz=',dz_int(k) - dz_int(k+1), &
         'h_new=',h_new
       stop 'Still did not work!'
       call MOM_error( FATAL, 'MOM_regridding: adjust_interface_motion() - '//&
@@ -2333,7 +2344,7 @@ function uniformResolution(nk,coordMode,maxDepth,rhoLight,rhoHeavy)
 
     case default
       call MOM_error(FATAL, "MOM_regridding, uniformResolution: "//&
-       "Unrecognized choice for coordinate mode ("//trim(coordMode)//").")
+          "Unrecognized choice for coordinate mode ("//trim(coordMode)//").")
 
   end select ! type of grid
 
@@ -2490,12 +2501,14 @@ subroutine set_regrid_max_depths( CS, max_depths, units_to_H )
 
   ! Check for sign reversals in the depths.
   if (max_depths(CS%nk+1) < max_depths(1)) then
-    do K=1,CS%nk ; if (max_depths(K+1) > max_depths(K)) &
-      call MOM_error(FATAL, "Unordered list of maximum depths sent to set_regrid_max_depths!")
+    do K=1,CS%nk
+      if (max_depths(K+1) > max_depths(K)) &
+          call MOM_error(FATAL, "Unordered list of maximum depths sent to set_regrid_max_depths!")
     enddo
   else
-    do K=1,CS%nk ; if (max_depths(K+1) < max_depths(K)) &
-      call MOM_error(FATAL, "Unordered list of maximum depths sent to set_regrid_max_depths.")
+    do K=1,CS%nk
+      if (max_depths(K+1) < max_depths(K)) &
+          call MOM_error(FATAL, "Unordered list of maximum depths sent to set_regrid_max_depths.")
     enddo
   endif
 
@@ -2655,8 +2668,8 @@ function getCoordinateInterfaces( CS, undo_scaling )
   ! densities, rather than computing the interfaces based on resolution
   if (CS%regridding_scheme == REGRIDDING_RHO) then
     if (.not. CS%target_density_set) &
-      call MOM_error(FATAL, 'MOM_regridding, getCoordinateInterfaces: '//&
-                            'target densities not set!')
+        call MOM_error(FATAL, 'MOM_regridding, getCoordinateInterfaces: '//&
+                              'target densities not set!')
 
     if (unscale) then
       getCoordinateInterfaces(:) = CS%coord_scale * CS%target_density(:)
@@ -2786,10 +2799,13 @@ subroutine set_regrid_params( CS, boundary_extrapolation, min_thickness, old_gri
       call MOM_error(FATAL,'MOM_regridding, set_regrid_params: Weight is out side the range 0..1!')
     CS%old_grid_weight = old_grid_weight
   endif
-  if (present(depth_of_time_filter_shallow)) CS%depth_of_time_filter_shallow = depth_of_time_filter_shallow
-  if (present(depth_of_time_filter_deep)) CS%depth_of_time_filter_deep = depth_of_time_filter_deep
+  if (present(depth_of_time_filter_shallow)) CS%depth_of_time_filter_shallow = &
+                                                depth_of_time_filter_shallow
+  if (present(depth_of_time_filter_deep)) CS%depth_of_time_filter_deep = &
+                                             depth_of_time_filter_deep
   if (present(depth_of_time_filter_shallow) .or. present(depth_of_time_filter_deep)) then
-    if (CS%depth_of_time_filter_deep<CS%depth_of_time_filter_shallow) call MOM_error(FATAL,'MOM_regridding, '//&
+    if (CS%depth_of_time_filter_deep<CS%depth_of_time_filter_shallow) call MOM_error(FATAL, &
+                     'MOM_regridding, '//&
                      'set_regrid_params: depth_of_time_filter_deep<depth_of_time_filter_shallow!')
   endif
 
@@ -2817,12 +2833,14 @@ subroutine set_regrid_params( CS, boundary_extrapolation, min_thickness, old_gri
     if (present(min_thickness)) call set_rho_params(CS%rho_CS, min_thickness=min_thickness)
     if (present(ref_pressure)) call set_rho_params(CS%rho_CS, ref_pressure=ref_pressure)
     if (present(integrate_downward_for_e)) &
-      call set_rho_params(CS%rho_CS, integrate_downward_for_e=integrate_downward_for_e)
-    if (associated(CS%rho_CS) .and. (present(interp_scheme) .or. present(boundary_extrapolation))) &
-      call set_rho_params(CS%rho_CS, interp_CS=CS%interp_CS)
+        call set_rho_params(CS%rho_CS, integrate_downward_for_e=integrate_downward_for_e)
+    if (associated(CS%rho_CS) .and. (present(interp_scheme) .or. &
+                                     present(boundary_extrapolation))) &
+        call set_rho_params(CS%rho_CS, interp_CS=CS%interp_CS)
   case (REGRIDDING_HYCOM1)
-    if (associated(CS%hycom_CS) .and. (present(interp_scheme) .or. present(boundary_extrapolation))) &
-      call set_hycom_params(CS%hycom_CS, interp_CS=CS%interp_CS)
+    if (associated(CS%hycom_CS) .and. (present(interp_scheme) .or. &
+                                       present(boundary_extrapolation))) &
+        call set_hycom_params(CS%hycom_CS, interp_CS=CS%interp_CS)
   case (REGRIDDING_HYBGEN)
     ! Do nothing for now.
   case (REGRIDDING_ADAPTIVE)

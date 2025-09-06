@@ -138,14 +138,14 @@ subroutine set_hycom_params(CS, max_interface_depths, max_layer_thickness, only_
 
   if (present(max_interface_depths)) then
     if (size(max_interface_depths) /= CS%nk+1) &
-      call MOM_error(FATAL, "set_hycom_params: max_interface_depths inconsistent size")
+        call MOM_error(FATAL, "set_hycom_params: max_interface_depths inconsistent size")
     allocate(CS%max_interface_depths(CS%nk+1))
     CS%max_interface_depths(:) = max_interface_depths(:)
   endif
 
   if (present(max_layer_thickness)) then
     if (size(max_layer_thickness) /= CS%nk) &
-      call MOM_error(FATAL, "set_hycom_params: max_layer_thickness inconsistent size")
+        call MOM_error(FATAL, "set_hycom_params: max_layer_thickness inconsistent size")
     allocate(CS%max_layer_thickness(CS%nk))
     CS%max_layer_thickness(:) = max_layer_thickness(:)
   endif
@@ -231,8 +231,8 @@ subroutine build_hycom1_column(CS, remapCS, eqn_of_state, nz, ix, jy, depth, h, 
     z_1 = 0.5 * ( z_col(1) + z_col(2) )
     z_nz  = 0.5 * ( z_col(nz) + z_col(nz+1) )
     do k = 1,CS%nk
-      p_col_new(k) = p_col(1) + ( 0.5 * ( z_col_new(K) + z_col_new(K+1) ) - z_1 ) / ( z_nz - z_1 ) * &
-          ( p_col(nz) - p_col(1) )
+      p_col_new(k) = p_col(1) + ( 0.5 * ( z_col_new(K) + z_col_new(K+1) ) - z_1 ) &
+                                / ( z_nz - z_1 ) * ( p_col(nz) - p_col(1) )
     enddo
     ! Remap from original h and T,S to get T,S_col_new
     call remapping_core_h(remapCS, nz, h(:), T, CS%nk, h_col_new, T_col_new)
@@ -278,8 +278,8 @@ subroutine build_hycom1_column(CS, remapCS, eqn_of_state, nz, ix, jy, depth, h, 
 end subroutine build_hycom1_column
 
 !> Calculate interface density anomaly w.r.t. the target.
-subroutine build_hycom1_target_anomaly(CS, remapCS, eqn_of_state, nz, ix, jy, depth, h, T, S, p_col, &
-                                       R, RiAnom, h_neglect, h_neglect_edge)
+subroutine build_hycom1_target_anomaly(CS, remapCS, eqn_of_state, nz, ix, jy, depth, h, T, S, &
+                                       p_col, R, RiAnom, h_neglect, h_neglect_edge)
   type(hycom_CS),        intent(in)  :: CS     !< Coordinate control structure
   type(remapping_CS),    intent(in)  :: remapCS !< Remapping parameters and options
   type(EOS_type),        intent(in)  :: eqn_of_state !< Equation of state structure
