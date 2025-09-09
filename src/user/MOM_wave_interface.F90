@@ -1078,7 +1078,7 @@ subroutine Surface_Bands_by_data_override(Time, G, GV, US, CS)
   character(len=48) :: dim_name(4)  ! The names of the dimensions of the variable.
   character(len=20) :: varname      ! The name of an input variable for data override.
   real :: PI       ! 3.1415926535... [nondim]
-  real :: avgx, avgy
+  real :: avgx, avgy  ! The global averages of temp_x and temp_y [L T-1 ~> m s-1]
   logical :: wavenumber_exists
   integer :: ndims, b, i, j
 
