@@ -154,7 +154,7 @@ type, public :: ocean_state_type ; private
   integer :: nstep = 0        !< The number of calls to update_ocean that update the dynamics.
   integer :: nstep_thermo = 0 !< The number of calls to update_ocean that update the thermodynamics.
   logical :: use_ice_shelf    !< If true, the ice shelf model is enabled.
-  logical :: use_waves        !< If true use wave coupling.
+  logical :: use_waves = .false.  !< If true, wave coupling will be activated, edited by Biao
 
   logical :: icebergs_alter_ocean !< If true, the icebergs can change ocean the
                               !! ocean dynamics and forcing fluxes.
@@ -226,7 +226,7 @@ contains
 !!   This subroutine initializes both the ocean state and the ocean surface type.
 !! Because of the way that indices and domains are handled, Ocean_sfc must have
 !! been used in a previous call to initialize_ocean_type.
-subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, wind_stagger, gas_fields_ocn, calve_ice_shelf_bergs)
+subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, wind_stagger, gas_fields_ocn, calve_ice_shelf_bergs, do_waves)
   type(ocean_public_type), target, &
                        intent(inout) :: Ocean_sfc !< A structure containing various publicly
                                 !! visible ocean surface properties after initialization,
@@ -238,6 +238,7 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, wind_stagger, gas
   type(time_type),     intent(in)    :: Time_in   !< The time at which to initialize the ocean model.
   integer, optional,   intent(in)    :: wind_stagger !< If present, the staggering of the winds that are
                                                      !! being provided in calls to update_ocean_model
+  logical, optional,   intent(in)    :: do_waves !< If true, the wave coupling will be activated
   type(coupler_1d_bc_type), &
              optional, intent(in)    :: gas_fields_ocn !< If present, this type describes the
                                               !! ocean and surface-ice fields that will participate
@@ -393,10 +394,6 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, wind_stagger, gas
       call allocate_forcing_type(OS%grid, OS%fluxes, shelf=.true.)
   endif
 
-  call get_param(param_file, mdl, "USE_WAVES", OS%Use_Waves, &
-       "If true, enables surface wave modules.", default=.false.)
-  ! MOM_wave_interface_init is called regardless of the value of USE_WAVES because
-  ! it also initializes statistical waves.
   call MOM_wave_interface_init(OS%Time, OS%grid, OS%GV, OS%US, param_file, OS%Waves, OS%diag)
 
   call initialize_ocean_public_type(OS%grid%Domain, Ocean_sfc, OS%diag, &
@@ -418,6 +415,12 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, wind_stagger, gas
     if (calve_ice_shelf_bergs) then
       call convert_shelf_state_to_ocean_type(Ocean_sfc, OS%Ice_shelf_CSp, OS%US)
       OS%calve_ice_shelf_bergs=.true.
+    endif
+  endif
+
+  if (present(do_waves)) then
+    if (do_waves) then
+      OS%use_waves=.true.
     endif
   endif
 
