@@ -25,6 +25,7 @@ use MOM_shared_initialization, only : reset_face_lengths_named, reset_face_lengt
 use MOM_shared_initialization, only : read_face_length_list, set_velocity_depth_max, set_velocity_depth_min
 use MOM_shared_initialization, only : set_subgrid_topo_at_vel_from_file
 use MOM_shared_initialization, only : compute_global_grid_integrals
+use MOM_shared_initialization, only : set_meanSL_from_file
 use MOM_unit_scaling, only : unit_scale_type
 
 use user_initialization, only : user_initialize_topography
@@ -61,7 +62,8 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
   ! Local variables
   character(len=200) :: inputdir   ! The directory where NetCDF input files are.
   character(len=200) :: config
-  logical            :: read_porous_file, OBC_projection_bug, open_corners, enable_bugs
+  logical            :: OBC_projection_bug, open_corners, enable_bugs
+  logical            :: read_porous_file, read_meanSL_file
   character(len=40)  :: mdl = "MOM_fixed_initialization" ! This module's name.
   integer :: I, J
   logical :: debug
@@ -87,6 +89,13 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
   ! To initialize masks, the bathymetry in halo regions must be filled in
   call pass_var(G%bathyT, G%Domain)
 
+  ! Calculate time mean ocean total thickness
+  call get_param(PF, mdl, "READ_MEAN_SEA_LEVEL", read_meanSL_file, &
+                "If true, use a 2D map for time mean sea level, which is used to calculate "// &
+                "time mean ocean total thickness.", default=.False.)
+  if (read_meanSL_file) &
+    call set_meanSL_from_file(G%meanSL, G, PF, US)
+
   ! Determine the position of any open boundaries
   call open_boundary_config(G, US, PF, OBC)
 
@@ -102,6 +111,12 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
                  "answers for some configurations that use OBCs.", &
                  default=enable_bugs, do_not_log=.not.associated(OBC))
   open_corners = .not.OBC_projection_bug
+
+  if (associated(OBC) .and. OBC_projection_bug .and. read_meanSL_file) &
+    ! OBC_projection_bug modifies bathyT outside of the open boundaries, so meanSL would have to be
+    ! modified as well.
+    call MOM_error(FATAL, "MOM_initialize_fixed: To read mean sea level file, "//&
+                   "OBC_PROJECTION_BUG needs to be False.")
 
   ! This call sets masks that prohibit flow over any point interpreted as land
   if (associated(OBC)) then

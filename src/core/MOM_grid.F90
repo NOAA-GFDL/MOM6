@@ -158,7 +158,16 @@ type, public :: ocean_grid_type
     y_ax_unit_short     !< A short description of the y-axis units for documenting parameter units
 
   real ALLOCABLE_, dimension(NIMEM_,NJMEM_) :: &
-    bathyT           !< Ocean bottom depth at tracer points, in depth units [Z ~> m].
+    bathyT           !< Ocean bottom depth, referenced to Z_ref at tracer points. bathyT is in
+                     !! depth units and positive *below* Z_ref [Z ~> m].
+  real ALLOCABLE_, dimension(NIMEM_,NJMEM_) :: &
+    meanSL           !< Spatially varying time mean sea level, referenced to Z_ref at tracer points.
+                     !! meanSL is in height units and positive *above* Z_ref. It is used
+                     !! a) as the height where p = p_atm or zero;
+                     !! b) to calculate time mean thickness of the water column, where
+                     !!    mean thickness = max(meanSL + bathyT, 0.0).
+                     !! meanSL is 2D for the consideration of a domain with spatically varying mean
+                     !! height, e.g. the Great Lakes system [Z ~> m].
   real    :: Z_ref   !< A reference value for all geometric height fields, such as bathyT [Z ~> m].
 
   logical :: bathymetry_at_vel  !< If true, there are separate values for the
@@ -584,6 +593,7 @@ subroutine allocate_metrics(G)
   ALLOC_(G%IareaCv(isd:ied,JsdB:JedB)) ; G%IareaCv(:,:) = 0.0
 
   ALLOC_(G%bathyT(isd:ied, jsd:jed)) ; G%bathyT(:,:) = -G%Z_ref
+  ALLOC_(G%meanSL(isd:ied, jsd:jed)) ; G%meanSL(:,:) = G%Z_ref
   ALLOC_(G%CoriolisBu(IsdB:IedB, JsdB:JedB)) ; G%CoriolisBu(:,:) = 0.0
   ALLOC_(G%Coriolis2Bu(IsdB:IedB, JsdB:JedB)) ; G%Coriolis2Bu(:,:) = 0.0
   ALLOC_(G%dF_dx(isd:ied, jsd:jed)) ; G%dF_dx(:,:) = 0.0
@@ -631,9 +641,10 @@ subroutine MOM_grid_end(G)
 
   DEALLOC_(G%dx_Cv) ; DEALLOC_(G%dy_Cu)
 
-  DEALLOC_(G%bathyT)  ; DEALLOC_(G%CoriolisBu) ; DEALLOC_(G%Coriolis2Bu)
-  DEALLOC_(G%dF_dx)   ; DEALLOC_(G%dF_dy)
-  DEALLOC_(G%sin_rot) ; DEALLOC_(G%cos_rot)
+  DEALLOC_(G%bathyT)     ; DEALLOC_(G%meanSL)
+  DEALLOC_(G%CoriolisBu) ; DEALLOC_(G%Coriolis2Bu)
+  DEALLOC_(G%dF_dx)      ; DEALLOC_(G%dF_dy)
+  DEALLOC_(G%sin_rot)    ; DEALLOC_(G%cos_rot)
 
   DEALLOC_(G%porous_DminU) ; DEALLOC_(G%porous_DmaxU) ; DEALLOC_(G%porous_DavgU)
   DEALLOC_(G%porous_DminV) ; DEALLOC_(G%porous_DmaxV) ; DEALLOC_(G%porous_DavgV)
