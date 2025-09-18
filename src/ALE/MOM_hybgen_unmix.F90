@@ -219,18 +219,18 @@ subroutine hybgen_unmix(G, GV, US, CS, tv, Reg, ntr, h)
       do k=1,nk
         dz_tot = dz_tot + GV%H_to_RZ * tv%SpV_avg(i,j,k) * h_col(k)
       enddo
-      if (dz_tot <= CS%min_dilate*(G%bathyT(i,j)+G%Z_ref)) then
+      if (dz_tot <= CS%min_dilate * (G%meanSL(i,j) + G%bathyT(i,j))) then
         dilate = CS%min_dilate
-      elseif (dz_tot >= CS%max_dilate*(G%bathyT(i,j)+G%Z_ref)) then
+      elseif (dz_tot >= CS%max_dilate * (G%meanSL(i,j) + G%bathyT(i,j))) then
         dilate = CS%max_dilate
       else
-        dilate = dz_tot / (G%bathyT(i,j)+G%Z_ref)
+        dilate = dz_tot / (G%meanSL(i,j) + G%bathyT(i,j))
       endif
     else
-      nominalDepth = (G%bathyT(i,j)+G%Z_ref)*GV%Z_to_H
-      if (h_tot <= CS%min_dilate*nominalDepth) then
+      nominalDepth = (G%meanSL(i,j) + G%bathyT(i,j)) * GV%Z_to_H
+      if (h_tot <= CS%min_dilate * nominalDepth) then
         dilate = CS%min_dilate
-      elseif (h_tot >= CS%max_dilate*nominalDepth) then
+      elseif (h_tot >= CS%max_dilate * nominalDepth) then
         dilate = CS%max_dilate
       else
         dilate = h_tot / nominalDepth

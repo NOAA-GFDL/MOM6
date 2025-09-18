@@ -197,7 +197,7 @@ subroutine PressureForce_Mont_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, p_atm, pb
     ! of self-attraction and loading.
     !$OMP parallel do default(shared)
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-      SSH(i,j) = min(-G%bathyT(i,j) - G%Z_ref, 0.0)
+      SSH(i,j) = min(-G%bathyT(i,j) - G%meanSL(i,j), 0.0)
     enddo ; enddo
     if (use_EOS) then
       !$OMP parallel do default(shared)
@@ -476,7 +476,7 @@ subroutine PressureForce_Mont_Bouss(h, tv, PFu, PFv, G, GV, US, CS, p_atm, pbce,
     ! barotropic tides.
     !$OMP parallel do default(shared)
     do j=Jsq,Jeq+1
-      do i=Isq,Ieq+1 ; SSH(i,j) = min(-G%bathyT(i,j) - G%Z_ref, 0.0) ; enddo
+      do i=Isq,Ieq+1 ; SSH(i,j) = min(-G%bathyT(i,j) - G%meanSL(i,j), 0.0) ; enddo
       do k=1,nz ; do i=Isq,Ieq+1
         SSH(i,j) = SSH(i,j) + h(i,j,k)*GV%H_to_Z
       enddo ; enddo
@@ -707,7 +707,7 @@ subroutine Set_pbce_Bouss(e, tv, G, GV, US, Rho0, GFS_scale, pbce, rho_star)
       do j=Jsq,Jeq+1
         do i=Isq,Ieq+1
           Ihtot(i) = GV%H_to_Z / ((e(i,j,1)-e(i,j,nz+1)) + dz_neglect)
-          press(i) = -Rho0xG*(e(i,j,1) - G%Z_ref)
+          press(i) = -Rho0xG*(e(i,j,1) - G%meanSL(i,j))
         enddo
         call calculate_density(tv%T(:,j,1), tv%S(:,j,1), press, rho_in_situ, &
                                tv%eqn_of_state, EOSdom)
@@ -716,7 +716,7 @@ subroutine Set_pbce_Bouss(e, tv, G, GV, US, Rho0, GFS_scale, pbce, rho_star)
         enddo
         do k=2,nz
           do i=Isq,Ieq+1
-            press(i) = -Rho0xG*(e(i,j,K) - G%Z_ref)
+            press(i) = -Rho0xG*(e(i,j,K) - G%meanSL(i,j))
             T_int(i) = 0.5*(tv%T(i,j,k-1)+tv%T(i,j,k))
             S_int(i) = 0.5*(tv%S(i,j,k-1)+tv%S(i,j,k))
           enddo

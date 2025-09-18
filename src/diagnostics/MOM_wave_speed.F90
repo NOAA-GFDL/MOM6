@@ -550,8 +550,9 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, halo_size, use_ebt_mode, mono_N
                 ! Determine whether N2 estimates should not be allowed to increase with depth.
                 if (l_mono_N2_column_fraction>0.) then
                   if (GV%Boussinesq .or. GV%semi_Boussinesq) then
-                    below_mono_N2_frac = (max(G%bathyT(i,j)+G%Z_ref, 0.0) - GV%H_to_Z*sum_hc < &
-                                          l_mono_N2_column_fraction*max(G%bathyT(i,j)+G%Z_ref, 0.0))
+                    below_mono_N2_frac = &
+                        (max(G%meanSL(i,j) + G%bathyT(i,j), 0.0) - GV%H_to_Z * sum_hc < &
+                         l_mono_N2_column_fraction * max(G%meanSL(i,j) + G%bathyT(i,j), 0.0))
                   else
                     below_mono_N2_frac = (htot(i) - sum_hc < l_mono_N2_column_fraction*htot(i))
                   endif

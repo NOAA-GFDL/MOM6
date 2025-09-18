@@ -507,16 +507,16 @@ logical function tidal_mixing_init(Time, G, GV, US, param_file, int_tide_CSp, di
                  units="nondim", default=0.1)
 
     do j=js,je ; do i=is,ie
-      if (G%bathyT(i,j)+G%Z_ref < CS%min_zbot_itides) CS%mask_itidal(i,j) = 0.0
+      if (max(G%meanSL(i,j) + G%bathyT(i,j), 0.0) < CS%min_zbot_itides) CS%mask_itidal(i,j) = 0.0
       CS%tideamp(i,j) = CS%tideamp(i,j) * CS%mask_itidal(i,j) * G%mask2dT(i,j)
 
       ! Restrict rms topo to a fraction (often 10 percent) of the column depth.
       if ((CS%tidal_answer_date < 20190101) .and. (max_frac_rough >= 0.0)) then
-        hamp = min(max_frac_rough*(G%bathyT(i,j)+G%Z_ref), sqrt(CS%h2(i,j)))
+        hamp = min(max_frac_rough * max(G%meanSL(i,j) + G%bathyT(i,j), 0.0), sqrt(CS%h2(i,j)))
         CS%h2(i,j) = hamp*hamp
       else
         if (max_frac_rough >= 0.0) &
-          CS%h2(i,j) = min((max_frac_rough * max(G%bathyT(i,j)+G%Z_ref, 0.0))**2, CS%h2(i,j))
+          CS%h2(i,j) = min((max_frac_rough * max(G%meanSL(i,j) + G%bathyT(i,j), 0.0))**2, CS%h2(i,j))
       endif
 
       utide = CS%tideamp(i,j)
