@@ -126,9 +126,9 @@ type, public :: ice_shelf_CS ; private
   real :: kd_molec_salt!< The molecular diffusivity of salt [Z2 T-1 ~> m2 s-1].
   real :: kd_molec_temp!< The molecular diffusivity of heat [Z2 T-1 ~> m2 s-1].
   real :: Lat_fusion   !< The latent heat of fusion [Q ~> J kg-1].
-  real :: Gamma_T_3EQ  !<  Nondimensional heat-transfer coefficient, used in the 3Eq. formulation
-  real :: Gamma_S_3EQ  !<  Nondimensional salt-transfer coefficient, used in the 3Eq. formulation
-                       !<  This number should be specified by the user.
+  real :: Gamma_T_3EQ  !< Nondimensional heat-transfer coefficient, used in the 3Eq. formulation [nondim]
+  real :: Gamma_S_3EQ  !< Nondimensional salt-transfer coefficient, used in the 3Eq. formulation [nondim]
+                       !< This number should be specified by the user.
   real :: col_mass_melt_threshold !< An ocean column mass below the iceshelf below which melting
                        !! does not occur [R Z ~> kg m-2]
   logical :: mass_from_file !< Read the ice shelf mass from a file every dt
@@ -194,12 +194,12 @@ type, public :: ice_shelf_CS ; private
   real    :: dTFr_dp                     !< Partial derivative of freezing temperature with
                                          !! pressure [C T2 R-1 L-2 ~> degC Pa-1]
   real    :: Zeta_N                      !< The stability constant xi_N = 0.052 from Holland & Jenkins '99
-                                         !! divided by the von Karman constant VK. Was 1/8.
-  real :: Vk                             !< Von Karman's constant - dimensionless
-  real :: Rc                             !< critical flux Richardson number.
-  logical :: buoy_flux_itt_bug           !< If true, fixes buoyancy iteration bug
-  logical :: salt_flux_itt_bug           !< If true, fixes salt iteration bug
-  real :: buoy_flux_itt_threshold        !< Buoyancy iteration threshold for convergence
+                                         !! divided by the von Karman constant VK [nondim]. Was 1/8.
+  real :: Vk                             !< Von Karman's constant [nondim]
+  real :: Rc                             !< critical flux Richardson number [nondim]
+  logical :: buoy_flux_itt_bugfix        !< If true, fixes buoyancy iteration bug
+  logical :: salt_flux_itt_bugfix        !< If true, fixes salt iteration bug
+  real :: buoy_flux_tol                  !< Fractional buoyancy iteration tolerance for convergence [nondim]
 
   !>@{ Diagnostic handles
   integer :: id_melt = -1, id_exch_vel_s = -1, id_exch_vel_t = -1, &
@@ -294,11 +294,11 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
                !! This is computed as part of the ISOMIP diagnostics.
   real :: time_step !< Length of time over which these fluxes will be applied [T ~> s].
   real :: Itime_step !< Inverse of the length of time over which these fluxes will be applied [T-1 ~> s-1]
-  real :: VK       !< Von Karman's constant - dimensionless
+  real :: VK       !< Von Karman's constant [nondim]
   real :: ZETA_N   !< This is the stability constant xi_N = 0.052 from Holland & Jenkins '99
                    !! divided by the von Karman constant VK. Was 1/8. [nondim]
-  real :: RC       !< critical flux Richardson number.
-  real :: I_ZETA_N !< The inverse of ZETA_N [nondim].
+  real :: Rf_crit  !< critical flux Richardson number  [nondim]
+  real :: I_2Zeta_N !< Half the inverse of Zeta_N [nondim].
   real :: I_LF     !< The inverse of the latent heat of fusion [Q-1 ~> kg J-1].
   real :: I_VK     !< The inverse of the Von Karman constant [nondim].
   real :: PR, SC   !< The Prandtl number and Schmidt number [nondim].
@@ -318,7 +318,8 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   real :: wB_flux !< The downward vertical flux of buoyancy just inside the ocean [Z2 T-3 ~> m2 s-3].
   real :: dB_dS   !< The derivative of buoyancy with salinity [Z T-2 S-1 ~> m s-2 ppt-1].
   real :: dB_dT   !< The derivative of buoyancy with temperature [Z T-2 C-1 ~> m s-2 degC-1].
-  real :: I_n_star ! [nondim]
+  real :: I_n_star ! The inverse of the ratio of working boundary layer thickness
+                   ! to the neutral thickness [nondim]
   real :: n_star_term ! A term in the expression for nstar [T3 Z-2 ~> s3 m-2]
   real :: absf     ! The absolute value of the Coriolis parameter [T-1 ~> s-1]
   real :: dIns_dwB !< The partial derivative of I_n_star with wB_flux, in [T3 Z-2 ~> s3 m-2]
@@ -327,34 +328,42 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   real :: dS_ustar ! The difference between the salinity at the ice-ocean interface and the ocean
                    ! boundary layer salinity times the friction velocity [S Z T-1 ~> ppt m s-1]
   real :: ustar_h  ! The friction velocity in the water below the ice shelf [Z T-1 ~> m s-1]
-  real :: Gam_turb ! [nondim]
+  real :: Gam_turb ! A relative turbluent diffusivity [nondim]
   real :: Gam_mol_t, Gam_mol_s ! Relative coefficients of molecular diffusivities [nondim]
   real :: RhoCp     ! A typical ocean density times the heat capacity of water [Q R C-1 ~> J m-3 degC-1]
-  real :: ln_neut
+  real :: ln_neut   ! The log of the ratio of the neutral boundary layer thickness to the molecular
+                    ! boundary layer thickness if it is greater than 1 or 0 otherwise [nondim]
   real :: mass_exch ! A mass exchange rate [R Z T-1 ~> kg m-2 s-1]
   real :: Sb_min, Sb_max ! Minimum and maximum boundary salinities [S ~> ppt]
   real :: dS_min, dS_max ! Minimum and maximum salinity changes [S ~> ppt]
   ! Variables used in iterating for wB_flux.
-  real :: wB_flux_new, dDwB_dwB_in
-  real :: I_Gam_T, I_Gam_S
-  real :: dG_dwB   ! The derivative of Gam_turb with wB [T3 Z-2 ~> s3 m-2]
+  real :: wB_flux_next ! The next interation's guess for wB_flux [Z2 T-3 ~> m2 s-2]
+  real :: wB_flux_new  ! An updated value of wB_flux when Gam_turb is based on wB_flux [Z2 T-3 ~> m2 s-2]
+  real :: wB_flux_max  ! The upper bound on wB_flux [Z2 T-3 ~> m2 s-2]
+  real :: wB_flux_min  ! The lower bound on wB_flux [Z2 T-3 ~> m2 s-2]
+  real :: dDwB_dwB     ! The slope of the change in wB_flux between iterations with wB_flux [nondim]
+  real :: DwB_max      ! The change in wB_flux when it is wB_flux_max [Z2 T-3 ~> m2 s-2]
+  real :: DwB_min      ! The change in wB_flux when it is wB_flux_min [Z2 T-3 ~> m2 s-2]
+  real :: I_Gam_T, I_Gam_S  ! Terms that vary inversely with Gam_mol_T or Gam_mol_S and Gam_turb [nondim]
+  real :: dG_dwB       ! The derivative of Gam_turb with wB [T3 Z-2 ~> s3 m-2]
   real :: taux2, tauy2 ! The squared surface stresses [R2 L2 Z2 T-4 ~> Pa2].
   real :: u2_av, v2_av ! The ice-area weighted average squared ocean velocities [L2 T-2 ~> m2 s-2]
-  real :: asu1, asu2   ! Ocean areas covered by ice shelves at neighboring u-
-  real :: asv1, asv2   ! and v-points [L2 ~> m2].
+  real :: asu1, asu2   ! Ocean areas covered by ice shelves at neighboring u-points [L2 ~> m2]
+  real :: asv1, asv2   ! Ocean areas covered by ice shelves at neighboring v-points [L2 ~> m2]
   real :: I_au, I_av   ! The Adcroft reciprocals of the ice shelf areas at adjacent points [L-2 ~> m-2]
   real :: Irho0        ! The inverse of the mean density times a unit conversion factor [R-1 L Z-1 ~> m3 kg-1]
   logical :: Sb_min_set, Sb_max_set
+  logical :: root_found
   logical :: update_ice_vel ! If true, it is time to update the ice shelf velocities.
   logical :: coupled_GL     ! If true, the grounding line position is determined based on
                             ! coupled ice-ocean dynamics.
 
-  real, parameter :: c2_3 = 2.0/3.0
-  character(len=160) :: mesg  ! The text of an error message
+  real, parameter :: c2_3 = 2.0/3.0 ! Two thirds [nondim]
+  character(len=320) :: mesg  ! The text of an error message
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   integer :: i, j, is, ie, js, je, ied, jed, it1, it3
-  real :: vaf0, vaf0_A, vaf0_G !The previous volumes above floatation [Z L2 ~> m3]
-                               !for all ice sheets, Antarctica only, or Greenland only [Z L2 ~> m3]
+  real :: vaf0, vaf0_A, vaf0_G ! The previous volumes above floatation [Z L2 ~> m3]
+                               ! for all ice sheets, Antarctica only, or Greenland only
 
   if (.not. associated(CS)) call MOM_error(FATAL, "shelf_calc_flux: "// &
        "initialize_ice_shelf must be called before shelf_calc_flux.")
@@ -394,8 +403,8 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   ! useful parameters
   ZETA_N = CS%Zeta_N
   VK = CS%Vk
-  RC = CS%Rc
-  I_ZETA_N = 1.0 / ZETA_N
+  Rf_crit = CS%Rc
+  I_2Zeta_N = 0.5 / CS%Zeta_N
   I_LF = 1.0 / CS%Lat_fusion
   SC = CS%kv_molec/CS%kd_molec_salt
   PR = CS%kv_molec/CS%kd_molec_temp
@@ -502,11 +511,12 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
           if (absf*sfc_state%Hml(i,j) <= VK*ustar_h) then ; hBL_neut = sfc_state%Hml(i,j)
           else ; hBL_neut = (VK*ustar_h) / absf ; endif
           hBL_neut_h_molec = ZETA_N * ((hBL_neut * ustar_h) / (5.0 * CS%kv_molec))
+          ln_neut = 0.0 ; if (hBL_neut_h_molec > 1.0) ln_neut = log(hBL_neut_h_molec)
+          n_star_term = (ZETA_N * hBL_neut * VK) / (Rf_crit * ustar_h**3)
 
           ! Determine the mixed layer buoyancy flux, wB_flux.
           dB_dS = (US%L_to_Z**2*CS%g_Earth / Rhoml(i)) * dR0_dS(i)
           dB_dT = (US%L_to_Z**2*CS%g_Earth / Rhoml(i)) * dR0_dT(i)
-          ln_neut = 0.0 ; if (hBL_neut_h_molec > 1.0) ln_neut = log(hBL_neut_h_molec)
 
           if (CS%find_salt_root) then
             ! Solve for the skin salinity using the linearized liquidus parameters and
@@ -556,68 +566,152 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
             dT_ustar = (ISS%tfreeze(i,j) - sfc_state%sst(i,j)) * ustar_h
             dS_ustar = (Sbdry(i,j) - sfc_state%sss(i,j)) * ustar_h
 
-            ! First, determine the buoyancy flux assuming no effects of stability
-            ! on the turbulence.  Following H & J '99, this limit also applies
-            ! when the buoyancy flux is destabilizing.
-
-            if (CS%const_gamma) then ! if using a constant gamma_T
-              ! note the different form, here I_Gam_T is NOT 1/Gam_T!
+            if (CS%const_gamma) then
+              ! If using a constant gamma_T, there are no effects of the buoyancy flux on the turbulence.
               I_Gam_T = CS%Gamma_T_3EQ
               I_Gam_S = CS%Gamma_S_3EQ
-            else
-              Gam_turb = I_VK * (ln_neut + (0.5 * I_ZETA_N - 1.0))
+              wT_flux = dT_ustar * CS%Gamma_T_3EQ
+              wB_flux = dB_dS * (dS_ustar * CS%Gamma_S_3EQ) + dB_dT * wT_flux
+            elseif (.not.CS%buoy_flux_itt_bugfix) then
+              ! Gamma_T and gamma_S are a function of the buoyancy flux, and there should have been
+              ! iteration to find the root where wB_flux is consistent with the values of gamma with
+              ! that flux, but it was omitted.
+              Gam_turb = I_VK * (ln_neut + (I_2Zeta_N - 1.0))
               I_Gam_T = 1.0 / (Gam_mol_t + Gam_turb)
               I_Gam_S = 1.0 / (Gam_mol_s + Gam_turb)
-            endif
+              wB_flux = dB_dS * (dS_ustar * I_Gam_S) + dB_dT * (dT_ustar * I_Gam_T)
 
-            wT_flux = dT_ustar * I_Gam_T
-            wB_flux = dB_dS * (dS_ustar * I_Gam_S) + dB_dT * wT_flux
-
-            if (wB_flux < 0.0) then
-              ! The buoyancy flux is stabilizing and will reduce the turbulent
-              ! fluxes, and iteration is required.
-              n_star_term = (ZETA_N * hBL_neut * VK) / (RC * ustar_h**3)
-              do it3 = 1,30
-               ! n_star <= 1.0 is the ratio of working boundary layer thickness
-               ! to the neutral thickness.
-               ! hBL = n_star*hBL_neut ; hSub = 1/8*n_star*hBL
-
+              if (wB_flux < 0.0) then  ! The stabilising buoyancy flux reduces the turbulent fluxes.
                 I_n_star = sqrt(1.0 - n_star_term * wB_flux)
-                dIns_dwB = 0.5 * n_star_term / I_n_star
                 if (hBL_neut_h_molec > I_n_star**2) then
-                  Gam_turb = I_VK * ((ln_neut - 2.0*log(I_n_star)) + &
-                                    (0.5*I_ZETA_N*I_n_star - 1.0))
-                  dG_dwB =  I_VK * ( -2.0 / I_n_star + (0.5 * I_ZETA_N)) * dIns_dwB
-                else
-                  !   The layer dominated by molecular viscosity is smaller than
-                  ! the assumed boundary layer.  This should be rare!
-                  Gam_turb = I_VK * (0.5 * I_ZETA_N*I_n_star - 1.0)
-                  dG_dwB = I_VK * (0.5 * I_ZETA_N) * dIns_dwB
+                  Gam_turb = I_VK * ((ln_neut - 2.0*log(I_n_star)) + (I_2Zeta_N*I_n_star - 1.0))
+                else ! The layer dominated by molecular viscosity is smaller than the boundary layer.
+                  Gam_turb = I_VK * (I_2Zeta_N*I_n_star - 1.0)
+                endif
+                I_Gam_T = 1.0 / (Gam_mol_t + Gam_turb)
+                I_Gam_S = 1.0 / (Gam_mol_s + Gam_turb)
+              endif
+              wT_flux = dT_ustar * I_Gam_T
+            else  ! gamma_T and gamma_S are a function of the buoyancy flux with proper iteration.
+              ! Find the root where wB_flux is consistent with the values of gamma with that flux.
+
+              ! First, determine the buoyancy flux assuming no effects of stability
+              ! on the turbulence.  Following H & J '99, this limit also applies
+              ! when the buoyancy flux is destabilizing.
+              Gam_turb = I_VK * (ln_neut + (I_2Zeta_N - 1.0))
+              I_Gam_T = 1.0 / (Gam_mol_t + Gam_turb)
+              I_Gam_S = 1.0 / (Gam_mol_s + Gam_turb)
+              wB_flux = (dB_dS * dS_ustar) * I_Gam_S + (dB_dT * dT_ustar) * I_Gam_T
+
+              if (wB_flux < 0.0) then
+                ! The buoyancy flux is stabilizing and will reduce the turbulent
+                ! fluxes, and iteration is required.
+
+                ! n_star <= 1.0 is the ratio of working boundary layer thickness
+                ! to the neutral thickness.  I_n_star is its inverse.
+                I_n_star = sqrt(1.0 - n_star_term * wB_flux)
+                if (hBL_neut_h_molec > I_n_star**2) then
+                  Gam_turb = I_VK * ((ln_neut - 2.0*log(I_n_star)) + (I_2Zeta_N*I_n_star - 1.0))
+                else !   The layer dominated by molecular viscosity is smaller than the boundary layer.
+                  Gam_turb = I_VK * (I_2Zeta_N*I_n_star - 1.0)
+                endif
+                I_Gam_T = 1.0 / (Gam_mol_t + Gam_turb)
+                I_Gam_S = 1.0 / (Gam_mol_s + Gam_turb)
+
+                wB_flux_new = (dB_dS * dS_ustar) * I_Gam_S + (dB_dT * dT_ustar) * I_Gam_T
+                root_found = (abs(wB_flux_new - wB_flux) < CS%buoy_flux_tol*(abs(wB_flux_new) + abs(wB_flux)))
+                ! Do not update the flux if its maagnitude would be increased by the otherwise
+                ! stabilizing buoyancy fluxes.  This can happen when the buoyancy flux
+                ! is stabilizing when one of the heat or salt fluxes are destabilizing due
+                ! to their different molecular properties.
+                if (wB_flux_new <= wB_flux) root_found = .true.
+
+                if (.not.root_found) then
+                  wB_flux_max = 0.0 ; DwB_max = wB_flux
+                  wB_flux_min = wB_flux ; DwB_min = wB_flux_new - wB_flux
+
+                  if ((wB_flux_min*n_star_term < (1.0 - hBL_neut_h_molec)) .and. &
+                      ((1.0 - hBL_neut_h_molec) < wB_flux_max*n_star_term)) then
+                    ! The derivative of Gam_turb with wB_flux has a discontinuous change within the
+                    ! bracketed range of values.  Take this discontinous slope value for a first
+                    ! guess, because Newton's method and the false position method may not converge
+                    ! quickly when this discontinuity is between a guess and the solution.
+                    wB_flux = (1.0 - hBL_neut_h_molec) / n_star_term
+                    I_n_star = sqrt(hBL_neut_h_molec)
+                    Gam_turb = I_VK * (I_2Zeta_N*I_n_star - 1.0)
+                    I_Gam_T = 1.0 / (Gam_mol_t + Gam_turb)
+                    I_Gam_S = 1.0 / (Gam_mol_s + Gam_turb)
+                    wB_flux_new = (dB_dS * dS_ustar) * I_Gam_S + (dB_dT * dT_ustar) * I_Gam_T
+
+                    if (abs(wB_flux_new - wB_flux) <= CS%buoy_flux_tol*(abs(wB_flux_new) + abs(wB_flux))) then
+                      ! The root has been found to within the tolerance at the kink.  This should be very rare.
+                      root_found = .true.
+                    elseif (wB_flux_new > wB_flux) then
+                      ! The solution is in the limit where abs(wB_flux) is small and
+                      ! Gam_turb = I_VK * ((ln_neut - 2.0*log(I_n_star)) + (I_2Zeta_N*I_n_star - 1.0))
+                      wB_flux_min = wB_flux ; DwB_min = wB_flux_new - wB_flux
+                    else
+                      ! The solution is in the limt where abs(wB_flux) is large and
+                      ! Gam_turb = I_VK * (I_2Zeta_N*I_n_star - 1.0)
+                      wB_flux_max = wB_flux ; DwB_max = wB_flux_new - wB_flux
+                    endif
+                  endif
                 endif
 
-                if (CS%const_gamma) then ! if using a constant gamma_T
-                  ! note the different form, here I_Gam_T is NOT 1/Gam_T!
-                  I_Gam_T = CS%Gamma_T_3EQ
-                  I_Gam_S = CS%Gamma_S_3EQ
-                else
-                  I_Gam_T = 1.0 / (Gam_mol_t + Gam_turb)
-                  I_Gam_S = 1.0 / (Gam_mol_s + Gam_turb)
+                if (.not.root_found) then
+                  ! Use the false position for the next guess.
+                  wB_flux = wB_flux_min + (wB_flux_max-wB_flux_min) * (DwB_min / (DwB_min - DwB_max))
+
+                  do it3 = 1,30
+                  ! Iterate using Newton's method with bounds or the false position method to find the root.
+
+                    I_n_star = sqrt(1.0 - n_star_term * wB_flux)
+                    dIns_dwB = -0.5 * n_star_term / I_n_star
+                    if (hBL_neut_h_molec > I_n_star**2) then
+                      Gam_turb = I_VK * ((ln_neut - 2.0*log(I_n_star)) + (I_2Zeta_N*I_n_star - 1.0))
+                      dG_dwB =  I_VK * (( -2.0 / I_n_star + I_2Zeta_N) * dIns_dwB)
+                    else
+                      !   The layer dominated by molecular viscosity is smaller than the boundary layer.
+                      Gam_turb = I_VK * (I_2Zeta_N*I_n_star - 1.0)
+                      dG_dwB = I_VK * (I_2Zeta_N * dIns_dwB)
+                    endif
+                    I_Gam_T = 1.0 / (Gam_mol_t + Gam_turb)
+                    I_Gam_S = 1.0 / (Gam_mol_s + Gam_turb)
+                    wB_flux_new = (dB_dS * dS_ustar) * I_Gam_S + (dB_dT * dT_ustar) * I_Gam_T
+
+                    ! Test for convergence to within tolerance at the point where wB_flux_new = wB_flux.
+                    if (abs(wB_flux_new - wB_flux) <= CS%buoy_flux_tol*(abs(wB_flux_new) + abs(wB_flux))) &
+                      root_found = .true.
+                    if (root_found) exit
+
+                    dDwB_dwB = -dG_dwB * ((dB_dS * dS_ustar) * I_Gam_S**2 + &
+                                          (dB_dT * dT_ustar) * I_Gam_T**2) - 1.0
+                    if ((dDwB_dwB >= 0.0) .or. &
+                        ( wB_flux - wB_flux_new >= abs(dDwB_dwB)*(wB_flux_max - wB_flux)) .or. &
+                        ( wB_flux - wB_flux_new <= abs(dDwB_dwB)*(wB_flux_min - wB_flux)) ) then
+                      ! Use the False position method to determine the guess for the next iteration when
+                      ! Newton's method would go out of bounds
+                      wB_flux_next = wB_flux_min + (wB_flux_max-wB_flux_min) * (DwB_min / (DwB_min - DwB_max))
+                    else
+                      ! Use Newton's method for the next guess.
+                      wB_flux_next = wB_flux - (wB_flux_new - wB_flux) / dDwB_dwB
+                    endif
+
+                    ! Reset one of the bounds inward.
+                    if (wB_flux_new - wB_flux > 0) then
+                      wB_flux_min = wB_flux ; DwB_min = wB_flux_new - wB_flux
+                    else
+                      wB_flux_max = wB_flux ; DwB_max = wB_flux_new - wB_flux
+                    endif
+
+                    ! Update wB_flux
+                    wB_flux = wB_flux_next
+                  enddo ! it3
                 endif
 
-                wT_flux = dT_ustar * I_Gam_T
-                wB_flux_new = dB_dS * (dS_ustar * I_Gam_S) + dB_dT * wT_flux
-
-                ! Find the root where wB_flux_new = wB_flux.
-                if (abs(wB_flux_new - wB_flux) < CS%buoy_flux_itt_threshold*(abs(wB_flux_new) + abs(wB_flux))) exit
-
-                dDwB_dwB_in = dG_dwB * (dB_dS * (dS_ustar * I_Gam_S**2) + &
-                                        dB_dT * (dT_ustar * I_Gam_T**2)) - 1.0
-                ! This is Newton's method without any bounds.  Should bounds be needed?
-                wB_flux_new = wB_flux - (wB_flux_new - wB_flux) / dDwB_dwB_in
-                ! Update wB_flux
-                if (CS%buoy_flux_itt_bug) wB_flux = wB_flux_new
-              enddo !it3
-            endif
+              endif  ! End of test for first guess of wB_flux < 0.
+              wT_flux = dT_ustar * I_Gam_T
+            endif  ! End of test for CS%const_gamma
 
             ISS%tflux_ocn(i,j)  = RhoCp * wT_flux
             exch_vel_t(i,j) = ustar_h * I_Gam_T
@@ -688,7 +782,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
                 Sbdry(i,j) = Sbdry_it
               endif ! Sb_min_set
 
-              if (.not.CS%salt_flux_itt_bug) Sbdry(i,j) = Sbdry_it
+              if (.not.CS%salt_flux_itt_bugfix) Sbdry(i,j) = Sbdry_it
 
             endif ! CS%find_salt_root
 
@@ -1138,7 +1232,7 @@ subroutine add_shelf_flux(G, US, CS, sfc_state, fluxes, time_step)
   type(ice_shelf_CS),    pointer       :: CS   !< This module's control structure.
   type(surface),         intent(inout) :: sfc_state !< Surface ocean state
   type(forcing),         intent(inout) :: fluxes  !< A structure of surface fluxes that may be used/updated.
-  real,                  intent(in)    :: time_step !< Time step over which fluxes are applied
+  real,                  intent(in)    :: time_step !< Time step over which fluxes are applied [T ~> s]
   ! local variables
   real :: frac_shelf       !< The fractional area covered by the ice shelf [nondim].
   real :: frac_open        !< The fractional area of the ocean that is not covered by the ice shelf [nondim].
@@ -1377,10 +1471,12 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
   type(directories)  :: dirs
   type(dyn_horgrid_type), pointer :: dG => NULL()
   type(dyn_horgrid_type), pointer :: dG_in => NULL()
-  real :: meltrate_conversion ! The conversion factor to use for in the melt rate diagnostic.
+  real :: meltrate_conversion ! The conversion factor to use for in the melt rate diagnostic
+                              ! [T kg R-1 Z-1 m-2 s-1 ~> nondim]
   real :: dz_ocean_min_float ! The minimum ocean thickness above which the ice shelf is considered
                         ! to be floating when CONST_SEA_LEVEL = True [Z ~> m].
-  real :: cdrag, drag_bg_vel
+  real :: cdrag         ! The drag coefficient at the ice-ocean interface [nondim]
+  real :: drag_bg_vel   ! A background velocity used in the quadratic drag [Z T-1 ~> m s-1]
   logical :: new_sim, save_IC
   !This include declares and sets the variable "version".
 # include "version_variable.h"
@@ -1396,7 +1492,7 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
   real    :: utide  ! A tidal velocity [L T-1 ~> m s-1]
   real    :: col_thick_melt_thresh ! An ocean column thickness below which iceshelf melting
                                    ! does not occur [Z ~> m]
-  real, allocatable, dimension(:,:) :: tmp2d ! Temporary array for storing ice shelf input data
+  real, allocatable, dimension(:,:) :: tmp2d ! Temporary array for ice shelf input data [L T-1 ~> m s-1]
 
   type(surface), pointer :: sfc_state => NULL()
   type(vardesc) :: u_desc, v_desc
@@ -1686,11 +1782,11 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
   call get_param(param_file, mdl, "ICE_SHELF_RC", CS%Rc, &
                  "Critical flux Richardson number for ice melt ", &
                  units="nondim", default=0.20)
-  call get_param(param_file, mdl, "ICE_SHELF_BUOYANCY_FLUX_ITT_BUG", CS%buoy_flux_itt_bug, &
-                 "Bug fix of buoyancy iteration", default=.true.)
-  call get_param(param_file, mdl, "ICE_SHELF_SALT_FLUX_ITT_BUG", CS%salt_flux_itt_bug, &
-                 "Bug fix of salt iteration", default=.true.)
-  call get_param(param_file, mdl, "ICE_SHELF_BUOYANCY_FLUX_ITT_THRESHOLD", CS%buoy_flux_itt_threshold, &
+  call get_param(param_file, mdl, "ICE_SHELF_BUOYANCY_FLUX_ITT_BUGFIX", CS%buoy_flux_itt_bugfix, &
+                 "Bug fix of buoyancy iteration", default=.true., old_name="ICE_SHELF_BUOYANCY_FLUX_ITT_BUG")
+  call get_param(param_file, mdl, "ICE_SHELF_SALT_FLUX_ITT_BUGFIX", CS%salt_flux_itt_bugfix, &
+                 "Bug fix of salt iteration", default=.true., old_name="ICE_SHELF_SALT_FLUX_ITT_BUG")
+  call get_param(param_file, mdl, "ICE_SHELF_BUOYANCY_FLUX_ITT_THRESHOLD", CS%buoy_flux_tol, &
                  "Convergence criterion of Newton's method for ice shelf "//&
                  "buoyancy iteration.", units="nondim", default=1.0e-4)
 
@@ -2356,6 +2452,7 @@ subroutine initialize_shelf_mass(G, param_file, CS, ISS, new_sim)
   end select
 
 end subroutine initialize_shelf_mass
+
 !> This subroutine applies net accumulation/ablation at the top surface to the dynamic ice shelf.
 !! acc_rate[m-s]=surf_mass_flux/density_ice is ablation/accumulation rate
 !! positive for accumulation negative for ablation
@@ -2372,13 +2469,12 @@ subroutine change_thickness_using_precip(CS, ISS, G, US, fluxes, time_step, Time
 
   ! locals
   integer :: i, j
-  real ::I_rho_ice
+  real :: I_rho_ice ! The specific volume of ice [R-1 ~> m3 kg-1]
 
   I_rho_ice = 1.0 / CS%density_ice
 
   !update time
 !  CS%Time = Time
-
 
 !    CS%time_step = time_step
     ! update surface mass flux  rate
@@ -2463,7 +2559,7 @@ subroutine ice_shelf_query(CS, G, frac_shelf_h, mass_shelf, data_override_shelf_
   type(ice_shelf_CS),         pointer    :: CS !< ice shelf control structure
   type(ocean_grid_type), intent(in)      :: G  !< A pointer to an ocean grid control structure.
   real, optional, dimension(SZI_(G),SZJ_(G)), intent(out)  :: frac_shelf_h !< Ice shelf area fraction [nondim].
-  real, optional, dimension(SZI_(G),SZJ_(G)), intent(out)  :: mass_shelf !<Ice shelf mass [R Z ~> kg m-2]
+  real, optional, dimension(SZI_(G),SZJ_(G)), intent(out)  :: mass_shelf !< Ice shelf mass [R Z ~> kg m-2]
   logical, optional                      :: data_override_shelf_fluxes !< If true, shelf fluxes can be written using
                                                !! the data_override capability (only for MOSAIC grids)
 
