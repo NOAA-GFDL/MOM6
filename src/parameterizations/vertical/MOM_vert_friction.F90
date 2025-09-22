@@ -758,7 +758,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     enddo ; enddo
   endif
 
-  do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+  do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
     b_denom_1 = CS%h_u(I,j,1) + dt * (Ray(I,j) + CS%a_u(I,j,1))
     b1(I,j) = 1.0 / (b_denom_1 + dt*CS%a_u(I,j,2))
     d1(I,j) = b_denom_1 * b1(I,j)
@@ -766,7 +766,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   endif ; enddo ; enddo
 
   if (associated(ADp%du_dt_str)) then
-    do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+    do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
       ADp%du_dt_str(I,j,1) = b1(I,j) * (CS%h_u(I,j,1) * ADp%du_dt_str(I,j,1) + surface_stress(I,j) * Idt)
     endif ; enddo ; enddo
   endif
@@ -778,7 +778,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
       enddo ; enddo
     endif
 
-    do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+    do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
       c1(I,j,k) = dt * CS%a_u(I,j,K) * b1(I,j)
       b_denom_1 = CS%h_u(I,j,k) + dt * (Ray(I,j) + CS%a_u(I,j,K)*d1(I,j))
       b1(I,j) = 1.0 / (b_denom_1 + dt * CS%a_u(I,j,K+1))
@@ -788,7 +788,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     endif ; enddo ; enddo
 
     if (associated(ADp%du_dt_str)) then
-      do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
         ADp%du_dt_str(I,j,k) = (CS%h_u(I,j,k) * ADp%du_dt_str(I,j,k) &
             + dt * CS%a_u(I,j,K) * ADp%du_dt_str(I,j,k-1)) * b1(I,j)
       endif ; enddo ; enddo
@@ -798,19 +798,19 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   ! back substitute to solve for the new velocities
   ! u_k = d'_k - c'_k x_(k+1)
   do k=nz-1,1,-1
-    do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+    do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
       u(I,j,k) = u(I,j,k) + c1(I,j,k+1) * u(I,j,k+1)
     endif ; enddo ; enddo
   enddo
 
   if (associated(ADp%du_dt_str)) then
-    do j=G%isc,G%jec ; do I=Isq,Ieq
+    do j=G%jsc,G%jec ; do I=Isq,Ieq
       if (abs(ADp%du_dt_str(I,j,nz)) < accel_underflow) &
         ADp%du_dt_str(I,j,nz) = 0.0
     enddo ; enddo
 
     do k=nz-1,1,-1
-      do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
         ADp%du_dt_str(I,j,k) = ADp%du_dt_str(I,j,k) + c1(I,j,k+1) * ADp%du_dt_str(I,j,k+1)
 
         if (abs(ADp%du_dt_str(I,j,k)) < accel_underflow) &
@@ -824,7 +824,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   ! use ADp%du_dt_visc_gl90 as a placeholder for updated u (due to GL90) until last do loop
   if ((CS%id_du_dt_visc_gl90 > 0) .or. (CS%id_GLwork > 0)) then
     if (associated(ADp%du_dt_visc_gl90)) then
-      do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
         b_denom_1 = CS%h_u(I,j,1)  ! CS%a_u_gl90(I,j,1) is zero
         b1(I,j) = 1.0 / (b_denom_1 + dt*CS%a_u_gl90(I,j,2))
         d1(I,j) = b_denom_1 * b1(I,j)
@@ -833,7 +833,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
       endif ; enddo ; enddo
 
       do k=2,nz
-        do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+        do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
           c1(I,j,k) = dt * CS%a_u_gl90(I,j,K) * b1(I,j)
           b_denom_1 = CS%h_u(I,j,k) + dt * (CS%a_u_gl90(I,j,K)*d1(I,j))
           b1(I,j) = 1.0 / (b_denom_1 + dt * CS%a_u_gl90(I,j,K+1))
@@ -846,14 +846,14 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
 
       ! back substitute to solve for new velocities, held by ADp%du_dt_visc_gl90
       do k=nz-1,1,-1
-        do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+        do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
           ADp%du_dt_visc_gl90(I,j,k) = ADp%du_dt_visc_gl90(I,j,k) &
               + c1(I,j,k+1) * ADp%du_dt_visc_gl90(I,j,k+1)
         endif ; enddo ; enddo
       enddo
 
       do k=1,nz
-        do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+        do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
           ! now fill ADp%du_dt_visc_gl90(I,j,k) with actual velocity tendency due to GL90;
           ! note that on RHS: ADp%du_dt_visc(I,j,k) holds the original velocity value u(I,j,k)
           ! and ADp%du_dt_visc_gl90(I,j,k) the updated velocity due to GL90
@@ -870,7 +870,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
       ! velocity update; note that ADp%du_dt_visc(I,j,k) holds the original velocity value u(I,j,k)
       if (CS%id_GLwork > 0) then
         do k=1,nz
-          do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+          do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
             KE_u(I,j,k) = ADp%du_dt_visc(I,j,k) * CS%h_u(I,j,k) * G%areaCu(I,j) * ADp%du_dt_visc_gl90(I,j,k)
           endif ; enddo ; enddo
         enddo
@@ -1542,7 +1542,7 @@ subroutine vertvisc_coef(u, v, h, dz, forces, visc, tv, dt, G, GV, US, CS, OBC, 
     endif
 
     if (OBC%u_W_OBCs_on_PE) then
-      do j=js_W_OBC,je_W_OBC ; do I=Is_W_OBC,Is_W_OBC
+      do j=js_W_OBC,je_W_OBC ; do I=Is_W_OBC,Ie_W_OBC
         if (do_i(I,j) .and. OBC%segnum_u(I,j) < 0) then
           Dmin(I,j) = G%bathyT(i+1,j)
           zi_dir(I,j) = 1
@@ -2144,7 +2144,7 @@ subroutine vertvisc_coef(u, v, h, dz, forces, visc, tv, dt, G, GV, US, CS, OBC, 
             zcol(i,j) = zcol(i,j) - dz(i,j,k)
           enddo ; enddo
 
-          do J=Jsq,Jeq ; do i=is,je ; if (do_i_shelf(i,J)) then
+          do J=Jsq,Jeq ; do i=is,ie ; if (do_i_shelf(i,J)) then
             zh(i,J) = zh(i,J) + dz_harm(i,J,k)
 
             hvel_shelf(i,J,k) = hvel(i,J,k)
