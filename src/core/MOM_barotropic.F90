@@ -2620,7 +2620,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
       enddo ; enddo
     else
       do j=js,je ; do i=is,ie
-        if (eta_IC(i,j) < 0.0) then
+        if ((eta_IC(i,j) < 0.0) .and. (G%mask2dT(i,j) > 0.0)) then
           write(mesg,'(" at ", ES12.4, ES12.4, i7, i7)') &
               G%geoLonT(i,j), G%geoLatT(i,j), i + G%HI%idg_offset, j + G%HI%jdg_offset
           call MOM_error(FATAL, "btstep: negative eta_IC at start of a non-Boussinesq barotropic solver "//&
@@ -2915,7 +2915,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
       enddo ; enddo
     else
       do j=js,je ; do i=is,ie
-        if (eta(i,j) < 0.0) then
+        if ((eta(i,j) < 0.0) .and. (G%mask2dT(i,j) > 0.0)) then
           write(mesg,'(" at ", ES12.4, ES12.4, i7, i7)') &
               G%geoLonT(i,j), G%geoLatT(i,j), i + G%HI%idg_offset, j + G%HI%jdg_offset
           if (CS%bt_limit_integral_transport) &
