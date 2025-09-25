@@ -24,6 +24,7 @@ type, public :: ice_shelf_state
   real, pointer, dimension(:,:) :: &
     mass_shelf => NULL(), &    !< The mass per unit area of the ice shelf or sheet [R Z ~> kg m-2].
     area_shelf_h => NULL(), &  !< The area per cell covered by the ice shelf [L2 ~> m2].
+    melt_mask => NULL(), &     !< Mask is > 0 where melting is allowed
     h_shelf => NULL(), &       !< the thickness of the shelf [Z ~> m], redundant with mass but may
                                !! make the code more readable
     dhdt_shelf => NULL(), &       !< the change in thickness of the shelf over time [Z T-1 ~> m s-1]
@@ -74,6 +75,7 @@ subroutine ice_shelf_state_init(ISS, G)
 
   allocate(ISS%mass_shelf(isd:ied,jsd:jed), source=0.0 )
   allocate(ISS%area_shelf_h(isd:ied,jsd:jed), source=0.0 )
+  allocate(ISS%melt_mask(isd:ied,jsd:jed), source=1.0 )
   allocate(ISS%h_shelf(isd:ied,jsd:jed), source=0.0 )
   allocate(ISS%dhdt_shelf(isd:ied,jsd:jed), source=0.0 )
   allocate(ISS%hmask(isd:ied,jsd:jed), source=-2.0 )

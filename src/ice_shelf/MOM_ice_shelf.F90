@@ -502,7 +502,8 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
 
     do i=is,ie
       if ((sfc_state%ocean_mass(i,j) > CS%col_mass_melt_threshold) .and. &
-          (ISS%area_shelf_h(i,j) > 0.0) .and. CS%isthermo) then
+          (ISS%area_shelf_h(i,j) > 0.0) .and. CS%isthermo &
+           .and. ISS%melt_mask(i,j)>0.0) then
 
         if (CS%threeeq) then
           !   Iteratively determine a self-consistent set of fluxes, with the ocean
@@ -1925,8 +1926,8 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
 
     if (new_sim) then
       ! new simulation, initialize ice thickness as in the static case
-      call initialize_ice_thickness(ISS%h_shelf, ISS%area_shelf_h, ISS%hmask, CS%Grid, CS%Grid_in, US, param_file,  &
-            CS%rotate_index, CS%turns)
+      call initialize_ice_thickness(ISS%h_shelf, ISS%area_shelf_h, ISS%hmask, ISS%melt_mask, CS%Grid, CS%Grid_in, &
+                                    US, param_file, CS%rotate_index, CS%turns)
 
     ! next make sure mass is consistent with thickness
       do j=G%jsd,G%jed ; do i=G%isd,G%ied
@@ -2006,8 +2007,8 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
 
   if (new_sim .and. (.not. (CS%override_shelf_movement .and. CS%mass_from_file))) then
     ! This model is initialized internally or from a file.
-    call initialize_ice_thickness(ISS%h_shelf, ISS%area_shelf_h, ISS%hmask, CS%Grid, CS%Grid_in, US, param_file,&
-          CS%rotate_index, CS%turns)
+    call initialize_ice_thickness(ISS%h_shelf, ISS%area_shelf_h, ISS%hmask, ISS%melt_mask, CS%Grid, CS%Grid_in, &
+                                  US, param_file, CS%rotate_index, CS%turns)
     ! next make sure mass is consistent with thickness
     do j=G%jsd,G%jed ; do i=G%isd,G%ied
       if ((ISS%hmask(i,j) == 1) .or. (ISS%hmask(i,j) == 2) .or. (ISS%hmask(i,j) == 3)) then
