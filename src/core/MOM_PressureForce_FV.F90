@@ -2078,16 +2078,16 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, ADp, SAL
                  "If true, apply tidal momentum forcing.", default=.false.)
   if (CS%tides) then
     call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
-                 "This sets the default value for the various _ANSWER_DATE parameters.", &
-                 default=99991231)
+                   "This sets the default value for the various _ANSWER_DATE parameters.", &
+                   default=99991231)
     call get_param(param_file, mdl, "TIDES_ANSWER_DATE", CS%tides_answer_date, "The vintage of "//&
-                  "self-attraction and loading (SAL) and tidal forcing calculations.  Setting "//&
-                  "dates before 20230701 recovers old answers (Boussinesq and non-Boussinesq "//&
-                  "modes) when SAL is part of the tidal forcing calculation.  The answer "//&
-                  "difference is only at bit level and due to a reordered summation.  Setting "//&
-                  "dates before 20250201 recovers answers (Boussinesq mode) that interface "//&
-                  "heights are modified before pressure force integrals are calculated.", &
-                  default=default_answer_date, do_not_log=(.not.CS%tides))
+                   "self-attraction and loading (SAL) and tidal forcing calculations.  Setting "//&
+                   "dates before 20230701 recovers old answers (Boussinesq and non-Boussinesq "//&
+                   "modes) when SAL is part of the tidal forcing calculation.  The answer "//&
+                   "difference is only at bit level and due to a reordered summation.  Setting "//&
+                   "dates before 20250201 recovers answers (Boussinesq mode) that interface "//&
+                   "heights are modified before pressure force integrals are calculated.", &
+                   default=default_answer_date, do_not_log=(.not.CS%tides))
   endif
   call get_param(param_file, mdl, "CALCULATE_SAL", CS%calculate_SAL, &
                  "If true, calculate self-attraction and loading.", default=CS%tides)
