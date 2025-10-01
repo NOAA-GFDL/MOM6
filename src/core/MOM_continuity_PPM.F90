@@ -459,7 +459,7 @@ subroutine zonal_edge_thickness(h_in, h_W, h_E, G, GV, US, CS, OBC, LB_in)
     !$OMP parallel do default(shared)
     do k=1,nz
       call PPM_reconstruction_x(h_in(:,:,k), h_W(:,:,k), h_E(:,:,k), G, LB, &
-                                2.0*GV%Angstrom_H, CS%monotonic, CS%simple_2nd, OBC)
+                                2.0*GV%Angstrom_H, CS%monotonic, CS%simple_2nd, OBC, k)
     enddo
   endif
 
@@ -506,7 +506,7 @@ subroutine meridional_edge_thickness(h_in, h_S, h_N, G, GV, US, CS, OBC, LB_in)
     !$OMP parallel do default(shared)
     do k=1,nz
       call PPM_reconstruction_y(h_in(:,:,k), h_S(:,:,k), h_N(:,:,k), G, LB, &
-                                2.0*GV%Angstrom_H, CS%monotonic, CS%simple_2nd, OBC)
+                                2.0*GV%Angstrom_H, CS%monotonic, CS%simple_2nd, OBC, k)
     enddo
   endif
 
@@ -2304,7 +2304,7 @@ subroutine set_merid_BT_cont(v, h_in, h_S, h_N, BT_cont, vh_tot_0, dvhdv_tot_0, 
 end subroutine set_merid_BT_cont
 
 !> Calculates left/right edge values for PPM reconstruction.
-subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_2nd, OBC)
+subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_2nd, OBC, k)
   type(ocean_grid_type),             intent(in)  :: G    !< Ocean's grid structure.
   real, dimension(SZI_(G),SZJ_(G)),  intent(in)  :: h_in !< Layer thickness [H ~> m or kg m-2].
   real, dimension(SZI_(G),SZJ_(G)),  intent(out) :: h_W  !< West edge thickness in the reconstruction,
@@ -2321,6 +2321,7 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
                     !! arithmetic mean thicknesses as the default edge values
                     !! for a simple 2nd order scheme.
   type(ocean_OBC_type),              pointer     :: OBC !< Open boundaries control structure.
+  integer :: k      !< vertical grid index
 
   ! Local variables with useful mnemonic names.
   real, dimension(SZI_(G),SZJ_(G))  :: slp ! The slopes per grid point [H ~> m or kg m-2]
@@ -2345,13 +2346,13 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
 
   if ((isl-stencil < G%isd) .or. (iel+stencil > G%ied)) then
     write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_x called with a ", &
-               & "x-halo that needs to be increased by ",i2,".")') &
+               & "x-halo that needs to be increased by ",I0,".")') &
                stencil + max(G%isd-isl,iel-G%ied)
     call MOM_error(FATAL,mesg)
   endif
   if ((jsl < G%jsd) .or. (jel > G%jed)) then
     write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_x called with a ", &
-               & "y-halo that needs to be increased by ",i2,".")') &
+               & "y-halo that needs to be increased by ",I0,".")') &
                max(G%jsd-jsl,jel-G%jed)
     call MOM_error(FATAL,mesg)
   endif
@@ -2411,20 +2412,38 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
       if (.not. segment%on_pe) cycle
       if (segment%direction == OBC_DIRECTION_E) then
         I=segment%HI%IsdB
-        do j=segment%HI%jsd,segment%HI%jed
-          h_W(i+1,j) = h_in(i,j)
-          h_E(i+1,j) = h_in(i,j)
-          h_W(i,j) = h_in(i,j)
-          h_E(i,j) = h_in(i,j)
-        enddo
+        if (associated(segment%h_Reg)) then
+          do j=segment%HI%jsd,segment%HI%jed
+            h_W(i+1,j) = segment%h_Reg%h_res(i,j,k)
+            h_E(i+1,j) = segment%h_Reg%h_res(i,j,k)
+            h_W(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_E(i,j) = segment%h_Reg%h_res(i,j,k)
+          enddo
+        else
+          do j=segment%HI%jsd,segment%HI%jed
+            h_W(i+1,j) = h_in(i,j)
+            h_E(i+1,j) = h_in(i,j)
+            h_W(i,j) = h_in(i,j)
+            h_E(i,j) = h_in(i,j)
+          enddo
+        endif
       elseif (segment%direction == OBC_DIRECTION_W) then
         I=segment%HI%IsdB
-        do j=segment%HI%jsd,segment%HI%jed
-          h_W(i,j) = h_in(i+1,j)
-          h_E(i,j) = h_in(i+1,j)
-          h_W(i+1,j) = h_in(i+1,j)
-          h_E(i+1,j) = h_in(i+1,j)
-        enddo
+        if (associated(segment%h_Reg)) then
+          do j=segment%HI%jsd,segment%HI%jed
+            h_W(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_E(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_W(i+1,j) = segment%h_Reg%h_res(i,j,k)
+            h_E(i+1,j) = segment%h_Reg%h_res(i,j,k)
+          enddo
+        else
+          do j=segment%HI%jsd,segment%HI%jed
+            h_W(i,j) = h_in(i+1,j)
+            h_E(i,j) = h_in(i+1,j)
+            h_W(i+1,j) = h_in(i+1,j)
+            h_E(i+1,j) = h_in(i+1,j)
+          enddo
+        endif
       endif
     enddo
   endif
@@ -2439,7 +2458,7 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
 end subroutine PPM_reconstruction_x
 
 !> Calculates left/right edge values for PPM reconstruction.
-subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_2nd, OBC)
+subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_2nd, OBC, k)
   type(ocean_grid_type),             intent(in)  :: G    !< Ocean's grid structure.
   real, dimension(SZI_(G),SZJ_(G)),  intent(in)  :: h_in !< Layer thickness [H ~> m or kg m-2].
   real, dimension(SZI_(G),SZJ_(G)),  intent(out) :: h_S  !< South edge thickness in the reconstruction,
@@ -2456,6 +2475,7 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_
                     !! arithmetic mean thicknesses as the default edge values
                     !! for a simple 2nd order scheme.
   type(ocean_OBC_type),              pointer     :: OBC !< Open boundaries control structure.
+  integer :: k      !< vertical grid index
 
   ! Local variables with useful mnemonic names.
   real, dimension(SZI_(G),SZJ_(G))  :: slp ! The slopes per grid point [H ~> m or kg m-2]
@@ -2480,13 +2500,13 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_
 
   if ((isl < G%isd) .or. (iel > G%ied)) then
     write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with a ", &
-               & "x-halo that needs to be increased by ",i2,".")') &
+               & "x-halo that needs to be increased by ",I0,".")') &
                max(G%isd-isl,iel-G%ied)
     call MOM_error(FATAL,mesg)
   endif
   if ((jsl-stencil < G%jsd) .or. (jel+stencil > G%jed)) then
     write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with a ", &
-                 & "y-halo that needs to be increased by ",i2,".")') &
+                 & "y-halo that needs to be increased by ",I0,".")') &
                  stencil + max(G%jsd-jsl,jel-G%jed)
     call MOM_error(FATAL,mesg)
   endif
@@ -2544,20 +2564,38 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_
       if (.not. segment%on_pe) cycle
       if (segment%direction == OBC_DIRECTION_N) then
         J=segment%HI%JsdB
-        do i=segment%HI%isd,segment%HI%ied
-          h_S(i,j+1) = h_in(i,j)
-          h_N(i,j+1) = h_in(i,j)
-          h_S(i,j) = h_in(i,j)
-          h_N(i,j) = h_in(i,j)
-        enddo
+        if (associated(segment%h_Reg)) then
+          do i=segment%HI%isd,segment%HI%ied
+            h_S(i,j+1) = segment%h_Reg%h_res(i,j,k)
+            h_N(i,j+1) = segment%h_Reg%h_res(i,j,k)
+            h_S(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_N(i,j) = segment%h_Reg%h_res(i,j,k)
+          enddo
+        else
+          do i=segment%HI%isd,segment%HI%ied
+            h_S(i,j+1) = h_in(i,j)
+            h_N(i,j+1) = h_in(i,j)
+            h_S(i,j) = h_in(i,j)
+            h_N(i,j) = h_in(i,j)
+          enddo
+        endif
       elseif (segment%direction == OBC_DIRECTION_S) then
         J=segment%HI%JsdB
-        do i=segment%HI%isd,segment%HI%ied
-          h_S(i,j) = h_in(i,j+1)
-          h_N(i,j) = h_in(i,j+1)
-          h_S(i,j+1) = h_in(i,j+1)
-          h_N(i,j+1) = h_in(i,j+1)
-        enddo
+        if (associated(segment%h_Reg)) then
+          do i=segment%HI%isd,segment%HI%ied
+            h_S(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_N(i,j) = segment%h_Reg%h_res(i,j,k)
+            h_S(i,j+1) = segment%h_Reg%h_res(i,j,k)
+            h_N(i,j+1) = segment%h_Reg%h_res(i,j,k)
+          enddo
+        else
+          do i=segment%HI%isd,segment%HI%ied
+            h_S(i,j) = h_in(i,j+1)
+            h_N(i,j) = h_in(i,j+1)
+            h_S(i,j+1) = h_in(i,j+1)
+            h_N(i,j+1) = h_in(i,j+1)
+          enddo
+        endif
       endif
     enddo
   endif
@@ -2671,22 +2709,32 @@ function ratio_max(a, b, maxrat) result(ratio)
 end function ratio_max
 
 !> Initializes continuity_ppm_cs
-subroutine continuity_PPM_init(Time, G, GV, US, param_file, diag, CS)
+subroutine continuity_PPM_init(Time, G, GV, US, param_file, diag, CS, OBC)
   type(time_type), target, intent(in)    :: Time !< The current model time.
   type(ocean_grid_type),   intent(in)    :: G    !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)    :: GV   !< Vertical grid structure.
-  type(unit_scale_type),   intent(in)    :: US  !< A dimensional unit scaling type
+  type(unit_scale_type),   intent(in)    :: US   !< A dimensional unit scaling type
   type(param_file_type),   intent(in)    :: param_file !< A structure indicating
                   !! the open file to parse for model parameter values.
   type(diag_ctrl), target, intent(inout) :: diag !< A structure that is used to
                   !! regulate diagnostic output.
   type(continuity_PPM_CS), intent(inout) :: CS   !< Module's control structure.
+  type(ocean_OBC_type),    pointer       :: OBC  !< Open boundaries control structure.
+  logical :: local_open_BC
+  type(OBC_segment_type), pointer :: segment => NULL()
+  integer :: n
 
   !> This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_continuity_PPM" ! This module's name.
+  character(len=256) :: mesg
 
   CS%initialized = .true.
+
+  local_open_BC = .false.
+  if (associated(OBC)) then
+    local_open_BC = OBC%open_u_BCs_exist_globally
+  endif
 
 ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, "")
@@ -2750,6 +2798,19 @@ subroutine continuity_PPM_init(Time, G, GV, US, param_file, diag, CS)
   id_clock_reconstruct = cpu_clock_id('(Ocean continuity reconstruction)', grain=CLOCK_ROUTINE)
   id_clock_update = cpu_clock_id('(Ocean continuity update)', grain=CLOCK_ROUTINE)
   id_clock_correct = cpu_clock_id('(Ocean continuity correction)', grain=CLOCK_ROUTINE)
+
+  if (local_open_BC) then
+    do n=1, OBC%number_of_segments
+      segment => OBC%segment(n)
+      if (associated(segment%h_Reg)) then
+        if (.not. allocated(segment%h_Reg%h_res)) then
+          write(mesg,'("In MOM_continuity_PPM, continuity_PPM_init called with ", &
+                & "badly configured h_res.")')
+          call MOM_error(FATAL, mesg)
+        endif
+      endif
+    enddo
+  endif
 
 end subroutine continuity_PPM_init
 

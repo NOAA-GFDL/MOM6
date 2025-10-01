@@ -119,8 +119,7 @@ function register_RGC_tracer(G, GV, param_file, CS, tr_Reg, restart_CS)
   endif
 
   do m=1,NTR
-    if (m < 10) then ; write(name,'("tr_RGC",I1.1)') m
-    else ; write(name,'("tr_RGC",I2.2)') m ; endif
+    write(name,'("tr_RGC",I0)') m
     write(longname,'("Concentration of RGC Tracer ",I2.2)') m
     CS%tr_desc(m) = var_desc(name, units="kg kg-1", longname=longname, caller=mdl)
 

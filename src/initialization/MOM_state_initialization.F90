@@ -22,6 +22,7 @@ use MOM_interface_heights, only : calc_derived_thermo
 use MOM_io, only : file_exists, field_size, MOM_read_data, MOM_read_vector, slasher
 use MOM_open_boundary, only : ocean_OBC_type, open_boundary_test_extern_h
 use MOM_open_boundary, only : fill_temp_salt_segments, setup_OBC_tracer_reservoirs
+use MOM_open_boundary, only : fill_thickness_segments
 use MOM_open_boundary, only : set_initialized_OBC_tracer_reservoirs
 use MOM_grid_initialize, only : initialize_masks, set_grid_metrics
 use MOM_restart, only : restore_state, is_new_run, copy_restart_var, copy_restart_vector
@@ -592,9 +593,9 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
     if ( use_temperature ) call hchksum(tv%T, "MOM_initialize_state: T ", G%HI, haloshift=1, unscale=US%C_to_degC)
     if ( use_temperature ) call hchksum(tv%S, "MOM_initialize_state: S ", G%HI, haloshift=1, unscale=US%S_to_ppt)
     if ( use_temperature .and. debug_layers) then ; do k=1,nz
-      write(mesg,'("MOM_IS: T[",I2,"]")') k
+      write(mesg,'("MOM_IS: T[",I0,"]")') k
       call hchksum(tv%T(:,:,k), mesg, G%HI, haloshift=1, unscale=US%C_to_degC)
-      write(mesg,'("MOM_IS: S[",I2,"]")') k
+      write(mesg,'("MOM_IS: S[",I0,"]")') k
       call hchksum(tv%S(:,:,k), mesg, G%HI, haloshift=1, unscale=US%S_to_ppt)
     enddo ; endif
   endif
@@ -653,7 +654,7 @@ subroutine MOM_initialize_OBCs(h, tv, OBC, Time, G, GV, US, PF, restart_CS, trac
   type(verticalGrid_type),    intent(in)    :: GV   !< The ocean's vertical grid structure.
   type(unit_scale_type),      intent(in)    :: US   !< A dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                              intent(out)   :: h    !< Layer thicknesses [H ~> m or kg m-2]
+                              intent(inout) :: h    !< Layer thicknesses [H ~> m or kg m-2]
   type(thermo_var_ptrs),      intent(inout) :: tv   !< A structure pointing to various thermodynamic
                                                     !! variables
   type(ocean_OBC_type),       pointer       :: OBC   !< The open boundary condition control structure.
@@ -742,6 +743,9 @@ subroutine MOM_initialize_OBCs(h, tv, OBC, Time, G, GV, US, PF, restart_CS, trac
       call qchksum(G%mask2dBu, 'MOM_initialize_OBCs: mask2dBu ', G%HI)
     endif
     if (debug_OBC) call open_boundary_test_extern_h(G, GV, OBC, h)
+
+    if (OBC%use_h_res) &
+      call fill_thickness_segments(G, GV, US, OBC, h)
   endif
 
   call callTree_leave('MOM_initialize_OBCs()')
@@ -873,7 +877,7 @@ subroutine initialize_thickness_from_file(h, depth_tot, G, GV, US, param_file, f
 
       if ((inconsistent > 0) .and. (is_root_pe())) then
         write(mesg,'("Thickness initial conditions are inconsistent ",'// &
-                 '"with topography in ",I8," places.")') inconsistent
+                 '"with topography in ",I0," places.")') inconsistent
         call MOM_error(WARNING, mesg)
       endif
     endif
@@ -918,7 +922,7 @@ subroutine adjustEtaToFitBathymetry(G, GV, US, eta, h, ht, dZ_ref_eta)
   call sum_across_PEs(contractions)
   if ((contractions > 0) .and. (is_root_pe())) then
     write(mesg,'("Thickness initial conditions were contracted ",'// &
-               '"to fit topography in ",I8," places.")') contractions
+               '"to fit topography in ",I0," places.")') contractions
     call MOM_error(WARNING, 'adjustEtaToFitBathymetry: '//mesg)
   endif
 
@@ -956,7 +960,7 @@ subroutine adjustEtaToFitBathymetry(G, GV, US, eta, h, ht, dZ_ref_eta)
   call sum_across_PEs(dilations)
   if ((dilations > 0) .and. (is_root_pe())) then
     write(mesg,'("Thickness initial conditions were dilated ",'// &
-               '"to fit topography in ",I8," places.")') dilations
+               '"to fit topography in ",I0," places.")') dilations
     call MOM_error(WARNING, 'adjustEtaToFitBathymetry: '//mesg)
   endif
 
@@ -3019,7 +3023,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
 
       if ((inconsistent > 0) .and. (is_root_pe())) then
         write(mesg, '("Thickness initial conditions are inconsistent ",'// &
-                    '"with topography in ",I5," places.")') inconsistent
+                    '"with topography in ",I0," places.")') inconsistent
         call MOM_error(WARNING, mesg)
       endif
     endif

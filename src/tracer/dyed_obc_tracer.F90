@@ -20,7 +20,6 @@ use MOM_tracer_diabatic,    only : tracer_vertdiff, applyTracerBoundaryFluxesInO
 use MOM_unit_scaling,       only : unit_scale_type
 use MOM_variables,          only : surface
 use MOM_verticalGrid,       only : verticalGrid_type
-use MOM_open_boundary,      only : OBC_segment_type, register_segment_tracer
 use MOM_tracer_registry,    only : tracer_type
 use MOM_tracer_registry,    only : tracer_name_lookup
 use MOM_tracer_advect_schemes, only : set_tracer_advect_scheme, TracerAdvectionSchemeDoc

@@ -277,12 +277,7 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
   call cpu_clock_begin(id_clock_continuity)
   call continuity(u, v, h, hp, uh, vh, dt*0.5, G, GV, US, CS%continuity_CSp, CS%OBC, pbv)
   call cpu_clock_end(id_clock_continuity)
-  if (cor_stencil > 2) then
-    call pass_var(hp, G%Domain, halo=cor_stencil, clock=id_clock_pass)
-    call pass_var(h, G%Domain, halo=cor_stencil, clock=id_clock_pass)
-  else
-    call pass_var(hp, G%Domain, clock=id_clock_pass)
-  endif
+  call pass_var(hp, G%Domain, clock=id_clock_pass)
   call pass_vector(uh, vh, G%Domain, clock=id_clock_pass)
 
   call enable_averages(0.5*dt, Time_local-real_to_time(0.5*US%T_to_s*dt), CS%diag)
@@ -312,11 +307,7 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
     enddo ; enddo
   enddo
   call cpu_clock_end(id_clock_mom_update)
-  if (cor_stencil > 2) then
-    call pass_vector(u, v, G%Domain, halo=cor_stencil, clock=id_clock_pass)
-  else
-    call pass_vector(u, v, G%Domain, clock=id_clock_pass)
-  endif
+  call pass_vector(u, v, G%Domain, clock=id_clock_pass)
 
 ! CAu = -(f+zeta)/h_av vh + d/dx KE
   call cpu_clock_begin(id_clock_Cor)
@@ -377,12 +368,7 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
   call cpu_clock_begin(id_clock_continuity)
   call continuity(up, vp, hp, h_av, uh, vh, (0.5*dt), G, GV, US, CS%continuity_CSp, CS%OBC, pbv)
   call cpu_clock_end(id_clock_continuity)
-  if (cor_stencil > 2) then
-    call pass_var(h_av, G%Domain, halo=cor_stencil, clock=id_clock_pass)
-    call pass_vector(up, vp, G%Domain, halo=cor_stencil, clock=id_clock_pass)
-  else
-    call pass_var(h_av, G%Domain, clock=id_clock_pass)
-  endif
+  call pass_var(h_av, G%Domain, clock=id_clock_pass)
   call pass_vector(uh, vh, G%Domain, clock=id_clock_pass)
 
 ! h_av <- (hp + h_av)/2
@@ -443,12 +429,7 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
   call cpu_clock_begin(id_clock_continuity)
   call continuity(upp, vpp, hp, h, uh, vh, (dt*0.5), G, GV, US, CS%continuity_CSp, CS%OBC, pbv)
   call cpu_clock_end(id_clock_continuity)
-  if (cor_stencil > 2) then
-    call pass_var(h, G%Domain, halo=cor_stencil, clock=id_clock_pass)
-    call pass_vector(upp, vpp, G%Domain, halo=cor_stencil, clock=id_clock_pass)
-  else
-    call pass_var(h, G%Domain, clock=id_clock_pass)
-  endif
+  call pass_var(h, G%Domain, clock=id_clock_pass)
   call pass_vector(uh, vh, G%Domain, clock=id_clock_pass)
   ! Whenever thickness changes let the diag manager know, target grids
   ! for vertical remapping may need to be regenerated.
@@ -600,7 +581,7 @@ end subroutine register_restarts_dyn_unsplit
 subroutine initialize_dyn_unsplit(u, v, h, tv, Time, G, GV, US, param_file, diag, CS, &
                                   Accel_diag, Cont_diag, MIS, &
                                   OBC, update_OBC_CSp, ALE_CSp, set_visc, &
-                                  visc, dirs, ntrunc, cont_stencil)
+                                  visc, dirs, ntrunc, cont_stencil, dyn_h_stencil)
   type(ocean_grid_type),          intent(inout) :: G          !< The ocean's grid structure.
   type(verticalGrid_type),        intent(in)    :: GV         !< The ocean's vertical grid structure.
   type(unit_scale_type),          intent(in)    :: US         !< A dimensional unit scaling type
@@ -645,7 +626,10 @@ subroutine initialize_dyn_unsplit(u, v, h, tv, Time, G, GV, US, param_file, diag
                                                         !! records the number of times the velocity
                                                         !! is truncated (this should be 0).
   integer,                        intent(out)   :: cont_stencil !< The stencil for thickness
-                                                                !! from the continuity solver.
+                                                              !! from the continuity solver.
+  integer,                        intent(out)   :: dyn_h_stencil !< The stencil for thickness
+                                                              !! for the dynamics based on the
+                                                              !! continuity solver and Coriolis scheme.
 
   !   This subroutine initializes all of the variables that are used by this
   ! dynamic core, including diagnostics and the cpu clocks.
@@ -699,9 +683,10 @@ subroutine initialize_dyn_unsplit(u, v, h, tv, Time, G, GV, US, param_file, diag
   Accel_diag%PFu => CS%PFu ; Accel_diag%PFv => CS%PFv
   Accel_diag%CAu => CS%CAu ; Accel_diag%CAv => CS%CAv
 
-  call continuity_init(Time, G, GV, US, param_file, diag, CS%continuity_CSp)
+  call continuity_init(Time, G, GV, US, param_file, diag, CS%continuity_CSp, CS%OBC)
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
+  dyn_h_stencil = max(cont_stencil, CoriolisAdv_stencil(CS%CoriolisAdv))
   if (CS%calculate_SAL) call SAL_init(h, tv, G, GV, US, param_file, CS%SAL_CSp)
   if (CS%use_tides) call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp)
   call PressureForce_init(Time, G, GV, US, param_file, diag, CS%PressureForce_CSp, CS%ADp, &

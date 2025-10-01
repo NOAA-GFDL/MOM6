@@ -485,8 +485,7 @@ subroutine register_ctrl_forcing_restarts(G, US, param_file, CS, restart_CS)
     allocate(CS%avg_SSS_anom(isd:ied,jsd:jed,CS%num_cycle), source=0.0)
     allocate(CS%avg_SSS(isd:ied,jsd:jed,CS%num_cycle), source=0.0)
 
-    write (period_str, '(i8)') CS%num_cycle
-    period_str = trim('p ')//trim(adjustl(period_str))
+    write (period_str, '("p ",I0)') CS%num_cycle
 
     call register_restart_field(CS%heat_cyc, "Ctrl_heat_cycle", .false., restart_CS, &
                   longname="Cyclical Control Heating", &

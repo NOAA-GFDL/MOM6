@@ -17,7 +17,7 @@ use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : get_param, log_param, log_version, param_file_type
 use MOM_forcing_type, only : mech_forcing
 use MOM_grid, only : ocean_grid_type
-use MOM_harmonic_analysis, only : HA_accum_FtSSH, harmonic_analysis_CS
+use MOM_harmonic_analysis, only : HA_accum, harmonic_analysis_CS
 use MOM_hor_index, only : hor_index_type
 use MOM_io, only : vardesc, var_desc, MOM_read_data, slasher, NORTH_FACE, EAST_FACE
 use MOM_open_boundary, only : ocean_OBC_type, OBC_NONE, open_boundary_query
@@ -1593,22 +1593,28 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   endif
   if (CS%linear_wave_drag) then
     !$OMP do
-    do j=js,je ; do I=is-1,ie ; if (CS%lin_drag_u(I,j) > 0.0) then
+    do j=js,je ; do I=is-1,ie ; if (G%mask2dCu(I,j) * CS%lin_drag_u(I,j) > 0.0) then
       Htot = 0.5 * (eta(i,j) + eta(i+1,j))
       if (GV%Boussinesq) &
         Htot = Htot + 0.5*GV%Z_to_H * (CS%bathyT(i,j) + CS%bathyT(i+1,j))
-      bt_rem_u(I,j) = bt_rem_u(I,j) * (Htot / (Htot + CS%lin_drag_u(I,j) * dtbt))
-
-      Rayleigh_u(I,j) = CS%lin_drag_u(I,j) / Htot
+      ! If Htot==0., linear wave drag is not used and Rayleigh_u = 0.0 (from initialization)
+      ! and bt_rem_u is unmodified.
+      if (Htot > 0.0) then
+        bt_rem_u(I,j) = bt_rem_u(I,j) * (Htot / (Htot + CS%lin_drag_u(I,j) * dtbt))
+        Rayleigh_u(I,j) = CS%lin_drag_u(I,j) / Htot
+      endif
     endif ; enddo ; enddo
     !$OMP do
-    do J=js-1,je ; do i=is,ie ; if (CS%lin_drag_v(i,J) > 0.0) then
+    do J=js-1,je ; do i=is,ie ; if (G%mask2dCv(i,J) * CS%lin_drag_v(i,J) > 0.0) then
       Htot = 0.5 * (eta(i,j) + eta(i,j+1))
       if (GV%Boussinesq) &
         Htot = Htot + 0.5*GV%Z_to_H * (CS%bathyT(i,j) + CS%bathyT(i,j+1))
-      bt_rem_v(i,J) = bt_rem_v(i,J) * (Htot / (Htot + CS%lin_drag_v(i,J) * dtbt))
-
-      Rayleigh_v(i,J) = CS%lin_drag_v(i,J) / Htot
+      ! If Htot==0., linear wave drag is not used and Rayleigh_v = 0.0 (from initialization)
+      ! and bt_rem_v is unmodified.
+      if (Htot > 0.0) then
+        bt_rem_v(i,J) = bt_rem_v(i,J) * (Htot / (Htot + CS%lin_drag_v(i,J) * dtbt))
+        Rayleigh_v(i,J) = CS%lin_drag_v(i,J) / Htot
+      endif
     endif ; enddo ; enddo
   endif
 
@@ -1940,8 +1946,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   ! Accumulator is updated at the end of every baroclinic time step.
   ! Harmonic analysis will not be performed of a field that is not registered.
   if (associated(CS%HA_CSp) .and. find_etaav) then
-    call HA_accum_FtSSH('ubt', ubt, CS%Time, G, CS%HA_CSp)
-    call HA_accum_FtSSH('vbt', vbt, CS%Time, G, CS%HA_CSp)
+    call HA_accum('ubt', ubt, CS%Time, G, CS%HA_CSp)
+    call HA_accum('vbt', vbt, CS%Time, G, CS%HA_CSp)
   endif
 
   if (id_clock_calc_post > 0) call cpu_clock_end(id_clock_calc_post)
@@ -2614,7 +2620,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
       enddo ; enddo
     else
       do j=js,je ; do i=is,ie
-        if (eta_IC(i,j) < 0.0) then
+        if ((eta_IC(i,j) < 0.0) .and. (G%mask2dT(i,j) > 0.0)) then
           write(mesg,'(" at ", ES12.4, ES12.4, i7, i7)') &
               G%geoLonT(i,j), G%geoLatT(i,j), i + G%HI%idg_offset, j + G%HI%jdg_offset
           call MOM_error(FATAL, "btstep: negative eta_IC at start of a non-Boussinesq barotropic solver "//&
@@ -2800,7 +2806,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
 
     ! This might need to be moved outside of the OMP do loop directives.
     if (CS%debug_bt) then
-      write(mesg,'("BT vel update ",I4)') n
+      write(mesg,'("BT vel update ",I0)') n
       debug_halo = 0 ; if  (CS%debug_wide_halos) debug_halo = iev - ie
       call uvchksum(trim(mesg)//" PF[uv]", PFu, PFv, CS%debug_BT_HI, haloshift=debug_halo, &
                     symmetric=.true., unscale=US%L_T_to_m_s*US%s_to_T)
@@ -2888,7 +2894,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
     endif
 
     if (CS%debug_bt) then
-      write(mesg,'("BT step ",I4)') n
+      write(mesg,'("BT step ",I0)') n
       call uvchksum(trim(mesg)//" [uv]bt", ubt, vbt, CS%debug_BT_HI, haloshift=debug_halo, &
                     symmetric=.true., unscale=US%L_T_to_m_s)
       call hchksum(eta, trim(mesg)//" eta", CS%debug_BT_HI, haloshift=debug_halo, unscale=GV%H_to_MKS)
@@ -2909,7 +2915,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
       enddo ; enddo
     else
       do j=js,je ; do i=is,ie
-        if (eta(i,j) < 0.0) then
+        if ((eta(i,j) < 0.0) .and. (G%mask2dT(i,j) > 0.0)) then
           write(mesg,'(" at ", ES12.4, ES12.4, i7, i7)') &
               G%geoLonT(i,j), G%geoLatT(i,j), i + G%HI%idg_offset, j + G%HI%jdg_offset
           if (CS%bt_limit_integral_transport) &

@@ -1655,23 +1655,23 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
          enddo
 
          if (abs(verif_N -1.0) > threshold_verif) then
-           write(stdout,'(I5,I5,F18.10)') i, j, verif_N
+           write(stdout,'(I0,", ",I0,F18.10)') i, j, verif_N
            call MOM_error(FATAL, "mismatch integral for N profile")
          endif
          if (abs(verif_N2 -1.0) > threshold_verif) then
-           write(stdout,'(I5,I5,F18.10)') i, j, verif_N2
+           write(stdout,'(I0,", ",I0,F18.10)') i, j, verif_N2
            call MOM_error(FATAL, "mismatch integral for N2 profile")
          endif
          if (abs(verif_bbl -1.0) > threshold_verif) then
-           write(stdout,'(I5,I5,F18.10)') i, j, verif_bbl
+           write(stdout,'(I0,", ",I0,F18.10)') i, j, verif_bbl
            call MOM_error(FATAL, "mismatch integral for bbl profile")
          endif
          if (abs(verif_stl1 -1.0) > threshold_verif) then
-           write(stdout,'(I5,I5,F18.10)') i, j, verif_stl1
+           write(stdout,'(I0,", ",I0,F18.10)') i, j, verif_stl1
            call MOM_error(FATAL, "mismatch integral for stl1 profile")
          endif
          if (abs(verif_stl2 -1.0) > threshold_verif) then
-           write(stdout,'(I5,I5,F18.10)') i, j, verif_stl2
+           write(stdout,'(I0,", ",I0,F18.10)') i, j, verif_stl2
            call MOM_error(FATAL, "mismatch integral for stl2 profile")
          endif
 
@@ -3021,13 +3021,13 @@ subroutine PPM_reconstruction_x(h_in, h_l, h_r, G, LB, simple_2nd, adv_limiter)
 
   if ((isl-stencil < G%isd) .or. (iel+stencil > G%ied)) then
     write(mesg,'("In MOM_internal_tides, PPM_reconstruction_x called with a ", &
-               & "x-halo that needs to be increased by ",i2,".")') &
+               & "x-halo that needs to be increased by ",I0,".")') &
                stencil + max(G%isd-isl,iel-G%ied)
     call MOM_error(FATAL,mesg)
   endif
   if ((jsl < G%jsd) .or. (jel > G%jed)) then
     write(mesg,'("In MOM_internal_tides, PPM_reconstruction_x called with a ", &
-               & "y-halo that needs to be increased by ",i2,".")') &
+               & "y-halo that needs to be increased by ",I0,".")') &
                max(G%jsd-jsl,jel-G%jed)
     call MOM_error(FATAL,mesg)
   endif
@@ -3108,13 +3108,13 @@ subroutine PPM_reconstruction_y(h_in, h_l, h_r, G, LB, simple_2nd, adv_limiter)
 
   if ((isl < G%isd) .or. (iel > G%ied)) then
     write(mesg,'("In MOM_internal_tides, PPM_reconstruction_y called with a ", &
-               & "x-halo that needs to be increased by ",i2,".")') &
+               & "x-halo that needs to be increased by ",I0,".")') &
                max(G%isd-isl,iel-G%ied)
     call MOM_error(FATAL,mesg)
   endif
   if ((jsl-stencil < G%jsd) .or. (jel+stencil > G%jed)) then
     write(mesg,'("In MOM_internal_tides, PPM_reconstruction_y called with a ", &
-                 & "y-halo that needs to be increased by ",i2,".")') &
+                 & "y-halo that needs to be increased by ",I0,".")') &
                  stencil + max(G%jsd-jsl,jel-G%jed)
     call MOM_error(FATAL,mesg)
   endif

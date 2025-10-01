@@ -283,8 +283,8 @@ subroutine Kelvin_set_OBC_data(OBC, CS, G, GV, US, h, Time)
     segment => OBC%segment(n)
     if (.not. segment%on_pe) cycle
 
-   unrot_dir = segment%direction
-   if (turns /= 0) unrot_dir = rotate_OBC_segment_direction(segment%direction, -turns)
+    unrot_dir = segment%direction
+    if (turns /= 0) unrot_dir = rotate_OBC_segment_direction(segment%direction, -turns)
 
     ! Apply values to the inflow end only.
     if ((unrot_dir == OBC_DIRECTION_E) .or. (unrot_dir == OBC_DIRECTION_N)) cycle
@@ -346,9 +346,19 @@ subroutine Kelvin_set_OBC_data(OBC, CS, G, GV, US, h, Time)
             enddo
           endif
         else
-          ! Baroclinic, not rotated yet (and apparently not working as intended yet).
+          ! Baroclinic, not rotated yet
           segment%SSH(I,j) = 0.0
           segment%normal_vel_bt(I,j) = 0.0
+          ! Use inside bathymetry
+          if (segment%direction == OBC_DIRECTION_W) then
+            depth_tot_vel = depth_tot(i+1,j)
+          elseif (segment%direction == OBC_DIRECTION_S) then
+            depth_tot_vel = depth_tot(i,j+1)
+          elseif (segment%direction == OBC_DIRECTION_E) then
+            depth_tot_vel = depth_tot(i,j)
+          elseif (segment%direction == OBC_DIRECTION_N) then
+            depth_tot_vel = depth_tot(i,j)
+          endif
           ! I suspect that the velocities in both of the following loops should instead be
           !   normal_vel(I,j,k) = CS%inflow_amp * CS%u_struct(k) * exp(-lambda * y) * cos_wt
           ! In addition, there should be a specification of the interface-height anomalies at the
@@ -367,6 +377,16 @@ subroutine Kelvin_set_OBC_data(OBC, CS, G, GV, US, h, Time)
               segment%normal_vel(I,j,k) = (normal_sign*mag_int) * &
                    exp(-lambda * y) * cos(PI * CS%mode * (k - 0.5) / nz) * cos_wt
             enddo
+          endif
+          if (associated(segment%h_Reg)) then
+            if (allocated(segment%h_Reg%h)) then
+              do k=1,nz
+                segment%h_Reg%h(I,j,k) = depth_tot_vel / nz + &
+                              ((CS%mode * PI) * CS%inflow_amp / (N0 * nz)) * &
+                                          cos(((PI * k) * CS%mode) / nz) * &
+                                          exp(-lambda * y) * cos_wt
+              enddo
+            endif
           endif
         endif
       enddo ; enddo

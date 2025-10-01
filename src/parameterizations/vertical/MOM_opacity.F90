@@ -327,7 +327,7 @@ subroutine opacity_from_chl(optics, sw_total, sw_vis_dir, sw_vis_dif, sw_nir_dir
     do k=1,nz ; do j=js,je ; do i=is,ie
       if ((G%mask2dT(i,j) > 0.0) .and. (chl_3d(i,j,k) < 0.0)) then
         write(mesg,'(" Negative chl_3d of ",(1pe12.4)," found at i,j,k = ", &
-                  & 3(1x,i3), " lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
+                  & 3(1x,I0), " lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
                    chl_3d(i,j,k), i, j, k, G%geoLonT(i,j), G%geoLatT(i,j)
         call MOM_error(FATAL, "MOM_opacity opacity_from_chl: "//trim(mesg))
       endif
@@ -337,7 +337,7 @@ subroutine opacity_from_chl(optics, sw_total, sw_vis_dir, sw_vis_dif, sw_nir_dir
     do j=js,je ; do i=is,ie
       if ((G%mask2dT(i,j) > 0.0) .and. (chl_2d(i,j) < 0.0)) then
         write(mesg,'(" Negative chl_2d of ",(1pe12.4)," at i,j = ", &
-                  & 2(i3), "lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
+                  & I0,", ",I0," lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
                    chl_data(i,j), i, j, G%geoLonT(i,j), G%geoLatT(i,j)
         call MOM_error(FATAL, "MOM_opacity opacity_from_chl: "//trim(mesg))
       endif
@@ -1299,12 +1299,12 @@ subroutine opacity_init(Time, G, GV, US, param_file, diag, CS, optics)
   CS%id_sw_vis_pen = register_diag_field('ocean_model', 'SW_vis_pen', diag%axesT1, Time, &
       'Visible penetrating shortwave radiation flux into ocean', 'W m-2', conversion=US%QRZ_T_to_W_m2)
   do n=1,optics%nbands
-    write(bandnum,'(i3)') n
-    shortname = 'opac_'//trim(adjustl(bandnum))
-    longname = 'Opacity for shortwave radiation in band '//trim(adjustl(bandnum)) &
-      // ', saved as L^-1 tanh(Opacity * L) for L = 10^-10 m'
+    write(bandnum,'(I0)') n
+    shortname = 'opac_'//trim(bandnum)
+    longname = 'Opacity for shortwave radiation in band '//trim(bandnum)// &
+               ', saved as L^-1 tanh(Opacity * L) for L = 10^-10 m'
     CS%id_opacity(n) = register_diag_field('ocean_model', shortname, diag%axesTL, Time, &
-      longname, 'm-1', conversion=US%m_to_Z)
+        longname, 'm-1', conversion=US%m_to_Z)
   enddo
 
   if (CS%opacity_scheme == OHLMANN_03) then
