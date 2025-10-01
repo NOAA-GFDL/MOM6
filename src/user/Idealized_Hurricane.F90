@@ -51,7 +51,7 @@ type, public :: idealized_hurricane_CS ; private
   real    :: max_windspeed        !< Maximum wind speeds [L T-1 ~> m s-1]
   real    :: hurr_translation_spd !< Hurricane translation speed [L T-1 ~> m s-1]
   real    :: hurr_translation_dir !< Hurricane translation direction [radians]
-  real    :: gustiness            !< Gustiness (optional, used in u*) [R L Z T-2 ~> Pa]
+  real    :: gustiness            !< Gustiness (used in u*) [R Z2 T-2 ~> Pa]
   real    :: Rho0                 !< A reference ocean density [R ~> kg m-3]
   real    :: Hurr_cen_Y0          !< The initial y position of the hurricane
                                   !!  This experiment is conducted in a Cartesian
@@ -242,7 +242,7 @@ subroutine idealized_hurricane_wind_init(Time, G, US, param_file, CS)
                  "If true and IDL_HURR_SCM is true, use a bug that does all of the tapering and "//&
                  "inflow angle calculations for radii between RAD_EDGE and RAD_AMBIENT as though "//&
                  "they were at RAD_EDGE.", &
-                 default=CS%SCM_mode, do_not_log=.not.CS%SCM_mode) !### Change the default to false.
+                 default=.false., do_not_log=.not.CS%SCM_mode)
   if (.not.CS%SCM_mode) CS%edge_taper_bug = .false.
   call get_param(param_file, mdl, "IDL_HURR_SCM_LOCY", CS%dy_from_center, &
                  "Y distance of station used in the SCM idealized hurricane wind profile.", &
@@ -313,7 +313,7 @@ subroutine idealized_hurricane_wind_init(Time, G, US, param_file, CS)
                  units="kg m-3", default=1035.0, scale=US%kg_m3_to_R, do_not_log=.true.)
   call get_param(param_file, mdl, "GUST_CONST", CS%gustiness, &
                  "The background gustiness in the winds.", &
-                 units="Pa", default=0.0, scale=US%kg_m2s_to_RZ_T*US%m_s_to_L_T, do_not_log=.true.)
+                 units="Pa", default=0.0, scale=US%Pa_to_RLZ_T2*US%L_to_Z, do_not_log=.true.)
 
   if (CS%rad_edge >= CS%rad_ambient) call MOM_error(FATAL, &
     "idealized_hurricane_wind_init: IDL_HURR_RAD_AMBIENT must be larger than IDL_HURR_RAD_EDGE.")
@@ -349,7 +349,6 @@ subroutine idealized_hurricane_wind_forcing(sfc_state, forces, day, G, US, CS)
   real :: fbench      !< The benchmark 'f' value [T-1 ~> s-1]
   real :: fbench_fac  !< A factor that is set to 0 to use the
                       !!  benchmark 'f' value [nondim]
-  real :: km_to_L     !< The conversion factor from the units of latitude to L [L km-1 ~> 1e3]
   real :: rel_tau_fac !< A factor that is set to 0 to disable
                       !!  current relative stress calculation [nondim]
 
@@ -359,7 +358,8 @@ subroutine idealized_hurricane_wind_forcing(sfc_state, forces, day, G, US, CS)
   isd = G%isd   ; ied = G%ied   ; jsd = G%jsd   ; jed = G%jed
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
 
-  km_to_L = 1.0e3*US%m_to_L
+  if ((G%grid_unit_to_L <= 0.) .and. (.not.CS%SCM_mode)) call MOM_error(FATAL, "Idealized_Hurricane.F90: " //&
+          "idealized_hurricane_wind_forcing is only set to work with Cartesian axis units.")
 
   ! Allocate the forcing arrays, if necessary.
   call allocate_mech_forcing(G, forces, stress=.true., ustar=.true., tau_mag=.true.)
@@ -375,7 +375,6 @@ subroutine idealized_hurricane_wind_forcing(sfc_state, forces, day, G, US, CS)
        cos(CS%hurr_translation_dir))
   YC = CS%Hurr_cen_Y0 + (time_type_to_real(day)*US%s_to_T * CS%hurr_translation_spd * &
        sin(CS%hurr_translation_dir))
-
 
   if (CS%BR_Bench) then
     ! f reset to value used in generated wind for benchmark test
@@ -403,8 +402,8 @@ subroutine idealized_hurricane_wind_forcing(sfc_state, forces, day, G, US, CS)
         YY = CS%dy_from_center - YC
         XX = -XC
       else
-        YY = G%geoLatCu(I,j)*km_to_L - YC
-        XX = G%geoLonCu(I,j)*km_to_L - XC
+        YY = G%geoLatCu(I,j) * G%grid_unit_to_L - YC
+        XX = G%geoLonCu(I,j) * G%grid_unit_to_L - XC
       endif
       call idealized_hurricane_wind_profile(CS, US, f_local, YY, XX, Uocn, Vocn, TX, TY)
       forces%taux(I,j) = G%mask2dCu(I,j) * TX
@@ -427,8 +426,8 @@ subroutine idealized_hurricane_wind_forcing(sfc_state, forces, day, G, US, CS)
         YY = CS%dy_from_center - YC
         XX = -XC
       else
-        YY = G%geoLatCv(i,J)*km_to_L - YC
-        XX = G%geoLonCv(i,J)*km_to_L - XC
+        YY = G%geoLatCv(i,J) * G%grid_unit_to_L - YC
+        XX = G%geoLonCv(i,J) * G%grid_unit_to_L - XC
       endif
       call idealized_hurricane_wind_profile(CS, US, f_local, YY, XX, Uocn, Vocn, TX, TY)
       forces%tauy(i,J) = G%mask2dCv(i,J) * TY
@@ -438,16 +437,16 @@ subroutine idealized_hurricane_wind_forcing(sfc_state, forces, day, G, US, CS)
   !> Get Ustar
   if (associated(forces%ustar)) then ; do j=js,je ; do i=is,ie
     !  This expression can be changed if desired, but need not be.
-    forces%ustar(i,j) = G%mask2dT(i,j) * sqrt(US%L_to_Z * (CS%gustiness/CS%Rho0 + &
-            sqrt(0.5*((forces%taux(I-1,j)**2) + (forces%taux(I,j)**2)) + &
-                 0.5*((forces%tauy(i,J-1)**2) + (forces%tauy(i,J)**2)))/CS%Rho0))
+    forces%ustar(i,j) = G%mask2dT(i,j) * sqrt(CS%gustiness/CS%Rho0 + &
+            US%L_to_Z * sqrt(0.5*((forces%taux(I-1,j)**2) + (forces%taux(I,j)**2)) + &
+                             0.5*((forces%tauy(i,J-1)**2) + (forces%tauy(i,J)**2)))/CS%Rho0)
   enddo ; enddo ; endif
 
-  !> Get tau_mag [R L Z T-2 ~> Pa]
+  !> Get tau_mag [R Z2 T-2 ~> Pa]
   if (associated(forces%tau_mag)) then ; do j=js,je ; do i=is,ie
     forces%tau_mag(i,j) = G%mask2dT(i,j) * (CS%gustiness + &
-            sqrt(0.5*((forces%taux(I-1,j)**2) + (forces%taux(I,j)**2)) + &
-                 0.5*((forces%tauy(i,J-1)**2) + (forces%tauy(i,J)**2))))
+            US%L_to_Z * sqrt(0.5*((forces%taux(I-1,j)**2) + (forces%taux(I,j)**2)) + &
+                             0.5*((forces%tauy(i,J-1)**2) + (forces%tauy(i,J)**2))))
   enddo ; enddo ; endif
 
 end subroutine idealized_hurricane_wind_forcing

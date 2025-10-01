@@ -17,7 +17,7 @@ implicit none ; private
 
 #include <MOM_memory.h>
 
-public set_opacity, opacity_init, opacity_end, opacity_manizza, opacity_morel
+public set_opacity, opacity_init, opacity_end
 public extract_optics_slice, extract_optics_fields, optics_nbands
 public absorbRemainingSW, sumSWoverBands
 
@@ -40,7 +40,19 @@ type, public :: optics_type
   real :: PenSW_flux_absorb !< A heat flux that is small enough to be completely absorbed in the next
                         !! sufficiently thick layer [C H T-1 ~> degC m s-1 or degC kg m-2 s-1].
   real :: PenSW_absorb_Invlen !< The inverse of the thickness that is used to absorb the remaining
-                        !! shortwave heat flux when it drops below PEN_SW_FLUX_ABSORB [H ~> m or kg m-2].
+  !! shortwave heat flux when it drops below PEN_SW_FLUX_ABSORB [H ~> m or kg m-2].
+
+  !! Lookup tables for Ohlmann solar penetration scheme
+  !! These would naturally exist as private module variables but that is prohibited in MOM6
+  real :: dlog10chl           !< Chl increment within lookup table  [log10 of Chl in mg m-3]
+  real :: chl_min             !< Lower bound of Chl in lookup table [mg m-3]
+  real :: log10chl_min        !< Lower bound of Chl in lookup table [log10 of Chl in mg m-3]
+  real :: log10chl_max        !< Upper bound of Chl in lookup table [log10 of Chl in mg m-3]
+  real, allocatable, dimension(:) :: a1_lut,&       !< Coefficient for band 1 [nondim]
+       &                             a2_lut,&       !< Coefficient for band 2 [nondim]
+       &                             b1_lut,&       !< Exponential decay scale for band 1 [Z-1 ~> m-1]
+       &                             b2_lut         !< Exponential decay scale for band 2 [Z-1 ~> m-1]
+
   integer :: answer_date  !< The vintage of the order of arithmetic and expressions in the optics
                           !! calculations.  Values below 20190101 recover the answers from the
                           !! end of 2018, while higher values use updated and more robust
@@ -66,8 +78,21 @@ type, public :: opacity_CS ; private
                              !! radiation that is in the blue band [nondim].
   real :: opacity_land_value !< The value to use for opacity over land [Z-1 ~> m-1].
                              !! The default is 10 m-1 - a value for muddy water.
+  real, allocatable, dimension(:,:) &
+       :: opacity_coef       !< Groups of coefficients, in [Z-1 ~> m-1] or [Z ~> m] depending on the
+                             !! scheme, in expressions for opacity, with the second index being the
+                             !! wavelength band.  For example, when OPACITY_SCHEME = MANIZZA_05,
+                             !! these are coef_1 and coef_2 in the
+                             !! expression opacity = coef_1 + coef_2 * chl**pow.
+  real, allocatable, dimension(:) &
+       :: sw_pen_frac_coef   !< Coefficients in the expression for the penetrating shortwave
+                             !! fracetion [nondim]
+  real, allocatable, dimension(:) &
+       :: chl_power          !< Powers of chlorophyll [nondim] for each band for expressions for
+                             !! opacity of the form opacity = coef_1 + coef_2 * chl**pow.
   type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
                              !! regulate the timing of diagnostic output.
+  integer :: chl_dep_bands   !< The number of bands that depend on the Chlorophyll concentrations.
   logical :: warning_issued  !< A flag that is used to avoid repetitive warnings.
 
   !>@{ Diagnostic IDs
@@ -77,11 +102,13 @@ type, public :: opacity_CS ; private
 end type opacity_CS
 
 !>@{ Coded integers to specify the opacity scheme
-integer, parameter :: NO_SCHEME = 0, MANIZZA_05 = 1, MOREL_88 = 2, SINGLE_EXP = 3, DOUBLE_EXP = 4
+integer, parameter :: NO_SCHEME = 0, MANIZZA_05 = 1, MOREL_88 = 2, SINGLE_EXP = 3, DOUBLE_EXP = 4,&
+     &                OHLMANN_03 = 5
 !>@}
 
 character*(10), parameter :: MANIZZA_05_STRING = "MANIZZA_05" !< String to specify the opacity scheme
 character*(10), parameter :: MOREL_88_STRING   = "MOREL_88"   !< String to specify the opacity scheme
+character*(10), parameter :: OHLMANN_03_STRING = "OHLMANN_03" !< String to specify the opacity scheme
 character*(10), parameter :: SINGLE_EXP_STRING = "SINGLE_EXP" !< String to specify the opacity scheme
 character*(10), parameter :: DOUBLE_EXP_STRING = "DOUBLE_EXP" !< String to specify the opacity scheme
 
@@ -254,6 +281,16 @@ subroutine opacity_from_chl(optics, sw_total, sw_vis_dir, sw_vis_dif, sw_nir_dir
 ! use the "blue" band in the parameterizations to determine the e-folding
 ! depth of the incoming shortwave attenuation. The red portion is lumped
 ! into the net heating at the surface.
+! Adding Ohlmann scheme. Needs sw_total and chl as inputs. Produces 2 penetrating bands.
+! This implementation follows that in CESM-POP using a lookup table in log10(chl) space.
+! The table is initialized in subroutine init_ohlmann and the coefficients are recovered
+! with routines lookup_ohlmann_swpen and lookup_ohlmann_opacity.
+! Note that this form treats the IR solar input implicitly: the sum of partitioning
+! coefficients < 1.0. The remainder is non-penetrating and is deposited in first layer
+! irrespective of thickness. The Ohlmann (2003) paper states that the scheme is not valid
+! for vertcal grids with first layer thickness < 2.0 meters.
+!
+! Ohlmann, J.C. Ocean radiant heating in climate models. J. Climate, 16, 1337-1351, 2003.
 !
 ! Morel, A., Optical modeling of the upper ocean in relation to its biogenous
 !   matter content (case-i waters)., J. Geo. Res., {93}, 10,749--10,768, 1988.
@@ -290,7 +327,7 @@ subroutine opacity_from_chl(optics, sw_total, sw_vis_dir, sw_vis_dif, sw_nir_dir
     do k=1,nz ; do j=js,je ; do i=is,ie
       if ((G%mask2dT(i,j) > 0.0) .and. (chl_3d(i,j,k) < 0.0)) then
         write(mesg,'(" Negative chl_3d of ",(1pe12.4)," found at i,j,k = ", &
-                  & 3(1x,i3), " lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
+                  & 3(1x,I0), " lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
                    chl_3d(i,j,k), i, j, k, G%geoLonT(i,j), G%geoLatT(i,j)
         call MOM_error(FATAL, "MOM_opacity opacity_from_chl: "//trim(mesg))
       endif
@@ -300,7 +337,7 @@ subroutine opacity_from_chl(optics, sw_total, sw_vis_dir, sw_vis_dif, sw_nir_dir
     do j=js,je ; do i=is,ie
       if ((G%mask2dT(i,j) > 0.0) .and. (chl_2d(i,j) < 0.0)) then
         write(mesg,'(" Negative chl_2d of ",(1pe12.4)," at i,j = ", &
-                  & 2(i3), "lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
+                  & I0,", ",I0," lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
                    chl_data(i,j), i, j, G%geoLonT(i,j), G%geoLatT(i,j)
         call MOM_error(FATAL, "MOM_opacity opacity_from_chl: "//trim(mesg))
       endif
@@ -344,22 +381,52 @@ subroutine opacity_from_chl(optics, sw_total, sw_vis_dir, sw_vis_dif, sw_nir_dir
         SW_pen_tot = 0.0
         if (G%mask2dT(i,j) > 0.0) then
           if (multiband_vis_input) then
-            SW_pen_tot = SW_pen_frac_morel(chl_data(i,j)) * (sw_vis_dir(i,j) + sw_vis_dif(i,j))
+            SW_pen_tot = SW_pen_frac_morel(chl_data(i,j), CS) * (sw_vis_dir(i,j) + sw_vis_dif(i,j))
           elseif (total_sw_input) then
-            SW_pen_tot = SW_pen_frac_morel(chl_data(i,j)) * 0.5*sw_total(i,j)
+            SW_pen_tot = SW_pen_frac_morel(chl_data(i,j), CS) * 0.5*sw_total(i,j)
           endif
         endif
 
         do n=1,nbands
           optics%sw_pen_band(n,i,j) = Inv_nbands*sw_pen_tot
         enddo
-      enddo ; enddo
+     enddo; enddo
+    case (OHLMANN_03)
+      ! want exactly two penetrating bands. If not, throw an error.
+      if ( nbands /= 2 ) then
+        call MOM_error(FATAL, "opacity_from_chl: CS%opacity_scheme requires nbands==2.")
+      endif
+      !$OMP parallel do default(shared) private(SW_vis_tot)
+      do j=js,je ; do i=is,ie
+        SW_vis_tot = 0.0  ! Ohlmann does not classify as vis/nir. Using vis to add up total
+        if (G%mask2dT(i,j) < 0.5) then
+          optics%sw_pen_band(1:2,i,j) = 0.  ! Make sure there is a valid value for land points
+        else
+          if (multiband_vis_input ) then ! If multiband_vis_input is true then so is multiband_nir_input
+            SW_vis_tot = ((sw_vis_dir(i,j) + sw_vis_dif(i,j)) + sw_nir_dir(i,j)) + sw_nir_dif(i,j)
+          elseif (total_sw_input) then
+            SW_vis_tot = sw_total(i,j)
+          else
+            call MOM_error(FATAL, "No shortwave input was provided.")
+          endif
+
+          ! Bands 1-2 (Ohlmann factors A with coefficients for Table 1a)
+          optics%sw_pen_band(1:2,i,j)  = lookup_ohlmann_swpen(chl_data(i,j),optics)*SW_vis_tot
+        endif
+      enddo; enddo
     case default
       call MOM_error(FATAL, "opacity_from_chl: CS%opacity_scheme is not valid.")
   end select
 
   !$OMP parallel do default(shared) firstprivate(chl_data)
   do k=1,nz
+    !! FOB
+    !!! I don't think this is what we want to do with Ohlmann.
+    !!! The surface CHL is used in developing the parameterization.
+    !!! Only the surface CHL is used above in setting optics%sw_pen_band for all schemes.
+    !!! Seems inconsistent to use depth dependent CHL in opacity calculation.
+    !!! Nevertheless, leaving as is for now.
+    !! FOB
     if (present(chl_3d)) then
       do j=js,je ; do i=is,ie ; chl_data(i,j) = chl_3d(i,j,k) ; enddo ; enddo
     endif
@@ -372,57 +439,64 @@ subroutine opacity_from_chl(optics, sw_total, sw_vis_dir, sw_vis_dif, sw_nir_dir
               optics%opacity_band(n,i,j,k) = CS%opacity_land_value
             enddo
           else
-            ! Band 1 is Manizza blue.
-            optics%opacity_band(1,i,j,k) = (0.0232 + 0.074*chl_data(i,j)**0.674) * US%Z_to_m
-            if (nbands >= 2) &  !  Band 2 is Manizza red.
-              optics%opacity_band(2,i,j,k) = (0.225 + 0.037*chl_data(i,j)**0.629) * US%Z_to_m
-            ! All remaining bands are NIR, for lack of something better to do.
-            do n=3,nbands ; optics%opacity_band(n,i,j,k) = 2.86*US%Z_to_m ; enddo
+            do n=1,CS%chl_dep_bands
+              optics%opacity_band(n,i,j,k) = CS%opacity_coef(1,n) + &
+                      CS%opacity_coef(2,n) * chl_data(i,j)**CS%chl_power(n)
+            enddo
+            do n=CS%chl_dep_bands+1,optics%nbands  !  These bands do not depend on the chlorophyll.
+              ! Any nonzero values that were in opacity_coef(2,n) have been added to opacity_coef(1,n).
+              optics%opacity_band(n,i,j,k) = CS%opacity_coef(1,n)
+            enddo
           endif
         enddo ; enddo
       case (MOREL_88)
         do j=js,je ; do i=is,ie
           optics%opacity_band(1,i,j,k) = CS%opacity_land_value
           if (G%mask2dT(i,j) > 0.0) &
-            optics%opacity_band(1,i,j,k) = US%Z_to_m * opacity_morel(chl_data(i,j))
+            optics%opacity_band(1,i,j,k) = opacity_morel(chl_data(i,j), CS)
 
           do n=2,optics%nbands
             optics%opacity_band(n,i,j,k) = optics%opacity_band(1,i,j,k)
           enddo
-        enddo ; enddo
-
+        enddo; enddo
+      case (OHLMANN_03)
+        !! not testing for 2 bands since we did it above
+        do j=js,je ; do i=is,ie
+          if (G%mask2dT(i,j) <= 0.5) then
+            optics%opacity_band(1:2,i,j,k) = CS%opacity_land_value
+          else
+            ! Bands 1-2 (Ohlmann factors B with coefficients for Table 1a
+            optics%opacity_band(1:2,i,j,k) = lookup_ohlmann_opacity(chl_data(i,j),optics) * US%Z_to_m
+          endif
+        enddo; enddo
       case default
         call MOM_error(FATAL, "opacity_from_chl: CS%opacity_scheme is not valid.")
     end select
   enddo
 
-
 end subroutine opacity_from_chl
 
 !> This sets the blue-wavelength opacity according to the scheme proposed by
 !! Morel and Antoine (1994).
-function opacity_morel(chl_data)
+function opacity_morel(chl_data, CS)
   real, intent(in)  :: chl_data !< The chlorophyll-A concentration in [mg m-3]
-  real :: opacity_morel !< The returned opacity [m-1]
+  type(opacity_CS)  :: CS       !< Opacity control structure
+  real :: opacity_morel !< The returned opacity [Z-1 ~> m-1]
 
-  !   The following are coefficients for the optical model taken from Morel and
-  ! Antoine (1994). These coefficients represent a non uniform distribution of
-  ! chlorophyll-a through the water column.  Other approaches may be more
-  ! appropriate when using an interactive ecosystem model that predicts
-  ! three-dimensional chl-a values.
-  real, dimension(6), parameter :: &
-    Z2_coef = (/7.925, -6.644, 3.662, -1.815, -0.218,  0.502/) ! Extinction length coefficients [m]
   real :: Chl, Chl2 ! The log10 of chl_data (in mg m-3), and Chl^2 [nondim]
 
   Chl = log10(min(max(chl_data,0.02),60.0)) ; Chl2 = Chl*Chl
-  opacity_morel = 1.0 / ( (Z2_coef(1) + Z2_coef(2)*Chl) + Chl2 * &
-      ((Z2_coef(3) + Chl*Z2_coef(4)) + Chl2*(Z2_coef(5) + Chl*Z2_coef(6))) )
-end function
+  ! All frequency bands currently use the same opacities.
+  opacity_morel = 1.0 / ( (CS%opacity_coef(1,1) + CS%opacity_coef(2,1)*Chl) + Chl2 * &
+                          ((CS%opacity_coef(3,1) + Chl*CS%opacity_coef(4,1)) + &
+                            Chl2*(CS%opacity_coef(5,1) + Chl*CS%opacity_coef(6,1))) )
+end function opacity_morel
 
 !> This sets the penetrating shortwave fraction according to the scheme proposed by
 !! Morel and Antoine (1994).
-function SW_pen_frac_morel(chl_data)
+function SW_pen_frac_morel(chl_data, CS)
   real, intent(in)  :: chl_data !< The chlorophyll-A concentration [mg m-3]
+  type(opacity_CS)  :: CS       !< Opacity control structure
   real :: SW_pen_frac_morel     !< The returned penetrating shortwave fraction [nondim]
 
   !   The following are coefficients for the optical model taken from Morel and
@@ -431,23 +505,12 @@ function SW_pen_frac_morel(chl_data)
   ! appropriate when using an interactive ecosystem model that predicts
   ! three-dimensional chl-a values.
   real :: Chl, Chl2         ! The log10 of chl_data in mg m-3, and Chl^2 [nondim]
-  real, dimension(6), parameter :: &
-    V1_coef = (/0.321,  0.008, 0.132,  0.038, -0.017, -0.007/) ! Penetrating fraction coefficients [nondim]
 
   Chl = log10(min(max(chl_data,0.02),60.0)) ; Chl2 = Chl*Chl
-  SW_pen_frac_morel = 1.0 - ( (V1_coef(1) + V1_coef(2)*Chl) + Chl2 * &
-       ((V1_coef(3) + Chl*V1_coef(4)) + Chl2*(V1_coef(5) + Chl*V1_coef(6))) )
+  SW_pen_frac_morel = 1.0 - ( (CS%SW_pen_frac_coef(1) + CS%SW_pen_frac_coef(2)*Chl) + Chl2 * &
+                              ((CS%SW_pen_frac_coef(3) + Chl*CS%SW_pen_frac_coef(4)) + &
+                               Chl2*(CS%SW_pen_frac_coef(5) + Chl*CS%SW_pen_frac_coef(6))) )
 end function SW_pen_frac_morel
-
-!>   This sets the blue-wavelength opacity according to the scheme proposed by
-!! Manizza, M. et al, 2005.
-function opacity_manizza(chl_data)
-  real, intent(in)  :: chl_data !< The chlorophyll-A concentration [mg m-3]
-  real :: opacity_manizza !< The returned opacity [m-1]
-!   This sets the blue-wavelength opacity according to the scheme proposed by Manizza, M. et al, 2005.
-
-  opacity_manizza = 0.0232 + 0.074*chl_data**0.674
-end function
 
 !> This subroutine returns a 2-d slice at constant j of fields from an optics_type, with the potential
 !! for rescaling these fields.
@@ -648,9 +711,9 @@ subroutine absorbRemainingSW(G, GV, US, h, opacity_band, nsw, optics, j, dt, H_l
   TKE_calc = (present(TKE) .and. present(dSV_dT))
 
   if (optics%answer_date < 20190101) then
-    g_Hconv2 = (US%L_to_Z**2*GV%g_Earth * GV%H_to_RZ) * GV%H_to_RZ
+    g_Hconv2 = (GV%g_Earth_Z_T2 * GV%H_to_RZ) * GV%H_to_RZ
   else
-    g_Hconv2 = US%L_to_Z**2*GV%g_Earth * GV%H_to_RZ**2
+    g_Hconv2 = GV%g_Earth_Z_T2 * GV%H_to_RZ**2
   endif
 
   h_heat(:) = 0.0
@@ -973,9 +1036,25 @@ subroutine opacity_init(Time, G, GV, US, param_file, diag, CS, optics)
   character(len=40)  :: scheme_string
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
+  real :: opacity_coefs(6)      ! Pairs of opacity coefficients [Z-1 ~> m-1] for blue, red and
+                                ! near-infrared radiation with parameterizations following the
+                                ! functional form from Manizza et al., GRL 2005, namely in the form
+                                ! opacity = coef_1 + coef_2 * chl**pow for each band.
+  real :: opacity_powers(3)     ! Powers of chlorophyll [nondim] for blue, red and near-infrared
+                                ! radiation bands, in expressions for opacity of the form
+                                ! opacity = coef_1 + coef_2 * chl**pow.
+  real :: extinction_coefs(6)   ! Extinction length coefficients [Z ~> m] for penetrating shortwave
+                                ! radiation in the form proposed by Morel and Antoine (1994), namely
+                                ! opacity = 1 / (sum(n=1:6, Coef(n) * log10(Chl)**(n-1)))
+  real :: sw_pen_frac_coefs(6)  ! Coefficients for the shortwave radiation fraction [nondim] in a
+                                ! fifth order polynomial fit as a funciton of log10(Chlorophyll).
   real :: PenSW_absorb_minthick ! A thickness that is used to absorb the remaining shortwave heat
                                 ! flux when that flux drops below PEN_SW_FLUX_ABSORB [H ~> m or kg m-2]
-  real :: PenSW_minthick_dflt ! The default for PenSW_absorb_minthick [m]
+  real :: PenSW_minthick_dflt   ! The default for PenSW_absorb_minthick [m]
+  real :: I_NIR_bands           ! The inverse of the number of near-infrared bands being used [nondim]
+  real, allocatable :: band_wavelengths(:) ! The bounding wavelengths for the penetrating shortwave
+                                ! radiation bands [nm]
+  real, allocatable :: band_wavelen_default(:) ! The defaults for band_wavelengths [nm]
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags
   integer :: isd, ied, jsd, jed, nz, n
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed ; nz = GV%ke
@@ -998,7 +1077,8 @@ subroutine opacity_init(Time, G, GV, US, param_file, diag, CS, optics)
                  "concentrations are translated into opacities. Currently "//&
                  "valid options include:\n"//&
                  " \t\t  MANIZZA_05 - Use Manizza et al., GRL, 2005. \n"//&
-                 " \t\t  MOREL_88 - Use Morel, JGR, 1988.", &
+                 " \t\t  MOREL_88 - Use Morel, JGR, 1988. \n"//&
+                 " \t\t  OHLMANN_03 - Use Ohlmann, J Clim, 2003. (only use if dz(1)>2.0m)", &
                  default=MANIZZA_05_STRING)
     if (len_trim(tmpstr) > 0) then
       tmpstr = uppercase(tmpstr)
@@ -1007,6 +1087,8 @@ subroutine opacity_init(Time, G, GV, US, param_file, diag, CS, optics)
           CS%opacity_scheme = MANIZZA_05 ; scheme_string = MANIZZA_05_STRING
         case (MOREL_88_STRING)
           CS%opacity_scheme = MOREL_88 ; scheme_string = MOREL_88_STRING
+        case (OHLMANN_03_STRING)
+          CS%opacity_scheme = OHLMANN_03 ; scheme_string = OHLMANN_03_STRING
         case default
           call MOM_error(FATAL, "opacity_init: #DEFINE OPACITY_SCHEME "//&
                                   trim(tmpstr) // "in input file is invalid.")
@@ -1072,6 +1154,9 @@ subroutine opacity_init(Time, G, GV, US, param_file, diag, CS, optics)
   elseif (CS%Opacity_scheme == SINGLE_EXP ) then
     if (optics%nbands /= 1) call MOM_error(FATAL, &
         "set_opacity: \Cannot use a single_exp opacity scheme with nbands!=1.")
+  elseif (CS%Opacity_scheme == OHLMANN_03 ) then
+    if (optics%nbands /= 2) call MOM_error(FATAL, &
+         "set_opacity: \OHLMANN_03 scheme requires nbands==2")
   endif
 
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
@@ -1098,24 +1183,103 @@ subroutine opacity_init(Time, G, GV, US, param_file, diag, CS, optics)
                  default=PenSW_minthick_dflt, units="m", scale=GV%m_to_H)
   optics%PenSW_absorb_Invlen = 1.0 / (PenSW_absorb_minthick + GV%H_subroundoff)
 
+  ! The defaults for the following coefficients are taken from Manizza et al., GRL, 2005.
+  call get_param(param_file, mdl, "OPACITY_VALUES_MANIZZA", opacity_coefs, &
+                 "Pairs of opacity coefficients for blue, red and near-infrared radiation with "//&
+                 "parameterizations following the functional form from Manizza et al., GRL 2005, "//&
+                 "namely in the form opacity = coef_1 + coef_2 * chl**pow for each band.  Although "//&
+                 "coefficients are set for 3 bands, more or less bands may actually be used, with "//&
+                 "extra bands following the same properties as band 3.", &
+                 units="m-1", scale=US%Z_to_m, defaults=(/0.0232, 0.074, 0.225, 0.037, 2.86, 0.0/), &
+                 do_not_log=(CS%opacity_scheme/=MANIZZA_05))
+  call get_param(param_file, mdl, "CHOROPHYLL_POWER_MANIZZA", opacity_powers, &
+                 "Powers of chlorophyll for blue, red and near-infrared radiation bands in "//&
+                 "expressions for opacity of the form opacity = coef_1 + coef_2 * chl**pow.", &
+                 units="nondim", defaults=(/0.674, 0.629, 0.0/), &
+                 do_not_log=(CS%opacity_scheme/=MANIZZA_05))
+
+  ! The defaults for the following coefficients are taken from Morel and Antoine (1994).
+  call get_param(param_file, mdl, "OPACITY_VALUES_MOREL", extinction_coefs, &
+                 "Shortwave extinction length coefficients for shortwave radiation in the form "//&
+                 "proposed by Morel (1988), opacity = 1 / (sum(Coef(n) * log10(Chl)**(n-1))).", &
+                 units="m", scale=US%m_to_Z, defaults=(/7.925, -6.644, 3.662, -1.815, -0.218, 0.502/), &
+                 do_not_log=(CS%opacity_scheme/=MOREL_88))
+  call get_param(param_file, mdl, "SW_PEN_FRAC_COEFS_MOREL", sw_pen_frac_coefs, &
+                 "Coefficients for the shortwave radiation fraction in a fifth order polynomial "//&
+                 "fit as a function of log10(Chlorophyll).", &
+                 units="nondim", defaults=(/0.321,  0.008, 0.132,  0.038, -0.017, -0.007/), &
+                 do_not_log=(CS%opacity_scheme/=MOREL_88))
+
   if (.not.allocated(optics%min_wavelength_band)) &
     allocate(optics%min_wavelength_band(optics%nbands))
   if (.not.allocated(optics%max_wavelength_band)) &
     allocate(optics%max_wavelength_band(optics%nbands))
 
+  ! Set the wavelengths of the opacity bands
+  allocate(band_wavelengths(optics%nbands+1), source=0.0)
+  allocate(band_wavelen_default(optics%nbands+1), source=0.0)
   if (CS%opacity_scheme == MANIZZA_05) then
-    optics%min_wavelength_band(1) =0
-    optics%max_wavelength_band(1) =550
-    if (optics%nbands >= 2) then
-      optics%min_wavelength_band(2)=550
-      optics%max_wavelength_band(2)=700
-    endif
-    if (optics%nbands > 2) then
+    if (optics%nbands >= 1) band_wavelen_default(2) = 550.0
+    if (optics%nbands >= 2) band_wavelen_default(3) = 700.0
+    if (optics%nbands >= 3) then
+      I_NIR_bands = 1.0 / real(optics%nbands - 2)
       do n=3,optics%nbands
-        optics%min_wavelength_band(n) =700
-        optics%max_wavelength_band(n) =2800
+        band_wavelen_default(n+1) = 2800. - (optics%nbands-n)*2100.0*I_NIR_bands
       enddo
     endif
+  endif
+  call get_param(param_file, mdl, "OPACITY_BAND_WAVELENGTHS", band_wavelengths, &
+                 "The bounding wavelengths for the various bands of shortwave radiation, with "//&
+                 "defaults that depend on the setting for OPACITY_SCHEME.", &
+                 units="nm", defaults=band_wavelen_default, do_not_log=(optics%nbands<2))
+  do n=1,optics%nbands
+    optics%min_wavelength_band(n) = band_wavelengths(n)
+    optics%max_wavelength_band(n) = band_wavelengths(n+1)
+  enddo
+  deallocate(band_wavelengths, band_wavelen_default)
+
+  ! Set opacity scheme dependent parameters.
+
+  if (CS%opacity_scheme == MANIZZA_05) then
+    allocate(CS%opacity_coef(2,optics%nbands))
+    allocate(CS%chl_power(optics%nbands))
+    do n=1,min(3,optics%nbands)
+      CS%opacity_coef(1,n) = opacity_coefs(2*n-1) ; CS%opacity_coef(2,n) = opacity_coefs(2*n)
+      CS%chl_power(n) = opacity_powers(n)
+    enddo
+    ! All remaining bands use the same properties as NIR, for lack of something better to do.
+    do n=4,optics%nbands
+      CS%opacity_coef(1,n) = CS%opacity_coef(1,n-1) ; CS%opacity_coef(2,n) = CS%opacity_coef(2,n-1)
+      CS%chl_power(n) = CS%chl_power(n-1)
+    enddo
+    ! Determine the last band that is dependent on chlorophyll.
+    CS%chl_dep_bands = optics%nbands
+    do n=optics%nbands,1,-1
+      if (CS%chl_power(n) /= 0.0) exit
+      CS%chl_dep_bands = n - 1
+    enddo
+    do n=CS%chl_dep_bands+1,optics%nbands
+      if (CS%opacity_coef(2,n) /= 0.0) then
+        call MOM_error(WARNING, "set_opacity: A non-zero value of the chlorophyll dependence in "//&
+            "OPACITY_VALUES_MANIZZA was set for a band with zero power in its chlorophyll dependence "//&
+            "as set by CHOROPHYLL_POWER_MANIZZA.")
+        CS%opacity_coef(1,n) = CS%opacity_coef(1,n) + CS%opacity_coef(2,n)
+        CS%opacity_coef(2,n) = 0.0
+      endif
+    enddo
+
+  elseif (CS%opacity_scheme == MOREL_88) then
+    !   The Morel opacity scheme represents a non uniform distribution of chlorophyll-a through the
+    ! water column.  Other approaches may be more appropriate when using an interactive ecosystem
+    ! model that predicts three-dimensional chl-a values.
+    allocate(CS%opacity_coef(6, optics%nbands))
+    allocate(CS%sw_pen_frac_coef(6))
+
+    ! As presently implemented, all frequency bands use the same opacities.
+    do n=1,optics%nbands
+      CS%opacity_coef(1:6,n) = extinction_coefs(1:6)
+    enddo
+    CS%sw_pen_frac_coef(:) = sw_pen_frac_coefs(:)
   endif
 
   call get_param(param_file, mdl, "OPACITY_LAND_VALUE", CS%opacity_land_value, &
@@ -1135,16 +1299,190 @@ subroutine opacity_init(Time, G, GV, US, param_file, diag, CS, optics)
   CS%id_sw_vis_pen = register_diag_field('ocean_model', 'SW_vis_pen', diag%axesT1, Time, &
       'Visible penetrating shortwave radiation flux into ocean', 'W m-2', conversion=US%QRZ_T_to_W_m2)
   do n=1,optics%nbands
-    write(bandnum,'(i3)') n
-    shortname = 'opac_'//trim(adjustl(bandnum))
-    longname = 'Opacity for shortwave radiation in band '//trim(adjustl(bandnum)) &
-      // ', saved as L^-1 tanh(Opacity * L) for L = 10^-10 m'
+    write(bandnum,'(I0)') n
+    shortname = 'opac_'//trim(bandnum)
+    longname = 'Opacity for shortwave radiation in band '//trim(bandnum)// &
+               ', saved as L^-1 tanh(Opacity * L) for L = 10^-10 m'
     CS%id_opacity(n) = register_diag_field('ocean_model', shortname, diag%axesTL, Time, &
-      longname, 'm-1', conversion=US%m_to_Z)
+        longname, 'm-1', conversion=US%m_to_Z)
   enddo
+
+  if (CS%opacity_scheme == OHLMANN_03) then
+     ! Set up the lookup table
+     call init_ohlmann_table(optics)
+  endif
 
 end subroutine opacity_init
 
+!> Initialize the lookup table for Ohlmann solar penetration scheme.
+!! Step size in Chl is a constant in log-space to make lookups easy.
+!! Step size is fine enough that nearest neighbor lookup is sufficiently
+!! accurate.
+subroutine init_ohlmann_table(optics)
+
+  implicit none
+
+  type(optics_type), intent(inout) :: optics
+
+  ! Local variables
+
+  !! These are the data from Ohlmann (2003) Table 1a with additional
+  !! values provided by C. Ohlmann and implemented in CESM-POP by B. Briegleb
+  integer, parameter :: nval_tab1a = 31
+  real, parameter, dimension(nval_tab1a) :: &
+       chl_tab1a = (/                       &
+       .001, .005, .01,  .02,               &
+       .03,  .05,  .10,  .15,               &
+       .20,  .25,  .30,  .35,               &
+       .40,  .45,  .50,  .60,               &
+       .70,  .80,  .90, 1.00,               &
+       1.50, 2.00, 2.50, 3.00,              &
+       4.00, 5.00, 6.00, 7.00,              &
+       8.00, 9.00, 10.00  /)
+
+  real, parameter, dimension(nval_tab1a) :: &
+       a1_tab1a = (/                        &
+       0.4421, 0.4451, 0.4488, 0.4563,      &
+       0.4622, 0.4715, 0.4877, 0.4993,      &
+       0.5084, 0.5159, 0.5223, 0.5278,      &
+       0.5326, 0.5369, 0.5408, 0.5474,      &
+       0.5529, 0.5576, 0.5615, 0.5649,      &
+       0.5757, 0.5802, 0.5808, 0.5788,      &
+       0.56965, 0.55638, 0.54091, 0.52442,  &
+       0.50766, 0.49110, 0.47505  /)
+
+  real, parameter, dimension(nval_tab1a) :: &
+       a2_tab1a = (/                        &
+       0.2981, 0.2963, 0.2940, 0.2894,      &
+       0.2858, 0.2800, 0.2703, 0.2628,      &
+       0.2571, 0.2523, 0.2481, 0.2444,      &
+       0.2411, 0.2382, 0.2356, 0.2309,      &
+       0.2269, 0.2235, 0.2206, 0.2181,      &
+       0.2106, 0.2089, 0.2113, 0.2167,      &
+       0.23357, 0.25504, 0.27829, 0.30274,  &
+       0.32698, 0.35056, 0.37303 /)
+
+  real, parameter, dimension(nval_tab1a) :: &
+       b1_tab1a = (/                        &
+       0.0287, 0.0301, 0.0319, 0.0355,      &
+       0.0384, 0.0434, 0.0532, 0.0612,      &
+       0.0681, 0.0743, 0.0800, 0.0853,      &
+       0.0902, 0.0949, 0.0993, 0.1077,      &
+       0.1154, 0.1227, 0.1294, 0.1359,      &
+       0.1640, 0.1876, 0.2082, 0.2264,      &
+       0.25808, 0.28498, 0.30844, 0.32932,  &
+       0.34817, 0.36540, 0.38132 /)
+
+  real, parameter, dimension(nval_tab1a) :: &
+       b2_tab1a = (/                        &
+       0.3192, 0.3243, 0.3306, 0.3433,      &
+       0.3537, 0.3705, 0.4031, 0.4262,      &
+       0.4456, 0.4621, 0.4763, 0.4889,      &
+       0.4999, 0.5100, 0.5191, 0.5347,      &
+       0.5477, 0.5588, 0.5682, 0.5764,      &
+       0.6042, 0.6206, 0.6324, 0.6425,      &
+       0.66172, 0.68144, 0.70086, 0.72144,  &
+       0.74178, 0.76190, 0.78155 /)
+
+  !! Make the table big enough so step size is smaller
+  !! in log-space that any increment in Table 1a
+  integer, parameter :: nval_lut=401
+  real :: chl, log10chl_lut, w1, w2
+  integer :: n,m,mm1,err
+
+  allocate(optics%a1_lut(nval_lut),optics%b1_lut(nval_lut),&
+       &   optics%a2_lut(nval_lut),optics%b2_lut(nval_lut),&
+       &   stat=err)
+  if ( err /= 0 ) then
+     call MOM_error(FATAL,"init_ohlmann: Cannot allocate lookup table")
+  endif
+
+  optics%chl_min = chl_tab1a(1)
+  optics%log10chl_min = log10(chl_tab1a(1))
+  optics%log10chl_max = log10(chl_tab1a(nval_tab1a))
+  optics%dlog10chl = (optics%log10chl_max - optics%log10chl_min)/(nval_lut-1)
+
+  ! step through the lookup table
+  m = 2
+  do n=1,nval_lut
+     log10chl_lut = optics%log10chl_min + (n-1)*optics%dlog10chl
+     chl = 10.0**log10chl_lut
+     chl = max(chl_tab1a(1),min(chl,chl_tab1a(nval_tab1a)))
+
+     ! find interval in Table 1a (m-1,m]
+     do while (chl > chl_tab1a(m))
+        m = m + 1
+     enddo
+     mm1 = m-1
+
+     ! interpolation weights
+     w2 = (chl - chl_tab1a(mm1))/(chl_tab1a(m) - chl_tab1a(mm1))
+     w1 = 1. - w2
+
+     ! fill in the tables
+     optics%a1_lut(n) = w1*a1_tab1a(mm1) + w2*a1_tab1a(m)
+     optics%a2_lut(n) = w1*a2_tab1a(mm1) + w2*a2_tab1a(m)
+     optics%b1_lut(n) = w1*b1_tab1a(mm1) + w2*b1_tab1a(m)
+     optics%b2_lut(n) = w1*b2_tab1a(mm1) + w2*b2_tab1a(m)
+  enddo
+
+  return
+end subroutine init_ohlmann_table
+
+!> Get the partion of total solar into bands from Ohlmann lookup table
+function lookup_ohlmann_swpen(chl,optics) result(A)
+
+  implicit none
+
+  real, intent(in) :: chl
+  type(optics_type), intent(in) :: optics
+  real, dimension(2) :: A
+
+  ! Local variables
+
+  real :: log10chl
+  integer :: n
+
+  ! Make sure we are in the table
+  if (chl > optics%chl_min) then
+    log10chl = min(log10(chl),optics%log10chl_max)
+  else
+    log10chl = optics%log10chl_min
+  endif
+  ! Do a nearest neighbor lookup
+  n = nint( (log10chl - optics%log10chl_min)/optics%dlog10chl ) + 1
+
+  A(1) = optics%a1_lut(n)
+  A(2) = optics%a2_lut(n)
+
+end function lookup_ohlmann_swpen
+
+!> Get the opacity (decay scale) from Ohlmann lookup table
+function lookup_ohlmann_opacity(chl,optics) result(B)
+
+  implicit none
+  real, intent(in) :: chl
+  type(optics_type), intent(in) :: optics
+  real, dimension(2) :: B
+
+  ! Local variables
+  real :: log10chl
+  integer :: n
+
+  ! Make sure we are in the table
+  if (chl > optics%chl_min) then
+    log10chl = min(log10(chl),optics%log10chl_max)
+  else
+    log10chl = optics%log10chl_min
+  endif
+  ! Do a nearest neighbor lookup
+  n = nint( (log10chl - optics%log10chl_min)/optics%dlog10chl ) + 1
+
+  B(1) = optics%b1_lut(n)
+  B(2) = optics%b2_lut(n)
+
+  return
+end function lookup_ohlmann_opacity
 
 subroutine opacity_end(CS, optics)
   type(opacity_CS)  :: CS     !< Opacity control structure
@@ -1152,6 +1490,12 @@ subroutine opacity_end(CS, optics)
 
   if (allocated(CS%id_opacity)) &
     deallocate(CS%id_opacity)
+  if (allocated(CS%opacity_coef)) &
+    deallocate(CS%opacity_coef)
+  if (allocated(CS%sw_pen_frac_coef)) &
+    deallocate(CS%sw_pen_frac_coef)
+  if (allocated(CS%chl_power)) &
+    deallocate(CS%chl_power)
   if (allocated(optics%sw_pen_band)) &
     deallocate(optics%sw_pen_band)
   if (allocated(optics%opacity_band)) &
@@ -1159,7 +1503,11 @@ subroutine opacity_end(CS, optics)
   if (allocated(optics%max_wavelength_band)) &
     deallocate(optics%max_wavelength_band)
   if (allocated(optics%min_wavelength_band)) &
-    deallocate(optics%min_wavelength_band)
+       deallocate(optics%min_wavelength_band)
+  if (allocated(optics%a1_lut)) deallocate(optics%a1_lut)
+  if (allocated(optics%a2_lut)) deallocate(optics%a2_lut)
+  if (allocated(optics%b1_lut)) deallocate(optics%b1_lut)
+  if (allocated(optics%b2_lut)) deallocate(optics%b2_lut)
 end subroutine opacity_end
 
 !> \namespace mom_opacity
@@ -1178,5 +1526,8 @@ end subroutine opacity_end
 !!  Bio-optical feedbacks among phytoplankton, upper ocean physics
 !!  and sea-ice in a global model, Geophys. Res. Let., 32, L05603,
 !!  doi:10.1029/2004GL020778.
+
+!! Ohlmann, J.C., 2003: Ocean radiant heating in climate models.
+!!   J. Climate, 16, 1337-1351, 2003.
 
 end module MOM_opacity

@@ -84,7 +84,7 @@ subroutine set_grid_metrics(G, param_file, US)
   ! These are defaults that may be changed in the next select block.
   G%x_axis_units = "degrees_east" ; G%y_axis_units = "degrees_north"
   G%x_ax_unit_short = "degrees_E" ; G%y_ax_unit_short = "degrees_N"
-
+  G%grid_unit_to_L = 0.0
   G%Rad_Earth_L = -1.0*US%m_to_L ; G%len_lat = 0.0 ; G%len_lon = 0.0
   select case (trim(config))
     case ("mosaic");    call set_grid_metrics_from_mosaic(G, param_file, US)
@@ -102,7 +102,6 @@ subroutine set_grid_metrics(G, param_file, US)
     call get_param(param_file, "MOM_grid_init", "RAD_EARTH", G%Rad_Earth_L, &
                    "The radius of the Earth.", units="m", default=6.378e6, scale=US%m_to_L)
   endif
-  G%Rad_Earth = US%L_to_m*G%Rad_Earth_L
 
   ! Calculate derived metrics (i.e. reciprocals and products)
   call callTree_enter("set_derived_metrics(), MOM_grid_initialize.F90")
@@ -176,7 +175,8 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
   real, dimension(2*G%isd-2:2*G%ied+1,2*G%jsd-2:2*G%jed+1) :: tmpT ! Areas [L2 ~> m2]
   real, dimension(2*G%isd-3:2*G%ied+1,2*G%jsd-2:2*G%jed+1) :: tmpU ! East face supergrid spacing [L ~> m]
   real, dimension(2*G%isd-2:2*G%ied+1,2*G%jsd-3:2*G%jed+1) :: tmpV ! North face supergrid spacing [L ~> m]
-  real, dimension(2*G%isd-3:2*G%ied+1,2*G%jsd-3:2*G%jed+1) :: tmpZ ! Corner latitudes or longitudes [degN] or [degE]
+  real, dimension(2*G%isd-3:2*G%ied+1,2*G%jsd-3:2*G%jed+1) :: tmpZ ! Corner latitudes [degrees_N] or
+                                                                   ! longitudes [degrees_E]
   real, dimension(:,:), allocatable :: tmpGlbl ! A global array of axis labels [degrees_N] or [km] or [m]
   character(len=200) :: filename, grid_file, inputdir
   character(len=64)  :: mdl = "MOM_grid_init set_grid_metrics_from_mosaic"
@@ -250,6 +250,11 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
   do J=G%JsdB,G%JedB ; do i=G%isd,G%ied ; i2 = 2*i ; j2 = 2*J
     G%geoLatCv(i,J) = tmpZ(i2-1,j2)
   enddo ; enddo
+
+  ! This routine could be modified to support the use of a mosaic using Cartesian grid coordinates,
+  ! in which case the values of G%x_axis_units, G%y_axis_units and G%grid_unit_to_L would need to be
+  ! reset appropriately here, but this option has not yet been implemented, and the grid coordinates
+  ! are assumed to be degrees of longitude and latitude.
 
   ! Read DX,DY from the supergrid
   tmpU(:,:) = 0. ; tmpV(:,:) = 0.
@@ -440,9 +445,11 @@ subroutine set_grid_metrics_cartesian(G, param_file, US)
   enddo
 
   if (units_temp(1:1) == 'k') then ! Axes are measured in km.
+    G%grid_unit_to_L = 1000.0*US%m_to_L
     dx_everywhere = 1000.0*US%m_to_L * G%len_lon / (REAL(niglobal))
     dy_everywhere = 1000.0*US%m_to_L * G%len_lat / (REAL(njglobal))
   elseif (units_temp(1:1) == 'm') then ! Axes are measured in m.
+    G%grid_unit_to_L = US%m_to_L
     dx_everywhere = US%m_to_L*G%len_lon / (REAL(niglobal))
     dy_everywhere = US%m_to_L*G%len_lat / (REAL(njglobal))
   else ! Axes are measured in degrees of latitude and longitude.
@@ -749,14 +756,14 @@ subroutine set_grid_metrics_mercator(G, param_file, US)
     y_q = find_root(Int_dj_dy, dy_dj, GP, jd, 0.0, -1.0*PI_2, PI_2, itt2)
     G%gridLatB(J) = y_q*180.0/PI
     ! if (is_root_pe()) &
-    !   write(stdout, '("J, y_q = ",I4,ES14.4," itts = ",I4)')  j, y_q, itt2
+    !   write(stdout, '("J, y_q = ",I0,", ",ES14.4," itts = ",I0)')  j, y_q, itt2
   enddo
   do j=G%jsg,G%jeg
     jd = fnRef + (j - jRef) - 0.5
     y_h = find_root(Int_dj_dy, dy_dj, GP, jd, 0.0, -1.0*PI_2, PI_2, itt1)
     G%gridLatT(j) = y_h*180.0/PI
     ! if (is_root_pe()) &
-    !   write(stdout, '("j, y_h = ",I4,ES14.4," itts = ",I4)')  j, y_h, itt1
+    !   write(stdout, '("j, y_h = ",I0,", ",ES14.4," itts = ",I0)')  j, y_h, itt1
   enddo
   do J=JsdB+J_off,JedB+J_off
     jd = fnRef + (J - jRef)
@@ -956,7 +963,7 @@ function find_root( fn, dy_df, GP, fnval, y1, ymin, ymax, ittmax)
     fnbot = fn(ybot,GP) - fnval
 
     if ((itt > 50) .and. (fnbot > 0.0)) then
-      write(warnmesg, '("PE ",I2," unable to find bottom bound for grid function. &
+      write(warnmesg, '("PE ",I0," unable to find bottom bound for grid function. &
         &x = ",ES10.4,", xmax = ",ES10.4,", fn = ",ES10.4,", dfn_dx = ",ES10.4,&
         &", seeking fn = ",ES10.4," - fn = ",ES10.4,".")') &
           pe_here(),ybot,ymin,fn(ybot,GP),dy_df(ybot,GP),fnval, fnbot
@@ -976,7 +983,7 @@ function find_root( fn, dy_df, GP, fnval, y1, ymin, ymax, ittmax)
     fntop = fn(ytop,GP) - fnval
 
     if ((itt > 50) .and. (fntop < 0.0)) then
-      write(warnmesg, '("PE ",I2," unable to find top bound for grid function. &
+      write(warnmesg, '("PE ",I0," unable to find top bound for grid function. &
         &x = ",ES10.4,", xmax = ",ES10.4,", fn = ",ES10.4,", dfn_dx = ",ES10.4, &
         &", seeking fn = ",ES10.4," - fn = ",ES10.4,".")') &
           pe_here(),ytop,ymax,fn(ytop,GP),dy_df(ytop,GP),fnval,fntop
@@ -987,7 +994,7 @@ function find_root( fn, dy_df, GP, fnval, y1, ymin, ymax, ittmax)
   ! Find the root using a bracketed variant of Newton's method, starting
   ! with a false-positon method first guess.
   if ((fntop < 0.0) .or. (fnbot > 0.0) .or. (ytop < ybot)) then
-    write(warnmesg, '("PE ",I2," find_root failed to bracket function. y = ",&
+    write(warnmesg, '("PE ",I0," find_root failed to bracket function. y = ",&
               &2ES10.4,", fn = ",2ES10.4,".")') pe_here(),ybot,ytop,fnbot,fntop
     call MOM_error(FATAL, warnmesg)
   endif
@@ -1175,16 +1182,33 @@ end function Adcroft_reciprocal
 !! flow over any points which are shallower than Dmask and permit an
 !! appropriate treatment of the boundary conditions.  mask2dCu and mask2dCv
 !! are 0.0 at any points adjacent to a land point.  mask2dBu is 0.0 at
-!! any land or boundary point.  For points in the interior, mask2dCu,
-!! mask2dCv, and mask2dBu are all 1.0.
-subroutine initialize_masks(G, PF, US)
+!! any land or boundary point.  For points in the ocean interior or at open boundary
+!! condition points, mask2dCu, mask2dCv, and mask2dBu are all 1.0.
+subroutine initialize_masks(G, PF, US, OBC_dir_u, OBC_dir_v, open_corner_OBCs)
   type(dyn_horgrid_type), intent(inout) :: G  !< The dynamic horizontal grid type
   type(param_file_type),  intent(in)    :: PF !< Parameter file structure
   type(unit_scale_type),  intent(in)    :: US !< A dimensional unit scaling type
+  integer, dimension(G%IsdB:G%IedB,G%jsd:G%jed), &
+                optional, intent(in)    :: OBC_dir_u  !< Trinary values that indicate whether there
+                                              !! is an open boundary condition at zonal velocity
+                                              !! faces and their orientation, with 0 for no OBC,
+                                              !! a positive value for an Eastern OBC and
+                                              !! a negative value for a Western OBC.
+  integer, dimension(G%isd:G%ied,G%JsdB:G%JedB), &
+                optional, intent(in)    :: OBC_dir_v  !< Trinary values that indicate whether there
+                                              !! is an open boundary condition at zonal velocity
+                                              !! faces and their orientation, with 0 for no OBC,
+                                              !! a positive value for a Northern OBC and
+                                              !! a negative value for a Southern OBC.
+  logical,      optional, intent(in)   :: open_corner_OBCs  !< If present and true, the bay-like corner
+                                              !! between two orthogonal open boundary segments is open,
+                                              !! otherwise it is closed.
+
   ! Local variables
   real :: Dmask      ! The depth for masking in the same units as G%bathyT [Z ~> m].
   real :: min_depth  ! The minimum ocean depth in the same units as G%bathyT [Z ~> m].
   real :: mask_depth ! The depth shallower than which to mask a point as land [Z ~> m].
+  logical :: open_corners ! If true, the bay-like corner between two orthogonal open boundary segments is open
   character(len=40)  :: mdl = "MOM_grid_init initialize_masks"
   integer :: i, j
 
@@ -1205,6 +1229,8 @@ subroutine initialize_masks(G, PF, US)
   Dmask = mask_depth
   if (mask_depth == -9999.0*US%m_to_Z) Dmask = min_depth
 
+  open_corners = .false. ; if (present(open_corner_OBCs)) open_corners = open_corner_OBCs
+
   G%mask2dCu(:,:) = 0.0 ; G%mask2dCv(:,:) = 0.0 ; G%mask2dBu(:,:) = 0.0
 
   ! Construct the h-point or T-point mask
@@ -1222,6 +1248,20 @@ subroutine initialize_masks(G, PF, US)
     else
       G%mask2dCu(I,j) = 1.0
     endif
+  enddo ; enddo
+
+  if (present(OBC_dir_u)) then
+    do j=G%jsd,G%jed ; do I=G%isd,G%ied-1
+      if (OBC_dir_u(I,j) > 0) then
+        if (G%bathyT(i,j) > Dmask) G%mask2dCu(I,j) = 1.0
+      endif
+      if (OBC_dir_u(I,j) < 0) then
+        if (G%bathyT(i+1,j) > Dmask) G%mask2dCu(I,j) = 1.0
+      endif
+    enddo ; enddo
+  endif
+
+  do j=G%jsd,G%jed ; do I=G%isd,G%ied-1
     ! This mask may be revised later after the open boundary positions are specified.
     G%OBCmaskCu(I,j) = G%mask2dCu(I,j)
   enddo ; enddo
@@ -1232,18 +1272,59 @@ subroutine initialize_masks(G, PF, US)
     else
       G%mask2dCv(i,J) = 1.0
     endif
+  enddo ; enddo
+
+  if (present(OBC_dir_v)) then
+    do J=G%jsd,G%jed-1 ; do i=G%isd,G%ied
+      if (OBC_dir_v(i,J) > 0) then
+        if (G%bathyT(i,j) > Dmask) G%mask2dCv(i,J) = 1.0
+      endif
+      if (OBC_dir_v(i,J) < 0) then
+        if (G%bathyT(i,j+1) > Dmask) G%mask2dCv(i,J) = 1.0
+      endif
+    enddo ; enddo
+  endif
+
+  do J=G%jsd,G%jed-1 ; do i=G%isd,G%ied
     ! This mask may be revised later after the open boundary positions are specified.
     G%OBCmaskCv(i,J) = G%mask2dCv(i,J)
   enddo ; enddo
 
+  ! The mask at the vertex can be determined from the masks at the faces.
+  ! This works at interior ocean points or at convex OBC points.
   do J=G%jsd,G%jed-1 ; do I=G%isd,G%ied-1
-    if ((G%bathyT(i+1,j) <= Dmask) .or. (G%bathyT(i+1,j+1) <= Dmask) .or. &
-        (G%bathyT(i,j) <= Dmask) .or. (G%bathyT(i,j+1) <= Dmask)) then
-      G%mask2dBu(I,J) = 0.0
-    else
-      G%mask2dBu(I,J) = 1.0
-    endif
+    G%mask2dBu(I,J) = (G%mask2dCu(I,j) * G%mask2dCu(I,j+1)) * (G%mask2dCv(i,J) * G%mask2dCv(i+1,J))
   enddo ; enddo
+
+  ! This block resets masks at the vertices when there are OBCs.  The right logic is that if there
+  ! are 2 or more unmasked OBCs, this point should be open, but to recreate the previous answers,
+  if (present(OBC_dir_u)) then
+    do J=G%jsd,G%jed-1 ; do I=G%isd,G%ied-1
+      ! These are conditions to set open vertex points on a straight north-south coastline
+      if ((G%mask2dCu(I,j) * OBC_dir_u(I,j)) * (G%mask2dCu(I,j+1) * OBC_dir_u(I,j+1)) > 0.) &
+        G%mask2dBu(I,J) = 1.0
+    enddo ; enddo
+  endif
+  if (present(OBC_dir_v)) then
+    do J=G%jsd,G%jed-1 ; do I=G%isd,G%ied-1
+      ! These are conditions to set open vertex points on a straight east-west coastline
+      if ((G%mask2dCv(i,J) * OBC_dir_v(i,J)) * (G%mask2dCv(i+1,J) * OBC_dir_v(i+1,J)) > 0.) &
+        G%mask2dBu(I,J) = 1.0
+    enddo ; enddo
+  endif
+  if (open_corners .and. present(OBC_dir_u) .and. present(OBC_dir_v)) then
+    do J=G%jsd,G%jed-1 ; do I=G%isd,G%ied-1
+      ! These are the 4 conditions to set an open point in a concave (bay-like) corner
+      if ((G%mask2dCu(I,j+1) * OBC_dir_u(I,j+1) < 0.) .and. (G%mask2dCv(i+1,J) * OBC_dir_v(i+1,J) < 0.)) &
+         G%mask2dBu(I,J) = 1.0  ! Southwestern corner
+      if ((G%mask2dCu(I,j+1) * OBC_dir_u(I,j+1) > 0.) .and. (G%mask2dCv(i,J) * OBC_dir_v(i,J) < 0.)) &
+         G%mask2dBu(I,J) = 1.0  ! Southeastern corner
+      if ((G%mask2dCu(I,j) * OBC_dir_u(I,j) < 0.) .and. (G%mask2dCv(i+1,J) * OBC_dir_v(i+1,J) > 0.)) &
+         G%mask2dBu(I,J) = 1.0  ! Northwestern corner
+      if ((G%mask2dCu(I,j) * OBC_dir_u(I,j) > 0.) .and. (G%mask2dCv(i,J) * OBC_dir_v(i,J) > 0.)) &
+         G%mask2dBu(I,J) = 1.0  ! Northeastern corner
+    enddo ; enddo
+  endif
 
   call pass_var(G%mask2dBu, G%Domain, position=CORNER)
   call pass_vector(G%mask2dCu, G%mask2dCv, G%Domain, To_All+Scalar_Pair, CGRID_NE)

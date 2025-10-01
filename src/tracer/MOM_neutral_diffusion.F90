@@ -219,7 +219,7 @@ logical function neutral_diffusion_init(Time, G, GV, US, param_file, diag, EOS, 
                  "Values of 20240330 or below recover the answers from the original form of the "//&
                  "neutral diffusion code, while higher values use mathematically equivalent "//&
                  "expressions that recover rotational symmetry.", &
-                 default=20240101) !### Change this default later to default_answer_date.
+                 default=default_answer_date)
 
   ! Initialize and configure remapping
   if ( .not.CS%continuous_reconstruction ) then
@@ -1131,6 +1131,7 @@ end subroutine interface_scalar
 
 !> Returns the PPM quasi-fourth order edge value at k+1/2 following
 !! equation 1.6 in Colella & Woodward, 1984: JCP 54, 174-201.
+!! The returned units are the same as those of Ak (e.g. [C ~> degC] for temperature).
 real function ppm_edge(hkm1, hk, hkp1, hkp2,  Ak, Akp1, Pk, Pkp1, h_neglect)
   real, intent(in) :: hkm1 !< Width of cell k-1 in [H ~> m or kg m-2] or other units
   real, intent(in) :: hk   !< Width of cell k in [H ~> m or kg m-2] or other units
@@ -1289,9 +1290,9 @@ subroutine PLM_diff(nk, h, S, c_method, b_method, diff)
 
 end subroutine PLM_diff
 
-!> Returns the cell-centered second-order finite volume (unlimited PLM) slope
-!! using three consecutive cell widths and average values. Slope is returned
-!! as a difference across the central cell (i.e. units of scalar S).
+!> Returns the cell-centered second-order finite volume (unlimited PLM) slope using three
+!! consecutive cell widths and average values. Slope is returned as a difference across
+!! the central cell (i.e. units of scalar S, e.g. [C ~> degC] for temperature).
 !! Discretization follows equation 1.7 in Colella & Woodward, 1984: JCP 54, 174-201.
 real function fv_diff(hkm1, hk, hkp1, Skm1, Sk, Skp1)
   real, intent(in) :: hkm1 !< Left cell width [H ~> m or kg m-2] or other arbitrary units
@@ -1572,7 +1573,7 @@ subroutine find_neutral_surface_positions_continuous(nk, Pl, Tl, Sl, dRdTl, dRdS
 end subroutine find_neutral_surface_positions_continuous
 
 !> Returns the non-dimensional position between Pneg and Ppos where the
-!! interpolated density difference equals zero.
+!! interpolated density difference equals zero [nondim].
 !! The result is always bounded to be between 0 and 1.
 real function interpolate_for_nondim_position(dRhoNeg, Pneg, dRhoPos, Ppos)
   real, intent(in) :: dRhoNeg !< Negative density difference [R ~> kg m-3]
@@ -1749,7 +1750,7 @@ subroutine find_neutral_surface_positions_discontinuous(CS, nk, &
                                      Tr(kl_right, ki_right), Sr(kl_right, ki_right), Pres_r(kl_right,ki_right), &
                                      Tl(kl_left, ki_left),   Sl(kl_left, ki_left)  , Pres_l(kl_left,ki_left),   &
                                      dRho)
-      if (CS%debug) write(stdout,'(A,I2,A,E12.4,A,I2,A,I2,A,I2,A,I2)') &
+      if (CS%debug) write(stdout,'(A,I0,A,E12.4,A,I0,A,I0,A,I0,A,I0)') &
           "k_surface=",k_surface, "  dRho=",CS%R_to_kg_m3*dRho, &
           "kl_left=",kl_left, "  ki_left=",ki_left, "  kl_right=",kl_right, "  ki_right=",ki_right
       ! Which column has the lighter surface for the current indexes, kr and kl
@@ -1782,8 +1783,8 @@ subroutine find_neutral_surface_positions_discontinuous(CS, nk, &
         KoL(k_surface) = kl_left
 
         if (CS%debug) then
-          write(stdout,'(A,I2)') "Searching left layer ", kl_left
-          write(stdout,'(A,I2,1X,I2)') "Searching from right: ", kl_right, ki_right
+          write(stdout,'(A,I0)') "Searching left layer ", kl_left
+          write(stdout,'(A,I0,1X,I0)') "Searching from right: ", kl_right, ki_right
           write(stdout,*) "Temp/Salt Reference: ", Tr(kl_right,ki_right), Sr(kl_right,ki_right)
           write(stdout,*) "Temp/Salt Top L: ", Tl(kl_left,1), Sl(kl_left,1)
           write(stdout,*) "Temp/Salt Bot L: ", Tl(kl_left,2), Sl(kl_left,2)
@@ -1805,8 +1806,8 @@ subroutine find_neutral_surface_positions_discontinuous(CS, nk, &
         KoR(k_surface) = kl_right
 
         if (CS%debug) then
-          write(stdout,'(A,I2)') "Searching right layer ", kl_right
-          write(stdout,'(A,I2,1X,I2)') "Searching from left: ", kl_left, ki_left
+          write(stdout,'(A,I0)') "Searching right layer ", kl_right
+          write(stdout,'(A,I0,1X,I0)') "Searching from left: ", kl_left, ki_left
           write(stdout,*) "Temp/Salt Reference: ", Tl(kl_left,ki_left), Sl(kl_left,ki_left)
           write(stdout,*) "Temp/Salt Top L: ", Tr(kl_right,1), Sr(kl_right,1)
           write(stdout,*) "Temp/Salt Bot L: ", Tr(kl_right,2), Sr(kl_right,2)
@@ -1818,7 +1819,7 @@ subroutine find_neutral_surface_positions_discontinuous(CS, nk, &
       else
         stop 'Else what?'
       endif
-      if (CS%debug)  write(stdout,'(A,I3,A,ES16.6,A,I2,A,ES16.6)') "KoL:", KoL(k_surface), " PoL:", PoL(k_surface), &
+      if (CS%debug)  write(stdout,'(A,I3,A,ES16.6,A,I0,A,ES16.6)') "KoL:", KoL(k_surface), " PoL:", PoL(k_surface), &
                      "     KoR:", KoR(k_surface), " PoR:", PoR(k_surface)
     endif
     ! Effective thickness
@@ -1875,7 +1876,8 @@ subroutine mark_unstable_cells(CS, nk, T, S, P, stable_cell)
   enddo
 end subroutine mark_unstable_cells
 
-!> Searches the "other" (searched) column for the position of the neutral surface
+!> Searches the "other" (searched) column for the position of the neutral surface, returning
+!! the fractional postion within the layer [nondim]
 real function search_other_column(CS, ksurf, pos_last, T_from, S_from, P_from, T_top, S_top, P_top, &
                                   T_bot, S_bot, P_bot, T_poly, S_poly ) result(pos)
   type(neutral_diffusion_CS), intent(in   ) :: CS       !< Neutral diffusion control structure
@@ -3223,11 +3225,11 @@ logical function test_data1d(verbose, nk, Po, Ptrue, title)
     do k = 1,nk
       if (Po(k) /= Ptrue(k)) then
         test_data1d = .true.
-        write(stdunit,'(a,i2,2(1x,a,f20.16),1x,a,1pe22.15,1x,a)') &
+        write(stdunit,'(a,I0,2(1x,a,f20.16),1x,a,1pe22.15,1x,a)') &
               'k=',k,'Po=',Po(k),'Ptrue=',Ptrue(k),'err=',Po(k)-Ptrue(k),'WRONG!'
       else
         if (verbose) &
-          write(stdunit,'(a,i2,2(1x,a,f20.16),1x,a,1pe22.15)') &
+          write(stdunit,'(a,I0,2(1x,a,f20.16),1x,a,1pe22.15)') &
                 'k=',k,'Po=',Po(k),'Ptrue=',Ptrue(k),'err=',Po(k)-Ptrue(k)
       endif
     enddo
@@ -3258,10 +3260,10 @@ logical function test_data1di(verbose, nk, Po, Ptrue, title)
     do k = 1,nk
       if (Po(k) /= Ptrue(k)) then
         test_data1di = .true.
-        write(stdunit,'(a,i2,2(1x,a,i5),1x,a)') 'k=',k,'Io=',Po(k),'Itrue=',Ptrue(k),'WRONG!'
+        write(stdunit,'(a,I0,2(1x,a,i5),1x,a)') 'k=',k,'Io=',Po(k),'Itrue=',Ptrue(k),'WRONG!'
       else
         if (verbose) &
-          write(stdunit,'(a,i2,2(1x,a,i5))') 'k=',k,'Io=',Po(k),'Itrue=',Ptrue(k)
+          write(stdunit,'(a,I0,2(1x,a,i5))') 'k=',k,'Io=',Po(k),'Itrue=',Ptrue(k)
       endif
     enddo
   endif

@@ -8,16 +8,18 @@ module MOM_debugging
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
-use MOM_checksums, only : hchksum, Bchksum, qchksum, uvchksum, hchksum_pair
-use MOM_checksums, only : is_NaN, chksum, MOM_checksums_init
-use MOM_coms, only : PE_here, root_PE, num_PEs
-use MOM_coms, only : min_across_PEs, max_across_PEs, reproducing_sum
-use MOM_domains, only : pass_vector, pass_var, pe_here
-use MOM_domains, only : BGRID_NE, AGRID, To_All, Scalar_Pair
+use MOM_checksums,     only : hchksum, Bchksum, qchksum, uvchksum, hchksum_pair
+use MOM_checksums,     only : is_NaN, chksum, MOM_checksums_init
+use MOM_coms,          only : PE_here, root_PE, num_PEs
+use MOM_coms,          only : min_across_PEs, max_across_PEs, reproducing_sum
+use MOM_domains,       only : pass_vector, pass_var, pe_here
+use MOM_domains,       only : BGRID_NE, AGRID, To_All, Scalar_Pair
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, is_root_pe
-use MOM_file_parser, only : log_version, param_file_type, get_param
-use MOM_grid, only : ocean_grid_type
-use MOM_hor_index, only : hor_index_type
+use MOM_file_parser,   only : log_version, param_file_type, get_param
+use MOM_grid,          only : ocean_grid_type
+use MOM_hor_index,     only : hor_index_type
+use MOM_io,            only : stdout
+use MOM_unit_scaling,  only : unit_scale_type
 
 implicit none ; private
 
@@ -138,11 +140,7 @@ subroutine check_redundant_vC3d(mesg, u_comp, v_comp, G, is, ie, js, je, &
   integer :: k
 
   do k=1,size(u_comp,3)
-    if (k < 10) then ; write(mesg_k,'(" Layer",i2," ")') k
-    elseif (k < 100) then ; write(mesg_k,'(" Layer",i3," ")') k
-    elseif (k < 1000) then ; write(mesg_k,'(" Layer",i4," ")') k
-    else ; write(mesg_k,'(" Layer",i9," ")') k ; endif
-
+    write(mesg_k,'(" Layer ",i0," ")') k
     call check_redundant_vC2d(trim(mesg)//trim(mesg_k), u_comp(:,:,k), &
              v_comp(:,:,k), G, is, ie, js, je, direction, unscale)
   enddo
@@ -213,7 +211,7 @@ subroutine check_redundant_vC2d(mesg, u_comp, v_comp, G, is, ie, js, je, &
     if (u_resym(i,j) /= u_comp(i,j) .and. &
         redundant_prints(3) < max_redundant_prints) then
       write(mesg2,'(" redundant u-components",2(1pe12.4)," differ by ", &
-                    & 1pe12.4," at i,j = ",2i4," on pe ",i4)') &
+                    & 1pe12.4," at i,j = ",I0,",",I0," on pe ",I0)') &
            sc*u_comp(i,j), sc*u_resym(i,j), sc*(u_comp(i,j)-u_resym(i,j)), i, j, pe_here()
       write(0,'(A130)') trim(mesg)//trim(mesg2)
       redundant_prints(3) = redundant_prints(3) + 1
@@ -223,7 +221,7 @@ subroutine check_redundant_vC2d(mesg, u_comp, v_comp, G, is, ie, js, je, &
     if (v_resym(i,j) /= v_comp(i,j) .and. &
         redundant_prints(3) < max_redundant_prints) then
       write(mesg2,'(" redundant v-comps",2(1pe12.4)," differ by ", &
-                    & 1pe12.4," at i,j = ",2i4," x,y = ",2(1pe12.4)," on pe ",i4)') &
+                    & 1pe12.4," at i,j = ",I0,",",I0," x,y = ",2(1pe12.4)," on pe ",I0)') &
            sc*v_comp(i,j), sc*v_resym(i,j), sc*(v_comp(i,j)-v_resym(i,j)), i, j, &
            G%geoLonBu(i,j), G%geoLatBu(i,j), pe_here()
       write(0,'(A155)') trim(mesg)//trim(mesg2)
@@ -251,11 +249,7 @@ subroutine check_redundant_sB3d(mesg, array, G, is, ie, js, je, unscale)
   integer :: k
 
   do k=1,size(array,3)
-    if (k < 10) then ; write(mesg_k,'(" Layer",i2," ")') k
-    elseif (k < 100) then ; write(mesg_k,'(" Layer",i3," ")') k
-    elseif (k < 1000) then ; write(mesg_k,'(" Layer",i4," ")') k
-    else ; write(mesg_k,'(" Layer",i9," ")') k ; endif
-
+    write(mesg_k,'(" Layer ",i0," ")') k
     call check_redundant_sB2d(trim(mesg)//trim(mesg_k), array(:,:,k), &
                               G, is, ie, js, je, unscale)
   enddo
@@ -318,7 +312,7 @@ subroutine check_redundant_sB2d(mesg, array, G, is, ie, js, je, unscale)
     if (a_resym(i,j) /= array(i,j) .and. &
         redundant_prints(2) < max_redundant_prints) then
       write(mesg2,'(" Redundant points",2(1pe12.4)," differ by ", &
-                    & 1pe12.4," at i,j = ",2i4," on pe ",i4)') &
+                    & 1pe12.4," at i,j = ",I0,",",I0," on pe ",I0)') &
            sc*array(i,j), sc*a_resym(i,j), sc*(array(i,j)-a_resym(i,j)), i, j, pe_here()
       write(0,'(A130)') trim(mesg)//trim(mesg2)
       redundant_prints(2) = redundant_prints(2) + 1
@@ -351,11 +345,7 @@ subroutine check_redundant_vB3d(mesg, u_comp, v_comp, G, is, ie, js, je, &
   integer :: k
 
   do k=1,size(u_comp,3)
-    if (k < 10) then ; write(mesg_k,'(" Layer",i2," ")') k
-    elseif (k < 100) then ; write(mesg_k,'(" Layer",i3," ")') k
-    elseif (k < 1000) then ; write(mesg_k,'(" Layer",i4," ")') k
-    else ; write(mesg_k,'(" Layer",i9," ")') k ; endif
-
+    write(mesg_k,'(" Layer ",i0," ")') k
     call check_redundant_vB2d(trim(mesg)//trim(mesg_k), u_comp(:,:,k), &
              v_comp(:,:,k), G, is, ie, js, je, direction, unscale)
   enddo
@@ -427,7 +417,7 @@ subroutine check_redundant_vB2d(mesg, u_comp, v_comp, G, is, ie, js, je, &
     if (u_resym(i,j) /= u_comp(i,j) .and. &
         redundant_prints(2) < max_redundant_prints) then
       write(mesg2,'(" redundant u-components",2(1pe12.4)," differ by ", &
-                    & 1pe12.4," at i,j = ",2i4," on pe ",i4)') &
+                    & 1pe12.4," at i,j = ",I0,",",I0," on pe ",I0)') &
            sc*u_comp(i,j), sc*u_resym(i,j), sc*(u_comp(i,j)-u_resym(i,j)), i, j, pe_here()
       write(0,'(A130)') trim(mesg)//trim(mesg2)
       redundant_prints(2) = redundant_prints(2) + 1
@@ -437,7 +427,7 @@ subroutine check_redundant_vB2d(mesg, u_comp, v_comp, G, is, ie, js, je, &
     if (v_resym(i,j) /= v_comp(i,j) .and. &
         redundant_prints(2) < max_redundant_prints) then
       write(mesg2,'(" redundant v-comps",2(1pe12.4)," differ by ", &
-                    & 1pe12.4," at i,j = ",2i4," x,y = ",2(1pe12.4)," on pe ",i4)') &
+                    & 1pe12.4," at i,j = ",I0,",",I0," x,y = ",2(1pe12.4)," on pe ",I0)') &
            sc*v_comp(i,j), sc*v_resym(i,j), sc*(v_comp(i,j)-v_resym(i,j)), i, j, &
            G%geoLonBu(i,j), G%geoLatBu(i,j), pe_here()
       write(0,'(A155)') trim(mesg)//trim(mesg2)
@@ -464,11 +454,7 @@ subroutine check_redundant_sT3d(mesg, array, G, is, ie, js, je, unscale)
   integer :: k
 
   do k=1,size(array,3)
-    if (k < 10) then ; write(mesg_k,'(" Layer",i2," ")') k
-    elseif (k < 100) then ; write(mesg_k,'(" Layer",i3," ")') k
-    elseif (k < 1000) then ; write(mesg_k,'(" Layer",i4," ")') k
-    else ; write(mesg_k,'(" Layer",i9," ")') k ; endif
-
+    write(mesg_k,'(" Layer ",i0," ")') k
     call check_redundant_sT2d(trim(mesg)//trim(mesg_k), array(:,:,k), &
                               G, is, ie, js, je, unscale)
   enddo
@@ -518,7 +504,7 @@ subroutine check_redundant_sT2d(mesg, array, G, is, ie, js, je, unscale)
     if (a_nonsym(i,j) /= array(i,j) .and. &
         redundant_prints(1) < max_redundant_prints) then
       write(mesg2,'(" Redundant points",2(1pe12.4)," differ by ", &
-                    & 1pe12.4," at i,j = ",2i4," on pe ",i4)') &
+                    & 1pe12.4," at i,j = ",I0,",",I0," on pe ",I0)') &
            sc*array(i,j), sc*a_nonsym(i,j), sc*(array(i,j)-a_nonsym(i,j)), i, j, pe_here()
       write(0,'(A130)') trim(mesg)//trim(mesg2)
       redundant_prints(1) = redundant_prints(1) + 1
@@ -551,11 +537,7 @@ subroutine check_redundant_vT3d(mesg, u_comp, v_comp, G, is, ie, js, je, &
   integer :: k
 
   do k=1,size(u_comp,3)
-    if (k < 10) then ; write(mesg_k,'(" Layer",i2," ")') k
-    elseif (k < 100) then ; write(mesg_k,'(" Layer",i3," ")') k
-    elseif (k < 1000) then ; write(mesg_k,'(" Layer",i4," ")') k
-    else ; write(mesg_k,'(" Layer",i9," ")') k ; endif
-
+    write(mesg_k,'(" Layer ",i0," ")') k
     call check_redundant_vT2d(trim(mesg)//trim(mesg_k), u_comp(:,:,k), &
              v_comp(:,:,k), G, is, ie, js, je, direction, unscale)
   enddo
@@ -614,7 +596,7 @@ subroutine check_redundant_vT2d(mesg, u_comp, v_comp, G, is, ie, js, je, &
     if (u_nonsym(i,j) /= u_comp(i,j) .and. &
         redundant_prints(1) < max_redundant_prints) then
       write(mesg2,'(" redundant u-components",2(1pe12.4)," differ by ", &
-                    & 1pe12.4," at i,j = ",2i4," on pe ",i4)') &
+                    & 1pe12.4," at i,j = ",I0,",",I0," on pe ",I0)') &
            sc*u_comp(i,j), sc*u_nonsym(i,j), sc*(u_comp(i,j)-u_nonsym(i,j)), i, j, pe_here()
       write(0,'(A130)') trim(mesg)//trim(mesg2)
       redundant_prints(1) = redundant_prints(1) + 1
@@ -624,7 +606,7 @@ subroutine check_redundant_vT2d(mesg, u_comp, v_comp, G, is, ie, js, je, &
     if (v_nonsym(i,j) /= v_comp(i,j) .and. &
         redundant_prints(1) < max_redundant_prints) then
       write(mesg2,'(" redundant v-comps",2(1pe12.4)," differ by ", &
-                    & 1pe12.4," at i,j = ",2i4," x,y = ",2(1pe12.4)," on pe ",i4)') &
+                    & 1pe12.4," at i,j = ",I0,",",I0," x,y = ",2(1pe12.4)," on pe ",I0)') &
            sc*v_comp(i,j), sc*v_nonsym(i,j), sc*(v_comp(i,j)-v_nonsym(i,j)), i, j, &
            G%geoLonBu(i,j), G%geoLatBu(i,j), pe_here()
       write(0,'(A155)') trim(mesg)//trim(mesg2)
@@ -657,7 +639,7 @@ subroutine chksum_vec_C3d(mesg, u_comp, v_comp, G, halos, scalars, unscale)
   are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
-    call uvchksum(mesg, u_comp, v_comp, G%HI, halos, scale=unscale)
+    call uvchksum(mesg, u_comp, v_comp, G%HI, halos, unscale=unscale)
   endif
   if (debug_redundant) then
     if (are_scalars) then
@@ -689,7 +671,7 @@ subroutine chksum_vec_C2d(mesg, u_comp, v_comp, G, halos, scalars, unscale)
   are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
-    call uvchksum(mesg, u_comp, v_comp, G%HI, halos, scale=unscale)
+    call uvchksum(mesg, u_comp, v_comp, G%HI, halos, unscale=unscale)
   endif
   if (debug_redundant) then
     if (are_scalars) then
@@ -721,8 +703,8 @@ subroutine chksum_vec_B3d(mesg, u_comp, v_comp, G, halos, scalars, unscale)
   are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
-    call Bchksum(u_comp, mesg//"(u)", G%HI, halos, scale=unscale)
-    call Bchksum(v_comp, mesg//"(v)", G%HI, halos, scale=unscale)
+    call Bchksum(u_comp, mesg//"(u)", G%HI, halos, unscale=unscale)
+    call Bchksum(v_comp, mesg//"(v)", G%HI, halos, unscale=unscale)
   endif
   if (debug_redundant) then
     if (are_scalars) then
@@ -756,8 +738,8 @@ subroutine chksum_vec_B2d(mesg, u_comp, v_comp, G, halos, scalars, symmetric, un
   are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
-    call Bchksum(u_comp, mesg//"(u)", G%HI, halos, symmetric=symmetric, scale=unscale)
-    call Bchksum(v_comp, mesg//"(v)", G%HI, halos, symmetric=symmetric, scale=unscale)
+    call Bchksum(u_comp, mesg//"(u)", G%HI, halos, symmetric=symmetric, unscale=unscale)
+    call Bchksum(v_comp, mesg//"(v)", G%HI, halos, symmetric=symmetric, unscale=unscale)
   endif
   if (debug_redundant) then
     if (are_scalars) then
@@ -789,8 +771,8 @@ subroutine chksum_vec_A3d(mesg, u_comp, v_comp, G, halos, scalars, unscale)
   are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
-    call hchksum(u_comp, mesg//"(u)", G%HI, halos, scale=unscale)
-    call hchksum(v_comp, mesg//"(v)", G%HI, halos, scale=unscale)
+    call hchksum(u_comp, mesg//"(u)", G%HI, halos, unscale=unscale)
+    call hchksum(v_comp, mesg//"(v)", G%HI, halos, unscale=unscale)
   endif
   if (debug_redundant) then
     if (are_scalars) then
@@ -822,8 +804,8 @@ subroutine chksum_vec_A2d(mesg, u_comp, v_comp, G, halos, scalars, unscale)
   are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
-    call hchksum(u_comp, mesg//"(u)", G%HI, halos, scale=unscale)
-    call hchksum(v_comp, mesg//"(v)", G%HI, halos, scale=unscale)
+    call hchksum(u_comp, mesg//"(u)", G%HI, halos, unscale=unscale)
+    call hchksum(v_comp, mesg//"(v)", G%HI, halos, unscale=unscale)
   endif
   if (debug_redundant) then
     if (are_scalars) then
@@ -837,14 +819,21 @@ end subroutine chksum_vec_A2d
 
 !> This function returns the sum over computational domain of all
 !! processors of hThick*stuff, where stuff is a 3-d array at tracer points.
-function totalStuff(HI, hThick, areaT, stuff)
+function totalStuff(HI, hThick, areaT, stuff, unscale)
   type(hor_index_type),               intent(in) :: HI     !< A horizontal index type
-  real, dimension(HI%isd:,HI%jsd:,:), intent(in) :: hThick !< The array of thicknesses to use as weights [m]
-  real, dimension(HI%isd:,HI%jsd:),   intent(in) :: areaT  !< The array of cell areas [m2]
-  real, dimension(HI%isd:,HI%jsd:,:), intent(in) :: stuff  !< The array of stuff to be summed in arbitrary units [a]
-  real                                         :: totalStuff !< the globally integrated amount of stuff [a m3]
+  real, dimension(HI%isd:,HI%jsd:,:), intent(in) :: hThick !< The array of thicknesses to use as weights
+                                                           !! [H ~> m or kg m-2] or [m] or [kg m-2]
+  real, dimension(HI%isd:,HI%jsd:),   intent(in) :: areaT  !< The array of cell areas [L2 ~> m2] or [m2]
+  real, dimension(HI%isd:,HI%jsd:,:), intent(in) :: stuff  !< The array of stuff to be summed in arbitrary
+                                                           !! units [A ~> a] or [a]
+  real,                     optional, intent(in) :: unscale !< A factor that is used to undo scaling of the array
+                                                           !! and the cell mass or volume before it is summed in
+                                                           !! [a m3 A-1 H-1 L-2 ~> 1] or [a kg A-1 H-1 L-2 ~> 1]
+  real                                           :: totalStuff !< the globally integrated amount of stuff
+                                                           !! [A H L2 ~> a m3 or a kg] or [a m3]
   ! Local variables
-  real, dimension(HI%isc:HI%iec, HI%jsc:HI%jec) :: tmp_for_sum ! The column integrated amount of stuff in a cell [a m3]
+  real  :: tmp_for_sum(HI%isc:HI%iec, HI%jsc:HI%jec)  ! The column integrated amount of stuff in a
+                                                      ! cell [A H L2 ~> a m3 or a kg] or [a m3]
   integer :: i, j, k, nz
 
   nz = size(hThick,3)
@@ -852,52 +841,79 @@ function totalStuff(HI, hThick, areaT, stuff)
   do k=1,nz ; do j=HI%jsc,HI%jec ; do i=HI%isc,HI%iec
     tmp_for_sum(i,j) = tmp_for_sum(i,j) + hThick(i,j,k) * stuff(i,j,k) * areaT(i,j)
   enddo ; enddo ; enddo
-  totalStuff = reproducing_sum(tmp_for_sum)
+  totalStuff = reproducing_sum(tmp_for_sum, unscale=unscale)
 
 end function totalStuff
 
 !> This subroutine display the total thickness, temperature and salinity
 !! as well as the change since the last call.
-subroutine totalTandS(HI, hThick, areaT, temperature, salinity, mesg)
+subroutine totalTandS(HI, hThick, areaT, temperature, salinity, mesg, US, H_to_mks)
   type(hor_index_type),               intent(in) :: HI     !< A horizontal index type
-  real, dimension(HI%isd:,HI%jsd:,:), intent(in) :: hThick !< The array of thicknesses to use as weights [m]
-  real, dimension(HI%isd:,HI%jsd:),   intent(in) :: areaT  !< The array of cell areas [m2]
-  real, dimension(HI%isd:,HI%jsd:,:), intent(in) :: temperature !< The temperature field to sum [degC]
-  real, dimension(HI%isd:,HI%jsd:,:), intent(in) :: salinity    !< The salinity field to sum [ppt]
+  real, dimension(HI%isd:,HI%jsd:,:), intent(in) :: hThick !< The array of thicknesses to use as weights
+                                                           !! [H ~> m or kg m-2] or [m] or [kg m-2]
+  real, dimension(HI%isd:,HI%jsd:),   intent(in) :: areaT  !< The array of cell areas [L2 ~> m2] or [m2]
+  real, dimension(HI%isd:,HI%jsd:,:), intent(in) :: temperature !< The temperature field to sum [C ~> degC] or [degC]
+  real, dimension(HI%isd:,HI%jsd:,:), intent(in) :: salinity    !< The salinity field to sum [S ~> ppt] or [ppt]
   character(len=*),                   intent(in) :: mesg        !< An identifying message
+  type(unit_scale_type),    optional, intent(in) :: US       !< A dimensional unit scaling type
+  real,                     optional, intent(in) :: H_to_MKS !< A constant that translates thickness units to its
+                                                             !! MKS units (m or kg m-2) based on whether the model is
+                                                             !! Boussinesq [m H-1 ~> 1] or not [kg m-2 H-1 ~> 1]
   ! NOTE: This subroutine uses "save" data which is not thread safe and is purely for
   ! extreme debugging without a proper debugger.
-  real, save :: totalH = 0.   ! The total ocean volume, saved for the next call [m3]
-  real, save :: totalT = 0.   ! The total volume integrated ocean temperature, saved for the next call [degC m3]
-  real, save :: totalS = 0.   ! The total volume integrated ocean salinity, saved for the next call [ppt m3]
+  real, save :: totalH = 0.   ! The total ocean volume or mass, saved for the next
+                              ! call [H L2 ~> m3 or kg] or [m3] or [kg]
+  real, save :: totalT = 0.   ! The total volume integrated ocean temperature, saved for the next
+                              ! call [C H L2 ~> degC m3 or degC kg] or [degC m3] or [degC kg]
+  real, save :: totalS = 0.   ! The total volume integrated ocean salinity, saved for the next
+                              ! call [S H L2 ~> ppt m3 or ppt kg] or [ppt m3] or [ppt kg]
   ! Local variables
   logical, save :: firstCall = .true.
-  real, dimension(HI%isc:HI%iec, HI%jsc:HI%jec) :: tmp_for_sum ! The volume of each column [m3]
-  real :: thisH, delH  ! The total ocean volume and the change from the last call [m3]
-  real :: thisT, delT  ! The current total volume integrated temperature and the change from the last call [degC m3]
-  real :: thisS, delS  ! The current total volume integrated salinity and the change from the last call [ppt m3]
+  real :: tmp_for_sum(HI%isc:HI%iec, HI%jsc:HI%jec) ! The volume of each column [H L2 ~> m3 or kg] or [m3] or [kg]
+  real :: thisH, delH  ! The total ocean volume and the change from the last call [H L2 ~> m3 or kg] or [m3] or [kg]
+  real :: thisT, delT  ! The current total volume integrated temperature and the change from the last
+                       ! call [C H L2 ~> degC m3 or degC kg] or [degC m3] or [degC kg]
+  real :: thisS, delS  ! The current total volume integrated salinity and the change from the last
+                       ! call [S H L2 ~> ppt m3 or ppt kg] or [ppt m3] or [ppt kg]
+  real :: H_unscale    ! A constant that translates thickness units to its MKS units (m or kg m-2) based on
+                       ! whether the model is Boussinesq [m H-1 ~> 1] or non-Boussinesq [kg m-2 H-1 ~> 1]
+  real :: HL2_unscale  ! An overall unscaling factor for cell mass or volume [m3 H-1 L-2 ~> 1] or [kg H-1 L-2 ~> 1]
+  real :: T_unscale    ! An overall unscaling factor for cell-integrated temperature [degC m3 C-1 H-1 L-2 ~> 1] or
+                       ! [degC kg C-1 H-1 L-2 ~> 1]
+  real :: S_unscale    ! An overall unscaling factor for cell-integrated salinity [ppt m3 S-1 H-1 L-2 ~> 1] or
+                       ! [ppt kg S-1 H-1 L-2 ~> 1]
   integer :: i, j, k, nz
+
+  H_unscale = 1.0 ; if (present(H_to_mks)) H_unscale = H_to_mks
+  if (present(US)) then
+    HL2_unscale = US%L_to_m**2 * H_unscale
+    T_unscale = US%C_to_degC * HL2_unscale ; S_unscale = US%S_to_ppt * HL2_unscale
+  else
+    HL2_unscale = H_unscale
+    T_unscale = HL2_unscale ; S_unscale = HL2_unscale
+  endif
 
   nz = size(hThick,3)
   tmp_for_sum(:,:) = 0.0
   do k=1,nz ; do j=HI%jsc,HI%jec ; do i=HI%isc,HI%iec
     tmp_for_sum(i,j) = tmp_for_sum(i,j) + hThick(i,j,k) * areaT(i,j)
   enddo ; enddo ; enddo
-  thisH = reproducing_sum(tmp_for_sum)
-  thisT = totalStuff(HI, hThick, areaT, temperature)
-  thisS = totalStuff(HI, hThick, areaT, salinity)
+  thisH = reproducing_sum(tmp_for_sum, unscale=HL2_unscale)
+  thisT = totalStuff(HI, hThick, areaT, temperature, unscale=T_unscale)
+  thisS = totalStuff(HI, hThick, areaT, salinity, unscale=S_unscale)
 
   if (is_root_pe()) then
     if (firstCall) then
       totalH = thisH ; totalT = thisT ; totalS = thisS
-      write(0,*) 'Totals H,T,S:',thisH,thisT,thisS,' ',mesg
+      write(stdout,*) 'Totals H,T,S:', thisH*HL2_unscale, thisT*T_unscale, thisS*S_unscale, ' ', mesg
       firstCall = .false.
     else
       delH = thisH - totalH
       delT = thisT - totalT
       delS = thisS - totalS
       totalH = thisH ; totalT = thisT ; totalS = thisS
-      write(0,*) 'Tot/del H,T,S:',thisH,thisT,thisS,delH,delT,delS,' ',mesg
+      write(0,*) 'Tot/del H,T,S:', thisH*HL2_unscale, thisT*T_unscale, thisS*S_unscale, &
+                                   delH*HL2_unscale,  delT*T_unscale,  delS*S_unscale, ' ', mesg
     endif
   endif
 

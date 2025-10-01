@@ -32,7 +32,6 @@ use MOM_EOS, only : gsw_sp_from_sr, gsw_pt_from_ct
 use MOM_file_parser, only : get_param, log_version, close_param_file, param_file_type
 use MOM_forcing_type, only : forcing, mech_forcing, allocate_forcing_type
 use MOM_forcing_type, only : fluxes_accumulate, get_net_mass_forcing
-use MOM_forcing_type, only : copy_back_forcing_fields
 use MOM_forcing_type, only : forcing_diagnostics, mech_forcing_diags
 use MOM_get_input, only : Get_MOM_Input, directories
 use MOM_grid, only : ocean_grid_type
@@ -1040,9 +1039,17 @@ subroutine Ocean_stock_pe(OS, index, value, time_index)
   select case (index)
     case (ISTOCK_WATER)  ! Return the mass of fresh water in the ocean in [kg].
       if (OS%GV%Boussinesq) then
-        call get_ocean_stocks(OS%MOM_CSp, mass=value, on_PE_only=.true.)
+        if (OS%use_ice_shelf) then
+          call get_ocean_stocks(OS%MOM_CSp, mass=value, ice_shelf_CSp=OS%ice_shelf_CSp, on_PE_only=.true.)
+        else
+          call get_ocean_stocks(OS%MOM_CSp, mass=value, on_PE_only=.true.)
+        endif
       else  ! In non-Boussinesq mode, the mass of salt needs to be subtracted.
-        call get_ocean_stocks(OS%MOM_CSp, mass=value, salt=salt, on_PE_only=.true.)
+        if (OS%use_ice_shelf) then
+          call get_ocean_stocks(OS%MOM_CSp, mass=value, salt=salt, ice_shelf_CSp=OS%ice_shelf_CSp, on_PE_only=.true.)
+        else
+          call get_ocean_stocks(OS%MOM_CSp, mass=value, salt=salt, on_PE_only=.true.)
+        endif
         value = value - salt
       endif
     case (ISTOCK_HEAT)  ! Return the heat content of the ocean in [J].

@@ -16,6 +16,7 @@ use MOM_hor_index,     only : hor_index_type
 use MOM_io,            only : file_exists, get_var_sizes, read_variable
 use MOM_io,            only : vardesc, var_desc
 use MOM_safe_alloc,    only : safe_alloc_ptr
+use MOM_spatial_means, only : global_area_mean
 use MOM_time_manager,  only : time_type, operator(+), operator(/)
 use MOM_unit_scaling,  only : unit_scale_type
 use MOM_variables,     only : thermo_var_ptrs, surface
@@ -66,6 +67,7 @@ type, public :: wave_parameters_CS ; private
   logical, public :: Stokes_DDT = .false.   !< Developmental:
                                             !! True if Stokes d/dt is used
   logical, public :: Passive_Stokes_DDT = .false.   !< Keeps Stokes_DDT on, but doesn't affect dynamics
+  logical :: Homogenize_Surfbands !< True to homogenize surface band Stokes drift in the horizontal
 
   real, allocatable, dimension(:,:,:), public :: &
     Us_x               !< 3d zonal Stokes drift profile [L T-1 ~> m s-1]
@@ -315,7 +317,7 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
   CS%diag => diag
   CS%Time => Time
 
-  CS%g_Earth = US%L_to_Z**2*GV%g_Earth
+  CS%g_Earth = GV%g_Earth_Z_T2
   CS%I_g_Earth = 1.0 / CS%g_Earth
 
   ! Add any initializations needed here
@@ -335,8 +337,7 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
                  "\t >= 20230101 - More robust expressions for Update_Stokes_Drift\n"//&
                  "\t >= 20230102 - More robust expressions for get_StokesSL_LiFoxKemper\n"//&
                  "\t >= 20230103 - More robust expressions for ust_2_u10_coare3p5", &
-                 default=20221231, do_not_log=.not.GV%Boussinesq)
-                 !### In due course change the default to default=default_answer_date)
+                 default=default_answer_date, do_not_log=.not.GV%Boussinesq)
   if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
   ! Langmuir number Options
@@ -442,6 +443,11 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
                  "A layer thickness below which the cell-center Stokes drift is used instead of "//&
                  "the cell average.  This is only used if WAVE_INTERFACE_ANSWER_DATE < 20230101.", &
                  units="m", default=0.1, scale=US%m_to_Z, do_not_log=(CS%answer_date>=20230101))
+    call get_param(param_file, mdl, "HOMOGENIZE_SURFBANDS", CS%Homogenize_Surfbands, &
+                 "A logical which causes the code to horizontally homogenize the surface band "//&
+                 "Stokes drift, which is needed in column mode to avoid round-off differences. "//&
+                 "At present it only works with DATAOVERRIDE, and is not coded for COUPLER.",&
+                 default=.false.)
     call get_param(param_file, mdl, "SURFBAND_SOURCE", TMPSTRING2, &
                  "Choice of SURFACE_BANDS data mode, valid options include: \n"//&
                  " DATAOVERRIDE  - Read from NetCDF using FMS DataOverride. \n"//&
@@ -539,8 +545,7 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
   call get_param(param_file, mdl, "LA_MISALIGNMENT_BUG", CS%LA_misalign_bug, &
          "If true, use a code with a sign error when calculating the misalignment between "//&
          "the shear and waves when LA_MISALIGNMENT is true.", &
-         default=CS%LA_Misalignment, do_not_log=.not.CS%LA_Misalignment)
-         !### Change the default for LA_MISALIGNMENT_BUG to .false.
+         default=.false., do_not_log=.not.CS%LA_Misalignment)
   call get_param(param_file, mdl, "MIN_LANGMUIR", CS%La_min,    &
          "A minimum value for all Langmuir numbers that is not physical, "//&
          "but is likely only encountered when the wind is very small and "//&
@@ -730,7 +735,7 @@ subroutine Update_Surface_Waves(G, GV, US, Time_present, dt, CS, forces)
       enddo
       do j=G%jsc,G%jec
         do i=G%isc,G%iec
-          !CS%Omega_w2x(i,j)   = forces%omega_w2x(i,j)
+          CS%Omega_w2x(i,j)   = forces%omega_w2x(i,j)
           do b=1,CS%NumBands
             CS%UStk_Hb(i,j,b) = forces%UStkb(i,j,b)
             CS%VStk_Hb(i,j,b) = forces%VStkb(i,j,b)
@@ -1033,7 +1038,7 @@ subroutine Update_Stokes_Drift(G, GV, US, CS, dz, ustar, dt, dynamics_step)
 
 end subroutine Update_Stokes_Drift
 
-!> Return the value of (1 - exp(-x))/x, using an accurate expression for small values of x.
+!> Return the value of (1 - exp(-x))/x [nondim], using an accurate expression for small values of x.
 real function one_minus_exp_x(x)
   real, intent(in) :: x !< The argument of the function ((1 - exp(-x))/x) [nondim]
   real, parameter :: C1_6 = 1.0/6.0  ! A rational fraction [nondim]
@@ -1045,7 +1050,7 @@ real function one_minus_exp_x(x)
   endif
 end function one_minus_exp_x
 
-!> Return the value of (1 - exp(-x)), using an accurate expression for small values of x.
+!> Return the value of (1 - exp(-x)) [nondim], using an accurate expression for small values of x.
 real function one_minus_exp(x)
   real, intent(in) :: x !< The argument of the function ((1 - exp(-x))/x) [nondim]
   real, parameter :: C1_6 = 1.0/6.0  ! A rational fraction [nondim]
@@ -1073,6 +1078,7 @@ subroutine Surface_Bands_by_data_override(Time, G, GV, US, CS)
   character(len=48) :: dim_name(4)  ! The names of the dimensions of the variable.
   character(len=20) :: varname      ! The name of an input variable for data override.
   real :: PI       ! 3.1415926535... [nondim]
+  real :: avgx, avgy  ! The global averages of temp_x and temp_y [L T-1 ~> m s-1]
   logical :: wavenumber_exists
   integer :: ndims, b, i, j
 
@@ -1153,6 +1159,14 @@ subroutine Surface_Bands_by_data_override(Time, G, GV, US, CS)
         endif
       enddo
     enddo
+    if (CS%Homogenize_Surfbands) then
+      avgx = global_area_mean(temp_x, G)
+      avgy = global_area_mean(temp_y, G)
+      do j = G%jsd,G%jed ; do i = G%Isd,G%Ied ; if (G%mask2dT(i,j) > 0.0) then
+          temp_y(i,j) = avgy
+          temp_x(i,j) = avgx
+      endif ; enddo ; enddo
+    endif
 
     ! Interpolate to u/v grids
     do j = G%jsc,G%jec

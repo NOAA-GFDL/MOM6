@@ -274,18 +274,18 @@ subroutine hybgen_unmix(G, GV, US, CS, tv, Reg, ntr, h)
         Trh_tot_out(m) = Trh_tot_out(m) + h_col(k)*tracer(k,m)
       enddo ; enddo
       if (abs(Sh_tot_in - Sh_tot_out) > 1.e-15*(abs(Sh_tot_in) + abs(Sh_tot_out))) then
-        write(mesg, '("i,j=",2i8,"Sh_tot = ",2es17.8," err = ",es13.4)') &
+        write(mesg, '("i,j=",I0,",",I0," Sh_tot = ",2es17.8," err = ",es13.4)') &
               i, j, Sh_tot_in, Sh_tot_out, (Sh_tot_in - Sh_tot_out)
         call MOM_error(FATAL, "Mismatched column salinity in hybgen_unmix: "//trim(mesg))
       endif
       if (abs(Th_tot_in - Th_tot_out) > 1.e-10*(abs(Th_tot_in) + abs(Th_tot_out))) then
-        write(mesg, '("i,j=",2i8,"Th_tot = ",2es17.8," err = ",es13.4)') &
+        write(mesg, '("i,j=",I0,",",I0," Th_tot = ",2es17.8," err = ",es13.4)') &
               i, j, Th_tot_in, Th_tot_out, (Th_tot_in - Th_tot_out)
         call MOM_error(FATAL, "Mismatched column temperature in hybgen_unmix: "//trim(mesg))
       endif
       do m=1,ntr
         if (abs(Trh_tot_in(m) - Trh_tot_out(m)) > 1.e-10*(abs(Trh_tot_in(m)) + abs(Trh_tot_out(m)))) then
-          write(mesg, '("i,j=",2i8,"Trh_tot(",i2,") = ",2es17.8," err = ",es13.4)') &
+          write(mesg, '("i,j=",I0,",",I0," Trh_tot(",i0,") = ",2es17.8," err = ",es13.4)') &
                 i, j, m, Trh_tot_in(m), Trh_tot_out(m), (Trh_tot_in(m) - Trh_tot_out(m))
           call MOM_error(FATAL, "Mismatched column tracer in hybgen_unmix: "//trim(mesg))
         endif

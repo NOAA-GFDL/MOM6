@@ -127,8 +127,7 @@ function register_DOME_tracer(G, GV, US, param_file, CS, tr_Reg, restart_CS)
   allocate(CS%tr(isd:ied,jsd:jed,nz,NTR), source=0.0)
 
   do m=1,NTR
-    if (m < 10) then ; write(name,'("tr_D",I1.1)') m
-    else ; write(name,'("tr_D",I2.2)') m ; endif
+    write(name,'("tr_D",I0)') m
     write(longname,'("Concentration of DOME Tracer ",I2.2)') m
     CS%tr_desc(m) = var_desc(name, units="kg kg-1", longname=longname, caller=mdl)
     if (GV%Boussinesq) then ; flux_units = "kg kg-1 m3 s-1"
@@ -180,7 +179,7 @@ subroutine initialize_DOME_tracer(restart, day, G, GV, US, h, diag, OBC, CS, &
   real :: dz(SZI_(G),SZK_(GV)) ! Height change across layers [Z ~> m]
   real :: tr_y   ! Initial zonally uniform tracer concentrations, perhaps in [g kg-1]
   real :: dz_neglect        ! A thickness that is so small it is usually lost
-                            ! in roundoff and can be neglected [Z ~> m or kg m-2].
+                            ! in roundoff and can be neglected [Z ~> m]
   real :: e(SZK_(GV)+1)     ! Interface heights relative to the sea surface (negative down) [Z ~> m]
   real :: e_top  ! Height of the top of the tracer band relative to the sea surface [Z ~> m]
   real :: e_bot  ! Height of the bottom of the tracer band relative to the sea surface [Z ~> m]

@@ -23,6 +23,7 @@ public :: reproducing_sum, reproducing_sum_EFP, EFP_sum_across_PEs, EFP_list_sum
 public :: EFP_plus, EFP_minus, EFP_to_real, real_to_EFP, EFP_real_diff
 public :: operator(+), operator(-), assignment(=)
 public :: query_EFP_overflow_error, reset_EFP_overflow_error
+public :: max_count_prec
 
 ! This module provides interfaces to the non-domain-oriented communication subroutines.
 
@@ -877,7 +878,7 @@ subroutine EFP_list_sum_across_PEs(EFPs, nval, errors)
     do n=1,ni ; EFPs(i)%v(n) = ints(n,i) ; enddo
     if (present(errors)) errors(i) = overflow_error
     if (overflow_error) then
-      write (mesg,'("EFP_list_sum_across_PEs error at ",i6," val was ",ES12.6, ", prec_error = ",ES12.6)') &
+      write (mesg,'("EFP_list_sum_across_PEs error at ",i0," val was ",ES12.6, ", prec_error = ",ES12.6)') &
              i, EFP_to_real(EFPs(i)), real(prec_error)
       call MOM_error(WARNING, mesg)
     endif

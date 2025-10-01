@@ -16,7 +16,7 @@ implicit none ; private
 
 #include <MOM_memory.h>
 
-public tracer_Z_init, tracer_Z_init_array, determine_temperature
+public tracer_Z_init, read_Z_edges, tracer_Z_init_array, determine_temperature
 
 ! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
 ! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
@@ -636,7 +636,7 @@ subroutine determine_temperature(temp, salt, R_tgt, EOS, p_ref, niter, k_start, 
                  "to determine when the iterations have converged when DETERMINE_TEMP_ADJUST_T_AND_S "//&
                  "is false.  For realistic equations of state and the default values of the "//&
                  "various tolerances, this bug does not impact the solutions.", &
-                 default=.true., do_not_log=just_read) !### Change the default to false.
+                 default=.false., do_not_log=just_read)
 
   call get_param(PF, mdl, "DETERMINE_TEMP_T_MIN", T_min, &
                  "The minimum temperature that can be found by determine_temperature.", &
