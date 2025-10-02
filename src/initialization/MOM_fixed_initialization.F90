@@ -81,20 +81,20 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
   ! Set up the parameters of the physical domain (i.e. the grid), G
   call set_grid_metrics(G, PF, US)
 
-  ! Set up the bottom depth, G%bathyT either analytically or from file
-  ! This also sets G%max_depth based on the input parameter MAXIMUM_DEPTH,
-  ! or, if absent, is diagnosed as G%max_depth = max( G%D(:,:) )
-  call MOM_initialize_topography(G%bathyT, G%max_depth, G, PF, US)
-
-  ! To initialize masks, the bathymetry in halo regions must be filled in
-  call pass_var(G%bathyT, G%Domain)
-
   ! Calculate time mean ocean total thickness
   call get_param(PF, mdl, "READ_MEAN_SEA_LEVEL", read_meanSL_file, &
                 "If true, use a 2D map for time mean sea level, which is used to calculate "// &
                 "time mean ocean total thickness.", default=.False.)
   if (read_meanSL_file) &
     call set_meanSL_from_file(G%meanSL, G, PF, US)
+
+  ! Set up the bottom depth, G%bathyT either analytically or from file
+  ! This also sets G%max_depth based on the input parameter MAXIMUM_DEPTH,
+  ! or, if absent, is diagnosed as G%max_depth = max( G%D(:,:) )
+  call MOM_initialize_topography(G%bathyT, G%max_depth, G, PF, US, meanSL=G%meanSL)
+
+  ! To initialize masks, the bathymetry in halo regions must be filled in
+  call pass_var(G%bathyT, G%Domain)
 
   ! Determine the position of any open boundaries
   call open_boundary_config(G, US, PF, OBC)
@@ -209,21 +209,29 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
 end subroutine MOM_initialize_fixed
 
 !> MOM_initialize_topography makes the appropriate call to set up the bathymetry in units of [Z ~> m].
-subroutine MOM_initialize_topography(D, max_depth, G, PF, US)
+subroutine MOM_initialize_topography(D, max_depth, G, PF, US, meanSL)
   type(dyn_horgrid_type),           intent(in)  :: G  !< The dynamic horizontal grid type
   real, dimension(G%isd:G%ied,G%jsd:G%jed), &
                                     intent(out) :: D  !< Ocean bottom depth [Z ~> m]
   type(param_file_type),            intent(in)  :: PF !< Parameter file structure
-  real,                             intent(out) :: max_depth !< Maximum depth of model [Z ~> m]
+  real,                             intent(out) :: max_depth !< Maximum depth or geometric thickness,
+                                                             !! with meanSL present, of model [Z ~> m]
   type(unit_scale_type),            intent(in)  :: US !< A dimensional unit scaling type
+  real, dimension(G%isd:G%ied,G%jsd:G%jed), &
+                          optional, intent(in)  :: meanSL !< Mean sea level [Z ~> m]
 
   ! This subroutine makes the appropriate call to set up the bottom depth.
   ! This is a separate subroutine so that it can be made public and shared with
   ! the ice-sheet code or other components.
 
   ! Local variables
+  real :: max_depth_default = -1.e9 ! Default value of MAXIMUM_DEPTH parameter [m]
   character(len=40)  :: mdl = "MOM_initialize_topography" ! This subroutine's name.
   character(len=200) :: config
+  real, dimension(G%isd:G%ied, G%jsd:G%jed) :: D_meanSL ! depth (positive below meanSL) referenced
+                                        ! to meanSL. A temporary field used to diagnose maximum
+                                        ! static column thickness. D_meanSL = D + meanSL [Z ~> m].
+  integer :: i, j
 
   call get_param(PF, mdl, "TOPO_CONFIG", config, &
                  "This specifies how bathymetry is specified: \n"//&
@@ -253,7 +261,8 @@ subroutine MOM_initialize_topography(D, max_depth, G, PF, US)
                  " \t dense - Denmark Strait-like dense water formation and overflow.\n"//&
                  " \t USER - call a user modified routine.", &
                  fail_if_missing=.true.)
-  call get_param(PF, mdl, "MAXIMUM_DEPTH", max_depth, units="m", default=-1.e9, scale=US%m_to_Z, do_not_log=.true.)
+  call get_param(PF, mdl, "MAXIMUM_DEPTH", max_depth, units="m", default=max_depth_default, &
+                 scale=US%m_to_Z, do_not_log=.true.)
   select case ( trim(config) )
     case ("file");      call initialize_topography_from_file(D, G, PF, US)
     case ("flat");      call initialize_topography_named(D, G, PF, config, max_depth, US)
@@ -277,17 +286,27 @@ subroutine MOM_initialize_topography(D, max_depth, G, PF, US)
     case default ;      call MOM_error(FATAL,"MOM_initialize_topography: "// &
       "Unrecognized topography setup '"//trim(config)//"'")
   end select
-  if (max_depth>0.) then
+  if (max_depth /= max_depth_default * US%m_to_Z) then
     call log_param(PF, mdl, "MAXIMUM_DEPTH", max_depth, &
                    "The maximum depth of the ocean.", units="m", unscale=US%Z_to_m)
+    if (trim(config) /= "DOME") then
+      call limit_topography(D, G, PF, max_depth, US)
+    endif
   else
-    max_depth = diagnoseMaximumDepth(D,G)
+    if (present(meanSL)) then
+      D_meanSL(:,:) = 0.0
+      do j=G%jsc,G%jec ; do i=G%isc,G%iec ; D_meanSL(i,j) = D(i,j) + meanSL(i,j) ; enddo ; enddo
+      max_depth = diagnoseMaximumDepth(D_meanSL, G)
+    else
+      max_depth = diagnoseMaximumDepth(D, G)
+    endif
     call log_param(PF, mdl, "!MAXIMUM_DEPTH", max_depth, &
                    "The (diagnosed) maximum depth of the ocean.", &
                    units="m", unscale=US%Z_to_m, like_default=.true.)
-  endif
-  if (trim(config) /= "DOME") then
-    call limit_topography(D, G, PF, max_depth, US)
+    if (trim(config) /= "DOME") then
+      ! MAXIMUM_DEPTH is not set and topography does not need to be trimmed by its maximum depth.
+      call limit_topography(D, G, PF, -max_depth_default * US%m_to_Z, US)
+    endif
   endif
 
 end subroutine MOM_initialize_topography
