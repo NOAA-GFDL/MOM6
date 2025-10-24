@@ -6444,6 +6444,7 @@ subroutine rotate_OBC_config(OBC_in, G_in, OBC, G, turns)
   OBC%zero_biharmonic = OBC_in%zero_biharmonic
   OBC%silly_h = OBC_in%silly_h
   OBC%silly_u = OBC_in%silly_u
+  OBC%reverse_segment_order = OBC_in%reverse_segment_order
 
   ! Segment rotation
   allocate(OBC%segment(0:OBC%number_of_segments))
