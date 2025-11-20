@@ -300,6 +300,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   real :: Rf_crit  !< critical flux Richardson number  [nondim]
   real :: I_2Zeta_N !< Half the inverse of Zeta_N [nondim].
   real :: I_LF     !< The inverse of the latent heat of fusion [Q-1 ~> kg J-1].
+  real :: I_dt_LHF  ! The inverse of the timestep times the latent heat of fusion [Q-1 T-1 ~> kg J-1 s-1].
   real :: I_VK     !< The inverse of the Von Karman constant [nondim].
   real :: PR, SC   !< The Prandtl number and Schmidt number [nondim].
 
@@ -406,6 +407,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   Rf_crit = CS%Rc
   I_2Zeta_N = 0.5 / CS%Zeta_N
   I_LF = 1.0 / CS%Lat_fusion
+  I_dt_LHF = 1.0 / (time_step * CS%Lat_fusion)
   SC = CS%kv_molec/CS%kd_molec_salt
   PR = CS%kv_molec/CS%kd_molec_temp
   I_VK = 1.0/VK
@@ -817,7 +819,12 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
 
   do j=js,je ; do i=is,ie
     ! ISS%water_flux = net liquid water into the ocean [R Z T-1 ~> kg m-2 s-1]
-    fluxes%iceshelf_melt(i,j) = ISS%water_flux(i,j) * CS%flux_factor
+    if (CS%flux_factor/=1.0) then
+      ISS%water_flux(i,j) = ISS%water_flux(i,j) * CS%flux_factor
+      ISS%tflux_ocn(i,j) = ISS%tflux_ocn(i,j) * CS%flux_factor
+      if (CS%threeeq .and. ISS%tflux_ocn(i,j) < 0.0 .and. (.not. CS%insulator)) &
+        ISS%tflux_shelf(i,j)=ISS%tflux_ocn(i,j) + CS%Lat_fusion * ISS%water_flux(i,j)
+    endif
 
     if ((sfc_state%ocean_mass(i,j) > CS%col_mass_melt_threshold) .and. &
         (ISS%area_shelf_h(i,j) > 0.0) .and.  (CS%isthermo)) then
@@ -826,7 +833,6 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
       ! This is needed for the ISOMIP test case.
       if (ISS%mass_shelf(i,j) < CS%Rho_ocn*CS%cutoff_depth) then
         ISS%water_flux(i,j) = 0.0
-        fluxes%iceshelf_melt(i,j) = 0.0
       endif
       ! Compute haline driving, which is one of the diags. used in ISOMIP
       if (exch_vel_s(i,j)>0.) haline_driving(i,j) = (ISS%water_flux(i,j) * Sbdry(i,j)) / (CS%Rho_ocn * exch_vel_s(i,j))
@@ -834,7 +840,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!Safety checks !!!!!!!!!!!!!!!!!!!!!!!!!
       !1)Check if haline_driving computed above is consistent with
       ! haline_driving = sfc_state%sss - Sbdry
-      !if (fluxes%iceshelf_melt(i,j) /= 0.0) then
+      !if (fluxes%water_flux(i,j) /= 0.0) then
       !   if (haline_driving(i,j) /= (sfc_state%sss(i,j) - Sbdry(i,j))) then
       !     write(mesg,*) 'at i,j=',i,j,' haline_driving, sss-Sbdry',US%S_to_ppt*haline_driving(i,j), &
       !                   US%S_to_ppt*(sfc_state%sss(i,j) - Sbdry(i,j))
@@ -845,8 +851,8 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
 
       ! 2) check if |melt| > 0 when ustar_shelf = 0.
       ! this should never happen
-      if ((abs(fluxes%iceshelf_melt(i,j))>0.0) .and. (fluxes%ustar_shelf(i,j) == 0.0)) then
-        write(mesg,*) "|melt| = ",fluxes%iceshelf_melt(i,j)," > 0 and ustar_shelf = 0. at i,j", i, j
+      if ((abs(ISS%water_flux(i,j))>0.0) .and. (fluxes%ustar_shelf(i,j) == 0.0)) then
+        write(mesg,*) "|melt| = ",ISS%water_flux(i,j)," > 0 and ustar_shelf = 0. at i,j", i, j
         call MOM_error(FATAL, "shelf_calc_flux: "//trim(mesg))
       endif
        !!!!!!!!!!!!!!!!!!!!!!!!!!!!End of safety checks !!!!!!!!!!!!!!!!!!!
@@ -854,11 +860,15 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
       ! This is grounded ice, that could be modified to melt if a geothermal heat flux were used.
       haline_driving(i,j) = 0.0
       ISS%water_flux(i,j) = 0.0
-      fluxes%iceshelf_melt(i,j) = 0.0
     endif ! area_shelf_h
 
     ! mass flux [R Z L2 T-1 ~> kg s-1], part of ISOMIP diags.
     mass_flux(i,j) = ISS%water_flux(i,j) * ISS%area_shelf_h(i,j)
+
+    !Add frazil formation
+    if (ISS%hmask(i,j) == 1 .or. ISS%hmask(i,j) == 2) &
+      ISS%water_flux(i,j) = ISS%water_flux(i,j) - sfc_state%frazil(i,j) * I_dt_LHF
+    fluxes%iceshelf_melt(i,j) = ISS%water_flux(i,j)
   enddo ; enddo ! i- and j-loops
 
   if (CS%active_shelf_dynamics .or. CS%override_shelf_movement) then
@@ -1309,10 +1319,10 @@ subroutine add_shelf_flux(G, US, CS, sfc_state, fluxes, time_step)
     if (associated(fluxes%evap)) fluxes%evap(i,j) = frac_open * fluxes%evap(i,j)
     if (associated(fluxes%lprec)) then
       if (ISS%water_flux(i,j) > 0.0) then
-        fluxes%lprec(i,j) =  frac_shelf*ISS%water_flux(i,j)*CS%flux_factor + frac_open * fluxes%lprec(i,j)
+        fluxes%lprec(i,j) =  frac_shelf*ISS%water_flux(i,j) + frac_open * fluxes%lprec(i,j)
       else
         fluxes%lprec(i,j) = frac_open * fluxes%lprec(i,j)
-        fluxes%evap(i,j) = fluxes%evap(i,j) + frac_shelf*ISS%water_flux(i,j)*CS%flux_factor
+        fluxes%evap(i,j) = fluxes%evap(i,j) + frac_shelf*ISS%water_flux(i,j)
       endif
     endif
 
