@@ -488,7 +488,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
     u_star = max(CS%ustar_min, 0.5*(U_star_2d(i,j) + U_star_2d(i+1,j)))
 
     absf = 0.5*(abs(G%CoriolisBu(I,J-1)) + abs(G%CoriolisBu(I,J)))
-    ! Compute I_LFront = 1 / (frontal length scale) [m-1]
+    ! Compute I_LFront = 1 / (frontal length scale) [L-1 ~> m-1]
     lfront = 0.5 * (mle_fl_2d(i,j) + mle_fl_2d(i+1,j))
     ! Adcroft reciprocal
     I_LFront = 0.0 ; if (lfront /= 0.0) I_LFront = 1.0/lfront
@@ -577,7 +577,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
   !$OMP do
   do J=js-1,je ; do i=is,ie
     u_star = max(CS%ustar_min, 0.5*(U_star_2d(i,j) + U_star_2d(i,j+1)))
-    ! Compute I_LFront = 1 / (frontal length scale) [m-1]
+    ! Compute I_LFront = 1 / (frontal length scale) [L-1 ~> m-1]
     lfront = 0.5 * (mle_fl_2d(i,j) + mle_fl_2d(i,j+1))
     ! Adcroft reciprocal
     I_LFront = 0.0 ; if (lfront /= 0.0) I_LFront = 1.0/lfront
@@ -1183,7 +1183,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
 
 end subroutine mixedlayer_restrat_Bodner
 
-!> Two time-scale running mean [units of "signal" and "filtered"]
+!> Two time-scale running mean in the same arbitrary units as "signal" and "filtered"
 !!
 !! If signal > filtered, returns running-mean with time scale "tau_growing".
 !! If signal <= filtered, returns running-mean with time scale "tau_decaying".
@@ -1197,8 +1197,8 @@ end subroutine mixedlayer_restrat_Bodner
 !! rmean2ts with tau_growing=0 recovers the "resetting running mean" used in OM4.
 real elemental function rmean2ts(signal, filtered, tau_growing, tau_decaying, dt)
   ! Arguments
-  real, intent(in) :: signal       ! Unfiltered signal [arbitrary units]
-  real, intent(in) :: filtered     ! Current value of running mean [arbitrary units]
+  real, intent(in) :: signal       ! Unfiltered signal in arbitrary units [A]
+  real, intent(in) :: filtered     ! Current value of running mean in the same arbitrary units [A]
   real, intent(in) :: tau_growing  ! Time scale for growing signal [T ~> s]
   real, intent(in) :: tau_decaying ! Time scale for decaying signal [T ~> s]
   real, intent(in) :: dt           ! Time step [T ~> s]

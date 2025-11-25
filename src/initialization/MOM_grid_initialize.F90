@@ -1135,11 +1135,11 @@ end function Int_dj_dy
 
 !> Extrapolates missing metric data into all the halo regions.
 subroutine extrapolate_metric(var, jh, missing)
-  real, dimension(:,:), intent(inout) :: var     !< The array in which to fill in halos [abitrary]
+  real, dimension(:,:), intent(inout) :: var     !< The array in which to fill in halos in arbitrary units [A]
   integer,              intent(in)    :: jh      !< The size of the halos to be filled
-  real,       optional, intent(in)    :: missing !< The missing data fill value, 0 by default [abitrary]
+  real,       optional, intent(in)    :: missing !< The missing data fill value, 0 by default [A]
   ! Local variables
-  real :: badval ! A bad data value [abitrary]
+  real :: badval ! A bad data value [A]
   integer :: i, j
 
   badval = 0.0 ; if (present(missing)) badval = missing
@@ -1169,8 +1169,8 @@ end subroutine extrapolate_metric
 !> This function implements Adcroft's rule for reciprocals, namely that
 !!   Adcroft_Inv(x) = 1/x for |x|>0 or 0 for x=0.
 function Adcroft_reciprocal(val) result(I_val)
-  real, intent(in) :: val  !< The value being inverted [abitrary]
-  real :: I_val            !< The Adcroft reciprocal of val [abitrary-1]
+  real, intent(in) :: val  !< The value being inverted in arbitrary units [A]
+  real :: I_val            !< The Adcroft reciprocal of val [A-1]
 
   I_val = 0.0
   if (val /= 0.0) I_val = 1.0/val

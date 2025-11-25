@@ -719,7 +719,7 @@ end function CFC_cap_unit_tests
 logical function compare_values(verbose, test_name, calc, ans, limit)
   logical,             intent(in) :: verbose   !< If true, write results to stdout
   character(len=80),   intent(in) :: test_name !< Brief description of the unit test
-  real,                intent(in) :: calc      !< computed value in abitrary units [A]
+  real,                intent(in) :: calc      !< computed value in arbitrary units [A]
   real,                intent(in) :: ans       !< correct value [A]
   real,                intent(in) :: limit     !< value above which test fails [A]
 

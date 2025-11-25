@@ -15,7 +15,7 @@ type, abstract :: Recon1d
 
   integer :: n = 0 !< Number of cells in column
   real, allocatable, dimension(:) :: u_mean !< Cell mean [A]
-  real :: h_neglect = 0. !< A negligibly small width used in cell reconstructions [same as h, H]
+  real :: h_neglect = 0. !< A negligibly small width used in cell reconstructions in the same units as h [H]
   logical :: check = .false. !< If true, enable some consistency checking
 
   logical :: debug = .false. !< If true, dump info as calculations are made (do not enable)
@@ -80,7 +80,7 @@ interface
   subroutine i_reconstruct(this, h, u)
     import :: Recon1d
     class(Recon1d), intent(inout) :: this !< This reconstruction
-    real,           intent(in)    :: h(*) !< Grid spacing (thickness) [typically H]
+    real,           intent(in)    :: h(*) !< Grid spacing (thickness), typically in [H]
     real,           intent(in)    :: u(*) !< Cell mean values [A]
   end subroutine i_reconstruct
 
@@ -122,7 +122,7 @@ interface
   logical function i_check_reconstruction(this, h, u)
     import :: Recon1d
     class(Recon1d), intent(in) :: this !< This reconstruction
-    real,           intent(in) :: h(*) !< Grid spacing (thickness) [typically H]
+    real,           intent(in) :: h(*) !< Grid spacing (thickness), typically in [H]
     real,           intent(in) :: u(*) !< Cell mean values [A]
   end function i_check_reconstruction
 
@@ -145,7 +145,7 @@ interface
   subroutine i_reconstruct_parent(this, h, u)
     import :: Recon1d
     class(Recon1d), intent(inout) :: this !< This reconstruction
-    real,           intent(in)    :: h(*) !< Grid spacing (thickness) [typically H]
+    real,           intent(in)    :: h(*) !< Grid spacing (thickness), typically in [H]
     real,           intent(in)    :: u(*) !< Cell mean values [A]
   end subroutine i_reconstruct_parent
 

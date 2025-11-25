@@ -495,7 +495,7 @@ end subroutine set_derived_dyn_horgrid
 
 !> Adcroft_reciprocal(x) = 1/x for |x|>0 or 0 for x=0.
 function Adcroft_reciprocal(val) result(I_val)
-  real, intent(in) :: val  !< The value being inverted in abitrary units [A ~> a]
+  real, intent(in) :: val  !< The value being inverted in arbitrary units [A ~> a]
   real :: I_val            !< The Adcroft reciprocal of val [A-1 ~> a-1].
 
   I_val = 0.0 ; if (val /= 0.0) I_val = 1.0/val

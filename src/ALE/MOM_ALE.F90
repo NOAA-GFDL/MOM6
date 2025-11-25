@@ -1184,9 +1184,9 @@ subroutine ALE_remap_velocities(CS, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u
       ! First get barotropic component
       u_bt = 0.0
       do k=1,nz
-        u_bt = u_bt + h2(k) * u_tgt(k) ! Dimensions [H L T-1]
+        u_bt = u_bt + h2(k) * u_tgt(k) ! Dimensions [H L T-1 ~> m2 s-1 or kg m-1 s-1]
       enddo
-      u_bt = u_bt / (sum(h2(1:nz)) + GV%H_subroundoff) ! Dimensions return to [L T-1]
+      u_bt = u_bt / (sum(h2(1:nz)) + GV%H_subroundoff) ! Dimensions return to [L T-1 ~> m s-1]
       ! Next get baroclinic ke = \int (u-u_bt)^2 from source and target
       ke_c_src = 0.0
       ke_c_tgt = 0.0
@@ -1259,9 +1259,9 @@ subroutine ALE_remap_velocities(CS, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u
       ! First get barotropic component
       v_bt = 0.0
       do k=1,nz
-        v_bt = v_bt + h2(k) * v_tgt(k) ! Dimensions [H L T-1]
+        v_bt = v_bt + h2(k) * v_tgt(k) ! Dimensions [H L T-1 ~> m2 s-1 or kg m-1 s-1]
       enddo
-      v_bt = v_bt / (sum(h2(1:nz)) + GV%H_subroundoff) ! Dimensions return to [L T-1]
+      v_bt = v_bt / (sum(h2(1:nz)) + GV%H_subroundoff) ! Dimensions return to [L T-1 ~> m s-1]
       ! Next get baroclinic ke = \int (u-u_bt)^2 from source and target
       ke_c_src = 0.0
       ke_c_tgt = 0.0
@@ -1607,11 +1607,11 @@ subroutine TS_PPM_edge_values( CS, S_t, S_b, T_t, T_b, G, GV, tv, h, bdry_extrap
   ! Local variables
   integer :: i, j, k
   real    :: hTmp(GV%ke) ! A 1-d copy of h [H ~> m or kg m-2]
-  real    :: tmp(GV%ke)  ! A 1-d copy of a column of temperature [degC] or salinity [ppt]
+  real    :: tmp(GV%ke)  ! A 1-d copy of a column of temperature [C ~> degC] or salinity [S ~> ppt]
   real, dimension(CS%nk,2) :: &
-      ppol_E            ! Edge value of polynomial in [degC] or [ppt]
+      ppol_E            ! Edge value of polynomial in [C ~> degC] or [S ~> ppt]
   real, dimension(CS%nk,3) :: &
-      ppol_coefs        ! Coefficients of polynomial, all in [degC] or [ppt]
+      ppol_coefs        ! Coefficients of polynomial, all in [C ~> degC] or [S ~> ppt]
   real :: h_neglect, h_neglect_edge ! Tiny thicknesses [H ~> m or kg m-2]
 
   if (CS%answer_date >= 20190101) then

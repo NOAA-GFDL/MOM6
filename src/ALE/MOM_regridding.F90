@@ -217,7 +217,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   integer :: np       ! Number of profiles,    for HYBRID_MAP
   integer :: nceiling ! ceiling  of map index, for HYBRID_MAP
   integer :: nfloor   ! floor    of map index, for HYBRID_MAP
-  real ::    nfrac    ! fraction of map index, for HYBRID_MAP
+  real ::    nfrac    ! fraction of map index, for HYBRID_MAP [nondim]
   character(len=80)  :: string, string2, varName ! Temporary strings
   character(len=40)  :: coord_units, coord_res_param ! Temporary strings
   character(len=MAX_PARAM_LENGTH) :: param_name
@@ -236,8 +236,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                         ! maximum_depth is large [m] (not in Z).
   real :: nominalDepth  ! Depth of ocean bottom in thickness units (positive downward) [H ~> m or kg m-2]
   real :: depth_q       ! A depth scale factor [nondim]
-  real :: depth_s       ! The end of the shallow Z regime (m)
-  real :: depth_d       ! The start of the deep Z regime (m)
+  real :: depth_s       ! The end of the shallow Z regime [m]
+  real :: depth_d       ! The start of the deep Z regime [m]
   real :: adaptTimeRatio, adaptZoomCoeff ! Temporary variables for input parameters [nondim]
   real :: adaptBuoyCoeff, adaptAlpha     ! Temporary variables for input parameters [nondim]
   real :: adaptZoom  ! The thickness of the near-surface zooming region with the adaptive coordinate [H ~> m or kg m-2]
@@ -1208,7 +1208,7 @@ subroutine regridding_main( remapCS, CS, G, GV, US, h, tv, h_new, dzInterface, &
                                                                       !! coordinate [H ~> m or kg m-2]
   real, dimension(SZI_(G),SZJ_(G),CS%nk+1),   intent(inout) :: dzInterface !< The change in position of each
                                                                       !! interface [H ~> m or kg m-2]
-  real, dimension(SZI_(G),SZJ_(G)), optional, intent(in   ) :: frac_shelf_h !< Fractional ice shelf coverage [nomdim]
+  real, dimension(SZI_(G),SZJ_(G)), optional, intent(in   ) :: frac_shelf_h !< Fractional ice shelf coverage [nondim]
   logical, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                                     optional, intent(out  ) :: PCM_cell !< Use PCM remapping in cells where true
 
@@ -2416,7 +2416,7 @@ subroutine setCoordinateResolution_3d( dz_3d, CS, scale )
                                            !! dependent units, such as [m] for a z-coordinate or [kg m-3]
                                            !! for a density coordinate.
   type(regridding_CS), intent(inout) :: CS !< Regridding control structure
-  real,      optional, intent(in)    :: scale !< A scaling factor converting dz to coordRes [m -> Z]
+  real,      optional, intent(in)    :: scale !< A scaling factor converting dz to coordRes [Z m-1 ~> 1]
 
   if (.not.allocated(CS%coordinateResolution_3d)) &
       call MOM_error(FATAL,'setCoordinateResolution_3d: '//&
@@ -2457,7 +2457,7 @@ end subroutine set_target_densities_from_GV
 subroutine set_target_densities_3d( CS, G, scale, rho_int_3d )
   type(regridding_CS),  intent(inout) :: CS    !< Regridding control structure
   type(ocean_grid_type),intent(in)    :: G     !< Ocean grid structure
-  real,                 intent(in)    :: scale !< A scaling factor converting densities [kg m-3 -> R]
+  real,                 intent(in)    :: scale !< A scaling factor converting densities [R m3 kg-1 ~> 1]
   real, dimension(SZI_(G),SZJ_(G),CS%nk+1), intent(in) :: rho_int_3d !< Interface densities [kg m-3]
 
   if (.not.allocated(CS%target_density_3d)) &
