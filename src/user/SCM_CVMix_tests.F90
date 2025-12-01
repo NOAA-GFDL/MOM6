@@ -251,7 +251,7 @@ subroutine SCM_CVMix_tests_buoyancy_forcing(sfc_state, fluxes, day, G, US, CS)
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
 
   if (CS%UseHeatFlux) then
-    ! Note CVMix test inputs give Heat flux in [Z C T-1 ~> m K/s]
+    ! Note CVMix test inputs give Heat flux in [Z C T-1 ~> m K s-1]
     ! therefore must convert to [Q R Z T-1 ~> W m-2] by multiplying
     ! by Rho0*Cp
     do J=Jsq,Jeq ; do i=is,ie

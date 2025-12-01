@@ -125,7 +125,7 @@ type, public :: ODA_CS ; private
   integer :: ensemble_id = 0 !< id of the current ensemble member
   integer, pointer, dimension(:,:) :: ensemble_pelist !< PE list for ensemble members
   integer, pointer, dimension(:) :: filter_pelist !< PE list for ensemble members
-  real :: assim_interval !< analysis interval [ T ~> s]
+  real :: assim_interval !< analysis interval [T ~> s]
   ! Profiles local to the analysis domain
   type(ocean_profile_type), pointer :: Profiles => NULL() !< pointer to linked list of all available profiles
   type(ocean_profile_type), pointer :: CProfiles => NULL()!< pointer to linked list of current profiles

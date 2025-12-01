@@ -2470,9 +2470,9 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
     PFu, &        ! The zonal pressure force acceleration [L T-2 ~> m s-2]
     Cor_u, &      ! The zonal Coriolis acceleration [L T-2 ~> m s-2]
     ubt_int, &    ! The running time integral of ubt over the time steps [L ~> m]
-    uhbt_int, &   ! The running time integral of uhbt over the time steps [H L2  ~> m3]
+    uhbt_int, &   ! The running time integral of uhbt over the time steps [H L2 ~> m3 or kg]
     ubt_int_prev, & ! Previous value of time-integrated velocity stored for OBCs [L ~> m]
-    uhbt_int_prev   ! Previous value of time-integrated transport stored for integral_BT_cont [L2 H ~> m3]
+    uhbt_int_prev   ! Previous value of time-integrated transport stored for integral_BT_cont [H L2 ~> m3 or kg]
   real, dimension(SZIW_(CS),SZJBW_(CS)) :: &
     vhbt, &       ! The meridional barotropic thickness fluxes [H L2 T-1 ~> m3 s-1 or kg s-1]
     vbt_prev, &   ! The starting value of vbt in a barotropic step [L T-1 ~> m s-1]
@@ -2480,14 +2480,14 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
     PFv, &        ! The meridional pressure force acceleration [L T-2 ~> m s-2]
     Cor_v, &      ! The meridional Coriolis acceleration [L T-2 ~> m s-2]
     vbt_int, &    ! The running time integral of vbt over the time steps [L ~> m]
-    vhbt_int, &   ! The running time integral of vhbt over the time steps [H L2  ~> m3]
+    vhbt_int, &   ! The running time integral of vhbt over the time steps [H L2 ~> m3 or kg]
     vbt_int_prev, & ! Previous value of time-integrated velocity stored for OBCs [L ~> m]
-    vhbt_int_prev   ! Previous value of time-integrated transport stored for integral_BT_cont [L2 H ~> m3]
+    vhbt_int_prev   ! Previous value of time-integrated transport stored for integral_BT_cont [H L2 ~> m3 or kg]
   real, target, dimension(SZIW_(CS),SZJW_(CS)) :: &
     eta_pred      ! A predictor value of eta [H ~> m or kg m-2] like eta
   real, dimension(SZIW_(CS),SZJW_(CS)) :: &
     p_surf_dyn, & !< A dynamic surface pressure under rigid ice [L2 T-2 ~> m2 s-2]
-    cfl_ltd_vol   !< The volume available after removing sinks used to limit uhbt_int and vhbt_int [H L2 ~> m3]
+    cfl_ltd_vol   !< The volume available after removing sinks used to limit uhbt_int and vhbt_int [H L2 ~> m3 or kg]
   real, dimension(SZI_(G),SZJ_(G)) :: &
     eta_anom_PF   ! The eta anomalies used to find the pressure force anomalies [H ~> m or kg m-2]
   real :: wt_end      ! The weighting of the final value of eta_PF [nondim]
@@ -3196,9 +3196,9 @@ subroutine btloop_eta_predictor(n, dtbt, ubt, vbt, eta, ubt_int, vbt_int, uhbt, 
   real, dimension(SZIW_(CS),SZJBW_(CS)), intent(inout) :: &
     vhbt          !< The meridional barotropic thickness fluxes [H L2 T-1 ~> m3 s-1 or kg s-1].
   real, dimension(SZIBW_(CS),SZJW_(CS)), intent(inout) :: &
-    uhbt_int      !< The running time integral of uhbt over the time steps [H L2  ~> m3].
+    uhbt_int      !< The running time integral of uhbt over the time steps [H L2 ~> m3 or kg].
   real, dimension(SZIW_(CS),SZJBW_(CS)), intent(inout) :: &
-    vhbt_int      !< The running time integral of vhbt over the time steps [H L2  ~> m3].
+    vhbt_int      !< The running time integral of vhbt over the time steps [H L2 ~> m3 or kg].
   real, target, dimension(SZIW_(CS),SZJW_(CS)), intent(inout) :: &
     eta_pred      !< A predictor value of eta [H ~> m or kg m-2] like eta.
   integer, intent(in)  :: isv         !< The starting i-index of eta_pred to calculate

@@ -32,13 +32,13 @@ type vbf_CS
   ! 3d varying Kd contributions
   real, pointer, dimension(:,:,:) :: &
     Bflx_salt => NULL(), & !< Salinity contribution to buoyancy flux at interfaces
-                           !! [H Z T-3 ~> m2 s-3 or kg m-1 s-3 = W m-3]
+                           !! [H Z T-3 ~> m2 s-3 or W m-3]
     Bflx_temp => NULL(), & !< Temperature contribution to buoyancy flux at interfaces
-                           !! [H Z T-3 ~> m2 s-3 or kg m-1 s-3 = W m-3]
+                           !! [H Z T-3 ~> m2 s-3 or W m-3]
     Bflx_salt_dz => NULL(), & !< Salinity contribution to integral of buoyancy flux over layer
-                              !! [H Z2 T-3 ~> m3 s-3 or kg m-1 s-3 = W m-2]
+                              !! [H Z2 T-3 ~> m3 s-3 or W m-2]
     Bflx_temp_dz => NULL(), & !< Temperature contribution to integral of buoyancy flux over layer
-                              !! [H Z2 T-3 ~> m3 s-3 or kg m-1 s-3 = W m-2]
+                              !! [H Z2 T-3 ~> m3 s-3 or W m-2]
     ! The following are all allocatable arrays that store copies of process driven Kd, so that
     ! the process driven buoyancy flux and work can be derived at the end of the time step.
     Kd_salt => NULL(), &   !< total diapycnal diffusivity of salt at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
@@ -740,11 +740,11 @@ subroutine diagnoseKdWork(G, GV, N2, Kd, Bdif_flx, dz, Bdif_flx_dz)
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
                            intent(in)  :: Kd   !< Diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
-                           intent(out) :: Bdif_flx !< Buoyancy flux [H Z T-3 ~> m2 s-3 or kg m-1 s-3 = W m-3]
+                           intent(out) :: Bdif_flx !< Buoyancy flux [H Z T-3 ~> m2 s-3 or W m-3]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                  intent(in), optional :: dz    !< Grid spacing [Z ~> m]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                intent(out), optional :: Bdif_flx_dz !< Buoyancy flux over layer [H Z2 T-3 ~> m3 s-3 or kg s-3 = W m-2]
+                intent(out), optional :: Bdif_flx_dz !< Buoyancy flux over layer [H Z2 T-3 ~> m3 s-3 or W m-2]
 
   integer :: i, j, k
 

@@ -253,7 +253,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
                            ! magnitudes [H L T-1 ~> m2 s-1 or kg m-1 s-1].
   real :: Thtot            ! Running sum of thickness times temperature [C H ~> degC m or degC kg m-2].
   real :: Shtot            ! Running sum of thickness times salinity [S H ~> ppt m or ppt kg m-2].
-  real :: SpV_htot         ! Running sum of thickness times specific volume [R-1 H ~> m4 kg-1 or m]
+  real :: SpV_htot         ! Running sum of thickness times specific volume [H R-1 ~> m4 kg-1 or m]
   real :: hweight          ! The thickness of a layer that is within Hbbl
                            ! of the bottom [H ~> m or kg m-2].
   real :: dzweight         ! The counterpart of hweight in height units [Z ~> m].
@@ -1996,7 +1996,7 @@ subroutine set_viscous_ML(u, v, h, tv, forces, visc, dt, G, GV, US, CS)
                 ! surface mixed layer [H C ~> m degC or kg degC m-2].
     Shtot, &    !   The integrated salt of layers that are within the
                 ! surface mixed layer [H S ~> m ppt or kg ppt m-2].
-    SpV_htot, & !   Running sum of thickness times specific volume [R-1 H ~> m4 kg-1 or m]
+    SpV_htot, & !   Running sum of thickness times specific volume [H R-1 ~> m4 kg-1 or m]
     Rhtot, &    !   The integrated density of layers that are within the surface mixed layer
                 ! [H R ~> kg m-2 or kg2 m-5].  Rhtot is only used if no
                 ! equation of state is used.
