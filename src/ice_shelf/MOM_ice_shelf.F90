@@ -840,7 +840,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!Safety checks !!!!!!!!!!!!!!!!!!!!!!!!!
       !1)Check if haline_driving computed above is consistent with
       ! haline_driving = sfc_state%sss - Sbdry
-      !if (fluxes%water_flux(i,j) /= 0.0) then
+      !if (ISS%water_flux(i,j) /= 0.0) then
       !   if (haline_driving(i,j) /= (sfc_state%sss(i,j) - Sbdry(i,j))) then
       !     write(mesg,*) 'at i,j=',i,j,' haline_driving, sss-Sbdry',US%S_to_ppt*haline_driving(i,j), &
       !                   US%S_to_ppt*(sfc_state%sss(i,j) - Sbdry(i,j))
