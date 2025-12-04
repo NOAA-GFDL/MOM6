@@ -672,7 +672,6 @@ subroutine init_ALE_sponge_diags(Time, G, diag, CS, US)
   CS%diag => diag
 
   do m=1,CS%fldno
-    CS%id_sp_tendency(m) = -1
     if ((trim(CS%Ref_val(m)%unit) == 'none') .or. (len_trim(CS%Ref_val(m)%unit) == 0)) then
       tend_unit = "s-1"
     else
