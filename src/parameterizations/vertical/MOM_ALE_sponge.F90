@@ -142,8 +142,9 @@ type, public :: ALE_sponge_CS ; private
                                    !! It is not clear why this needs to be greater than 0.
 
   !>@{ Diagnostic IDs
-  integer, dimension(MAX_FIELDS_) :: id_sp_tendency  !< Diagnostic ids for tracer
-                                               !! tendencies due to sponges
+  integer, dimension(MAX_FIELDS_) :: id_sp_tendency = reshape([-1], [MAX_FIELDS_], [-1]) !< Diagnostic ids for tracer
+                                                                                         !! tendencies due to sponges.
+                                                                                         !! Init all to -1.
   integer :: id_sp_u_tendency                  !< Diagnostic id for zonal momentum tendency due to
                                                !! Rayleigh damping
   integer :: id_sp_v_tendency                  !< Diagnostic id for meridional momentum tendency due to
