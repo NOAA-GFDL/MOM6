@@ -53,6 +53,7 @@ use regrid_edge_values,   only : edge_values_implicit_h4
 use PLM_functions,        only : PLM_reconstruction, PLM_boundary_extrapolation
 use PLM_functions,        only : PLM_extrapolate_slope, PLM_monotonized_slope, PLM_slope_wa
 use PPM_functions,        only : PPM_reconstruction, PPM_boundary_extrapolation
+use Recon1d_PLM_WLS,      only : PLM_WLS
 
 implicit none ; private
 #include <MOM_memory.h>
@@ -140,6 +141,7 @@ public ALE_remap_vertex_vals
 public ALE_PLM_edge_values
 public TS_PLM_edge_values
 public TS_PPM_edge_values
+public TS_PLM_WLS_edge_values
 public adjustGridForIntegrity
 public ALE_initRegridding
 public ALE_getCoordinate
@@ -1670,6 +1672,45 @@ subroutine TS_PPM_edge_values( CS, S_t, S_b, T_t, T_b, G, GV, tv, h, bdry_extrap
 
 end subroutine TS_PPM_edge_values
 
+!> Calculate edge values (top and bottom of layer) for T and S consistent with a PLM reconstruction
+!! in the vertical direction that uses weighted least squares for the slope.
+subroutine TS_PLM_WLS_edge_values(CS, S_t, S_b, T_t, T_b, G, GV, tv, h)
+  type(ocean_grid_type),   intent(in)    :: G    !< ocean grid structure
+  type(verticalGrid_type), intent(in)    :: GV   !< Ocean vertical grid structure
+  type(ALE_CS),            intent(inout) :: CS   !< module control structure
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(inout) :: S_t  !< Salinity at the top edge of each layer [S ~> ppt]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(inout) :: S_b  !< Salinity at the bottom edge of each layer [S ~> ppt]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(inout) :: T_t  !< Temperature at the top edge of each layer [C ~> degC]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(inout) :: T_b  !< Temperature at the bottom edge of each layer [C ~> degC]
+  type(thermo_var_ptrs),   intent(in)    :: tv   !< thermodynamics structure
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(in)    :: h    !< layer thickness [H ~> m or kg m-2]
+  ! Local variables
+  integer :: i, j, k
+  type(PLM_WLS) :: recon !< A PLM-WLS reconstruction
+
+  call recon%init(GV%ke, h_neglect=GV%H_subroundoff)
+
+  !$OMP parallel do default(shared) firstprivate(recon)
+  do j = G%jsc-1,G%jec+1 ; do i = G%isc-1,G%iec+1
+
+    call recon%reconstruct(h(i,j,:), tv%T(i,j,:))
+    T_t(i,j,:) = recon%ul(:)
+    T_b(i,j,:) = recon%ur(:)
+
+    call recon%reconstruct(h(i,j,:), tv%S(i,j,:))
+    S_t(i,j,:) = recon%ul(:)
+    S_b(i,j,:) = recon%ur(:)
+
+  enddo ; enddo
+
+  call recon%destroy()
+
+end subroutine TS_PLM_WLS_edge_values
 
 !> Initializes regridding for the main ALE algorithm
 subroutine ALE_initRegridding(G, GV, US, max_depth, param_file, mdl, regridCS)

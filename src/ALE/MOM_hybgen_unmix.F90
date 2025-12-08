@@ -214,7 +214,7 @@ subroutine hybgen_unmix(G, GV, US, CS, tv, Reg, ntr, h)
     endif
 
     ! The following block of code is used to trigger z* stretching of the targets heights.
-    if (allocated(tv%SpV_avg)) then  ! This is the fully non-Boussiesq version
+    if (allocated(tv%SpV_avg)) then  ! This is the fully non-Boussinesq version
       dz_tot = 0.0
       do k=1,nk
         dz_tot = dz_tot + GV%H_to_RZ * tv%SpV_avg(i,j,k) * h_col(k)

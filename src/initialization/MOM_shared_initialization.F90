@@ -884,6 +884,8 @@ subroutine reset_face_lengths_list(G, param_file, US)
 
     ! Count the number of u_width and v_width entries.
     call read_face_length_list(iounit, filename, num_lines, lines)
+  else
+    num_lines = 0
   endif
 
   len_lon = 360.0 ; if (G%len_lon > 0.0) len_lon = G%len_lon

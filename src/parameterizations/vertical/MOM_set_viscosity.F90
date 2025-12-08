@@ -75,6 +75,8 @@ type, public :: set_visc_CS ; private
                             !! actual velocity in the bottommost `HBBL`, depending
                             !! on whether linear_drag is true.
                             !! Runtime parameter `BOTTOMDRAGLAW`.
+  logical :: bottomdragmap  !< If true, apply the spatially varying drag coefficient (cdrag_2d)
+                            !! instead of the spatially uniform drag coefficient (cdrag).
   logical :: body_force_drag !< If true, the bottom stress is imposed as an explicit body force
                             !! applied over a fixed distance from the bottom, rather than as an
                             !! implicit calculation based on an enhanced near-bottom viscosity.
@@ -117,6 +119,8 @@ type, public :: set_visc_CS ; private
   type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
                             !! regulate the timing of diagnostic output.
   ! Allocatable data arrays
+  real, allocatable, dimension(:,:) :: cdrag_u !< The spatially varying quadratic drag coefficient [nondim]
+  real, allocatable, dimension(:,:) :: cdrag_v !< The spatially varying quadratic drag coefficient [nondim]
   real, allocatable, dimension(:,:) :: tideamp !< RMS tidal amplitude at h points [Z T-1 ~> m s-1]
   ! Diagnostic arrays
   real, allocatable, dimension(:,:) :: bbl_u !< BBL mean U current [L T-1 ~> m s-1]
@@ -207,6 +211,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
   real :: ustarsq          ! 400 times the square of ustar, times
                            ! Rho0 divided by G_Earth and the conversion
                            ! from m to thickness units [H R ~> kg m-2 or kg2 m-5].
+  real :: cdrag            ! The drag coefficient [nondim].
   real :: cdrag_sqrt       ! Square root of the drag coefficient [nondim].
   real :: cdrag_sqrt_H     ! Square root of the drag coefficient, times a unit conversion factor
                            ! from lateral lengths to layer thicknesses [H L-1 ~> nondim or kg m-3].
@@ -340,11 +345,13 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
   use_BBL_EOS = associated(tv%eqn_of_state) .and. CS%BBL_use_EOS
   OBC => CS%OBC
 
-  cdrag_sqrt = sqrt(CS%cdrag)
-  cdrag_sqrt_H = cdrag_sqrt * US%L_to_m * GV%m_to_H
-  cdrag_sqrt_H_RL = cdrag_sqrt * US%L_to_Z * GV%RZ_to_H
-  cdrag_L_to_H = CS%cdrag * US%L_to_m * GV%m_to_H
-  cdrag_RL_to_H = CS%cdrag * US%L_to_Z * GV%RZ_to_H
+  if (.not.CS%bottomdragmap) then
+    cdrag_sqrt = sqrt(CS%cdrag)
+    cdrag_sqrt_H = cdrag_sqrt * US%L_to_m * GV%m_to_H
+    cdrag_sqrt_H_RL = cdrag_sqrt * US%L_to_Z * GV%RZ_to_H
+    cdrag_L_to_H = CS%cdrag * US%L_to_m * GV%m_to_H
+    cdrag_RL_to_H = CS%cdrag * US%L_to_Z * GV%RZ_to_H
+  endif
   BBL_thick_max = G%Rad_Earth_L * US%L_to_Z
   K2 = max(nkmb+1, 2)
 
@@ -629,6 +636,16 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
         dztot_vel = 0.0 ; dzwtot = 0.0
         Thtot = 0.0 ; Shtot = 0.0 ; SpV_htot = 0.0
 
+        if (CS%bottomdragmap) then
+          if (m==1) then
+            cdrag_sqrt = sqrt(CS%cdrag_u(i,j))
+          else
+            cdrag_sqrt = sqrt(CS%cdrag_v(i,j))
+          endif
+          cdrag_sqrt_H = cdrag_sqrt * US%L_to_m * GV%m_to_H
+          cdrag_sqrt_H_RL = cdrag_sqrt * US%L_to_Z * GV%RZ_to_H
+        endif
+
         do k=nz,1,-1
 
           if (htot_vel>=CS%Hbbl) exit ! terminate the k loop
@@ -692,7 +709,17 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
 
       endif ; enddo
     else
-      do i=is,ie ; ustar(i) = cdrag_sqrt_H*CS%drag_bg_vel ; enddo
+      do i=is,ie
+        if (CS%bottomdragmap) then
+          if (m==1) then
+            cdrag_sqrt = sqrt(CS%cdrag_u(i,j))
+          else
+            cdrag_sqrt = sqrt(CS%cdrag_v(i,j))
+          endif
+          cdrag_sqrt_H = cdrag_sqrt * US%L_to_m * GV%m_to_H
+        endif
+        ustar(i) = cdrag_sqrt_H * CS%drag_bg_vel
+      enddo
     endif ! Not linear_drag
 
     if (use_BBL_EOS) then
@@ -722,6 +749,16 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
       ustarsq = Rho0x400_G * ustar(i)**2 ! Note not in units of u*^2 but [H R ~> kg m-2 or kg2 m-5]
       htot = 0.0
       dztot = 0.0
+
+      if (CS%bottomdragmap) then
+        if (m==1) then
+          cdrag = CS%cdrag_u(i,j)
+        else
+          cdrag = CS%cdrag_v(i,j)
+        endif
+        cdrag_L_to_H = cdrag * US%L_to_m * GV%m_to_H
+        cdrag_RL_to_H = cdrag * US%L_to_Z * GV%RZ_to_H
+      endif
 
       ! Calculate the thickness of a stratification limited BBL ignoring rotation:
       !   h_N = Ci u* / N          (limit of KW99 eq. 2.20 for |f|->0)
@@ -2330,7 +2367,7 @@ subroutine set_viscous_ML(u, v, h, tv, forces, visc, dt, G, GV, US, CS)
         ustarsq = Rho0x400_G * ustar(i)**2
         htot(i) = 0.0 ; dztot(i) = 0.0
         if (use_EOS) then
-          Thtot(i) = 0.0 ; Shtot(i) = 0.0
+          Thtot(i) = 0.0 ; Shtot(i) = 0.0 ; oldfn = 0.0
           do k=1,nz-1
             if (h_at_vel(i,k) <= 0.0) cycle
             T_Lay = 0.5 * (tv%T(i,j,k) + tv%T(i+1,j,k))
@@ -2609,7 +2646,7 @@ subroutine set_viscous_ML(u, v, h, tv, forces, visc, dt, G, GV, US, CS)
         htot(i) = 0.0
         dztot(i) = 0.0
         if (use_EOS) then
-          Thtot(i) = 0.0 ; Shtot(i) = 0.0
+          Thtot(i) = 0.0 ; Shtot(i) = 0.0 ; oldfn = 0.0
           do k=1,nz-1
             if (h_at_vel(i,k) <= 0.0) cycle
             T_Lay = 0.5 * (tv%T(i,j,k) + tv%T(i,j+1,k))
@@ -2899,6 +2936,7 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
                              ! is used in place of the absolute value of the local Coriolis
                              ! parameter in the denominator of some expressions [nondim]
   real    :: Chan_max_thick_dflt ! The default value for CHANNEL_DRAG_MAX_THICK [Z ~> m]
+  real, allocatable, dimension(:,:) :: cdrag_h !< The spatially varying quadratic drag coefficient [nondim]
 
   integer :: i, j, k, is, ie, js, je
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB, nz
@@ -2909,8 +2947,8 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
                              ! isopycnal or stacked shallow water mode.
   logical :: use_temperature ! If true, temperature and salinity are used as state variables.
   logical :: use_EOS         ! If true, density calculated from T & S using an equation of state.
-  character(len=200) :: filename, tideamp_file ! Input file names or paths
-  character(len=80)  :: tideamp_var ! Input file variable names
+  character(len=200) :: filename, cdrag_file, tideamp_file ! Input file names or paths
+  character(len=80)  :: cdrag_var, tideamp_var ! Input file variable names
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_set_visc"  ! This module's name.
@@ -3026,6 +3064,16 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
                  "CDRAG is the drag coefficient relating the magnitude of "//&
                  "the velocity field to the bottom stress. CDRAG is only "//&
                  "used if BOTTOMDRAGLAW is defined.", units="nondim", default=0.003)
+    call get_param(param_file, mdl, "CDRAG_MAP", CS%bottomdragmap, &
+                 "If true, apply a spatially varying scaling factor to CDRAG, "//&
+                 "specified by CDRAG_VAR in CDRAG_FILE.", default=.false.)
+    call get_param(param_file, mdl, "CDRAG_FILE", cdrag_file, &
+                 "The name of the file with the spatially varying bottom drag "//&
+                 "scaling factor.", default="", do_not_log=.not.CS%bottomdragmap)
+    call get_param(param_file, mdl, "CDRAG_VAR", cdrag_var, &
+                 "The name of the variable in CDRAG_FILE with the spatially "//&
+                 "varying bottom drag scaling factor at h points.", &
+                 default="", do_not_log=.not.CS%bottomdragmap)
     call get_param(param_file, mdl, "BBL_USE_TIDAL_BG", CS%BBL_use_tidal_bg, &
                  "Flag to use the tidal RMS amplitude in place of constant "//&
                  "background velocity for computing u* in the BBL. "//&
@@ -3170,6 +3218,27 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
        Time, 'BBL mean v current', 'm s-1', conversion=US%L_T_to_m_s)
     if (CS%id_bbl_v>0) then
       allocate(CS%bbl_v(isd:ied,JsdB:JedB), source=0.0)
+    endif
+    if (CS%bottomdragmap) then
+      if (len_trim(cdrag_file)==0 .or. len_trim(cdrag_var)==0) then
+        call MOM_error(FATAL,"CDRAG_FILE and CDRAG_VAR are required when using CDRAG_MAP.")
+      endif
+      allocate(cdrag_h(isd:ied,jsd:jed), source=0.0)
+      allocate(CS%cdrag_u(IsdB:IedB,jsd:jed), source=0.0)
+      allocate(CS%cdrag_v(isd:ied,JsdB:JedB), source=0.0)
+      filename = trim(CS%inputdir) // trim(cdrag_file)
+      call log_param(param_file, mdl, "INPUTDIR/CDRAG_FILE", filename)
+      call MOM_read_data(filename, cdrag_var, cdrag_h, G%domain, scale=CS%cdrag)
+      call pass_var(cdrag_h, G%domain)
+      do j=js,je ; do I=is-1,ie ; if (G%mask2dCu(I,j) > 0) then
+        CS%cdrag_u(I,j) = (G%mask2dT(i,j) * cdrag_h(i,j) + G%mask2dT(i+1,j) * cdrag_h(i+1,j)) / &
+                          (G%mask2dT(i,j) + G%mask2dT(i+1,j))
+      endif ; enddo ; enddo
+      do J=js-1,je ; do i=is,ie ; if (G%mask2dCv(i,J) > 0) then
+        CS%cdrag_v(i,J) = (G%mask2dT(i,j) * cdrag_h(i,j) + G%mask2dT(i,j+1) * cdrag_h(i,j+1)) / &
+                          (G%mask2dT(i,j) + G%mask2dT(i,j+1))
+      endif ; enddo ; enddo
+      deallocate(cdrag_h)
     endif
     if (CS%BBL_use_tidal_bg) then
       allocate(CS%tideamp(isd:ied,jsd:jed), source=0.0)

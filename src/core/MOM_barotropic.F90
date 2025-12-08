@@ -2506,6 +2506,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
                       ! to equal bebt, as they have similar roles and meanings.
   real :: eta_cor_multiplier ! Increases the rate of applying CS%eta_cor so that the mass
                       ! source is all used up by the beginning of the filtering [nondim]
+  real :: eta_acc     ! Change due to divergence of mass transport [H ~> m or kg m-2]
   logical :: do_hifreq_output  ! If true, output occurs every barotropic step.
   logical :: do_ave   ! If true, diagnostics are enabled on this step.
   logical :: evolving_face_areas
@@ -2882,7 +2883,21 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
       do j=jsv,jev ; do i=isv,iev
         eta(i,j) = (eta_IC(i,j) + eta_cor_multiplier*eta_src(i,j)) + CS%IareaT_OBCmask(i,j) * &
                    ((uhbt_int(I-1,j) - uhbt_int(I,j)) + (vhbt_int(i,J-1) - vhbt_int(i,J)))
+        ! eta_acc contains the magnitude of the largest term in the above expression which
+        ! will be used to estimate a bound for round off when comparing to the bottom depth
+        eta_acc = abs( CS%IareaT_OBCmask(i,j) * &
+                   ((uhbt_int(I-1,j) - uhbt_int(I,j)) + (vhbt_int(i,J-1) - vhbt_int(i,J))) )
+        eta_acc = max( eta_acc, abs( eta_cor_multiplier*eta_src(i,j) ), abs( eta_IC(i,j) ) )
+        if ( G%mask2dT(i,j) * ( eta(i,j) + GV%Z_to_H*G%bathyT(i,j) ) > &
+             -G%mask2dT(i,j) * eta_acc * epsilon(eta_acc) * 2. ) &
+          eta(i,j) = max( eta(i,j), -GV%Z_to_H*G%bathyT(i,j) )
         eta_wtd(i,j) = eta_wtd(i,j) + eta(i,j) * wt_eta(n)
+        if ((eta(i,j) < -GV%Z_to_H*G%bathyT(i,j)) .and. (G%mask2dT(i,j) > 0.0)) then
+          write(mesg,'(ES24.16," vs. ",ES24.16, " at ", ES12.4, ES12.4, i7, i7)') GV%H_to_m*eta(i,j), &
+               -US%Z_to_m*G%bathyT(i,j), G%geoLonT(i,j), G%geoLatT(i,j), i + G%HI%idg_offset, j + G%HI%jdg_offset
+          if (CS%bt_limit_integral_transport) &
+            call MOM_error(FATAL, "btstep: eta has dropped below bathyT: "//trim(mesg))
+        endif
       enddo ; enddo
     else
       !$OMP do
@@ -5533,6 +5548,7 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                                        ! name in wave_drag_file.
   real :: mean_SL     ! The mean sea level that is used along with the bathymetry to estimate the
                       ! geometry when LINEARIZED_BT_CORIOLIS is true or BT_NONLIN_STRESS is false [Z ~> m].
+  real :: htot        ! Total column thickness used when BT_NONLIN_STRESS is false [Z ~> m].
   real :: Z_to_H      ! A local unit conversion factor [H Z-1 ~> nondim or kg m-3]
   real :: H_to_Z      ! A local unit conversion factor [Z H-1 ~> nondim or m3 kg-1]
   real :: det_de      ! The partial derivative due to self-attraction and loading of the reference
@@ -6437,15 +6453,17 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
     Mean_SL = G%Z_ref
     Z_to_H = GV%Z_to_H ; if (.not.GV%Boussinesq) Z_to_H = GV%RZ_to_H * CS%Rho_BT_lin
     do j=js,je ; do I=is-1,ie
-      if (G%OBCmaskCu(I,j) > 0.) then
-        CS%IDatu(I,j) = G%OBCmaskCu(I,j) * 2.0 / (Z_to_H * ((G%bathyT(i+1,j) + G%bathyT(i,j)) + 2.0*Mean_SL))
+      htot = max(G%bathyT(i+1,j) + G%Z_ref, 0.0) + max(G%bathyT(i,j) + G%Z_ref, 0.0)
+      if (G%OBCmaskCu(I,j) * htot > 0.) then
+        CS%IDatu(I,j) = G%OBCmaskCu(I,j) * 2.0 / (Z_to_H * htot)
       else ! Both neighboring H points are masked out or this is an OBC face so IDatu(I,j) is unused
         CS%IDatu(I,j) = 0.
       endif
     enddo ; enddo
     do J=js-1,je ; do i=is,ie
-      if (G%OBCmaskCv(i,J) > 0.) then
-        CS%IDatv(i,J) = G%OBCmaskCv(i,J) * 2.0 / (Z_to_H * ((G%bathyT(i,j+1) + G%bathyT(i,j)) + 2.0*Mean_SL))
+      htot = max(G%bathyT(i,j+1) + G%Z_ref, 0.0) + max(G%bathyT(i,j) + G%Z_ref, 0.0)
+      if (G%OBCmaskCv(i,J) * htot > 0.) then
+        CS%IDatv(i,J) = G%OBCmaskCv(i,J) * 2.0 / (Z_to_H * htot)
       else ! Both neighboring H points are masked out or this is an OBC face so IDatv(i,J) is unused
         CS%IDatv(i,J) = 0.
       endif

@@ -516,7 +516,7 @@ logical function tidal_mixing_init(Time, G, GV, US, param_file, int_tide_CSp, di
         CS%h2(i,j) = hamp*hamp
       else
         if (max_frac_rough >= 0.0) &
-          CS%h2(i,j) = min((max_frac_rough*(G%bathyT(i,j)+G%Z_ref))**2, CS%h2(i,j))
+          CS%h2(i,j) = min((max_frac_rough * max(G%bathyT(i,j)+G%Z_ref, 0.0))**2, CS%h2(i,j))
       endif
 
       utide = CS%tideamp(i,j)

@@ -224,11 +224,13 @@ subroutine calc_depth_function(G, CS)
   expo = CS%depth_scaled_khth_exp
 !$OMP do
   do j=js,je ; do I=is-1,Ieq
-    CS%Depth_fn_u(I,j) = (MIN(1.0, (0.5*(G%bathyT(i,j) + G%bathyT(i+1,j)) + G%Z_ref)/H0))**expo
+    CS%Depth_fn_u(I,j) = (MIN(1.0, &
+      (0.5 * (max(G%bathyT(i,j) + G%Z_ref, 0.0) + max(G%bathyT(i+1,j) + G%Z_ref, 0.0))) / H0))**expo
   enddo ; enddo
 !$OMP do
   do J=js-1,Jeq ; do i=is,ie
-    CS%Depth_fn_v(i,J) = (MIN(1.0, (0.5*(G%bathyT(i,j) + G%bathyT(i,j+1)) + G%Z_ref)/H0))**expo
+    CS%Depth_fn_v(i,J) = (MIN(1.0, &
+      (0.5 * (max(G%bathyT(i,j) + G%Z_ref, 0.0) + max(G%bathyT(i,j+1) + G%Z_ref, 0.0))) / H0))**expo
   enddo ; enddo
 
 end subroutine calc_depth_function
