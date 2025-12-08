@@ -2664,10 +2664,8 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
         endif
 
         if (CS%max_surface_slope>0) then
-          if ((sx**2 + sy**2)>0) then
-            scale = min(CS%max_surface_slope/sqrt((sx**2)+(sy**2)),1.0)
-            sx = scale*sx; sy = scale*sy
-          endif
+          scale = CS%max_surface_slope / max( sqrt((sx**2) + (sy**2)), CS%max_surface_slope )
+          sx = scale*sx; sy = scale*sy
         endif
 
         sx_e(i,j) = (-.25 * G%areaT(i,j)) * ((rho * grav) * (max(ISS%h_shelf(i,j),CS%min_h_shelf) * sx))

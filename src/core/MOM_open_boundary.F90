@@ -6444,6 +6444,7 @@ subroutine rotate_OBC_config(OBC_in, G_in, OBC, G, turns)
   OBC%zero_biharmonic = OBC_in%zero_biharmonic
   OBC%silly_h = OBC_in%silly_h
   OBC%silly_u = OBC_in%silly_u
+  OBC%reverse_segment_order = OBC_in%reverse_segment_order
 
   ! Segment rotation
   allocate(OBC%segment(0:OBC%number_of_segments))
@@ -6671,6 +6672,11 @@ subroutine rotate_OBC_segment_config(segment_in, G_in, segment, G, turns)
   ! These are conditionally set if Lscale_{in,out} are present
   segment%Tr_InvLscale_in = segment_in%Tr_InvLscale_in
   segment%Tr_InvLscale_out = segment_in%Tr_InvLscale_out
+  segment%Th_InvLscale_in = segment_in%Th_InvLscale_in
+  segment%Th_InvLscale_out = segment_in%Th_InvLscale_out
+
+  ! This needs to be set
+  segment%num_fields = segment_in%num_fields
 end subroutine rotate_OBC_segment_config
 
 
@@ -6981,6 +6987,10 @@ subroutine write_OBC_info(OBC, G, GV, US)
     write(mesg, '("  Tr_InvLscale_out ", ES16.6)') segment%Tr_InvLscale_out*US%m_to_L
     call MOM_mesg(mesg, verb=1)
     write(mesg, '("  Tr_InvLscale_in ", ES16.6)') segment%Tr_InvLscale_in*US%m_to_L
+    call MOM_mesg(mesg, verb=1)
+    write(mesg, '("  Th_InvLscale_out ", ES16.6)') segment%Th_InvLscale_out*US%m_to_L
+    call MOM_mesg(mesg, verb=1)
+    write(mesg, '("  Th_InvLscale_in ", ES16.6)') segment%Th_InvLscale_in*US%m_to_L
     call MOM_mesg(mesg, verb=1)
 
   enddo

@@ -370,7 +370,8 @@ subroutine geothermal_in_place(h, tv, dt, G, GV, US, CS, BFlx_geothermal, halo)
   real,                                      intent(in)    :: dt !< Time increment [T ~> s].
   type(unit_scale_type),                     intent(in)    :: US !< A dimensional unit scaling type
   type(geothermal_CS),                       intent(in)    :: CS !< Geothermal heating control struct
-  real, dimension(SZI_(G), SZJ_(G)),         intent(out)   :: BFlx_geothermal !< Geothermal Buoyancy Flux [m2 s-3]
+  real, dimension(SZI_(G), SZJ_(G)),         intent(out)   :: BFlx_geothermal !< Geothermal buoyancy flux
+                                                                 !! in [Z2 T-3 ~> m2 s-3]
   integer,                         optional, intent(in)    :: halo !< Halo width over which to work
 
 

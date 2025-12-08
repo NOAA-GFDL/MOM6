@@ -359,7 +359,7 @@ function reproducing_sum_3d(array, isr, ier, jsr, jer, sums, EFP_sum, EFP_lay_su
   integer,            optional, intent(in)  :: jer     !< The ending j-index of the sum, noting
                                                        !! that the array indices starts at 1
   real, dimension(:), optional, intent(out) :: sums    !< The sums by vertical layer in the same
-                                                       !! abitrary units as array [a] or [A ~> a]
+                                                       !! arbitrary units as array [a] or [A ~> a]
   type(EFP_type),     optional, intent(out) :: EFP_sum !< The result in extended fixed point format
   type(EFP_type), dimension(:), &
                       optional, intent(out) :: EFP_lay_sums !< The sums by vertical layer in EFP format
@@ -796,7 +796,7 @@ end subroutine EFP_assign
 !> Return the real number that an extended-fixed-point number corresponds with
 function EFP_to_real(EFP1)
   type(EFP_type), intent(inout) :: EFP1 !< The extended fixed point number being converted
-  real :: EFP_to_real  !< The real version of the number in abitrary units [a]
+  real :: EFP_to_real  !< The real version of the number in arbitrary units [a]
 
   call regularize_ints(EFP1%v)
   EFP_to_real = ints_to_real(EFP1%v)

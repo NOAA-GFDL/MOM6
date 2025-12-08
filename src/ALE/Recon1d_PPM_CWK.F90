@@ -143,7 +143,7 @@ subroutine reconstruct(this, h, u)
     u2 = u(k+1)
     a6 = 3.0 * ( ( u1 - this%ul(k) ) + ( u1 - this%ur(k) ) )
     du = this%ur(k) - this%ul(k)
-    if ( ( u2 - u1 ) * ( u1 - u0 ) <- 0.0 ) then ! Large scale extrema
+    if ( ( u2 - u1 ) * ( u1 - u0 ) <= 0.0 ) then ! Large scale extrema
       this%ul(k) = u1
       this%ur(k) = u1
     elseif ( du * a6 > du * du ) then ! Extrema on right

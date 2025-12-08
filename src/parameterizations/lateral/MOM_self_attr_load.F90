@@ -205,7 +205,7 @@ subroutine SAL_init(h, tv, G, GV, US, param_file, CS, restart_CS)
   type(vardesc) :: vars(1)            ! used to write ref_pbot file
   type(MOM_field) :: fields(1)        ! used to write ref_pbot file
   logical :: calculate_sal, tides, use_tidal_sal_file
-  integer :: tides_answer_date ! Recover old answers with tides
+  integer :: default_answer_date, tides_answer_date ! Recover old answers with tides
   real :: sal_scalar_value ! Scaling SAL factors [nondim]
   integer :: isd, ied, jsd, jed
 
@@ -267,8 +267,12 @@ subroutine SAL_init(h, tv, G, GV, US, param_file, CS, restart_CS)
     end select
     call pass_var(CS%pbot_ref, G%Domain)
   endif
-  call get_param(param_file, '', "TIDES_ANSWER_DATE", tides_answer_date, default=20230630, &
-                 do_not_log=.True.) ! used to check SAL_USE_BPA
+
+  call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
+                 "This sets the default value for the various _ANSWER_DATE parameters.", &
+                 default=99991231, do_not_log=.True.) ! used to check SAL_USE_BPA
+  call get_param(param_file, '', "TIDES_ANSWER_DATE", tides_answer_date, &
+                 default=default_answer_date, do_not_log=.True.) ! used to check SAL_USE_BPA
   if (tides_answer_date<=20250131 .and. CS%use_bpa) &
     call MOM_error(FATAL, trim(mdl) // ", SAL_init: SAL_USE_BPA needs to be false to recover "//&
                    "tide answers before 20250131.")
