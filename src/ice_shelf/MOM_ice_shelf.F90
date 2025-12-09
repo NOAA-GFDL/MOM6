@@ -209,7 +209,7 @@ type, public :: ice_shelf_CS ; private
              id_h_shelf = -1, id_dhdt_shelf, id_h_mask = -1, &
              id_surf_elev = -1, id_bathym = -1, &
              id_area_shelf_h = -1, &
-             id_ustar_shelf = -1, id_taux = -1, id_tauy = -1, id_shelf_mass = -1, id_mass_flux = -1, &
+             id_ustar_shelf = -1, id_shelf_mass = -1, id_mass_flux = -1, &
              id_shelf_sfc_mass_flux = -1, &
              id_vaf = -1, id_g_adott = -1, id_f_adott = -1, id_adott = -1, &
              id_bdott_melt = -1, id_bdott_accum = -1, id_bdott = -1, &
@@ -347,8 +347,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   real :: DwB_min      ! The change in wB_flux when it is wB_flux_min [Z2 T-3 ~> m2 s-3]
   real :: I_Gam_T, I_Gam_S  ! Terms that vary inversely with Gam_mol_T or Gam_mol_S and Gam_turb [nondim]
   real :: dG_dwB       ! The derivative of Gam_turb with wB [T3 Z-2 ~> s3 m-2]
-  real, dimension(SZDI_(CS%grid),SZDJ_(CS%grid)) :: &
-    taux2, tauy2 ! The squared surface stresses [R2 L2 Z2 T-4 ~> Pa2].
+  real :: taux2, tauy2 ! The squared surface stresses [R2 L2 Z2 T-4 ~> Pa2].
   real :: u2_av, v2_av ! The ice-area weighted average squared ocean velocities [L2 T-2 ~> m2 s-2]
   real :: asu1, asu2   ! Ocean areas covered by ice shelves at neighboring u-points [L2 ~> m2]
   real :: asv1, asv2   ! Ocean areas covered by ice shelves at neighboring v-points [L2 ~> m2]
@@ -453,9 +452,8 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
     call pass_vector(sfc_state%taux_shelf, sfc_state%tauy_shelf, G%domain, TO_ALL, CGRID_NE)
   endif
   Irho0 = US%Z_to_L / CS%Rho_ocn
-  taux2(:,:)=0.0; tauy2(:,:)=0.0
   do j=js,je ; do i=is,ie ; if (fluxes%frac_shelf_h(i,j) > 0.0) then
-    u2_av = 0.0 ; v2_av = 0.0
+    taux2 = 0.0 ; tauy2 = 0.0 ; u2_av = 0.0 ; v2_av = 0.0
     asu1 = (ISS%area_shelf_h(i-1,j) + ISS%area_shelf_h(i,j))
     asu2 = (ISS%area_shelf_h(i,j) + ISS%area_shelf_h(i+1,j))
     asv1 = (ISS%area_shelf_h(i,j-1) + ISS%area_shelf_h(i,j))
@@ -463,19 +461,19 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
     I_au = 0.0 ; if (asu1 + asu2 > 0.0) I_au = 1.0 / (asu1 + asu2)
     I_av = 0.0 ; if (asv1 + asv2 > 0.0) I_av = 1.0 / (asv1 + asv2)
     if (allocated(sfc_state%taux_shelf) .and. allocated(sfc_state%tauy_shelf)) then
-      taux2(i,j) = (((asu1 * (sfc_state%taux_shelf(I-1,j)**2)) + (asu2 * (sfc_state%taux_shelf(I,j)**2))  ) * I_au)
-      tauy2(i,j) = (((asv1 * (sfc_state%tauy_shelf(i,J-1)**2)) + (asv2 * (sfc_state%tauy_shelf(i,J)**2))  ) * I_av)
+      taux2 = (((asu1 * (sfc_state%taux_shelf(I-1,j)**2)) + (asu2 * (sfc_state%taux_shelf(I,j)**2))  ) * I_au)
+      tauy2 = (((asv1 * (sfc_state%tauy_shelf(i,J-1)**2)) + (asv2 * (sfc_state%tauy_shelf(i,J)**2))  ) * I_av)
     endif
     u2_av = (((asu1 * (sfc_state%u(I-1,j)**2)) + (asu2 * sfc_state%u(I,j)**2)) * I_au)
     v2_av = (((asv1 * (sfc_state%v(i,J-1)**2)) + (asv2 * sfc_state%v(i,J)**2)) * I_av)
 
-    if ((taux2(i,j) + tauy2(i,j) > 0.0) .and. .not.CS%ustar_shelf_from_vel) then
+    if ((taux2 + tauy2 > 0.0) .and. .not.CS%ustar_shelf_from_vel) then
       if (CS%ustar_max >= 0.0) then
         fluxes%ustar_shelf(i,j) = MIN(CS%ustar_max, MAX(CS%ustar_bg, US%L_to_Z * &
-            sqrt(Irho0 * sqrt(taux2(i,j) + tauy2(i,j)) + CS%cdrag*CS%utide(i,j)**2)))
+            sqrt(Irho0 * sqrt(taux2 + tauy2) + CS%cdrag*CS%utide(i,j)**2)))
       else
         fluxes%ustar_shelf(i,j) = MAX(CS%ustar_bg, US%L_to_Z * &
-            sqrt(Irho0 * sqrt(taux2(i,j) + tauy2(i,j)) + CS%cdrag*CS%utide(i,j)**2))
+            sqrt(Irho0 * sqrt(taux2 + tauy2) + CS%cdrag*CS%utide(i,j)**2))
       endif
     else   ! Take care of the cases when taux_shelf is not set or not allocated.
       fluxes%ustar_shelf(i,j) = MAX(CS%ustar_bg, US%L_TO_Z * &
@@ -946,10 +944,6 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   if (CS%id_shelf_mass > 0) call post_data(CS%id_shelf_mass, ISS%mass_shelf, CS%diag)
   if (CS%id_area_shelf_h > 0) call post_data(CS%id_area_shelf_h, ISS%area_shelf_h, CS%diag)
   if (CS%id_ustar_shelf > 0) call post_data(CS%id_ustar_shelf, fluxes%ustar_shelf, CS%diag)
-  if (allocated(sfc_state%taux_shelf) .and. allocated(sfc_state%tauy_shelf)) then
-    if (CS%id_taux > 0) call post_data(CS%id_taux, sqrt(taux2), CS%diag)
-    if (CS%id_tauy > 0) call post_data(CS%id_tauy, sqrt(tauy2), CS%diag)
-  endif
   if (CS%id_shelf_sfc_mass_flux > 0) call post_data(CS%id_shelf_sfc_mass_flux, fluxes%shelf_sfc_mass_flux, CS%diag)
 
   if (CS%id_melt > 0) call post_data(CS%id_melt, fluxes%iceshelf_melt, CS%diag)
@@ -2113,10 +2107,6 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
       'Heat conduction into ice shelf', 'W m-2', conversion=-US%QRZ_T_to_W_m2)
   CS%id_ustar_shelf = register_diag_field('ice_shelf_model', 'ustar_shelf', CS%diag%axesT1, CS%Time, &
       'Fric vel under shelf', 'm/s', conversion=US%Z_to_m*US%s_to_T)
-  CS%id_taux = register_diag_field('ice_shelf_model', 'taux_shelf', CS%diag%axesT1, CS%Time, &
-      'x-surface stress under the ice shelf', 'Pa', conversion=US%RLZ_T2_to_Pa)
-  CS%id_tauy = register_diag_field('ice_shelf_model', 'tauy_shelf', CS%diag%axesT1, CS%Time, &
-      'y-surface stress under the ice shelf', 'Pa', conversion=US%RLZ_T2_to_Pa)
   if (CS%active_shelf_dynamics) then
     CS%id_h_mask = register_diag_field('ice_shelf_model', 'h_mask', CS%diag%axesT1, CS%Time, &
        'ice shelf thickness mask', 'none', conversion=1.0)
