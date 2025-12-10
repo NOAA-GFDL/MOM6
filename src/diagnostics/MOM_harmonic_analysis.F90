@@ -264,7 +264,7 @@ subroutine HA_init(Time, US, param_file, nc, CS)
 
   ! Register variables/fields to be analyzed
   call get_param(param_file, mdl, "HA_SSH", HA_ssh, &
-                 "If true, perform harmonic analysis of sea serface height.", default=.false.)
+                 "If true, perform harmonic analysis of sea surface height.", default=.false.)
   if (HA_ssh) call HA_register('ssh', 'h', CS)
   call get_param(param_file, mdl, "HA_UBT", HA_ubt, &
                  "If true, perform harmonic analysis of zonal barotropic velocity.", default=.false.)
