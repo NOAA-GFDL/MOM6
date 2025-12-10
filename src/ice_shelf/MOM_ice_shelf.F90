@@ -1332,10 +1332,12 @@ subroutine add_shelf_flux(G, US, CS, sfc_state, fluxes, time_step)
     endif
 
     if (associated(fluxes%sens)) &
-      fluxes%sens(i,j) = frac_shelf*ISS%tflux_ocn(i,j)*CS%flux_factor + frac_open * fluxes%sens(i,j)
+      fluxes%sens(i,j) = frac_shelf*ISS%tflux_ocn(i,j) + frac_open * fluxes%sens(i,j)
     ! The salt flux should be mostly from sea ice, so perhaps none should be intercepted and this should be changed.
     if (associated(fluxes%salt_flux)) &
       fluxes%salt_flux(i,j) = frac_shelf * ISS%salt_flux(i,j)*CS%flux_factor + frac_open * fluxes%salt_flux(i,j)
+    if (associated(fluxes%latent)) &
+      fluxes%latent(i,j) = fluxes%latent(i,j) - frac_shelf * ISS%water_flux(i,j) * CS%Lat_Fusion
   endif ; enddo ; enddo
 
   if (CS%debug) then
