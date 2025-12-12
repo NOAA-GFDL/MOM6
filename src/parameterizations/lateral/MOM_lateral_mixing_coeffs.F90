@@ -1164,24 +1164,16 @@ subroutine calc_slope_functions_with_gradient_model(h, G, GV, US, CS, e, uh, vh)
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(in)    :: e  !< Interface position [Z ~> m]
   ! type(thermo_var_ptrs),                     intent(in)    :: tv !< Thermodynamic variables
   ! Local variables
-  !real :: dz_tot(SZI_(G),SZJ_(G)) ! The total thickness of the water columns [Z ~> m]
-  ! real :: dz(SZI_(G),SZJ_(G),SZK_(GV)) ! The vertical distance across each layer [Z ~> m]
   real :: Ux_Hx(SZIB_(G), SZJ_(G))  ! X-slope of U and H  [H L-1 T-1 ~> s-1 or kg m-3 s-1]
   real :: Uy_Hy(SZI_(G), SZJB_(G))  ! Y-slope of U and H  [H L-1 T-1 ~> s-1 or kg m-3 s-1]
   real :: Vx_Hx(SZIB_(G), SZJ_(G))  ! X-slope of V and H  [H L-1 T-1 ~> s-1 or kg m-3 s-1]
   real :: Vy_Hy(SZI_(G), SZJB_(G))  ! Y-slope of V and H  [H L-1 T-1 ~> s-1 or kg m-3 s-1]
   real :: H_cutoff      ! Local estimate of a minimum thickness for masking [H ~> m or kg m-2]
-  !real :: dZ_cutoff     ! A minimum water column depth for masking [H ~> m or kg m-2]
   real :: h_neglect     ! A thickness that is so small it is usually lost
                         ! in roundoff and can be neglected [H ~> m or kg m-2].
-!  real :: graduh        ! Gradient model frequency, zonal transport [T-1 ~> s-1]
-!  real :: gradvh        ! Gradient model frequency, merid transport [T-1 ~> s-1]
   real :: Hup, Hdn      ! Thickness from above, below [H ~> m or kg m-2]
   real :: H_geom        ! The geometric mean of Hup*Hdn [H ~> m or kg m-2].
-  !logical :: use_dztot  ! If true, use the total water column thickness rather than the
                         ! bathymetric depth for certain calculations.
-!  real    :: UH_grad_local(SZIB_(G), SZJ_(G),SZK_(GV))  ! The depth integral of grad slopes for UH at u-points
-!  real    :: VH_grad_local(SZI_(G), SZJB_(G),SZK_(GV))  ! The depth integral of grad slopes for VH at v-points
   real    :: Lgrid      ! Grid lengthscale for the gradient model [H ~> m]
   integer :: is, ie, js, je, nz
   integer :: i, j, k
@@ -1755,9 +1747,9 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
     allocate(CS%VH_grad(isd:ied,JsdB:JedB,GV%ke), source=0.0)
     allocate(CS%L2grad_u(IsdB:IedB,jsd:jed), source=0.0)
     allocate(CS%L2grad_v(isd:ied,JsdB:JedB), source=0.0)
-    CS%id_UH_grad = register_diag_field('ocean_model', 'UH_grad', diag%axesCu1, Time, &
+    CS%id_UH_grad = register_diag_field('ocean_model', 'UH_grad', diag%axesCuL, Time, &
      'Inverse gradient eddy time-scale, Ux_Hx+Uy_Hy, at u-points', 's-1')
-    CS%id_VH_grad = register_diag_field('ocean_model', 'VH_grad', diag%axesCv1, Time, &
+    CS%id_VH_grad = register_diag_field('ocean_model', 'VH_grad', diag%axesCvL, Time, &
      'Inverse gradient eddy time-scale, Vx_Hx+Vy_Hy, at v-points', 's-1')
     CS%id_L2grad_u = register_diag_field('ocean_model', 'L2grad_u', diag%axesCu1, Time, &
      'Length scale squared for gradient coefficient, at u-points', 'm2')
