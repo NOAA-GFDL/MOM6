@@ -17,7 +17,7 @@ implicit none ; private
 
 #include <MOM_memory.h>
 
-public find_eta, dz_to_thickness, thickness_to_dz, dz_to_thickness_simple
+public find_eta, find_bsl, dz_to_thickness, thickness_to_dz, dz_to_thickness_simple
 public calc_derived_thermo
 public convert_MLD_to_ML_thickness
 public find_rho_bottom, find_col_avg_SpV, find_col_mass
@@ -263,6 +263,112 @@ subroutine find_eta_2d(h, tv, G, GV, US, eta, eta_bt, halo_size, dZref)
 
 end subroutine find_eta_2d
 
+!> Calculates the barotropic and baroclinic sea levels following Xu et al., to be submitted to JPO.
+subroutine find_bsl(h, tv, G, GV, US, btsl, bcsl, dZref)
+  type(ocean_grid_type),                      intent(in)  :: G   !< The ocean's grid structure
+  type(verticalGrid_type),                    intent(in)  :: GV  !< The ocean's vertical grid structure
+  type(unit_scale_type),                      intent(in)  :: US  !< A dimensional unit scaling type
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)  :: h   !< Layer thicknesses [H ~> m or kg m-2]
+  type(thermo_var_ptrs),                      intent(in)  :: tv  !< A structure pointing to various
+                                                                 !! thermodynamic variables
+  real, dimension(SZI_(G),SZJ_(G)),           intent(out) :: btsl !< Barotropic sea level [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)),           intent(out) :: bcsl !< Baroclinic sea level [Z ~> m]
+  real,                             optional, intent(in)  :: dZref !< The difference in the
+                    !! reference height between G%bathyT and eta [Z ~> m]. The default is 0
+
+  ! Local variables
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: eta             ! layer interface heights [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)) :: &
+    bathyT, &       ! Bathymetry at T points plus dZ_ref [Z ~> m]
+    pt, &           ! Pressure at the top of a layer [R L2 T-2 ~> Pa]
+    pb, &           ! Pressure at the bottom of a layer [R L2 T-2 ~> Pa]
+    dp, &           ! Pressure change across a layer in Boussinesq mode [R L2 T-2 ~> Pa]
+                    ! or geopotential change across a layer in non-Boussinesq mode [L2 T-2 ~> m2 s-2]
+    dp_int, &       ! Layer-integrated pressure change in Boussinesq mode [R L T-2 ~> Pa m]
+                    ! or layer-integrated geopotential change in non-Boussinesq mode [L2 T-2 Z ~> m3 s-2]
+    p_int           ! Vertical integral of pressure at the bottom of a layer [R L2 T-2 Z ~> Pa m]
+                    ! or that scaled by GV%g_Earth in Boussinesq and EOS mode [R L4 T-4 ~> Pa m2 s-2]
+                    ! or that normalized by GV%g_Earth in non-EOS mode [R Z2 ~> Pa s2]
+  real :: dZ_ref    ! The difference in the reference height between G%bathyT and eta [Z ~> m]
+                    ! dZ_ref is 0 unless the optional argument dZref is present
+  real :: I_gEarth  ! The inverse of the gravitational acceleration [T2 Z L-2 ~> s2 m-1]
+  real :: Rho0      ! Reference (surface) density in Boussinesq (non-Boussinesq) mode [R ~> kg m-3]
+  integer :: i, j, k, is, ie, js, je, nz
+
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+
+  dZ_ref = 0.0 ; if (present(dZref)) dZ_ref = dZref
+
+  I_gEarth = 1.0 / GV%g_Earth
+
+  if (GV%Boussinesq) then
+    Rho0 = GV%Rho0
+  else
+    Rho0 = GV%Rlay(1)
+  endif
+
+  call find_eta(h, tv, G, GV, US, eta, halo_size=1, dZref=dZ_ref)
+
+  !$OMP parallel default(shared)
+  !$OMP do
+  do j=js,je ; do i=is,ie
+    pt(i,j) = 0.0 ; pb(i,j) = 0.0 ; p_int(i,j) = 0.0 ; btsl(i,j) = 0.0 ; bcsl(i,j) = 0.0
+    bathyT(i,j) = G%bathyT(i,j) + dZ_ref
+  enddo ; enddo
+
+  if (associated(tv%eqn_of_state)) then
+    if (GV%Boussinesq) then
+      do k=1,nz
+        call int_density_dz(tv%T(:,:,k), tv%S(:,:,k), eta(:,:,k), eta(:,:,k+1), 0.0, &
+                            GV%Rho0, GV%g_Earth, G%HI, tv%eqn_of_state, US, dp, dp_int)
+        !$OMP do
+        do j=js,je ; do i=is,ie ; if (G%mask2dT(i,j) > 0.0) then
+          p_int(i,j) = p_int(i,j) + (dp(i,j) * (eta(i,j,k+1) + bathyT(i,j)) + dp_int(i,j))
+        endif ; enddo ; enddo
+      enddo
+    else ! (.not. GV%Boussinesq)
+      do k=1,nz
+        !$OMP do
+        do j=js,je ; do i=is,ie
+          pb(i,j) = pt(i,j) + (GV%g_Earth * GV%H_to_RZ) * h(i,j,k)
+        enddo ; enddo
+        call int_specific_vol_dp(tv%T(:,:,k), tv%S(:,:,k), pt, pb, 0.0, G%HI, &
+                                 tv%eqn_of_state, US, dp, dp_int)
+        !$OMP do
+        do j=js,je ; do i=is,ie
+          p_int(i,j) = p_int(i,j) + (dp(i,j) * pt(i,j) + dp_int(i,j))
+          pt(i,j) = pb(i,j)
+        enddo ; enddo
+      enddo
+      !$OMP do
+      do j=js,je ; do i=is,ie
+        p_int(i,j) = p_int(i,j) * I_gEarth
+      enddo ; enddo
+    endif ! (GV%Boussinesq)
+    !$OMP do
+    do j=js,je ; do i=is,ie ; if (G%mask2dT(i,j) > 0.0) then
+      btsl(i,j) = (p_int(i,j) * I_gEarth / (Rho0 * BathyT(i,j)) - &
+                   0.5 * BathyT(i,j)) - 0.5 * (eta(i,j,1) * eta(i,j,1)) / BathyT(i,j)
+      bcsl(i,j) = (eta(i,j,1) - (p_int(i,j) * I_gEarth / (Rho0 * BathyT(i,j)) - &
+                   0.5 * BathyT(i,j))) + 0.5 * (eta(i,j,1) * eta(i,j,1)) / BathyT(i,j)
+    endif ; enddo ; enddo
+  else ! (.not. associated(tv%eqn_of_state))
+    !$OMP do
+    do j=js,je ; do i=is,ie ; if (G%mask2dT(i,j) > 0.0) then
+      p_int(i,j) = GV%Rlay(1) * ((eta(i,j,1) + bathyT(i,j)) * (eta(i,j,1) + bathyT(i,j)))
+      do k = 2,nz
+        p_int(i,j) = p_int(i,j) + (GV%Rlay(k) - GV%Rlay(k-1)) * &
+                                  ((eta(i,j,k) + bathyT(i,j)) * (eta(i,j,k) + bathyT(i,j)))
+      enddo
+      btsl(i,j) = 0.5 * (p_int(i,j) / (Rho0 * bathyT(i,j)) - &
+                         bathyT(i,j)) - (eta(i,j,1) * eta(i,j,1)) / bathyT(i,j)
+      bcsl(i,j) = (eta(i,j,1) - 0.5 * (p_int(i,j) / (Rho0 * bathyT(i,j)) - &
+                   bathyT(i,j))) + 0.5 * (eta(i,j,1) * eta(i,j,1)) / bathyT(i,j)
+    endif ; enddo ; enddo
+  endif ! (associated(tv%eqn_of_state))
+  !$OMP end parallel
+
+end subroutine find_bsl
 
 !> Calculate derived thermodynamic quantities for re-use later.
 subroutine calc_derived_thermo(tv, h, G, GV, US, halo, debug)

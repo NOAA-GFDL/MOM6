@@ -24,7 +24,7 @@ use MOM_EOS,               only : cons_temp_to_pot_temp, abs_saln_to_prac_saln
 use MOM_error_handler,     only : MOM_error, FATAL, WARNING
 use MOM_file_parser,       only : get_param, log_version, param_file_type
 use MOM_grid,              only : ocean_grid_type
-use MOM_interface_heights, only : find_eta, find_col_mass
+use MOM_interface_heights, only : find_eta, find_bsl, find_col_mass
 use MOM_spatial_means,     only : global_area_mean, global_layer_mean
 use MOM_spatial_means,     only : global_volume_mean, global_area_integral
 use MOM_tracer_registry,   only : tracer_registry_type, post_tracer_transport_diagnostics
@@ -114,6 +114,7 @@ type, public :: diagnostics_CS ; private
   integer :: id_drho_dT        = -1, id_drho_dS        = -1
   integer :: id_h_pre_sync     = -1
   integer :: id_tosq           = -1, id_sosq           = -1
+  integer :: id_btsl           = -1, id_bcsl           = -1
 
   !>@}
   type(wave_speed_CS) :: wave_speed  !< Wave speed control struct
@@ -902,8 +903,10 @@ subroutine calculate_vertical_integrals(h, tv, p_surf, G, GV, US, CS)
     btm_pres,&! The pressure at the ocean bottom, or CMIP variable 'pbo'.
               ! This is the column mass multiplied by gravity plus the pressure
               ! at the ocean surface [R L2 T-2 ~> Pa].
-    tr_int    ! vertical integral of a tracer times density,
+    tr_int, & ! vertical integral of a tracer times density,
               ! (Rho_0 in a Boussinesq model) [Conc R Z ~> Conc kg m-2].
+    btsl, &   ! Barotropic sea level [Z ~> m].
+    bcsl      ! Baroclinic sea level [Z ~> m].
   real    :: IG_Earth  ! Inverse of gravitational acceleration [T2 Z L-2 ~> s2 m-1].
 
   integer :: i, j, k, is, ie, js, je, nz
@@ -949,6 +952,12 @@ subroutine calculate_vertical_integrals(h, tv, p_surf, G, GV, US, CS)
       call find_col_mass(h, tv, G, GV, US, mass)
     endif
     if (CS%id_col_mass > 0) call post_data(CS%id_col_mass, mass, CS%diag)
+  endif
+
+  if (CS%id_btsl > 0 .or. CS%id_bcsl > 0) then
+    call find_bsl(h, tv, G, GV, US, btsl, bcsl, dZref=G%Z_ref)
+    if (CS%id_btsl > 0) call post_data(CS%id_btsl, btsl, CS%diag)
+    if (CS%id_bcsl > 0) call post_data(CS%id_bcsl, bcsl, CS%diag)
   endif
 
 end subroutine calculate_vertical_integrals
@@ -2101,6 +2110,12 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
   CS%id_pbo = register_diag_field('ocean_model', 'pbo', diag%axesT1, Time, &
       long_name='Sea Water Pressure at Sea Floor', standard_name='sea_water_pressure_at_sea_floor', &
       units='Pa', conversion=US%RL2_T2_to_Pa)
+  CS%id_btsl = register_diag_field('ocean_model', 'btsl', diag%axesT1, Time, &
+      long_name='Barotropic Sea Level', standard_name='barotropic_sea_level', &
+      units='m', conversion=US%Z_to_m)
+  CS%id_bcsl = register_diag_field('ocean_model', 'bcsl', diag%axesT1, Time, &
+      long_name='Baroclinic Sea Level', standard_name='baroclinic_sea_level', &
+      units='m', conversion=US%Z_to_m)
 
   ! Register time derivatives and allocate memory for diagnostics that need
   ! access from across several modules.
