@@ -111,6 +111,10 @@ type, public :: set_visc_CS ; private
   real    :: omega_frac     !<   When setting the decay scale for turbulence, use this
                             !! fraction of the absolute rotation rate blended with the local
                             !! value of f, as sqrt((1-of)*f^2 + of*4*omega^2) [nondim]
+  real    :: tideampfac2    !< A factor to multiple by tideamp to convert to a mean ustar,
+                            !! accounts for conversion of amplitude to mean magnitude over
+                            !! a time average much longer than the tidal periods and for
+                            !! non-commuting conversion of mean tideamp to mean ustar**3
   logical :: concave_trigonometric_L  !< If true, use trigonometric expressions to determine the
                             !! fractional open interface lengths for concave topography.
   integer :: answer_date    !< The vintage of the order of arithmetic and expressions in the set
@@ -623,13 +627,23 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
 
     ! Set the "back ground" friction velocity scale to either the tidal amplitude or place-holder constant
     if (CS%BBL_use_tidal_bg) then
-      do i=is,ie ; if (do_i(i)) then ; if (m==1) then
-        u2_bg(I) = 0.5*( G%mask2dT(i,j)*(CS%tideamp(i,j)*CS%tideamp(i,j))+ &
-                         G%mask2dT(i+1,j)*(CS%tideamp(i+1,j)*CS%tideamp(i+1,j)) )
+      if (CS%tideampfac2>0.0) then
+        do i=is,ie ; if (do_i(i)) then ; if (m==1) then
+          u2_bg(I) = ( 0.5*CS%tideampfac2 ) * ( G%mask2dT(i,j)*(CS%tideamp(i,j)*CS%tideamp(i,j))+ &
+                           G%mask2dT(i+1,j)*(CS%tideamp(i+1,j)*CS%tideamp(i+1,j)) )
+        else
+          u2_bg(i) = ( 0.5*CS%tideampfac2 ) * ( G%mask2dT(i,j)*(CS%tideamp(i,j)*CS%tideamp(i,j))+ &
+                           G%mask2dT(i,j+1)*(CS%tideamp(i,j+1)*CS%tideamp(i,j+1)) )
+        endif ; endif ; enddo
       else
-        u2_bg(i) = 0.5*( G%mask2dT(i,j)*(CS%tideamp(i,j)*CS%tideamp(i,j))+ &
-                         G%mask2dT(i,j+1)*(CS%tideamp(i,j+1)*CS%tideamp(i,j+1)) )
-      endif ; endif ; enddo
+        do i=is,ie ; if (do_i(i)) then ; if (m==1) then
+          u2_bg(I) = 0.5*( G%mask2dT(i,j)*(CS%tideamp(i,j)*CS%tideamp(i,j))+ &
+                           G%mask2dT(i+1,j)*(CS%tideamp(i+1,j)*CS%tideamp(i+1,j)) )
+        else
+          u2_bg(i) = 0.5*( G%mask2dT(i,j)*(CS%tideamp(i,j)*CS%tideamp(i,j))+ &
+                           G%mask2dT(i,j+1)*(CS%tideamp(i,j+1)*CS%tideamp(i,j+1)) )
+        endif ; endif ; enddo
+      endif
     else
       do i=is,ie ; if (do_i(i)) then
         u2_bg(i) = CS%drag_bg_vel * CS%drag_bg_vel
@@ -2955,6 +2969,7 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
                              ! is used in place of the absolute value of the local Coriolis
                              ! parameter in the denominator of some expressions [nondim]
   real    :: Chan_max_thick_dflt ! The default value for CHANNEL_DRAG_MAX_THICK [Z ~> m]
+  real    :: tideamp_factor  ! A factor to multiply by tideamp when converting to mean tidal magnitude [nondim]
   real    :: shelfbreak_depth ! When CHANNEL_DRAG is true, the bathymetric depth interpolated
                              ! to the vorticity point is a combination of the harmonic mean of the
                              ! adjacent velocity point depths below this depth [Z ~> m] and the
@@ -3125,6 +3140,13 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
       ! nor dimensional testing in this mode. If we ever detect a dimensional sensitivity to
       ! this parameter, in this mode, then it means it is being used inappropriately.
       CS%drag_bg_vel = 1.e30
+      call get_param(param_file, mdl, "TIDEAMP_FACTOR", tideamp_factor, &
+                   "A parameter to multiple by tideamp when converting to ustar. "//&
+                   "It accounts for converting the amplitude to a mean magintude (approx 1/sqrt(2)) "//&
+                   "and possibly also for non-commuting averaging operators when converting to ustar**3. "//&
+                   "It is ignored if negative and uncapped so it can be greater than 1 if desired.",&
+                   units="nondim", default=-1.0)
+      CS%tideampfac2 = tideamp_factor*abs(tideamp_factor) ! the abs preserves the sign, it is not used if negative
     else
       call get_param(param_file, mdl, "DRAG_BG_VEL", CS%drag_bg_vel, &
                    "DRAG_BG_VEL is either the assumed bottom velocity (with "//&
