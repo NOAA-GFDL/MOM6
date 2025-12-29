@@ -1356,11 +1356,7 @@ subroutine post_data_1d_k(diag_field_id, field, diag_cs, is_static)
       allocate( locfield( ks:ke ) )
 
       do k=ks,ke
-        if (field(k) == diag_cs%missing_value) then
-          locfield(k) = diag_cs%missing_value
-        else
-          locfield(k) = field(k) * diag%conversion_factor
-        endif
+        locfield(k) = field(k) * diag%conversion_factor
       enddo
     else
       locfield => field
@@ -1482,13 +1478,8 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
   if ((diag%conversion_factor /= 0.) .and. (diag%conversion_factor /= 1.)) then
     allocate( locfield( lbound(field,1):ubound(field,1), lbound(field,2):ubound(field,2) ) )
     do j=jsv,jev ; do i=isv,iev
-      if (field(i,j) == diag_cs%missing_value) then
-        locfield(i,j) = diag_cs%missing_value
-      else
-        locfield(i,j) = field(i,j) * diag%conversion_factor
-      endif
+      locfield(i,j) = field(i,j) * diag%conversion_factor
     enddo ; enddo
-    locfield(isv:iev,jsv:jev) = field(isv:iev,jsv:jev) * diag%conversion_factor
   else
     locfield => field
   endif
@@ -1829,11 +1820,7 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
     endif
 
     do k=ks,ke ; do j=jsv,jev ; do i=isv,iev
-      if (field(i,j,k) == diag_cs%missing_value) then
-        locfield(i,j,k) = diag_cs%missing_value
-      else
-        locfield(i,j,k) = field(i,j,k) * diag%conversion_factor
-      endif
+      locfield(i,j,k) = field(i,j,k) * diag%conversion_factor
     enddo ; enddo ; enddo
   else
     locfield => field
