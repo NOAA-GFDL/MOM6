@@ -29,7 +29,7 @@ use MOM_interface_heights, only : thickness_to_dz
 use MOM_io,               only : slasher, vardesc, query_vardesc, MOM_read_data
 use MOM_io,               only : get_filename_appendix
 use MOM_safe_alloc,       only : safe_alloc_ptr, safe_alloc_alloc
-use MOM_string_functions, only : lowercase
+use MOM_string_functions, only : lowercase, ints_to_string, trim_trailing_commas
 use MOM_time_manager,     only : time_type
 use MOM_time_manager,     only : get_time
 use MOM_unit_scaling,     only : unit_scale_type
@@ -1056,7 +1056,7 @@ subroutine define_axes_group(diag_cs, handles, axes, nz, vertical_coordinate_num
   n = size(handles)
   if (n<1 .or. n>3) call MOM_error(FATAL, "define_axes_group: wrong size for list of handles!")
   allocate( axes%handles(n) )
-  axes%id = i2s(handles, n) ! Identifying string
+  axes%id = ints_to_string(handles, max(n,3)) ! Identifying string
   axes%rank = n
   axes%handles(:) = handles(:)
   axes%diag_cs => diag_cs ! A [circular] link back to the diag_cs structure
@@ -1169,7 +1169,7 @@ subroutine define_axes_group_dsamp(diag_cs, handles, axes, dl, nz, vertical_coor
   n = size(handles)
   if (n<1 .or. n>3) call MOM_error(FATAL, "define_axes_group: wrong size for list of handles!")
   allocate( axes%handles(n) )
-  axes%id = i2s(handles, n) ! Identifying string
+  axes%id = ints_to_string(handles, max(n,3)) ! Identifying string
   axes%rank = n
   axes%handles(:) = handles(:)
   axes%diag_cs => diag_cs ! A [circular] link back to the diag_cs structure
@@ -2437,14 +2437,7 @@ integer function register_diag_field(module_name, field_name, axes_in, init_time
   if (axes_in%is_v_point)   dimensions = trim(dimensions)//" xh, yq,"
   if (axes_in%is_layer)     dimensions = trim(dimensions)//" zl,"
   if (axes_in%is_interface) dimensions = trim(dimensions)//" zi,"
-
-  if (len_trim(dimensions) > 0) then
-    dimensions = trim(adjustl(dimensions))
-    if (dimensions(len_trim(dimensions):len_trim(dimensions)) == ",") then
-        dimensions = dimensions(1:len_trim(dimensions) - 1)
-    endif
-    dimensions = trim(dimensions)
-  endif
+  if (len_trim(dimensions) > 0) dimensions = trim_trailing_commas(dimensions)
 
   if (is_root_pe() .and. (diag_CS%available_diag_doc_unit > 0)) then
     msg = ''
@@ -3181,14 +3174,7 @@ function register_static_field(module_name, field_name, axes, &
   if (axes%is_v_point)   dimensions = trim(dimensions)//" xh, yq,"
   if (axes%is_layer)     dimensions = trim(dimensions)//" zl,"
   if (axes%is_interface) dimensions = trim(dimensions)//" zi,"
-
-  if (len_trim(dimensions) > 0) then
-    dimensions = trim(adjustl(dimensions))
-    if (dimensions(len_trim(dimensions):len_trim(dimensions)) == ",") then
-        dimensions = dimensions(1:len_trim(dimensions) - 1)
-    endif
-    dimensions = trim(dimensions)
-  endif
+  if (len_trim(dimensions) > 0) dimensions = trim_trailing_commas(dimensions)
 
   ! Document diagnostics in list of available diagnostics
   if (is_root_pe() .and. diag_CS%available_diag_doc_unit > 0) then
@@ -3859,28 +3845,6 @@ subroutine diag_mediator_end(time, diag_CS, end_diag_manager)
   endif
 
 end subroutine diag_mediator_end
-
-!> Convert the first n elements (up to 3) of an integer array to an underscore delimited string.
-function i2s(a,n_in)
-  ! "Convert the first n elements of an integer array to a string."
-  ! Perhaps this belongs elsewhere in the MOM6 code?
-  integer, dimension(:), intent(in) :: a    !< The array of integers to translate
-  integer, optional    , intent(in) :: n_in !< The number of elements to translate, by default all
-  character(len=15) :: i2s !< The returned string
-
-  character(len=15) :: i2s_temp
-  integer :: i,n
-
-  n=size(a)
-  if (present(n_in)) n = n_in
-
-  i2s = ''
-  do i=1,min(n,3)
-    write (i2s_temp, '(I4.4)') a(i)
-    i2s = trim(i2s) //'_'// trim(i2s_temp)
-  enddo
-  i2s = adjustl(i2s)
-end function i2s
 
 !> Returns a new diagnostic id, it may be necessary to expand the diagnostics array.
 integer function get_new_diag_id(diag_cs)
