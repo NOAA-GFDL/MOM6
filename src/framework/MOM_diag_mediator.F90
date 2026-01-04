@@ -2971,6 +2971,7 @@ subroutine attach_cell_methods(id, axes, ostring, cell_methods, &
   ostring = adjustl(ostring)
 end subroutine attach_cell_methods
 
+!> Registers a scalar diagnostic, returning an integer handle
 function register_scalar_field(module_name, field_name, init_time, diag_cs, &
             long_name, units, missing_value, range, standard_name, &
             do_not_log, err_msg, interp_method, cmor_field_name, &
