@@ -223,15 +223,15 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
   !$OMP end parallel
 
   isv = is ; iev = ie ; jsv = js ; jev = je
+  nsten_halo = min(is - isd, ied - ie, js - jsd, jed - je) / stencil
 
   do itt=1,max_iter
 
     if (isv > is-stencil) then
       call do_group_pass(CS%pass_uhr_vhr_t_hprev, G%Domain, clock=id_clock_pass)
 
-      nsten_halo = min(is-isd,ied-ie,js-jsd,jed-je)/stencil
-      isv = is-nsten_halo*stencil ; jsv = js-nsten_halo*stencil
-      iev = ie+nsten_halo*stencil ; jev = je+nsten_halo*stencil
+      isv = is - nsten_halo * stencil ; jsv = js - nsten_halo * stencil
+      iev = ie + nsten_halo * stencil ; jev = je + nsten_halo * stencil
       ! Reevaluate domore_u & domore_v unless the valid range is the same size as
       ! before.  Also, do this if there is Strang splitting.
       if ((nsten_halo > 1) .or. (itt==1)) then
