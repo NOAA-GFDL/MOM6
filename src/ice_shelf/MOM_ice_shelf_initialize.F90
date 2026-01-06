@@ -40,9 +40,9 @@ subroutine initialize_ice_thickness(h_shelf, area_shelf_h, hmask, melt_mask, G, 
                          intent(inout) :: area_shelf_h !< The area per cell covered by the ice shelf [L2 ~> m2].
   real, dimension(SZDI_(G),SZDJ_(G)), &
                          intent(inout) :: hmask !< A mask indicating which tracer points are
-                                             !! partly or fully covered by an ice-shelf
+                                             !! partly or fully covered by an ice-shelf [nondim]
   real, dimension(SZDI_(G),SZDJ_(G)), &
-                         intent(inout) :: melt_mask !< A mask indicating where to allow ice-shelf melting
+                         intent(inout) :: melt_mask !< A mask indicating where to allow ice-shelf melting [nondim]
   type(unit_scale_type), intent(in)    :: US !< A structure containing unit conversion factors
   type(param_file_type), intent(in)    :: PF !< A structure to parse for run-time parameters
   logical, intent(in), optional        :: rotate_index !< If true, this is a rotation test
@@ -51,10 +51,10 @@ subroutine initialize_ice_thickness(h_shelf, area_shelf_h, hmask, melt_mask, G, 
   character(len=40)  :: mdl = "initialize_ice_thickness" ! This subroutine's name.
   character(len=200) :: config
   logical :: rotate = .false.
-  real, allocatable, dimension(:,:) :: tmp1_2d ! Temporary array for storing ice shelf input data
-  real, allocatable, dimension(:,:) :: tmp2_2d ! Temporary array for storing ice shelf input data
-  real, allocatable, dimension(:,:) :: tmp3_2d ! Temporary array for storing ice shelf input data
-  real, allocatable, dimension(:,:) :: tmp4_2d ! Temporary array for storing ice shelf input data
+  real, allocatable, dimension(:,:) :: tmp1_2d ! Temporary array for storing ice shelf input data [Z~>m]
+  real, allocatable, dimension(:,:) :: tmp2_2d ! Temporary array for storing ice shelf input data [L2~>m2]
+  real, allocatable, dimension(:,:) :: tmp3_2d ! Temporary array for storing ice shelf input data [nondim]
+  real, allocatable, dimension(:,:) :: tmp4_2d ! Temporary array for storing ice shelf input data [nondim]
 
   call get_param(PF, mdl, "ICE_PROFILE_CONFIG", config, &
                  "This specifies how the initial ice profile is specified. "//&
@@ -99,9 +99,9 @@ subroutine initialize_ice_thickness_from_file(h_shelf, area_shelf_h, hmask, melt
                          intent(inout) :: area_shelf_h !< The area per cell covered by the ice shelf [L2 ~> m2].
   real, dimension(SZDI_(G),SZDJ_(G)), &
                          intent(inout) :: hmask !< A mask indicating which tracer points are
-                                             !! partly or fully covered by an ice-shelf
+                                             !! partly or fully covered by an ice-shelf [nondim]
   real, dimension(SZDI_(G),SZDJ_(G)), &
-                         intent(inout) :: melt_mask !< A mask indicating where to allow ice-shelf melting
+                         intent(inout) :: melt_mask !< A mask indicating where to allow ice-shelf melting [nondim]
   type(unit_scale_type), intent(in)    :: US !< A structure containing unit conversion factors
   type(param_file_type), intent(in)    :: PF !< A structure to parse for run-time parameters
 
