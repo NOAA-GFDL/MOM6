@@ -372,7 +372,8 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, wind_stagger, gas
 
   !allocate(OS%sfc_state)
   call allocate_surface_state(OS%sfc_state, OS%grid, use_temperature, do_integrals=.true., &
-                              gas_fields_ocn=gas_fields_ocn, use_meltpot=use_melt_pot)
+                              gas_fields_ocn=gas_fields_ocn, use_meltpot=use_melt_pot, &
+                              use_iceshelves=OS%use_ice_shelf)
 
   if (present(wind_stagger)) then
     call surface_forcing_init(Time_in, OS%grid, OS%US, param_file, OS%diag, &

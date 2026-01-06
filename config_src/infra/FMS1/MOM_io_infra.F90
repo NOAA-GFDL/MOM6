@@ -32,7 +32,8 @@ implicit none ; private
 public :: open_file, open_ASCII_file, file_is_open, close_file, flush_file, file_exists
 public :: get_file_info, get_file_fields, get_file_times, get_filename_suffix
 public :: read_field, read_vector, write_metadata, write_field
-public :: field_exists, get_field_atts, get_field_size, get_axis_data, read_field_chksum
+public :: field_exists, get_field_atts, get_field_size, read_field_chksum
+public :: get_axis_data, set_axis_data
 public :: io_infra_init, io_infra_end, MOM_namelist_file, check_namelist_error, write_version
 public :: stdout_if_root
 ! These types are inherited from underlying infrastructure code, to act as containers for
@@ -404,12 +405,33 @@ subroutine get_field_size(filename, fieldname, sizes, field_found, no_domain)
 end subroutine get_field_size
 
 !> Extracts and returns the axis data stored in an axistype.
-subroutine get_axis_data( axis, dat )
-  type(axistype),     intent(in)  :: axis !< An axis type
-  real, dimension(:), intent(out) :: dat  !< The data in the axis variable
+subroutine get_axis_data(axis, axis_name, axis_data)
+  type(axistype), intent(in) :: axis
+    !< Infra axis
+  character(len=256), intent(out) :: axis_name
+    !< Axis name
+  real, dimension(:), intent(out) :: axis_data
+    !< Axis points
 
-  call mpp_get_axis_data( axis, dat )
+  call mpp_get_atts(axis, name=axis_name)
+  call mpp_get_axis_data(axis, axis_data)
 end subroutine get_axis_data
+
+
+! NOTE: Unused, but provided to match the FMS2 API
+
+!> Return a new axistype based on axis specs
+subroutine set_axis_data(axis, axis_name, axis_data)
+  type(axistype), intent(inout) :: axis
+    !< Target axis
+  character(len=256), intent(in) :: axis_name
+    !< Target axis name
+  real, intent(in) :: axis_data(:)
+    !< Target axis values
+
+  call MOM_error(FATAL, "set_axis_data in FMS1 is not yet implemented.")
+end subroutine set_axis_data
+
 
 !> This routine uses the fms_io subroutine read_data to read a scalar named
 !! "fieldname" from a single or domain-decomposed file "filename".

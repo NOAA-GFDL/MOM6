@@ -50,7 +50,9 @@ public calculate_specific_vol_derivs
 public calculate_TFreeze
 public convert_temp_salt_for_TEOS10
 public cons_temp_to_pot_temp
+public pot_temp_to_cons_temp
 public abs_saln_to_prac_saln
+public prac_saln_to_abs_saln
 public gsw_sp_from_sr
 public gsw_sr_from_sp
 public gsw_pt_from_ct

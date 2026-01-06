@@ -458,7 +458,7 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, visc, dt, Kd_int, G, GV, 
     BBL_Vel_Scale, &       ! The velocity scale used in getting the BBL part of Kd [Z T-1 ~> m s-1]
     BBL_Mix_Length         ! The length scale used in getting the BBL part of Kd [Z ~> m]
   real, dimension(SZI_(G),SZJ_(G)) :: &
-    ! The next 7 diagnostics are terms in the mixed layer TKE budget, all in [R Z3 T-3 ~> W m-2 = kg s-3].
+    ! The next 7 diagnostics are terms in the mixed layer TKE budget, all in [R Z3 T-3 ~> W m-2].
     diag_TKE_wind, &   ! The wind source of TKE [R Z3 T-3 ~> W m-2]
     diag_TKE_MKE, &    ! The resolved KE source of TKE [R Z3 T-3 ~> W m-2]
     diag_TKE_conv, &   ! The convective source of TKE [R Z3 T-3 ~> W m-2]
@@ -1028,7 +1028,8 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
   real :: dz_neglect ! A vertical distance that is so small it is usually lost
                     ! in roundoff and can be neglected [Z ~> m].
   real :: dMass     ! The mass per unit area within a layer [Z R ~> kg m-2].
-  real :: dPres     ! The hydrostatic pressure change across a layer [R Z2 T-2 ~> Pa = J m-3].
+  real :: dPres     ! The hydrostatic pressure change across a layer [R Z2 T-2 ~> Pa] or
+                    ! equivalently [R Z2 T-2 ~> J m-3].
   real :: dMKE_max  ! The maximum amount of mean kinetic energy that could be
                     ! converted to turbulent kinetic energy if the velocity in
                     ! the layer below an interface were homogenized with all of
@@ -2098,8 +2099,8 @@ subroutine ePBL_BBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, absf, &
   real :: dz_neglect ! A vertical distance that is so small it is usually lost
                     ! in roundoff and can be neglected [Z ~> m].
   real :: dMass     ! The mass per unit area within a layer [Z R ~> kg m-2].
-  real :: dPres     ! The hydrostatic pressure change across a layer [R Z2 T-2 ~> Pa = J m-3].
-
+  real :: dPres     ! The hydrostatic pressure change across a layer [R Z2 T-2 ~> Pa] or
+                    ! equivalently [R Z2 T-2 ~> J m-3].
   real :: dt_h      ! The timestep divided by the averages of the vertical distances around
                     ! a layer [T Z-1 ~> s m-1].
   real :: dz_top    ! The distance from the surface [Z ~> m].

@@ -227,8 +227,8 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
   real :: g_Rho0          ! G_Earth/Rho0 times a thickness conversion factor
                           ! [L2 H-1 T-2 R-1 ~> m4 s-2 kg-1 or m7 s-2 kg-2]
   real :: rho_ml(SZI_(G)) ! Potential density relative to the surface [R ~> kg m-3]
-  real :: rml_int_fast(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-3]
-  real :: rml_int_slow(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-3]
+  real :: rml_int_fast(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-5]
+  real :: rml_int_slow(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-5]
   real :: SpV_ml(SZI_(G)) ! Specific volume evaluated at the surface pressure [R-1 ~> m3 kg-1]
   real :: SpV_int_fast(SZI_(G)) ! Specific volume integrated through the mixed layer [H R-1 ~> m4 kg-1 or m]
   real :: SpV_int_slow(SZI_(G)) ! Specific volume integrated through the mixed layer [H R-1 ~> m4 kg-1 or m]
@@ -813,7 +813,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   real :: grid_dsd        ! combination of grid scales [L2 ~> m2]
   real :: h_sml           ! "Little h", the active mixing depth with diurnal cycle removed [H ~> m or kg m-2]
   real :: h_big           ! "Big H", the mixed layer depth based on a time filtered "little h" [H ~> m or kg m-2]
-  real :: grd_b           ! The vertically average gradient of buoyancy [L H-1 T-2 ~> s-2 or m-3 kg-1 s-2]
+  real :: grd_b           ! The vertically average gradient of buoyancy [L H-1 T-2 ~> s-2 or m3 kg-1 s-2]
   real :: psi_mag         ! Magnitude of stream function [L2 H T-1 ~> m3 s-1 or kg s-1]
   real :: h_neglect       ! tiny thickness usually lost in roundoff so can be neglected [H ~> m or kg m-2]
   real :: I4dt            ! 1/(4 dt) [T-1 ~> s-1]
@@ -1251,7 +1251,7 @@ subroutine mixedlayer_restrat_BML(h, uhtr, vhtr, tv, forces, dt, G, GV, US, CS)
   real :: g_Rho0          ! G_Earth/Rho0 times a thickness conversion factor
                           ! [L2 H-1 T-2 R-1 ~> m4 s-2 kg-1 or m7 s-2 kg-2]
   real :: Rho_ml(SZI_(G)) ! Potential density relative to the surface [R ~> kg m-3]
-  real :: rho_int(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-3]
+  real :: rho_int(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-5]
   real :: SpV_ml(SZI_(G)) ! Specific volume evaluated at the surface pressure [R-1 ~> m3 kg-1]
   real :: SpV_int(SZI_(G)) ! Specific volume integrated through the surface layer [H R-1 ~> m4 kg-1 or m]
   real :: p0(SZI_(G))     ! A pressure of 0 [R L2 T-2 ~> Pa]

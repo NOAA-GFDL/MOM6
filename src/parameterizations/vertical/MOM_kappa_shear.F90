@@ -183,7 +183,7 @@ subroutine Calculate_kappa_shear(u_in, v_in, h, tv, p_surf, kappa_io, tke_io, &
     u0xdz, &    ! The initial zonal velocity times dz [H L T-1 ~> m2 s-1 or kg m-1 s-1]
     v0xdz, &    ! The initial meridional velocity times dz [H L T-1 ~> m2 s-1 or kg m-1 s-1]
     T0xdz, &    ! The initial temperature times thickness [C H ~> degC m or degC kg m-2] or if
-                ! temperature is not a state variable, the density times thickness [R H ~> kg m-2 or kg2 m-3]
+                ! temperature is not a state variable, the density times thickness [R H ~> kg m-2 or kg2 m-5]
     S0xdz       ! The initial salinity times dz [S H ~> ppt m or ppt kg m-2].
   real, dimension(SZK_(GV)+1) :: &
     kappa, &    ! The shear-driven diapycnal diffusivity at an interface [H Z T-1 ~> m2 s-1 or Pa s]

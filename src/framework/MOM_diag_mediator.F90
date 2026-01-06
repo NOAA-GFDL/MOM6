@@ -1495,12 +1495,12 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
 
   if (present(mask)) then
     locmask => mask
-  elseif (.NOT. is_stat) then
+  elseif (.NOT. is_stat .and. associated(diag%axes)) then
     if (associated(diag%axes%mask2d)) locmask => diag%axes%mask2d
   endif
 
   dl=1
-  if (.NOT. is_stat) dl = diag%axes%downsample_level !static field downsample i not supported yet
+  if (.NOT. is_stat .and. associated(diag%axes)) dl = diag%axes%downsample_level !static field downsample not supported
   !Downsample the diag field and mask (if present)
   if (dl > 1) then
     isv_o = isv ; jsv_o = jsv

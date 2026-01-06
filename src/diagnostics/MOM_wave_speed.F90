@@ -135,7 +135,7 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, halo_size, use_ebt_mode, mono_N
   real :: I_Hnew   ! The inverse of a new layer thickness [H-1 ~> m-1 or m2 kg-1]
   real :: drxh_sum ! The sum of density differences across interfaces times thicknesses [R H ~> kg m-2 or kg2 m-5]
   real :: dSpVxh_sum ! The sum of specific volume differences across interfaces times
-                   ! thicknesses [R-1 H ~> m4 kg-1 or m], negative for stable stratification.
+                   ! thicknesses [H R-1 ~> m4 kg-1 or m], negative for stable stratification.
   real :: g_Rho0   ! G_Earth/Rho0 [L2 T-2 H-1 R-1 ~> m4 s-2 kg-1 or m7 s-2 kg-2].
   real :: c2_scale ! A scaling factor for wave speeds to help control the growth of the determinant and
                    ! its derivative with lam between rows of the Thomas algorithm solver [L2 s2 T-2 m-2 ~> nondim].
@@ -852,7 +852,7 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, w_struct, u_struct, u_s
   real :: I_Hnew     ! The inverse of a new layer thickness [H-1 ~> m-1 or m2 kg-1]
   real :: drxh_sum   ! The sum of density differences across interfaces times thicknesses [R H ~> kg m-2 or kg2 m-5]
   real :: dSpVxh_sum ! The sum of specific volume differences across interfaces times
-                     ! thicknesses [R-1 H ~> m4 kg-1 or m], negative for stable stratification.
+                     ! thicknesses [H R-1 ~> m4 kg-1 or m], negative for stable stratification.
   real :: g_Rho0     ! G_Earth/Rho0 [L2 T-2 H-1 R-1 ~> m4 s-2 kg-1 or m7 s-2 kg-2].
   real :: tol_Hfrac  ! Layers that together are smaller than this fraction of
                      ! the total water column can be merged for efficiency [nondim].
@@ -879,7 +879,7 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, w_struct, u_struct, u_s
   real :: mode_struct(SZK_(GV)+1) ! The mode structure [nondim], but it is also temporarily
                          ! in units of [L2 T-2 ~> m2 s-2] after it is modified inside of tdma6.
   real :: mode_struct_fder(SZK_(GV)) ! The mode structure 1st derivative [Z-1 ~> m-1], but it is also temporarily
-                         ! in units of [Z-1 L2 T-2 ~> m s-2] after it is modified inside of tdma6.
+                         ! in units of [L2 Z-1 T-2 ~> m s-2] after it is modified inside of tdma6.
   real :: mode_struct_sq(SZK_(GV)+1) ! The square of mode structure [nondim]
   real :: mode_struct_fder_sq(SZK_(GV)) ! The square of mode structure 1st derivative [Z-2 ~> m-2]
 

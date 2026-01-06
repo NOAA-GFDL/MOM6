@@ -38,7 +38,7 @@ type, public :: SAL_CS ; private
   real :: eta_prop
     !< The partial derivative of eta_sal with the local value of eta [nondim].
   real :: linear_scaling
-    !< Dimensional coefficients for scalar SAL [nondim or Z T2 L-2 R-1 ~> m Pa-1]
+    !< Dimensional coefficients for scalar SAL [nondim] or [Z T2 L-2 R-1 ~> m Pa-1]
   type(sht_CS), allocatable :: sht
     !< Spherical harmonic transforms (SHT) control structure
   integer :: sal_sht_Nd

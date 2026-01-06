@@ -1090,7 +1090,7 @@ subroutine IS_dynamics_post_data(time_step, Time, CS, ISS, G)
   real, dimension(SZDI_(G),SZDJ_(G))  :: ice_visc ! area-averaged vertically integrated ice viscosity
                                                   !! [R L2 Z T-1 ~> Pa s m]
   real, dimension(SZDI_(G),SZDJ_(G))  :: basal_tr ! area-averaged taub_beta field related to basal traction,
-                                                  !! [R L1 T-1 ~> Pa s m-1]
+                                                  !! [R L T-1 ~> Pa s m-1]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: surf_slope ! the surface slope of the ice shelf/sheet [nondim]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: ice_speed ! ice sheet flow speed [L T-1 ~> m s-1]
 
@@ -3413,9 +3413,9 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
           CS%ice_visc(i,j,1) = (G%areaT(i,j) * max(ISS%h_shelf(i,j),CS%min_h_shelf)) * &
                                max(CS%AGlen_visc(i,j) ,CS%min_ice_visc)
         endif
-        ! Here CS%Aglen_visc(i,j) is the ice viscosity [Pa s ~> R L2 T-1] computed from obs and read from a file
+        ! Here CS%Aglen_visc(i,j) is the ice viscosity [R L2 T-1 ~> Pa s] computed from obs and read from a file
       elseif (model_qp1) then
-        !calculate viscosity at 1 cell-centered quadrature point per cell
+        ! calculate viscosity at 1 cell-centered quadrature point per cell
 
         Visc_coef = (CS%AGlen_visc(i,j))**(-1./n_g)
         ! Units of Aglen_visc [Pa-(n_g) s-1]

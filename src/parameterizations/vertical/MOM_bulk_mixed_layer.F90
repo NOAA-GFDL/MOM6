@@ -278,7 +278,7 @@ subroutine bulkmixedlayer(h_3d, u_3d, v_3d, tv, fluxes, dt, ea, eb, G, GV, US, C
                      ! over a time step from evaporating fresh water [H ~> m or kg m-2]
     Net_heat, & !   The net heating at the surface over a time step [C H ~> degC m or degC kg m-2]
                 ! Any penetrating shortwave radiation is not included in Net_heat.
-    Net_salt, & ! The surface salt flux into the ocean over a time step [S H  ~> ppt m or ppt kg m-2]
+    Net_salt, & ! The surface salt flux into the ocean over a time step [S H ~> ppt m or ppt kg m-2]
     Idecay_len_TKE, &  ! The inverse of a turbulence decay length scale [H-1 ~> m-1 or m2 kg-1].
     p_ref, &    !   Reference pressure for the potential density governing mixed
                 ! layer dynamics, almost always 0 (or 1e5) [R L2 T-2 ~> Pa].
@@ -1118,7 +1118,7 @@ subroutine mixedlayer_convection(h, d_eb, htot, Ttot, Stot, uhtot, vhtot,      &
   real :: T_precip     !   The temperature of the precipitation [C ~> degC].
   real :: C1_3, C1_6   !  1/3 and 1/6 [nondim]
   real :: En_fn, Frac, x1 !  Nondimensional temporary variables [nondim].
-  real :: dr, dr0      ! Temporary variables [R H ~> kg m-2 or kg2 m-5] or [R-1 H ~> m4 kg-1 or m].
+  real :: dr, dr0      ! Temporary variables [R H ~> kg m-2 or kg2 m-5] or [H R-1 ~> m4 kg-1 or m].
   real :: dr_ent, dr_comp ! Temporary variables [R H ~> kg m-2 or kg2 m-5].
   real :: dr_dh        ! The partial derivative of dr_ent with h_ent [R ~> kg m-3].
   real :: h_min, h_max !   The minimum and maximum estimates for h_ent [H ~> m or kg m-2]

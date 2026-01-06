@@ -204,6 +204,7 @@ type, public :: ice_shelf_CS ; private
                                          !! divided by the von Karman constant VK [nondim]. Was 1/8.
   real :: Vk                             !< Von Karman's constant [nondim]
   real :: Rc                             !< critical flux Richardson number [nondim]
+  logical :: ustar_from_vel_bugfix       !< If true, fixes ustar from ocean velocity bug
   logical :: buoy_flux_itt_bugfix        !< If true, fixes buoyancy iteration bug
   logical :: salt_flux_itt_bugfix        !< If true, fixes salt iteration bug
   real :: buoy_flux_tol                  !< Fractional buoyancy iteration tolerance for convergence [nondim]
@@ -347,13 +348,13 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   real :: Sb_min, Sb_max ! Minimum and maximum boundary salinities [S ~> ppt]
   real :: dS_min, dS_max ! Minimum and maximum salinity changes [S ~> ppt]
   ! Variables used in iterating for wB_flux.
-  real :: wB_flux_next ! The next interation's guess for wB_flux [Z2 T-3 ~> m2 s-2]
-  real :: wB_flux_new  ! An updated value of wB_flux when Gam_turb is based on wB_flux [Z2 T-3 ~> m2 s-2]
-  real :: wB_flux_max  ! The upper bound on wB_flux [Z2 T-3 ~> m2 s-2]
-  real :: wB_flux_min  ! The lower bound on wB_flux [Z2 T-3 ~> m2 s-2]
+  real :: wB_flux_next ! The next interation's guess for wB_flux [Z2 T-3 ~> m2 s-3]
+  real :: wB_flux_new  ! An updated value of wB_flux when Gam_turb is based on wB_flux [Z2 T-3 ~> m2 s-3]
+  real :: wB_flux_max  ! The upper bound on wB_flux [Z2 T-3 ~> m2 s-3]
+  real :: wB_flux_min  ! The lower bound on wB_flux [Z2 T-3 ~> m2 s-3]
   real :: dDwB_dwB     ! The slope of the change in wB_flux between iterations with wB_flux [nondim]
-  real :: DwB_max      ! The change in wB_flux when it is wB_flux_max [Z2 T-3 ~> m2 s-2]
-  real :: DwB_min      ! The change in wB_flux when it is wB_flux_min [Z2 T-3 ~> m2 s-2]
+  real :: DwB_max      ! The change in wB_flux when it is wB_flux_max [Z2 T-3 ~> m2 s-3]
+  real :: DwB_min      ! The change in wB_flux when it is wB_flux_min [Z2 T-3 ~> m2 s-3]
   real :: I_Gam_T, I_Gam_S  ! Terms that vary inversely with Gam_mol_T or Gam_mol_S and Gam_turb [nondim]
   real :: dG_dwB       ! The derivative of Gam_turb with wB [T3 Z-2 ~> s3 m-2]
   real :: taux2, tauy2 ! The squared surface stresses [R2 L2 Z2 T-4 ~> Pa2].
@@ -486,7 +487,11 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
       tauy2 = (((asv1 * (sfc_state%tauy_shelf(i,J-1)**2)) + (asv2 * (sfc_state%tauy_shelf(i,J)**2))  ) * I_av)
     endif
     u2_av = (((asu1 * (sfc_state%u(I-1,j)**2)) + (asu2 * sfc_state%u(I,j)**2)) * I_au)
-    v2_av = (((asv1 * (sfc_state%v(i,J-1)**2)) + (asu2 * sfc_state%v(i,J)**2)) * I_av)
+    if (CS%ustar_from_vel_bugfix) then
+      v2_av = (((asv1 * (sfc_state%v(i,J-1)**2)) + (asv2 * sfc_state%v(i,J)**2)) * I_av)
+    else
+      v2_av = (((asv1 * (sfc_state%v(i,J-1)**2)) + (asu2 * sfc_state%v(i,J)**2)) * I_av)
+    endif
 
     if ((taux2 + tauy2 > 0.0) .and. .not.CS%ustar_shelf_from_vel) then
       if (CS%ustar_max >= 0.0) then
@@ -1449,10 +1454,12 @@ subroutine add_shelf_flux(G, US, CS, sfc_state, fluxes, time_step)
     endif
 
     if (associated(fluxes%sens)) &
-      fluxes%sens(i,j) = frac_shelf*ISS%tflux_ocn(i,j)*CS%flux_factor + frac_open * fluxes%sens(i,j)
+      fluxes%sens(i,j) = frac_shelf*ISS%tflux_ocn(i,j) + frac_open * fluxes%sens(i,j)
     ! The salt flux should be mostly from sea ice, so perhaps none should be intercepted and this should be changed.
     if (associated(fluxes%salt_flux)) &
       fluxes%salt_flux(i,j) = frac_shelf * ISS%salt_flux(i,j)*CS%flux_factor + frac_open * fluxes%salt_flux(i,j)
+    if (associated(fluxes%latent)) &
+      fluxes%latent(i,j) = fluxes%latent(i,j) - frac_shelf * ISS%water_flux(i,j) * CS%Lat_Fusion
   endif ; enddo ; enddo
 
   if (CS%debug) then
@@ -1931,6 +1938,9 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
   call get_param(param_file, mdl, "ICE_SHELF_RC", CS%Rc, &
                  "Critical flux Richardson number for ice melt ", &
                  units="nondim", default=0.20)
+  call get_param(param_file, mdl, "ICE_SHELF_USTAR_FROM_VEL_BUGFIX", CS%ustar_from_vel_bugfix, &
+                 "Bug fix for ice-area weighting of squared ocean velocities "//&
+                 "used to calculate friction velocity under ice shelves", default=.false.)
   call get_param(param_file, mdl, "ICE_SHELF_BUOYANCY_FLUX_ITT_BUGFIX", CS%buoy_flux_itt_bugfix, &
                  "Bug fix of buoyancy iteration", default=.true., old_name="ICE_SHELF_BUOYANCY_FLUX_ITT_BUG")
   call get_param(param_file, mdl, "ICE_SHELF_SALT_FLUX_ITT_BUGFIX", CS%salt_flux_itt_bugfix, &

@@ -48,7 +48,7 @@ type, public :: int_tide_CS ; private
   integer :: nMode = 1       !< The number of internal tide vertical modes
   integer :: nAngle = 24     !< The number of internal tide angular orientations
   integer :: energized_angle = -1 !< If positive, only this angular band is energized for debugging purposes
-  real    :: dt_itides       !< The timestep for internal tides ray-tracing [s ~> T]
+  real    :: dt_itides       !< The timestep for internal tides ray-tracing [T ~> s]
   real    :: uniform_test_cg !< Uniform group velocity of internal tide
                              !! for testing internal tides [L T-1 ~> m s-1]
   logical :: corner_adv      !< If true, use a corner advection rather than PPM.
@@ -130,7 +130,7 @@ type, public :: int_tide_CS ; private
   real, allocatable, dimension(:,:) :: tot_quad_loss !< Energy loss rates due to quadratic bottom drag,
                         !! summed over angle, frequency and mode [H Z2 T-3 ~> m3 s-3 or W m-2]
   real, allocatable, dimension(:,:) :: tot_itidal_loss !< Energy loss rates due to small-scale drag,
-                        !! summed over angle, frequency and mode [H Z2 T-3 ~>  m3 s-3 or W m-2]
+                        !! summed over angle, frequency and mode [H Z2 T-3 ~> m3 s-3 or W m-2]
   real, allocatable, dimension(:,:) :: tot_Froude_loss !< Energy loss rates due to wave breaking,
                         !! summed over angle, frequency and mode [H Z2 T-3 ~> m3 s-3 or W m-2]
   real, allocatable, dimension(:,:) :: tot_residual_loss !< Energy loss rates due to residual on slopes,
@@ -1363,7 +1363,7 @@ subroutine itidal_lowmode_loss(G, GV, US, CS, Nb, Rho_bot, Ub, En, TKE_loss_fixe
     if (En_tot > 0.0) then
       do a=1,CS%nAngle
         frac_per_sector = En(i,j,a,fr,m)/En_tot
-        TKE_loss(i,j,a,fr,m) = frac_per_sector*TKE_loss_tot           ! [H Z2 T-3  ~> m3 s-3 or W m-2]
+        TKE_loss(i,j,a,fr,m) = frac_per_sector*TKE_loss_tot           ! [H Z2 T-3 ~> m3 s-3 or W m-2]
         loss_rate = TKE_loss(i,j,a,fr,m) / (En(i,j,a,fr,m) + En_negl) ! [T-1 ~> s-1]
         En_b = En(i,j,a,fr,m)
         En_a = En(i,j,a,fr,m) / (1.0 + (dt*loss_rate))
@@ -1426,7 +1426,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
                                                               !! dissipated within a layer and the
                                                               !! diapycnal diffusivity within that layer,
                                                               !! usually (~Rho_0 / (G_Earth * dRho_lay))
-                                                              !! [H Z T-1 / H Z2 T-3 = T2 Z-1 ~> s2 m-1]
+                                                              !! [T2 Z-1 ~> s2 m-1]
   real,                                 intent(in) :: Kd_max  !< The maximum increment for diapycnal
                                                               !! diffusivity due to TKE-based processes
                                                               !! [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
@@ -1460,7 +1460,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
                                                                       !! [H-1 ~> m-1 or m2 kg-1]
 
   ! local variables
-  real :: TKE_loss          ! temp variable to pass value of internal tides TKE loss [R Z-3 T-3 ~> W m-2]
+  real :: TKE_loss          ! temp variable to pass value of internal tides TKE loss [H Z2 T-3 ~> m3 s-3 or W m-2]
   real :: renorm_N          ! renormalization for N profile [H T-1 ~> m s-1 or kg m-2 s-1]
   real :: renorm_N2         ! renormalization for N2 profile [H T-2 ~> m s-2 or kg m-2 s-2]
   real :: tmp_StLau         ! tmp var for renormalization for StLaurent profile [nondim]

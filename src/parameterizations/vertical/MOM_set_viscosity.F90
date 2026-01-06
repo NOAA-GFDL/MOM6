@@ -89,6 +89,12 @@ type, public :: set_visc_CS ; private
   real    :: Chan_drag_max_vol !< The maximum bottom boundary layer volume within which the
                             !! channel drag is applied, normalized by the full cell area,
                             !! or a negative value to apply no maximum [Z ~> m].
+  real    :: channel_break_depth !< When CHANNEL_DRAG is true, the bathymetric depth interpolated
+                            !! to the vorticity point is a combination of the harmonic mean of the
+                            !! adjacent velocity point depths below this depth [Z ~> m] and the
+                            !! arithmetic mean of the adjacent depths above it, to roughly mimic a
+                            !! continental shelf break profile.  The internal version of this depth
+                            !! uses the same offset (G%Z_ref) as the bathymetry.
   logical :: correct_BBL_bounds !< If true, uses the correct bounds on the BBL thickness and
                             !! viscosity so that the bottom layer feels the intended drag.
   logical :: RiNo_mix       !< If true, use Richardson number dependent mixing.
@@ -247,7 +253,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
                            ! magnitudes [H L T-1 ~> m2 s-1 or kg m-1 s-1].
   real :: Thtot            ! Running sum of thickness times temperature [C H ~> degC m or degC kg m-2].
   real :: Shtot            ! Running sum of thickness times salinity [S H ~> ppt m or ppt kg m-2].
-  real :: SpV_htot         ! Running sum of thickness times specific volume [R-1 H ~> m4 kg-1 or m]
+  real :: SpV_htot         ! Running sum of thickness times specific volume [H R-1 ~> m4 kg-1 or m]
   real :: hweight          ! The thickness of a layer that is within Hbbl
                            ! of the bottom [H ~> m or kg m-2].
   real :: dzweight         ! The counterpart of hweight in height units [Z ~> m].
@@ -260,8 +266,11 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
   real :: p_ref(SZI_(G))   !   The pressure used to calculate the coordinate
                            ! density [R L2 T-2 ~> Pa] (usually set to 2e7 Pa = 2000 dbar).
 
-  real :: D_vel            ! The bottom depth at a velocity point [Z ~> m].
-  real :: Dp, Dm           ! The depths at the edges of a velocity cell [Z ~> m].
+  real :: D_vel            ! The bottom depth relative to the shelfbreak depth at a velocity point [Z ~> m].
+  real :: Dp, Dm           ! The bottom depths at the edges of a velocity cell relative to the
+                           ! shelfbreak depth [Z ~> m].
+  real :: D_vel_p, D_vel_m ! The bottom depths in adjacent velocity points relative to the
+                           ! shelfbreak depth [Z ~> m].
   real :: crv              ! crv is the curvature of the bottom depth across a
                            ! cell, times the cell width squared [Z ~> m].
   real :: slope            ! The absolute value of the bottom depth slope across
@@ -373,23 +382,23 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
 
   !$OMP parallel do default(shared)
   do J=js-1,je ; do i=is-1,ie+1
-    D_v(i,J) = 0.5*(G%bathyT(i,j) + G%bathyT(i,j+1)) + G%Z_ref
+    D_v(i,J) = 0.5*(G%bathyT(i,j) + G%bathyT(i,j+1))
     mask_v(i,J) = G%mask2dCv(i,J)
   enddo ; enddo
   !$OMP parallel do default(shared)
   do j=js-1,je+1 ; do I=is-1,ie
-    D_u(I,j) = 0.5*(G%bathyT(i,j) + G%bathyT(i+1,j)) + G%Z_ref
+    D_u(I,j) = 0.5*(G%bathyT(i,j) + G%bathyT(i+1,j))
     mask_u(I,j) = G%mask2dCu(I,j)
   enddo ; enddo
 
-  if (associated(OBC)) then
+  if (associated(OBC) .and. CS%Channel_drag) then
     ! Use a one-sided projection of bottom depths at OBC points.
     if (OBC%v_N_OBCs_on_PE) then
       Js_OBC = max(js-1, OBC%Js_v_N_obc) ; Je_OBC = min(je, OBC%Je_v_N_obc)
       is_OBC = max(is-1, OBC%is_v_N_obc) ; ie_OBC = min(ie+1, OBC%ie_v_N_obc)
       !$OMP parallel do default(shared)
       do J=Js_OBC,Je_OBC ; do i=is_OBC,ie_OBC
-        if (OBC%segnum_v(i,J) > 0) D_v(i,J) = G%bathyT(i,j) + G%Z_ref !  OBC_DIRECTION_N
+        if (OBC%segnum_v(i,J) > 0) D_v(i,J) = G%bathyT(i,j) !  OBC_DIRECTION_N
       enddo ; enddo
     endif
     if (OBC%v_S_OBCs_on_PE) then
@@ -397,7 +406,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
       is_OBC = max(is-1, OBC%is_v_S_obc) ; ie_OBC = min(ie+1, OBC%ie_v_S_obc)
       !$OMP parallel do default(shared)
       do J=Js_OBC,Je_OBC ; do i=is_OBC,ie_OBC
-        if (OBC%segnum_v(i,J) < 0) D_v(i,J) = G%bathyT(i,j+1) + G%Z_ref !  OBC_DIRECTION_S
+        if (OBC%segnum_v(i,J) < 0) D_v(i,J) = G%bathyT(i,j+1) !  OBC_DIRECTION_S
       enddo ; enddo
     endif
     if (OBC%u_E_OBCs_on_PE) then
@@ -405,7 +414,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
       Is_OBC = max(is-1, OBC%Is_u_E_obc) ; Ie_OBC = min(ie, OBC%Ie_u_E_obc)
       !$OMP parallel do default(shared)
       do j=js_OBC,je_OBC ; do I=Is_OBC,Ie_OBC
-        if (OBC%segnum_u(I,j) > 0) D_u(I,j) = G%bathyT(i,j) + G%Z_ref !  OBC_DIRECTION_E
+        if (OBC%segnum_u(I,j) > 0) D_u(I,j) = G%bathyT(i,j) !  OBC_DIRECTION_E
       enddo ; enddo
     endif
     if (OBC%u_W_OBCs_on_PE) then
@@ -413,12 +422,12 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
       Is_OBC = max(is-1, OBC%Is_u_W_obc) ; Ie_OBC = min(ie, OBC%Ie_u_W_obc)
       !$OMP parallel do default(shared)
       do j=js_OBC,je_OBC ; do I=Is_OBC,Ie_OBC
-        if (OBC%segnum_u(I,j) < 0) D_u(I,j) = G%bathyT(i+1,j) + G%Z_ref !  OBC_DIRECTION_W
+        if (OBC%segnum_u(I,j) < 0) D_u(I,j) = G%bathyT(i+1,j) !  OBC_DIRECTION_W
       enddo ; enddo
     endif
   endif
 
-  if (associated(OBC)) then ; do n=1,OBC%number_of_segments
+  if (associated(OBC) .and. CS%Channel_drag) then ; do n=1,OBC%number_of_segments
     ! Now project bottom depths across cell-corner points in the OBCs.  The two
     ! projections have to occur in sequence and can not be combined easily.
     if (.not. OBC%segment(n)%on_pe) cycle
@@ -919,19 +928,29 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
           vol_below(K) = vol_below(K+1) + dz_vel(i,k)
         enddo
 
-        !### The harmonic mean edge depths here are not invariant to offsets!
+        ! Find the bathymetry at adjacent points relative to the shelf break.  For now this
+        ! shelf break depth is set with a global constant, but it could vary in space.
         if (m==1) then
-          D_vel = D_u(I,j)
-          tmp = G%mask2dCu(I,j+1) * D_u(I,j+1)
-          Dp = 2.0 * D_vel * tmp / (D_vel + tmp)
-          tmp = G%mask2dCu(I,j-1) * D_u(I,j-1)
-          Dm = 2.0 * D_vel * tmp / (D_vel + tmp)
+          D_vel = D_u(I,j) - CS%channel_break_depth
+          D_vel_p = G%mask2dCu(I,j+1) * (D_u(I,j+1) - CS%channel_break_depth)
+          D_vel_m = G%mask2dCu(I,j-1) * (D_u(I,j-1) - CS%channel_break_depth)
         else
-          D_vel = D_v(i,J)
-          tmp = G%mask2dCv(i+1,J) * D_v(i+1,J)
-          Dp = 2.0 * D_vel * tmp / (D_vel + tmp)
-          tmp = G%mask2dCv(i-1,J) * D_v(i-1,J)
-          Dm = 2.0 * D_vel * tmp / (D_vel + tmp)
+          D_vel = D_v(i,J) - CS%channel_break_depth
+          D_vel_p = G%mask2dCv(i+1,J) * (D_v(i+1,J) - CS%channel_break_depth)
+          D_vel_m = G%mask2dCv(i-1,J) * (D_v(i-1,J) - CS%channel_break_depth)
+        endif
+        ! This profile uses a harmonic mean bottom depth below some reference value to
+        ! roughly mimic the topographic shape at and beneath a continental shelf break.
+        ! Above this a simple arithmetic mean is used.
+        if ((D_vel > 0.0) .and. (D_vel_p > 0.0)) then
+          Dp = 2.0 * D_vel * D_vel_p / (D_vel + D_vel_p)
+        else  ! This is above the shelf-break, noting that D is positive downward.
+          Dp = 0.5 * (min(D_vel, 0.0) + min(D_vel_p, 0.0))
+        endif
+        if ((D_vel > 0.0) .and. (D_vel_m > 0.0)) then
+          Dm = 2.0 * D_vel * D_vel_m / (D_vel + D_vel_m)
+        else  ! This is above the shelf-break, noting that D is positive downward.
+          Dm = 0.5 * (min(D_vel, 0.0) + min(D_vel_m, 0.0))
         endif
         if (Dm > Dp) then ; tmp = Dp ; Dp = Dm ; Dm = tmp ; endif
         crv = 3.0*(Dp + Dm - 2.0*D_vel)
@@ -1977,7 +1996,7 @@ subroutine set_viscous_ML(u, v, h, tv, forces, visc, dt, G, GV, US, CS)
                 ! surface mixed layer [H C ~> m degC or kg degC m-2].
     Shtot, &    !   The integrated salt of layers that are within the
                 ! surface mixed layer [H S ~> m ppt or kg ppt m-2].
-    SpV_htot, & !   Running sum of thickness times specific volume [R-1 H ~> m4 kg-1 or m]
+    SpV_htot, & !   Running sum of thickness times specific volume [H R-1 ~> m4 kg-1 or m]
     Rhtot, &    !   The integrated density of layers that are within the surface mixed layer
                 ! [H R ~> kg m-2 or kg2 m-5].  Rhtot is only used if no
                 ! equation of state is used.
@@ -2936,6 +2955,11 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
                              ! is used in place of the absolute value of the local Coriolis
                              ! parameter in the denominator of some expressions [nondim]
   real    :: Chan_max_thick_dflt ! The default value for CHANNEL_DRAG_MAX_THICK [Z ~> m]
+  real    :: shelfbreak_depth ! When CHANNEL_DRAG is true, the bathymetric depth interpolated
+                             ! to the vorticity point is a combination of the harmonic mean of the
+                             ! adjacent velocity point depths below this depth [Z ~> m] and the
+                             ! arithmetic mean of the adjacent depths above it, to roughly mimic a
+                             ! continental shelf break profile.
   real, allocatable, dimension(:,:) :: cdrag_h !< The spatially varying quadratic drag coefficient [nondim]
 
   integer :: i, j, k, is, ie, js, je
@@ -2990,8 +3014,18 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
                  default=.false., do_not_log=.not.CS%bottomdraglaw)
   call get_param(param_file, mdl, "CHANNEL_DRAG", CS%Channel_drag, &
                  "If true, the bottom drag is exerted directly on each "//&
-                 "layer proportional to the fraction of the bottom it "//&
-                 "overlies.", default=.false.)
+                 "layer proportional to the fraction of the bottom it overlies.", &
+                 default=.false.)
+  call get_param(param_file, mdl, "CHANNEL_DRAG_SHELFBREAK_DEPTH", shelfbreak_depth, &
+                 "When CHANNEL_DRAG is true, the bathymetric depth interpolated to the "//&
+                 "vorticity point is a combination of the harmonic mean of the adjacent "//&
+                 "velocity point depths below this depth and the arithmetic mean of the "//&
+                 "depths above it, to roughly mimic a continental shelf break profile.  "//&
+                 "Setting this to exceed MAXIMUM_DEPTH leads to linear interpolation of "//&
+                 "the topography between velocity points.", &
+                 default=0.0, units="m", scale=US%m_to_Z, do_not_log=.not.CS%Channel_drag)
+  CS%channel_break_depth = shelfbreak_depth - G%Z_ref
+
   call get_param(param_file, mdl, "LINEAR_DRAG", CS%linear_drag, &
                  "If LINEAR_DRAG and BOTTOMDRAGLAW are defined the drag "//&
                  "law is cdrag*DRAG_BG_VEL*u.", default=.false.)

@@ -3603,12 +3603,8 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   if (associated(CS%sponge_CSp)) &
     call init_sponge_diags(Time, G, GV, US, diag, CS%sponge_CSp)
 
-  if (associated(CS%ALE_sponge_CSp)) &
-    call init_ALE_sponge_diags(Time, G, diag, CS%ALE_sponge_CSp, US)
-
   if (associated(CS%oda_incupd_CSp)) &
     call init_oda_incupd_diags(Time, G, GV, diag, CS%oda_incupd_CSp, US)
-
 
   call tracer_advect_init(Time, G, US, param_file, diag, CS%tracer_adv_CSp)
   call tracer_hor_diff_init(Time, G, GV, US, param_file, diag, CS%tv%eqn_of_state, CS%diabatic_CSp, &
@@ -3642,6 +3638,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
              CS%diag, CS%OBC, CS%tracer_flow_CSp, CS%sponge_CSp, &
              CS%ALE_sponge_CSp, CS%tv)
   if (present(tracer_flow_CSp)) tracer_flow_CSp => CS%tracer_flow_CSp
+
+  if (associated(CS%ALE_sponge_CSp)) &
+    call init_ALE_sponge_diags(Time, G, diag, CS%ALE_sponge_CSp, US)
 
   ! If running in offline tracer mode, initialize the necessary control structure and
   ! parameters

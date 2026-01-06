@@ -432,8 +432,16 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                    trim(message), units=trim(coord_units))
   elseif (trim(string)=='PARAM') then
     ! Read coordinate resolution (main model = ALE_RESOLUTION)
-    ke = GV%ke ! Use model nk by default
-    allocate(dz(ke))
+    allocate(dz(1001))
+    dz(:) = -1. ! Setting to <0 allows detection of unset elements
+    call get_param(param_file, mdl, coord_res_param, dz, "Scan", units="", do_not_log=.true.)
+    if (dz(1001)>=0.) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
+        "PARAM specification is limited to 1000 values. Hack the code to use more!")
+    do ke=1,1000 ! Find number of defined levels
+      if (dz(ke+1)<0.) exit
+    enddo
+    deallocate(dz)
+    allocate(dz(ke)) ! Allocate with the correct number of levels, and re-read thicknesses
     call get_param(param_file, mdl, coord_res_param, dz, &
                    trim(message), units=trim(coord_units), fail_if_missing=.true.)
   elseif (index(trim(string),'FILE:')==1) then

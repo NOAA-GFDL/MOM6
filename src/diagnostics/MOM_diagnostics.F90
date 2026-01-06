@@ -20,7 +20,9 @@ use MOM_diag_mediator,     only : diag_save_grids, diag_restore_grids, diag_copy
 use MOM_domains,           only : create_group_pass, do_group_pass, group_pass_type
 use MOM_domains,           only : To_North, To_East
 use MOM_EOS,               only : calculate_density, calculate_density_derivs, EOS_domain
-use MOM_EOS,               only : cons_temp_to_pot_temp, abs_saln_to_prac_saln
+use MOM_EOS,               only : calculate_spec_vol
+use MOM_EOS,               only : cons_temp_to_pot_temp, pot_temp_to_cons_temp
+use MOM_EOS,               only : prac_saln_to_abs_saln, abs_saln_to_prac_saln
 use MOM_error_handler,     only : MOM_error, FATAL, WARNING
 use MOM_file_parser,       only : get_param, log_version, param_file_type
 use MOM_grid,              only : ocean_grid_type
@@ -97,6 +99,9 @@ type, public :: diagnostics_CS ; private
   integer :: id_cg_ebt         = -1, id_Rd_ebt         = -1
   integer :: id_p_ebt          = -1
   integer :: id_temp_int       = -1, id_salt_int       = -1
+  integer :: id_absscint       = -1, id_pfscint        = -1
+  integer :: id_scint          = -1
+  integer :: id_chcint         = -1, id_phcint         = -1
   integer :: id_mass_wt        = -1, id_col_mass       = -1
   integer :: id_masscello      = -1, id_masso          = -1
   integer :: id_volcello       = -1
@@ -904,9 +909,11 @@ subroutine calculate_vertical_integrals(h, tv, p_surf, G, GV, US, CS)
               ! at the ocean surface [R L2 T-2 ~> Pa].
     tr_int    ! vertical integral of a tracer times density,
               ! (Rho_0 in a Boussinesq model) [Conc R Z ~> Conc kg m-2].
+  real :: tmp(SZI_(G),SZJ_(G),SZK_(GV)) ! Temporary array [defined at each usage]
   real    :: IG_Earth  ! Inverse of gravitational acceleration [T2 Z L-2 ~> s2 m-1].
 
   integer :: i, j, k, is, ie, js, je, nz
+  integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
   if (CS%id_mass_wt > 0) then
@@ -949,6 +956,84 @@ subroutine calculate_vertical_integrals(h, tv, p_surf, G, GV, US, CS)
       call find_col_mass(h, tv, G, GV, US, mass)
     endif
     if (CS%id_col_mass > 0) call post_data(CS%id_col_mass, mass, CS%diag)
+  endif
+
+  ! Practical salinity expressed as salt mass content
+  if (CS%id_scint > 0) then
+    EOSdom(:) = EOS_domain(G%HI)
+    if (tv%S_is_absS) then
+      do k=1,nz ; do j=js,je
+        call abs_saln_to_prac_saln(tv%S(:,j,k), tmp(:,j,k), tv%eqn_of_state, EOSdom) ! "tmp" [S ~> psu]
+        do i=is,ie
+          tmp(i,j,k) = ( GV%H_to_RZ * h(i,j,k) ) * tmp(i,j,k) ! "tmp" [R Z S ~> kg m-2]
+        enddo
+      enddo ; enddo
+    else
+      do k=1,nz ; do j=js,je ; do i=is,ie
+        tmp(i,j,k) = ( GV%H_to_RZ * h(i,j,k) ) * tv%S(i,j,k) ! "tmp" [R Z S ~> kg m-2]
+      enddo ; enddo ; enddo
+    endif
+    call post_data(CS%id_scint, tmp, CS%diag)
+  endif
+  ! Absolute salinities expressed as salt mass content
+  if (CS%id_absscint > 0 .or. CS%id_pfscint > 0) then
+    EOSdom(:) = EOS_domain(G%HI)
+    if (tv%S_is_absS) then
+      do k=1,nz ; do j=js,je ; do i=is,ie
+        tmp(i,j,k) = ( GV%H_to_RZ * h(i,j,k) ) * tv%S(i,j,k) ! "tmp" [R Z S ~> kg m-2]
+      enddo ; enddo ; enddo
+    else
+      do k=1,nz ; do j=js,je
+        call prac_saln_to_abs_saln(tv%S(:,j,k), tmp(:,j,k), tv%eqn_of_state, EOSdom) ! "tmp" [S ~> ppt]
+        do i=is,ie
+          tmp(i,j,k) = ( GV%H_to_RZ * h(i,j,k) ) * tmp(i,j,k) ! [R Z S ~> kg m-2]
+        enddo
+      enddo ; enddo
+    endif
+    if (CS%id_absscint > 0) call post_data(CS%id_absscint, tmp, CS%diag)
+    ! Based on the definitions in https://www.teos-10.org/pubs/gsw/pdf/TEOS-10_Manual.pdf
+    ! The preformed salinity, S*, is the conserved salinity used in models (page 8).
+    ! Although we appear to be labeling tv%S absolute salinity, we do not use the function
+    ! that calculates the "absolute salinity anomaly ratio" which accounts for the
+    ! geographic variations in the types of dissolved salts.
+    ! Hence, I think there is no difference between preformed and absolute salinity
+    ! for the current implementation of TEOS-10 and so we post the same data for
+    ! absscint and pfscint.  -AJA
+    if (CS%id_pfscint > 0) call post_data(CS%id_pfscint, tmp, CS%diag)
+  endif
+  ! Potential temperature expressed as heat content
+  if (CS%id_phcint > 0) then
+    EOSdom(:) = EOS_domain(G%HI)
+    if (tv%T_is_conT) then
+      do k=1,nz ; do j=js,je
+        call cons_temp_to_pot_temp(tv%T(:,j,k), tv%S(:,j,k), tmp(:,j,k), tv%eqn_of_state, EOSdom) ! "tmp" [C ~> degC]
+        do i=is,ie
+          tmp(i,j,k) = ( ( tv%C_p * GV%H_to_RZ ) * h(i,j,k) ) * tmp(i,j,k) ! "tmp" [ Q R Z ~> J m-2]
+        enddo
+      enddo ; enddo
+    else
+      do k=1,nz ; do j=js,je ; do i=is,ie
+        tmp(i,j,k) = ( ( tv%C_p * GV%H_to_RZ ) * h(i,j,k) ) * tv%T(i,j,k) ! "tmp" [Q R Z ~> J m-2]
+      enddo ; enddo ; enddo
+    endif
+    call post_data(CS%id_phcint, tmp, CS%diag)
+  endif
+  ! Conservative temperature expressed as heat content
+  if (CS%id_chcint > 0) then
+    EOSdom(:) = EOS_domain(G%HI)
+    if (tv%T_is_conT) then
+      do k=1,nz ; do j=js,je ; do i=is,ie
+        tmp(i,j,k) = ( ( tv%C_p * GV%H_to_RZ ) * h(i,j,k) ) * tv%T(i,j,k) ! "tmp" [Q R Z ~> J m-2]
+      enddo ; enddo ; enddo
+    else
+      do k=1,nz ; do j=js,je
+        call pot_temp_to_cons_temp(tv%T(:,j,k), tv%S(:,j,k), tmp(:,j,k), tv%eqn_of_state, EOSdom) ! "tmp" [C ~> degC]
+        do i=is,ie
+          tmp(i,j,k) = ( ( tv%C_p * GV%H_to_RZ ) * h(i,j,k) ) * tmp(i,j,k) ! "tmp" [ Q R Z ~> J m-2]
+        enddo
+      enddo ; enddo
+    endif
+    call post_data(CS%id_chcint, tmp, CS%diag)
   endif
 
 end subroutine calculate_vertical_integrals
@@ -1891,6 +1976,43 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
     CS%id_abssosga = register_scalar_field('ocean_model', 'ssabss_global', Time, diag, &
         long_name='Global Area Average Sea Surface Absolute Salinity', &
         units='psu', conversion=US%S_to_ppt, standard_name='sea_surface_absolute_salinity')
+
+    ! 2d column integrated
+    CS%id_temp_int = register_diag_field('ocean_model', 'temp_int', diag%axesT1, Time, &
+        'Density weighted column integrated potential temperature', &
+        'degC kg m-2', conversion=US%C_to_degC*US%RZ_to_kg_m2, &
+        cmor_field_name='opottempmint', &
+        cmor_long_name='integral_wrt_depth_of_product_of_sea_water_density_and_potential_temperature', &
+        cmor_standard_name='Depth integrated density times potential temperature')
+    CS%id_salt_int = register_diag_field('ocean_model', 'salt_int', diag%axesT1, Time, &
+        'Density weighted column integrated salinity', &
+        'psu kg m-2', conversion=US%S_to_ppt*US%RZ_to_kg_m2, v_extensive=.true., &
+        cmor_field_name='somint', &
+        cmor_long_name='integral_wrt_depth_of_product_of_sea_water_density_and_salinity', &
+        cmor_standard_name='Depth integrated density times salinity')
+
+    ! 3d vertically integrated
+    CS%id_absscint = register_diag_field('ocean_model', 'absscint', diag%axesTL, Time, &
+        'Integral wrt depth of seawater absolute salinity expressed as salt mass content', &
+        units='kg m-2', conversion=US%S_to_ppt*US%RZ_to_kg_m2, v_extensive=.true., &
+        standard_name='integral_wrt_depth_of_sea_water_absolute_salinity_expressed_as_salt_mass_content')
+    CS%id_pfscint = register_diag_field('ocean_model', 'pfscint', diag%axesTL, Time, &
+        ' Integral wrt depth of seawater preformed salinity expressed as salt mass content', &
+        units='kg m-2', conversion=US%S_to_ppt*US%RZ_to_kg_m2, v_extensive=.true., &
+        standard_name='integral_wrt_depth_of_sea_water_preformed_salinity_expressed_as_salt_mass_content')
+    CS%id_scint = register_diag_field('ocean_model', 'scint', diag%axesTL, Time, &
+        'Integral wrt depth of seawater practical salinity expressed as salt mass content', &
+        units='kg m-2', conversion=US%S_to_ppt*US%RZ_to_kg_m2, v_extensive=.true., &
+        standard_name='integral_wrt_depth_of_sea_water_practical_salinity_expressed_as_salt_mass_content')
+    CS%id_chcint = register_diag_field('ocean_model', 'chcint', diag%axesTL, Time, &
+        'Depth Integrated Seawater Conservative Temperature Expressed As Heat Content', &
+        units='J m-2', conversion=US%Q_to_J_kg*US%RZ_to_kg_m2, v_extensive=.true., &
+        standard_name='integral_wrt_depth_of_sea_water_conservative_temperature_expressed_as_heat_content')
+    CS%id_phcint = register_diag_field('ocean_model', 'phcint', diag%axesTL, Time, &
+        'Integrated Ocean Heat Content from Potential Temperature', &
+        units='J m-2', conversion=US%Q_to_J_kg*US%RZ_to_kg_m2, v_extensive=.true., &
+        standard_name='integral_wrt_depth_of_sea_water_potential_temperature_expressed_as_heat_content')
+
   endif
 
   CS%id_u = register_diag_field('ocean_model', 'u', diag%axesCuL, Time, &
@@ -2076,22 +2198,6 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
 
   CS%id_mass_wt = register_diag_field('ocean_model', 'mass_wt', diag%axesT1, Time, &
       'The column mass for calculating mass-weighted average properties', 'kg m-2', conversion=US%RZ_to_kg_m2)
-
-  if (use_temperature) then
-    CS%id_temp_int = register_diag_field('ocean_model', 'temp_int', diag%axesT1, Time, &
-        'Density weighted column integrated potential temperature', &
-        'degC kg m-2', conversion=US%C_to_degC*US%RZ_to_kg_m2, &
-        cmor_field_name='opottempmint', &
-        cmor_long_name='integral_wrt_depth_of_product_of_sea_water_density_and_potential_temperature', &
-        cmor_standard_name='Depth integrated density times potential temperature')
-
-    CS%id_salt_int = register_diag_field('ocean_model', 'salt_int', diag%axesT1, Time, &
-        'Density weighted column integrated salinity', &
-        'psu kg m-2', conversion=US%S_to_ppt*US%RZ_to_kg_m2, &
-        cmor_field_name='somint', &
-        cmor_long_name='integral_wrt_depth_of_product_of_sea_water_density_and_salinity', &
-        cmor_standard_name='Depth integrated density times salinity')
-  endif
 
   CS%id_col_mass = register_diag_field('ocean_model', 'col_mass', diag%axesT1, Time, &
       'The column integrated in situ density', 'kg m-2', conversion=US%RZ_to_kg_m2)

@@ -229,8 +229,7 @@ type diffusivity_diags
 
   real, pointer, dimension(:,:,:) :: TKE_to_Kd => NULL()
                           !< conversion rate (~1.0 / (G_Earth + dRho_lay)) between TKE
-                          !! dissipated within a layer and Kd in that layer
-                          !! [H Z T-1 / H Z2 T-3 = T2 Z-1 ~> s2 m-1]
+                          !! dissipated within a layer and Kd in that layer [T2 Z-1 ~> s2 m-1]
 
 end type diffusivity_diags
 
@@ -307,8 +306,7 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
     prof_Froude_2d, & !< vertical profile for Froude drag [Z-1 ~> m-1]
     prof_slope_2d, & !< vertical profile for critical slopes [Z-1 ~> m-1]
     TKE_to_Kd     !< Conversion rate (~1.0 / (G_Earth + dRho_lay)) between
-                  !< TKE dissipated within a layer and Kd in that layer
-                  !< [H Z T-1 / H Z2 T-3 = T2 Z-1 ~> s2 m-1]
+                  !< TKE dissipated within a layer and Kd in that layer [T2 Z-1 ~> s2 m-1]
 
   real, dimension(SZI_(G),SZK_(GV)+1) :: &
     N2_int,   &   !< squared buoyancy frequency associated at interfaces [T-2 ~> s-2]
@@ -888,7 +886,7 @@ subroutine find_TKE_to_Kd(h, tv, dRho_int, N2_lay, j, dt, G, GV, US, CS, &
                                                           !! TKE dissipated within a layer and the
                                                           !! diapycnal diffusivity within that layer,
                                                           !! usually (~Rho_0 / (G_Earth * dRho_lay))
-                                                          !! [H Z T-1 / H Z2 T-3 = T2 Z-1 ~> s2 m-1]
+                                                          !! [T2 Z-1 ~> s2 m-1]
   real, dimension(SZI_(G),SZK_(GV)), intent(out)  :: maxTKE !< The energy required to for a layer to entrain to its
                                                           !! maximum realizable thickness [H Z2 T-3 ~> m3 s-3 or W m-2]
   integer, dimension(SZI_(G)),      intent(out)   :: kb   !< Index of lightest layer denser than the buffer
@@ -1382,7 +1380,7 @@ subroutine add_drag_diffusivity(h, u, v, tv, fluxes, visc, j, TKE_to_Kd, maxTKE,
                                                           !! TKE dissipated within a layer and the
                                                           !! diapycnal diffusivity within that layer,
                                                           !! usually (~Rho_0 / (G_Earth * dRho_lay))
-                                                          !! [H Z T-1 / H Z2 T-3 = T2 Z-1 ~> s2 m-1]
+                                                          !! [T2 Z-1 ~> s2 m-1]
   real, dimension(SZI_(G),SZK_(GV)), intent(in)   :: maxTKE !< The energy required to for a layer to entrain to its
                                                           !! maximum-realizable thickness [H Z2 T-3 ~> m3 s-3 or W m-2]
   integer, dimension(SZI_(G)),      intent(in)    :: kb   !< Index of lightest layer denser than the buffer
@@ -1805,7 +1803,7 @@ subroutine add_MLrad_diffusivity(dz, fluxes, tv, j, Kd_int, G, GV, US, CS, TKE_t
                                                             !! TKE dissipated within  a layer and the
                                                             !! diapycnal diffusivity witin that layer,
                                                             !! usually (~Rho_0 / (G_Earth * dRho_lay))
-                                                            !! [H Z T-1 / H Z2 T-3 = T2 Z-1 ~> s2 m-1]
+                                                            !! [T2 Z-1 ~> s2 m-1]
   real, dimension(SZI_(G),SZK_(GV)), &
                           optional, intent(inout) :: Kd_lay !< The diapycnal diffusivity in layers
                                                             !! [H Z T-1 ~> m2 s-1 or kg m-1 s-1].

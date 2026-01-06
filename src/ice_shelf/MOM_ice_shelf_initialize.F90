@@ -332,7 +332,7 @@ subroutine initialize_ice_shelf_boundary_channel(u_face_mask_bdry, v_face_mask_b
   character(len=40)  :: mdl = "initialize_ice_shelf_boundary_channel" ! This subroutine's name.
   integer :: i, j, isd, jsd, giec, gjec, gisc, gjsc,gisd,gjsd, isc, jsc, iec, jec, ied, jed
   real    :: input_thick ! The input ice shelf thickness [Z ~> m]
-  real    :: input_vel  ! The input ice velocity per  [L Z T-1 ~> m s-1]
+  real    :: input_vel  ! The input ice velocity at the upstream boundary [L T-1 ~> m s-1]
   real    :: lenlat, len_stress, westlon, lenlon, southlat ! The input positions of the channel boundarises
 
   lenlat = G%len_lat
@@ -670,10 +670,10 @@ subroutine initialize_ice_AGlen(AGlen, ice_viscosity_compute, G, US, PF)
        " initialize_ice_stiffness_from_file: Unable to open "//trim(filename))
 
     if (trim(ice_viscosity_compute) == "OBS") then
-      !AGlen is the ice viscosity [Pa s ~> R L2 T-1] computed from obs and read from a file
+      ! AGlen is the ice viscosity [R L2 T-1 ~> Pa s] computed from obs and read from a file
       call MOM_read_data(filename, trim(varname), AGlen, G%Domain, scale=US%Pa_to_RL2_T2*US%s_to_T)
     else
-      !AGlen is the ice stiffness parameter [Pa-n_g s-1]
+      ! AGlen is the ice stiffness parameter [Pa-n_g s-1]
       call MOM_read_data(filename, trim(varname), AGlen, G%Domain)
     endif
   endif

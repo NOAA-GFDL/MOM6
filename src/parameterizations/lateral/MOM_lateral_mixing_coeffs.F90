@@ -843,9 +843,9 @@ subroutine calc_Visbeck_coeffs_old(h, slope_x, slope_y, N2_u, N2_v, G, GV, US, C
   integer :: OBC_dir_v(SZI_(G),SZJB_(G))  ! An integer indicating where there are v OBCs: +1 for
                                  ! northern OBCs, -1 for southern OBCs and 0 at points with no OBCs.
   real :: h4_u(SZIB_(G),SZJ_(G),SZK_(GV)+1)  ! The product of the 4 thicknesses surrounding a u-point
-                                 ! interface or the inward equivalent with OBCs [H4 ~> m4 or kg2 m-4]
+                                 ! interface or the inward equivalent with OBCs [H4 ~> m4 or kg4 m-8]
   real :: h4_v(SZI_(G),SZJB_(G),SZK_(GV)+1)  ! The product of the 4 thicknesses surrounding a v-point
-                                 ! interface or the inward equivalent with OBCs [H4 ~> m4 or kg2 m-4]
+                                 ! interface or the inward equivalent with OBCs [H4 ~> m4 or kg4 m-8]
   integer :: i, j, k, is, ie, js, je, nz
 
   if (.not. CS%initialized) call MOM_error(FATAL, "calc_Visbeck_coeffs_old: "// &

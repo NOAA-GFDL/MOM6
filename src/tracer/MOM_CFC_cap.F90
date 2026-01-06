@@ -516,7 +516,7 @@ subroutine CFC_cap_set_forcing(sfc_state, fluxes, day_start, day_interval, G, US
   !     Gas exchange/piston velocity parameter
   !---------------------------------------------------------------------
   ! From a = 0.251 cm/hr s^2/m^2 in Wannikhof 2014
-  !        = 6.97e-7 [m/s s^2/m^2] [Z T-1 T2 L-2] = [Z T L-2 ~> s / m]
+  !        = 6.97e-7 [m/s s^2/m^2] [Z T-1 T2 L-2] = [Z T L-2 ~> s m-1]
   kw_coeff = (US%m_to_Z*US%s_to_T*US%L_to_m**2) * 6.97e-7
 
   ! set unit conversion factors

@@ -21,7 +21,8 @@ use MOM_error_handler, only : MOM_error, FATAL, NOTE, WARNING, is_root_pe
 use MOM_file_parser,   only : get_param, log_param, log_version, param_file_type
 use MOM_grid,          only : ocean_grid_type
 use MOM_horizontal_regridding, only : horiz_interp_and_extrap_tracer
-use MOM_interpolate,   only : init_external_field, get_external_field_info, time_interp_external_init
+use MOM_interpolate,   only : init_external_field, time_interp_external_init
+use MOM_interpolate,   only : get_external_field_info
 use MOM_interpolate,   only : external_field
 use MOM_io,            only : axis_info
 use MOM_remapping,     only : remapping_cs, remapping_core_h, initialize_remapping
@@ -141,8 +142,9 @@ type, public :: ALE_sponge_CS ; private
                                    !! It is not clear why this needs to be greater than 0.
 
   !>@{ Diagnostic IDs
-  integer, dimension(MAX_FIELDS_) :: id_sp_tendency  !< Diagnostic ids for tracer
-                                               !! tendencies due to sponges
+  integer, dimension(MAX_FIELDS_) :: id_sp_tendency = reshape([-1], [MAX_FIELDS_], [-1]) !< Diagnostic ids for tracer
+                                                                                         !! tendencies due to sponges.
+                                                                                         !! Init all to -1.
   integer :: id_sp_u_tendency                  !< Diagnostic id for zonal momentum tendency due to
                                                !! Rayleigh damping
   integer :: id_sp_v_tendency                  !< Diagnostic id for meridional momentum tendency due to
@@ -670,7 +672,6 @@ subroutine init_ALE_sponge_diags(Time, G, diag, CS, US)
   CS%diag => diag
 
   do m=1,CS%fldno
-    CS%id_sp_tendency(m) = -1
     if ((trim(CS%Ref_val(m)%unit) == 'none') .or. (len_trim(CS%Ref_val(m)%unit) == 0)) then
       tend_unit = "s-1"
     else

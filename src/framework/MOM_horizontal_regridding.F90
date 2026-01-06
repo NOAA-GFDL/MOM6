@@ -16,7 +16,7 @@ use MOM_grid,          only : ocean_grid_type
 use MOM_interpolate,   only : time_interp_external
 use MOM_interp_infra,  only : run_horiz_interp, build_horiz_interp_weights
 use MOM_interp_infra,  only : horiz_interp_type, horizontal_interp_init
-use MOM_interp_infra,  only : get_external_field_info
+use MOM_interpolate,   only : get_external_field_info
 use MOM_interp_infra,  only : external_field
 use MOM_time_manager,  only : time_type
 use MOM_io,            only : axis_info, get_axis_info, get_var_axes_info, MOM_read_data

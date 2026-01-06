@@ -150,7 +150,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
                                                                !! by a floating ice shelf [nondim].
   real, dimension(SZI_(G),SZJ_(G)), &
                      optional, intent(in)   :: mass_shelf      !< The mass per unit area of the overlying
-                                                               !! ice shelf [ R Z ~> kg m-2 ]
+                                                               !! ice shelf [R Z ~> kg m-2]
   type(ocean_OBC_type), optional, pointer   :: OBC_for_bug  !< An open boundary condition control structure
                                                     !! that might be used to store OBC temperatures and
                                                     !! salinities if OBC_RESERVOIR_INIT_BUG is true.
