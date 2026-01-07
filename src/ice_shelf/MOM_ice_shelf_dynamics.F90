@@ -1738,19 +1738,24 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
                         RHSu, RHSv, & ! Right hand side of the stress balance [R L3 Z T-2 ~> m kg s-2]
                         Au, Av, & ! The retarding lateral stress contributions [R L3 Z T-2 ~> kg m s-2]
                         Du, Dv, & ! Velocity changes [L T-1 ~> m s-1]
-                        sum_vec ! Global sum of squares of residuals in stress calculations [m2 kg2 s-4]
-  real, dimension(SZDIB_(G),SZDJB_(G),3) :: sum_vec_3d ! Array used for various global residuals
-                                                       ! sum_vec_3d(:,:,1:2) [L T-1 ~> m s-1] [R L3 Z T-2 ~> m kg s-2]
-                                                       ! sum_vec_3d(:,:,3)  [R2 L6 Z2 T-4 ~> m2 kg2 s-4]
-  real    :: beta_k, resid0tol2, cg_halo, max_cg_halo
-  real    :: sv3dsum     ! sum of sum_vec_3d
-  real    :: sv3dsums(3) ! layer sums of sum_vec_3d
+                        sum_vec ! Sum of squares of residuals in stress calculations [m2 kg2 s-4]
+  real, dimension(SZDIB_(G),SZDJB_(G),3) :: sum_vec_3d ! Array used for various residuals
+                                                       ! sum_vec_3d(:,:,1:2) [m s-1] [m kg s-2]
+                                                       ! sum_vec_3d(:,:,3)   [m2 kg2 s-4]
+  real    :: beta_k      ! Ratio of residuals used to update search direction [nondim]
+  real    :: resid0tol2  ! Convergence tolerance times the initial residual [m2 kg2 s-4]
+  real    :: sv3dsum     ! An unused variable returned when taking global sum of residuals [various]
+  real    :: sv3dsums(3) ! The index-wise global sums of sum_vec_3d
+                         ! sv3dsums(:,:,1:2) [m s-1] [m kg s-2]
+                         ! sv3dsums(:,:,3)   [m2 kg2 s-4]
   real    :: alpha_k     ! A scaling factor for iterative corrections [nondim]
   real    :: resid_scale ! A scaling factor for redimensionalizing the global residuals
                          ! [L T-1 ~> m s-1] [R L3 Z T-2 ~> m kg s-2]
   real    :: resid2_scale ! A scaling factor for redimensionalizing the global squared residuals
                          ! [R2 L6 Z2 T-4 ~> m2 kg2 s-4]
   real    :: rhoi_rhow  ! The density of ice divided by a typical water density [nondim]
+  integer :: cg_halo     ! Number of halo vertices to include during a CG iteration
+  integer :: max_cg_halo ! Maximum possible number of halo vertices to include in the CG iterations
   integer :: iter, i, j, isd, ied, jsd, jed, isc, iec, jsc, jec, is, js, ie, je
   integer :: Is_sum, Js_sum, Ie_sum, Je_sum ! Loop bounds for global sums or arrays starting at 1.
   integer :: Isdq, Iedq, Jsdq, Jedq, Iscq, Iecq, Jscq, Jecq, nx_halo, ny_halo
