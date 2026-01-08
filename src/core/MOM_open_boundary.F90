@@ -4072,7 +4072,8 @@ subroutine allocate_OBC_segment_data(OBC, segment)
 
   if (segment%is_E_or_W) then
     ! If these are just Flather, change update_OBC_segment_data accordingly
-    allocate(segment%Cg(IsdB:IedB,jsd:jed), source=0.0)
+    !   segment%Cg is never used. A version of Cg is calculated in MOM_barotropic.
+    allocate(segment%Cg(IsdB:IedB, jsd:jed), source=0.0)
     allocate(segment%Htot(IsdB:IedB,jsd:jed), source=0.0)
     ! Allocate dZtot with extra values at the end to avoid segmentation faults in cases where
     ! it is interpolated to OBC vorticity points.
@@ -4288,15 +4289,14 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   type(time_type),                           intent(in)    :: Time !< Model time
 
   ! Local variables
-  integer :: c, i, j, k, is, ie, js, je, isd, ied, jsd, jed
-  integer :: IsdB, IedB, JsdB, JedB, n, m, nz, nt, nk_dst
+  integer :: c, i, j, k, n, m, nz, nt, nk_dst
+  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
   type(OBC_segment_type), pointer :: segment => NULL()
   integer, dimension(4) :: siz
   real, dimension(:,:,:), pointer :: tmp_buffer_in => NULL()  ! Unrotated input [various units]
   integer :: ni_seg, nj_seg  ! number of src gridpoints along the segments
   integer :: ni_buf, nj_buf  ! Number of filled values in tmp_buffer
-  integer :: is_obc, ie_obc, js_obc, je_obc  ! segment indices within local domain
-  integer :: ishift, jshift  ! offsets for staggered locations
+  ! integer :: ishift, jshift  ! offsets for staggered locations
   real    :: dz(SZI_(G),SZJ_(G),SZK_(GV)) ! Distance between the interfaces around a layer [Z ~> m]
   real, dimension(:,:,:), allocatable, target :: tmp_buffer ! A buffer for input data [various units]
   real, dimension(:), allocatable :: dz_stack  ! Distance between the interfaces at corner points [Z ~> m]
@@ -4308,14 +4308,15 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   real :: tidal_vel   ! Interpolated tidal velocity at the OBC points [L T-1 ~> m s-1]
   real :: tidal_elev  ! Interpolated tidal elevation at the OBC points [Z ~> m]
   real :: ramp_value  ! If OBC%ramp is True, where we are on the ramp from 0 to 1, or 1 otherwise [nondim].
-  real, allocatable :: normal_trans_bt(:,:) ! barotropic transport [H L2 T-1 ~> m3 s-1]
+  real :: normal_trans_bt ! barotropic transport [H L2 T-1 ~> m3 s-1]
   integer :: turns    ! Number of index quarter turns
   real :: time_delta  ! Time since tidal reference date [T ~> s]
   logical :: flip_buffer ! If true, the input buffer needs to be transposed
+  ! integer :: i_interior, j_interior
 
-  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
-  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
-  IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
+  ! is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
+  ! isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
+  ! IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
   nz = GV%ke
 
   turns = modulo(G%HI%turns, 4)
@@ -4335,16 +4336,19 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
     if (.not. segment%on_pe) cycle ! continue to next segment if not in computational domain
 
+    isd = segment%HI%isd ; ied = segment%HI%ied ; IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
+    jsd = segment%HI%jsd ; jed = segment%HI%jed ; JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
+
     ! NOTE: segment%is_obc and segment%ie_obc are range of indices for the full segment.
     !  The other data set here are in segment%HI, but here they defined slightly differently.
-    ni_seg = segment%ie_obc-segment%is_obc+1
-    nj_seg = segment%je_obc-segment%js_obc+1
-    is_obc = max(segment%is_obc,isd-1)
-    ie_obc = min(segment%ie_obc,ied)
-    js_obc = max(segment%js_obc,jsd-1)
-    je_obc = min(segment%je_obc,jed)
-    i_seg_offset = G%idg_offset - segment%HI%Isgb
-    j_seg_offset = G%jdg_offset - segment%HI%Jsgb
+    ni_seg = segment%ie_obc - segment%is_obc + 1 ! Global number of q points
+    nj_seg = segment%je_obc - segment%js_obc + 1 ! Global number of q points
+    ! is_obc = max(segment%is_obc,G%isd-1) ! IsdB = segment%HI%IsdB
+    ! ie_obc = min(segment%ie_obc,G%ied)   ! IedB = segment%HI%IedB
+    ! js_obc = max(segment%js_obc,G%jsd-1) ! JsdB = segment%HI%JsdB
+    ! je_obc = min(segment%je_obc,G%jed)   ! JedB = segment%HI%JedB
+    i_seg_offset = G%idg_offset - segment%HI%IsgB
+    j_seg_offset = G%jdg_offset - segment%HI%JsgB
 
 ! Calculate auxiliary fields at staggered locations.
 ! Segment indices are on q points:
@@ -4355,38 +4359,36 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 ! i2 has to start at Is_obc+1 and end at Ie_obc.
 ! j2 is J_obc and jshift has to be +1 at both the north and south.
 
-    ! calculate auxiliary fields at staggered locations
-    ishift = 0 ; jshift = 0
+    ! Calculate auxiliary fields at staggered locations
+    ! ishift = 0 ; jshift = 0
     segment%Htot(:,:) = 0.0
     segment%dZtot(:,:) = 0.0
     if (segment%is_E_or_W) then
-      allocate(normal_trans_bt(segment%HI%IsdB:segment%HI%IedB,segment%HI%jsd:segment%HI%jed), source=0.0)
-      if (segment%direction == OBC_DIRECTION_W) ishift = 1
-      I=segment%HI%IsdB
+      ! if (segment%direction == OBC_DIRECTION_W) ishift = 1
+      I = IsdB
       ! dZtot may extend one point past the end of the segment on the current PE for use at vorticity points
-      do k=1,GV%ke ; do j = max(segment%HI%jsd-1,G%jsd), min(segment%HI%jed+1,G%jed)
-        segment%dZtot(I,j) = segment%dZtot(I,j) + dz(i+ishift,j,k)
+      do k = 1, GV%ke ; do j = max(jsd-1, G%jsd), min(jed+1, G%jed)
+        segment%dZtot(I,j) = segment%dZtot(I,j) + dz(isd,j,k)
       enddo ; enddo
-      do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
-        segment%h(I,j,k) = h(i+ishift,j,k)
+      do k = 1, GV%ke ; do j = jsd, jed
+        segment%h(I,j,k) = h(isd,j,k)
         segment%Htot(I,j) = segment%Htot(I,j) + segment%h(I,j,k)
       enddo ; enddo
-      do j=segment%HI%jsd,segment%HI%jed
+      do j = jsd, jed
         segment%Cg(I,j) = sqrt(GV%g_prime(1) * max(0.0, segment%dZtot(I,j)))
       enddo
     else ! (segment%direction == OBC_DIRECTION_N .or. segment%direction == OBC_DIRECTION_S)
-      allocate(normal_trans_bt(segment%HI%isd:segment%HI%ied,segment%HI%JsdB:segment%HI%JedB), source=0.0)
-      if (segment%direction == OBC_DIRECTION_S) jshift = 1
-      J=segment%HI%JsdB
+      ! if (segment%direction == OBC_DIRECTION_S) jshift = 1
+      J = JsdB
       ! dZtot may extend one point past the end of the segment on the current PE for use at vorticity points
-      do k=1,GV%ke ; do i = max(segment%HI%isd-1,G%isd), min(segment%HI%ied+1,G%ied)
-        segment%dZtot(i,J) = segment%dZtot(i,J) + dz(i,j+jshift,k)
+      do k = 1, GV%ke ; do i = max(isd-1, G%isd), min(ied+1, G%ied)
+        segment%dZtot(i,J) = segment%dZtot(i,J) + dz(i,jsd,k)
       enddo ; enddo
-      do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
-        segment%h(i,J,k) = h(i,j+jshift,k)
+      do k = 1, GV%ke ; do i = isd, ied
+        segment%h(i,J,k) = h(i,jsd,k)
         segment%Htot(i,J) = segment%Htot(i,J) + segment%h(i,J,k)
       enddo ; enddo
-      do i=segment%HI%isd,segment%HI%ied
+      do i = isd, ied
         segment%Cg(i,J) = sqrt(GV%g_prime(1) * max(0.0, segment%dZtot(i,J)))
       enddo
     endif
@@ -4398,26 +4400,24 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
       !Cycle if it is not the time to update OBC segment data for this field.
       if (trim(segment%field(m)%genre) == 'obgc' .and. (.not. OBC%update_OBC_seg_data)) cycle
       if (segment%field(m)%use_IO) then
-        siz(1) = size(segment%field(m)%buffer_src,1)
-        siz(2) = size(segment%field(m)%buffer_src,2)
-        siz(3) = size(segment%field(m)%buffer_src,3)
+        siz(1:3) = shape(segment%field(m)%buffer_src)
         if (.not.allocated(segment%field(m)%buffer_dst)) then
-          if (siz(3) /= segment%field(m)%nk_src) call MOM_error(FATAL,'nk_src inconsistency')
+          if (siz(3) /= segment%field(m)%nk_src) call MOM_error(FATAL, 'nk_src inconsistency')
 
           nk_dst = GV%ke
           if (field_is_tidal(segment%field(m)%name)) nk_dst = siz(3)
           if (segment%field(m)%nk_src <= 1) nk_dst = 1
           if (.not.segment%field(m)%on_face) then
-            allocate(segment%field(m)%buffer_dst(is_obc:ie_obc, js_obc:je_obc, nk_dst), source=0.0)
+            allocate(segment%field(m)%buffer_dst(IsdB:IedB, JsdB:JedB, nk_dst), source=0.0)
           elseif (segment%is_E_or_W) then
-            allocate(segment%field(m)%buffer_dst(is_obc:ie_obc, js_obc+1:je_obc, nk_dst), source=0.0)
+            allocate(segment%field(m)%buffer_dst(IsdB:IedB, jsd:jed, nk_dst), source=0.0)
           else
-            allocate(segment%field(m)%buffer_dst(is_obc+1:ie_obc, js_obc:je_obc, nk_dst), source=0.0)
+            allocate(segment%field(m)%buffer_dst(isd:ied, JsdB:JedB, nk_dst), source=0.0)
           endif
         endif
         ! read source data interpolated to the current model time
         ! NOTE: buffer is sized for vertex points, but may be used for faces
-        if (siz(1)==1) then
+        if (segment%is_E_or_W) then
           if (OBC%brushcutter_mode) then
             allocate(tmp_buffer(1,nj_seg*2-1,segment%field(m)%nk_src))  ! segment data is currently on supergrid
           else
@@ -4481,37 +4481,37 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
           bug_offset = 0 ; if (OBC%hor_index_bug) bug_offset = -1
           if (segment%is_E_or_W) then
             if (.not.segment%field(m)%on_face) then
-              segment%field(m)%buffer_src(is_obc,:,:) = &
-                  tmp_buffer(1, 2*(js_obc+j_seg_offset+1)-1:2*(je_obc+j_seg_offset)+1:2, :)
+              segment%field(m)%buffer_src(IsdB,:,:) = &
+                  tmp_buffer(1, 2*(JsdB+j_seg_offset+1)-1:2*(JedB+j_seg_offset)+1:2, :)
             else
-              segment%field(m)%buffer_src(is_obc,:,:) = &
-                  tmp_buffer(1, 2*(js_obc+j_seg_offset+1)+bug_offset:2*(je_obc+j_seg_offset):2, :)
+              segment%field(m)%buffer_src(IsdB,:,:) = &
+                  tmp_buffer(1, 2*(JsdB+j_seg_offset+1)+bug_offset:2*(JedB+j_seg_offset):2, :)
             endif
           else
             if (.not.segment%field(m)%on_face) then
-              segment%field(m)%buffer_src(:,js_obc,:) = &
-                  tmp_buffer(2*(is_obc+i_seg_offset+1)-1:2*(ie_obc+i_seg_offset)+1:2, 1, :)
+              segment%field(m)%buffer_src(:,JsdB,:) = &
+                  tmp_buffer(2*(IsdB+i_seg_offset+1)-1:2*(IedB+i_seg_offset)+1:2, 1, :)
             else
-              segment%field(m)%buffer_src(:,js_obc,:) = &
-                  tmp_buffer(2*(is_obc+i_seg_offset+1)+bug_offset:2*(ie_obc+i_seg_offset):2, 1, :)
+              segment%field(m)%buffer_src(:,JsdB,:) = &
+                  tmp_buffer(2*(IsdB+i_seg_offset+1)+bug_offset:2*(IedB+i_seg_offset):2, 1, :)
             endif
           endif
         else  ! Not brushcutter_mode.
           if (segment%is_E_or_W) then
             if (.not.segment%field(m)%on_face) then
-              segment%field(m)%buffer_src(is_obc,:,:) = &
-                   tmp_buffer(1,js_obc+j_seg_offset+1:je_obc+j_seg_offset+1,:)
+              segment%field(m)%buffer_src(IsdB,:,:) = &
+                   tmp_buffer(1,JsdB+j_seg_offset+1:JedB+j_seg_offset+1,:)
             else
-              segment%field(m)%buffer_src(is_obc,:,:) = &
-                   tmp_buffer(1,js_obc+j_seg_offset+1:je_obc+j_seg_offset,:)
+              segment%field(m)%buffer_src(IsdB,:,:) = &
+                   tmp_buffer(1,JsdB+j_seg_offset+1:JedB+j_seg_offset,:)
             endif
           else
             if (.not.segment%field(m)%on_face) then
-              segment%field(m)%buffer_src(:,js_obc,:) = &
-                   tmp_buffer(is_obc+i_seg_offset+1:ie_obc+i_seg_offset+1,1,:)
+              segment%field(m)%buffer_src(:,JsdB,:) = &
+                   tmp_buffer(IsdB+i_seg_offset+1:IedB+i_seg_offset+1,1,:)
             else
-              segment%field(m)%buffer_src(:,js_obc,:) = &
-                   tmp_buffer(is_obc+i_seg_offset+1:ie_obc+i_seg_offset,1,:)
+              segment%field(m)%buffer_src(:,JsdB,:) = &
+                   tmp_buffer(IsdB+i_seg_offset+1:IedB+i_seg_offset,1,:)
             endif
           endif
         endif
@@ -4544,37 +4544,37 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
             bug_offset = 0 ; if (OBC%hor_index_bug) bug_offset = -1
             if (segment%is_E_or_W) then
               if (.not.segment%field(m)%on_face) then
-                segment%field(m)%dz_src(is_obc,:,:) = &
-                    tmp_buffer(1, 2*(js_obc+j_seg_offset+1)-1:2*(je_obc+j_seg_offset)+1:2, :)
+                segment%field(m)%dz_src(IsdB,:,:) = &
+                    tmp_buffer(1, 2*(JsdB+j_seg_offset+1)-1:2*(JedB+j_seg_offset)+1:2, :)
               else
-                segment%field(m)%dz_src(is_obc,:,:) = &
-                    tmp_buffer(1, 2*(js_obc+j_seg_offset+1)+bug_offset:2*(je_obc+j_seg_offset):2, :)
+                segment%field(m)%dz_src(IsdB,:,:) = &
+                    tmp_buffer(1, 2*(JsdB+j_seg_offset+1)+bug_offset:2*(JedB+j_seg_offset):2, :)
               endif
             else
               if (.not.segment%field(m)%on_face) then
-                segment%field(m)%dz_src(:,js_obc,:) = &
-                    tmp_buffer(2*(is_obc+i_seg_offset+1)-1:2*(ie_obc+i_seg_offset)+1:2, 1, :)
+                segment%field(m)%dz_src(:,JsdB,:) = &
+                    tmp_buffer(2*(IsdB+i_seg_offset+1)-1:2*(IedB+i_seg_offset)+1:2, 1, :)
               else
-                segment%field(m)%dz_src(:,js_obc,:) = &
-                    tmp_buffer(2*(is_obc+i_seg_offset+1)+bug_offset:2*(ie_obc+i_seg_offset):2, 1, :)
+                segment%field(m)%dz_src(:,JsdB,:) = &
+                    tmp_buffer(2*(IsdB+i_seg_offset+1)+bug_offset:2*(IedB+i_seg_offset):2, 1, :)
               endif
             endif
           else  ! Not brushcutter_mode.
             if (segment%is_E_or_W) then
               if (.not.segment%field(m)%on_face) then
-                segment%field(m)%dz_src(is_obc,:,:) = &
-                    tmp_buffer(1,js_obc+j_seg_offset+1:je_obc+j_seg_offset+1,:)
+                segment%field(m)%dz_src(IsdB,:,:) = &
+                    tmp_buffer(1,JsdB+j_seg_offset+1:JedB+j_seg_offset+1,:)
               else
-                segment%field(m)%dz_src(is_obc,:,:) = &
-                    tmp_buffer(1,js_obc+j_seg_offset+1:je_obc+j_seg_offset,:)
+                segment%field(m)%dz_src(IsdB,:,:) = &
+                    tmp_buffer(1,JsdB+j_seg_offset+1:JedB+j_seg_offset,:)
               endif
             else
               if (.not.segment%field(m)%on_face) then
-                segment%field(m)%dz_src(:,js_obc,:) = &
-                    tmp_buffer(is_obc+i_seg_offset+1:ie_obc+i_seg_offset+1,1,:)
+                segment%field(m)%dz_src(:,JsdB,:) = &
+                    tmp_buffer(IsdB+i_seg_offset+1:IedB+i_seg_offset+1,1,:)
               else
-                segment%field(m)%dz_src(:,js_obc,:) = &
-                    tmp_buffer(is_obc+i_seg_offset+1:ie_obc+i_seg_offset,1,:)
+                segment%field(m)%dz_src(:,JsdB,:) = &
+                    tmp_buffer(IsdB+i_seg_offset+1:IedB+i_seg_offset,1,:)
               endif
             endif
           endif
@@ -4587,31 +4587,31 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
           endif
 
           if (segment%is_E_or_W) then
-            ishift = 1
-            if (segment%direction == OBC_DIRECTION_E) ishift = 0
-            I=is_obc
+            ! ishift = 1
+            ! if (segment%direction == OBC_DIRECTION_E) ishift = 0
+            I = IsdB
             if (.not.segment%field(m)%on_face) then
               ! Do q points for the whole segment
-              do J=max(js_obc,jsd),min(je_obc,jed-1)
+              do J = max(JsdB, G%jsd), min(JedB, G%jed-1)
                 ! Using the h remapping approach
                 ! Pretty sure we need to check for source/target grid consistency here
                 !### For a concave corner between OBC segments, there are 3 thicknesses we might
                 ! consider using.
                 segment%field(m)%buffer_dst(I,J,:) = 0.0  ! initialize remap destination buffer
                 if (G%mask2dCu(I,j)>0. .and. G%mask2dCu(I,j+1)>0.) then
-                  dz_stack(:) = 0.5*(dz(i+ishift,j,:) + dz(i+ishift,j+1,:))
+                  dz_stack(:) = 0.5 * (dz(isd,j,:) + dz(isd,j+1,:))
                   call remapping_core_h(OBC%remap_z_CS, &
                        segment%field(m)%nk_src, segment%field(m)%dz_src(I,J,:), &
                        segment%field(m)%buffer_src(I,J,:), &
                        GV%ke, dz_stack, segment%field(m)%buffer_dst(I,J,:))
                 elseif (G%mask2dCu(I,j)>0.) then
-                  dz_stack(:) = dz(i+ishift,j,:)
+                  dz_stack(:) = dz(isd,j,:)
                   call remapping_core_h(OBC%remap_z_CS, &
                        segment%field(m)%nk_src, segment%field(m)%dz_src(I,J,:), &
                        segment%field(m)%buffer_src(I,J,:), &
                        GV%ke, dz_stack, segment%field(m)%buffer_dst(I,J,:))
                 elseif (G%mask2dCu(I,j+1)>0.) then
-                  dz_stack(:) = dz(i+ishift,j+1,:)
+                  dz_stack(:) = dz(isd,j+1,:)
                   call remapping_core_h(OBC%remap_z_CS, &
                        segment%field(m)%nk_src, segment%field(m)%dz_src(I,j,:), &
                        segment%field(m)%buffer_src(I,J,:), &
@@ -4619,45 +4619,45 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
                 endif
               enddo
             else
-              do j=js_obc+1,je_obc
+              do j = JsdB+1, JedB
                 ! Using the h remapping approach
                 ! Pretty sure we need to check for source/target grid consistency here
                 segment%field(m)%buffer_dst(I,j,:) = 0.0  ! initialize remap destination buffer
                 if (G%mask2dCu(I,j)>0.) then
                   net_dz_src = sum( segment%field(m)%dz_src(I,j,:) )
-                  net_dz_int = sum( dz(i+ishift,j,:) )
+                  net_dz_int = sum( dz(isd,j,:) )
                   scl_fac = net_dz_int / net_dz_src
                   call remapping_core_h(OBC%remap_z_CS, &
                        segment%field(m)%nk_src,  scl_fac*segment%field(m)%dz_src(I,j,:), &
                        segment%field(m)%buffer_src(I,j,:), &
-                       GV%ke, dz(i+ishift,j,:), segment%field(m)%buffer_dst(I,j,:))
+                       GV%ke, dz(isd,j,:), segment%field(m)%buffer_dst(I,j,:))
                 endif
               enddo
             endif
           else
-            jshift = 1
-            if (segment%direction == OBC_DIRECTION_N) jshift = 0
-            J=js_obc
+            ! jshift = 1
+            ! if (segment%direction == OBC_DIRECTION_N) jshift = 0
+            J = JsdB
             if (.not.segment%field(m)%on_face) then
               ! Do q points for the whole segment
-              do I=max(is_obc,isd),min(ie_obc,ied-1)
+              do I = max(IsdB, G%isd), min(IedB, G%ied-1)
                 segment%field(m)%buffer_dst(I,J,:) = 0.0  ! initialize remap destination buffer
                 if (G%mask2dCv(i,J)>0. .and. G%mask2dCv(i+1,J)>0.) then
               ! Using the h remapping approach
               ! Pretty sure we need to check for source/target grid consistency here
-                  dz_stack(:) = 0.5*(dz(i,j+jshift,:) + dz(i+1,j+jshift,:))
+                  dz_stack(:) = 0.5 * (dz(i,jsd,:) + dz(i+1,jsd,:))
                   call remapping_core_h(OBC%remap_z_CS, &
                        segment%field(m)%nk_src, segment%field(m)%dz_src(I,J,:), &
                        segment%field(m)%buffer_src(I,J,:), &
                        GV%ke, dz_stack, segment%field(m)%buffer_dst(I,J,:))
                 elseif (G%mask2dCv(i,J)>0.) then
-                  dz_stack(:) = dz(i,j+jshift,:)
+                  dz_stack(:) = dz(i,jsd,:)
                   call remapping_core_h(OBC%remap_z_CS, &
                        segment%field(m)%nk_src, segment%field(m)%dz_src(I,J,:), &
                        segment%field(m)%buffer_src(I,J,:), &
                        GV%ke, dz_stack, segment%field(m)%buffer_dst(I,J,:))
                 elseif (G%mask2dCv(i+1,J)>0.) then
-                  dz_stack(:) = dz(i+1,j+jshift,:)
+                  dz_stack(:) = dz(i+1,jsd,:)
                   call remapping_core_h(OBC%remap_z_CS, &
                        segment%field(m)%nk_src, segment%field(m)%dz_src(I,J,:), &
                        segment%field(m)%buffer_src(I,J,:), &
@@ -4665,18 +4665,18 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
                 endif
               enddo
             else
-              do i=is_obc+1,ie_obc
+              do i = IsdB+1, IedB
               ! Using the h remapping approach
               ! Pretty sure we need to check for source/target grid consistency here
                 segment%field(m)%buffer_dst(i,J,:) = 0.0  ! initialize remap destination buffer
                 if (G%mask2dCv(i,J)>0.) then
                   net_dz_src = sum( segment%field(m)%dz_src(i,J,:) )
-                  net_dz_int = sum( dz(i,j+jshift,:) )
+                  net_dz_int = sum( dz(i,jsd,:) )
                   scl_fac = net_dz_int / net_dz_src
                   call remapping_core_h(OBC%remap_z_CS, &
                        segment%field(m)%nk_src, scl_fac* segment%field(m)%dz_src(i,J,:), &
                        segment%field(m)%buffer_src(i,J,:), &
-                       GV%ke, dz(i,j+jshift,:), segment%field(m)%buffer_dst(i,J,:))
+                       GV%ke, dz(i,jsd,:), segment%field(m)%buffer_dst(i,J,:))
                 endif
               enddo
             endif
@@ -4690,13 +4690,13 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
           if (field_is_tidal(segment%field(m)%name)) nk_dst = 1
           if (segment%field(m)%name == 'SSH') nk_dst = 1
           if (.not.segment%field(m)%on_face) then
-            allocate(segment%field(m)%buffer_dst(is_obc:ie_obc, js_obc:je_obc, nk_dst), &
+            allocate(segment%field(m)%buffer_dst(IsdB:IedB, JsdB:JedB, nk_dst), &
                      source=segment%field(m)%value)
           elseif (segment%is_E_or_W) then
-            allocate(segment%field(m)%buffer_dst(is_obc:ie_obc, js_obc+1:je_obc, nk_dst), &
+            allocate(segment%field(m)%buffer_dst(IsdB:IedB, JsdB+1:JedB, nk_dst), &
                      source=segment%field(m)%value)
           else
-            allocate(segment%field(m)%buffer_dst(is_obc+1:ie_obc, js_obc:je_obc, nk_dst), &
+            allocate(segment%field(m)%buffer_dst(IsdB+1:IedB, JsdB:JedB, nk_dst), &
                      source=segment%field(m)%value)
           endif
         endif
@@ -4712,9 +4712,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
       ! calculate external BT velocity and transport if needed
       if (trim(segment%field(m)%name) == 'U' .or. trim(segment%field(m)%name) == 'V') then
         if (trim(segment%field(m)%name) == 'U' .and. segment%is_E_or_W) then
-          I=is_obc
-          do j=js_obc+1,je_obc
-            normal_trans_bt(I,j) = 0.0
+          I=IsdB
+          do j=JsdB+1,JedB
             tidal_vel = 0.0
             if (OBC%add_tide_constituents) then
               do c=1,OBC%n_tide_constituents
@@ -4723,19 +4722,19 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
                       + (OBC%tide_eq_phases(c) + OBC%tide_un(c)))
               enddo
             endif
+            normal_trans_bt = 0.0
             do k=1,GV%ke
               segment%normal_vel(I,j,k) = segment%field(m)%buffer_dst(I,j,k) + tidal_vel
               segment%normal_trans(I,j,k) = segment%normal_vel(I,j,k)*segment%h(I,j,k) * G%dyCu(I,j)
-              normal_trans_bt(I,j) = normal_trans_bt(I,j) + segment%normal_trans(I,j,k)
+              normal_trans_bt = normal_trans_bt + segment%normal_trans(I,j,k)
             enddo
-            segment%normal_vel_bt(I,j) = normal_trans_bt(I,j) &
+            segment%normal_vel_bt(I,j) = normal_trans_bt &
                 / (max(segment%Htot(I,j), 1.e-12 * GV%m_to_H) * G%dyCu(I,j))
             if (allocated(segment%nudged_normal_vel)) segment%nudged_normal_vel(I,j,:) = segment%normal_vel(I,j,:)
           enddo
         elseif (trim(segment%field(m)%name) == 'V' .and. segment%is_N_or_S) then
-          J=js_obc
-          do i=is_obc+1,ie_obc
-            normal_trans_bt(i,J) = 0.0
+          J=JsdB
+          do i=IsdB+1,IedB
             tidal_vel = 0.0
             if (OBC%add_tide_constituents) then
               do c=1,OBC%n_tide_constituents
@@ -4744,20 +4743,21 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
                       + (OBC%tide_eq_phases(c) + OBC%tide_un(c)))
               enddo
             endif
+            normal_trans_bt = 0.0
             do k=1,GV%ke
               segment%normal_vel(i,J,k) = segment%field(m)%buffer_dst(i,J,k) + tidal_vel
               segment%normal_trans(i,J,k) = segment%normal_vel(i,J,k)*segment%h(i,J,k) * &
                         G%dxCv(i,J)
-              normal_trans_bt(i,J) = normal_trans_bt(i,J) + segment%normal_trans(i,J,k)
+              normal_trans_bt = normal_trans_bt + segment%normal_trans(i,J,k)
             enddo
-            segment%normal_vel_bt(i,J) = normal_trans_bt(i,J) &
+            segment%normal_vel_bt(i,J) = normal_trans_bt &
                 / (max(segment%Htot(i,J), 1.e-12 * GV%m_to_H) * G%dxCv(i,J))
             if (allocated(segment%nudged_normal_vel)) segment%nudged_normal_vel(i,J,:) = segment%normal_vel(i,J,:)
           enddo
         elseif (trim(segment%field(m)%name) == 'V' .and. segment%is_E_or_W .and. &
                 allocated(segment%tangential_vel)) then
-          I=is_obc
-          do J=js_obc,je_obc
+          I=IsdB
+          do J=JsdB,JedB
             tidal_vel = 0.0
             if (OBC%add_tide_constituents) then
               do c=1,OBC%n_tide_constituents
@@ -4774,8 +4774,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
           enddo
         elseif (trim(segment%field(m)%name) == 'U' .and. segment%is_N_or_S .and. &
                 allocated(segment%tangential_vel)) then
-          J=js_obc
-          do I=is_obc,ie_obc
+          J=JsdB
+          do I=IsdB,IedB
             tidal_vel = 0.0
             if (OBC%add_tide_constituents) then
               do c=1,OBC%n_tide_constituents
@@ -4793,8 +4793,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
         endif
       elseif (trim(segment%field(m)%name) == 'DVDX' .and. segment%is_E_or_W .and. &
               allocated(segment%tangential_grad)) then
-        I=is_obc
-        do J=js_obc,je_obc
+        I=IsdB
+        do J=JsdB,JedB
           do k=1,GV%ke
             segment%tangential_grad(I,J,k) = segment%field(m)%buffer_dst(I,J,k)
             if (allocated(segment%nudged_tangential_grad)) &
@@ -4803,8 +4803,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
         enddo
       elseif (trim(segment%field(m)%name) == 'DUDY' .and. segment%is_N_or_S .and. &
               allocated(segment%tangential_grad)) then
-        J=js_obc
-        do I=is_obc,ie_obc
+        J=JsdB
+        do I=IsdB,IedB
           do k=1,GV%ke
             segment%tangential_grad(I,J,k) = segment%field(m)%buffer_dst(I,J,k)
             if (allocated(segment%nudged_tangential_grad)) &
@@ -4817,25 +4817,26 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
       ! from this point on, data are entirely on segments - will
       ! write all segment loops as 2d loops.
+      ! Note: retaining [ij]s_obc2 as this is the orientation oblivious framework we should move to.
       if (segment%is_E_or_W) then
-        js_obc2 = js_obc+1
-        is_obc2 = is_obc
+        js_obc2 = JsdB+1
+        is_obc2 = IsdB
       else
-        js_obc2 = js_obc
-        is_obc2 = is_obc+1
+        js_obc2 = JsdB
+        is_obc2 = IsdB+1
       endif
       if (segment%is_N_or_S) then
-        is_obc2 = is_obc+1
-        js_obc2 = js_obc
+        is_obc2 = IsdB+1
+        js_obc2 = JsdB
       else
-        is_obc2 = is_obc
-        js_obc2 = js_obc+1
+        is_obc2 = IsdB
+        js_obc2 = JsdB+1
       endif
 
       if (trim(segment%field(m)%name) == 'SSH') then
         ramp_value = 1.0
         if (OBC%ramp) ramp_value = OBC%ramp_value
-        do j=js_obc2,je_obc ; do i=is_obc2,ie_obc
+        do j=js_obc2,JedB ; do i=is_obc2,IedB
           tidal_elev = 0.0
           if (OBC%add_tide_constituents) then
             do c=1,OBC%n_tide_constituents
@@ -4850,12 +4851,12 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
       ! Set the thickness reservoir data.
       if (OBC%thickness_x_reservoirs_used .or. OBC%thickness_y_reservoirs_used) then
-        do k=1,nz; do j=js_obc2, je_obc; do i=is_obc2,ie_obc
+        do k=1,nz; do j=js_obc2, JedB; do i=is_obc2,IedB
           segment%h_Reg%h(i,j,k) = segment%h(i,j,k)
         enddo ; enddo ; enddo
         if (.not. segment%h_Reg%is_initialized) then
           ! If the thickness reservoir has not yet been initialized, then set to external value.
-          do k=1,nz; do j=js_obc2, je_obc; do i=is_obc2,ie_obc
+          do k=1,nz; do j=js_obc2, JedB; do i=is_obc2,IedB
             segment%h_Reg%h_res(i,j,k) = segment%h_Reg%h(i,j,k)
           enddo ; enddo ; enddo
           segment%h_Reg%is_initialized=.true.
@@ -4874,12 +4875,12 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
           if (nt < 0) call MOM_error(FATAL,"update_OBC_segment_data: Did not find tracer "//trim(segment%field(m)%name))
         endif
         if (allocated(segment%field(m)%buffer_dst)) then
-          do k=1,nz ; do j=js_obc2,je_obc ; do i=is_obc2,ie_obc
+          do k=1,nz ; do j=js_obc2,JedB ; do i=is_obc2,IedB
             segment%tr_Reg%Tr(nt)%t(i,j,k) = segment%field(m)%buffer_dst(i,j,k)
           enddo ; enddo ; enddo
           if (.not. segment%tr_Reg%Tr(nt)%is_initialized) then
             ! If the tracer reservoir has not yet been initialized, then set to external value.
-            do k=1,nz ; do j=js_obc2,je_obc ; do i=is_obc2,ie_obc
+            do k=1,nz ; do j=js_obc2,JedB ; do i=is_obc2,IedB
               segment%tr_Reg%Tr(nt)%tres(i,j,k) = segment%tr_Reg%Tr(nt)%t(i,j,k)
             enddo ; enddo ; enddo
             segment%tr_Reg%Tr(nt)%is_initialized=.true.
@@ -4891,7 +4892,6 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
     enddo ! end field loop
     deallocate(dz_stack)
-    deallocate(normal_trans_bt)
 
   enddo ! end segment loop
 
