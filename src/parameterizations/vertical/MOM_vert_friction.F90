@@ -82,8 +82,6 @@ type, public :: vertvisc_CS ; private
                              !! [H Z T ~> m2 s or kg s m-1]
   real    :: vel_underflow   !< Velocity components smaller than vel_underflow
                              !! are set to 0 [L T-1 ~> m s-1].
-  logical :: CFL_based_trunc !< If true, base truncations on CFL numbers, not
-                             !! absolute velocities.
   real    :: CFL_trunc       !< Velocity components will be truncated when they
                              !! are large enough that the corresponding CFL number
                              !! exceeds this value [nondim].
@@ -2570,7 +2568,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
   real :: vel_report(SZIB_(G),SZJB_(G))   ! The velocity to report [L T-1 ~> m s-1]
   real :: u_old(SZIB_(G),SZJ_(G),SZK_(GV)) ! The previous u-velocity [L T-1 ~> m s-1]
   real :: v_old(SZI_(G),SZJB_(G),SZK_(GV)) ! The previous v-velocity [L T-1 ~> m s-1]
-  logical :: trunc_any_array(SZI_(G), SZJB_(G), SZK_(GV))
+  logical :: trunc_any_array(SZIB_(G), SZJB_(G), SZK_(GV))
   logical :: trunc_any, dowrite(SZIB_(G),SZJB_(G))
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
@@ -2579,47 +2577,34 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
   H_report = 3.0 * GV%Angstrom_H
 
   if (len_trim(CS%u_trunc_file) > 0) then
-
-    !$omp parallel do 
-    do j =js,je ; do k=1,nz ; do i=Isq,Ieq
+    do j=js,je ; do k=1,nz ; do I=Isq,Ieq
       trunc_any_array(I,j,k) = .false.
-    enddo ; enddo ; enddo 
-    !$omp end parallel do
+    enddo ; enddo ; enddo
 
-    !$omp parallel do 
-    do j = js,je ; do I=Isq,Ieq
+    do j=js,je ; do I=Isq,Ieq
       dowrite(I,j) = .false.
       vel_report(I,j) = 3.0e8 * US%m_s_to_L_T
-    end do ; enddo
-    !$omp end parallel do
+    enddo ; enddo
 
-
-    !$omp parallel do 
-    do j=js,je ; do k=1,nz ; do i=Isq,Ieq
+    do j=js,je ; do k=1,nz ; do I=Isq,Ieq
       if (abs(u(I,j,k)) < CS%vel_underflow) u(I,j,k) = 0.0
-      if (u(i,j,k) < 0.0) then 
+      if (u(i,j,k) < 0.0) then
         CFL = (-u(I,j,k) * dt) * (G%dy_Cu(I,j) * G%IareaT(i+1,j))
-      else 
-        CFL = (u(i,j,k) * dt) * (G%dy_Cu(I,j) * G%IareaT(i,j))
+      else
+        CFL = (u(I,j,k) * dt) * (G%dy_Cu(I,j) * G%IareaT(i,j))
       endif
-      if (CFL > CS%CFL_trunc) trunc_any_array(i,j,k) = .true.
+      if (CFL > CS%CFL_trunc) trunc_any_array(I,j,k) = .true.
       if (CFL > CS%CFL_report) then
-        dowrite(i,j) = .true.
-        vel_report(i,j) = min(vel_report(i,j), abs(u(i,j,k)))
+        dowrite(I,j) = .true.
+        vel_report(I,j) = min(vel_report(I,j), abs(u(I,j,k)))
       endif
     enddo ; enddo ; enddo
-    !$omp end parallel do
 
-
-    !$omp parallel do 
-    do j=js,je ; do I=Isq,Ieq ; if(dowrite(I,j)) then 
-      u_old(I,j,:) = U(I,j,:)
+    do j=js,je ; do I=Isq,Ieq ; if (dowrite(I,j)) then
+      u_old(I,j,:) = u(I,j,:)
     endif ; enddo ; enddo
-    !$omp end parallel do
 
-
-    !$omp parallel do 
-    do j=js,je ; do k=1,nz ; do I=Isq,Ieq ; if(trunc_any_array(I,j,k)) then 
+    do j=js,je ; do k=1,nz ; do I=Isq,Ieq ; if (trunc_any_array(I,j,k)) then
       if ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
         u(I,j,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
         if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
@@ -2627,98 +2612,69 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         u(I,j,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dy_Cu(I,j)))
         if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
       endif
-    endif ; enddo ; enddo ; enddo 
-    !$omp end parallel do
-
-  else 
-    do k=1,nz 
-      !$omp parallel do
-      do j=js,je ; do I=Isq,Ieq
-        if (abs(u(I,j,k)) < CS%vel_underflow) then ; u(I,j,k) = 0.0
-        elseif ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
-          u(I,j,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
-          if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
-        elseif ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i,j) > CS%CFL_trunc) then
-          u(I,j,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dy_Cu(I,j)))
-          if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
-        endif
-      enddo ; enddo
-      !$omp end parallel do
-    enddo 
-  end if 
-
-
-  if (len_trim(CS%v_trunc_file) > 0) then 
-    !$omp parallel do
-    do J=Jsq,Jeq ; do k=1,nz ; do i=is,ie 
-      ! capital J?
-      trunc_any_array(i,J,k) = .false.
-    enddo ; enddo ; enddo
-    !$omp end parallel do
-
-
-    !$omp parallel do 
-    do J=Jsq,Jeq ; do i=is,ie
-      dowrite(i,j) = .false.
-      vel_report(i,j) = 3.0e8 * US%m_s_to_L_T
-    enddo ; enddo
-    !$omp end parallel do
-
-
-    !$omp parallel do
-    do J=Jsq,Jeq ; do k=1,nz ; do i=is,ie
-      if (abs(v(i,j,k)) < CS%vel_underflow) v(i,j,k) = 0.0
-      if (v(i,j,k) < 0.0) then
-        CFL = (-v(I,j,k) * dt) * (G%dx_Cv(I,j) * G%IareaT(i+1,j))
-      else
-        CFL = (v(I,j,k) * dt) * (G%dx_Cv(I,j) * G%IareaT(i,j))
-      end if
-      if (CFL > CS%CFL_trunc) trunc_any_array(i,j,k) = .true.
-      if (CFL > CS%CFL_report) then
-        dowrite(i,j) = .true.
-        vel_report(i,j) = min(vel_report(i,j), abs(v(i,j,k)))
-      end if
-    enddo ; enddo ; enddo
-    !$omp end parallel do
-
-
-    !$omp parallel do
-    do J=Jsq,Jeq ; do i=is,ie ; if(dowrite(i,J)) then 
-      v_old(i,J,:) = v(i,J,:)
-    endif ; enddo ; enddo
-    !$omp end parallel do
-
-
-    !$omp parallel do
-    do J=Jsq,Jeq ; do k=1,nz ; do i=is,ie ; if(trunc_any_array(i,j,k)) then 
-      if ((v(I,j,k) * (dt * G%dx_Cv(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
-        v(I,j,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dx_Cv(I,j)))
+    endif ; enddo ; enddo ; enddo
+  else
+    do k=1,nz ; do j=js,je ; do I=Isq,Ieq
+      if (abs(u(I,j,k)) < CS%vel_underflow) then ; u(I,j,k) = 0.0
+      elseif ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
+        u(I,j,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
         if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
-      elseif ((v(I,j,k) * (dt * G%dx_Cv(I,j))) * G%IareaT(i,j) > CS%CFL_trunc) then
-        v(I,j,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dx_Cv(I,j)))
+      elseif ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i,j) > CS%CFL_trunc) then
+        u(I,j,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dy_Cu(I,j)))
         if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
       endif
+    enddo ; enddo ; enddo
+  endif
+
+  if (len_trim(CS%v_trunc_file) > 0) then
+    do J=Jsq,Jeq ; do k=1,nz ; do i=is,ie
+      trunc_any_array(i,J,k) = .false.
+    enddo ; enddo ; enddo
+
+    do J=Jsq,Jeq ; do i=is,ie
+      dowrite(i,J) = .false.
+      vel_report(i,J) = 3.0e8 * US%m_s_to_L_T
+    enddo ; enddo
+
+    do J=Jsq,Jeq ; do k=1,nz ; do i=is,ie
+      if (abs(v(i,j,k)) < CS%vel_underflow) v(i,J,k) = 0.0
+      if (v(i,j,k) < 0.0) then
+        CFL = (-v(i,J,k) * dt) * (G%dx_Cv(i,J) * G%IareaT(i,j+1))
+      else
+        CFL = (v(i,J,k) * dt) * (G%dx_Cv(i,J) * G%IareaT(i,j))
+      endif
+      if (CFL > CS%CFL_trunc) trunc_any_array(i,j,k) = .true.
+      if (CFL > CS%CFL_report) then
+        dowrite(i,J) = .true.
+        vel_report(i,J) = min(vel_report(i,J), abs(v(i,J,k)))
+      endif
+    enddo ; enddo ; enddo
+
+    do J=Jsq,Jeq ; do i=is,ie ; if (dowrite(i,J)) then
+      v_old(i,J,:) = v(i,J,:)
+    endif ; enddo ; enddo
+
+    do J=Jsq,Jeq ; do k=1,nz ; do i=is,ie ; if (trunc_any_array(i,j,k)) then
+      if ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j+1) < -CS%CFL_trunc) then
+        v(i,J,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i,j+1) / (dt * G%dx_Cv(i,J)))
+        if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+      elseif ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j) > CS%CFL_trunc) then
+        v(i,J,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dx_Cv(i,J)))
+        if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+      endif
     endif ; enddo ; enddo ; enddo
-    !$omp end parallel do
-
-
-  else 
-    do k=1,nz 
-      !$omp parallel do
-      do J=Jsq,Jeq ; do i=is,ie 
-        if (abs(v(i,J,k)) < CS%vel_underflow) then ; v(i,J,k) = 0.0
-        elseif ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j+1) < -CS%CFL_trunc) then
-          v(i,J,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i,j+1) / (dt * G%dx_Cv(i,J)))
-          if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
-        elseif ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j) > CS%CFL_trunc) then
-          v(i,J,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dx_Cv(i,J)))
-          if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
-        endif
-      enddo ; enddo 
-      !$omp end parallel do
-    enddo
-  endif 
-
+  else
+    do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
+      if (abs(v(i,J,k)) < CS%vel_underflow) then ; v(i,J,k) = 0.0
+      elseif ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j+1) < -CS%CFL_trunc) then
+        v(i,J,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i,j+1) / (dt * G%dx_Cv(i,J)))
+        if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+      elseif ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j) > CS%CFL_trunc) then
+        v(i,J,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dx_Cv(i,J)))
+        if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+      endif
+    enddo ; enddo ; enddo
+  endif
 
   if (len_trim(CS%u_trunc_file) > 0) then
     do j=js,je ; do I=Isq,Ieq ; if (dowrite(I,j)) then
