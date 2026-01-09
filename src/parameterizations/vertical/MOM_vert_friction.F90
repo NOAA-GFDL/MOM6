@@ -2607,10 +2607,12 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
     do j=js,je ; do k=1,nz ; do I=Isq,Ieq ; if (trunc_any_array(I,j,k)) then
       if ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
         u(I,j,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
-        if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+        if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
+            (CS%h_u(I,j,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
       elseif ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i,j) > CS%CFL_trunc) then
         u(I,j,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dy_Cu(I,j)))
-        if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+        if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
+            (CS%h_u(I,j,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
       endif
     endif ; enddo ; enddo ; enddo
   else
@@ -2618,12 +2620,22 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       if (abs(u(I,j,k)) < CS%vel_underflow) then ; u(I,j,k) = 0.0
       elseif ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
         u(I,j,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
-        if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+        if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
+            (CS%h_u(I,j,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
       elseif ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i,j) > CS%CFL_trunc) then
         u(I,j,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dy_Cu(I,j)))
-        if (h(i,j,k) + h(i+1,j,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+        if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
+            (CS%h_u(I,j,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
       endif
     enddo ; enddo ; enddo
+  endif
+
+  if (len_trim(CS%u_trunc_file) > 0) then
+    do j=js,je ; do I=Isq,Ieq ; if (dowrite(I,j)) then
+      ! Call a diagnostic reporting subroutines are called if unphysically large values are found.
+      call write_u_accel(I, j, u_old, h, ADp, CDp, dt, G, GV, US, CS%PointAccel_CSp, &
+                         vel_report(I,j), forces%taux(I,j), a=CS%a_u, hv=CS%h_u)
+    endif ; enddo ; enddo
   endif
 
   if (len_trim(CS%v_trunc_file) > 0) then
@@ -2657,10 +2669,12 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
     do J=Jsq,Jeq ; do k=1,nz ; do i=is,ie ; if (trunc_any_array(i,j,k)) then
       if ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j+1) < -CS%CFL_trunc) then
         v(i,J,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i,j+1) / (dt * G%dx_Cv(i,J)))
-        if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+        if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
+            (CS%h_v(i,J,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
       elseif ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j) > CS%CFL_trunc) then
         v(i,J,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dx_Cv(i,J)))
-        if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+        if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
+            (CS%h_v(i,J,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
       endif
     endif ; enddo ; enddo ; enddo
   else
@@ -2668,20 +2682,14 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       if (abs(v(i,J,k)) < CS%vel_underflow) then ; v(i,J,k) = 0.0
       elseif ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j+1) < -CS%CFL_trunc) then
         v(i,J,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i,j+1) / (dt * G%dx_Cv(i,J)))
-        if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+        if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
+            (CS%h_v(i,J,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
       elseif ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j) > CS%CFL_trunc) then
         v(i,J,k) = (0.9*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dx_Cv(i,J)))
-        if (h(i,j,k) + h(i,j+1,k) > H_report) CS%ntrunc = CS%ntrunc + 1
+        if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
+            (CS%h_v(i,J,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
       endif
     enddo ; enddo ; enddo
-  endif
-
-  if (len_trim(CS%u_trunc_file) > 0) then
-    do j=js,je ; do I=Isq,Ieq ; if (dowrite(I,j)) then
-      ! Call a diagnostic reporting subroutines are called if unphysically large values are found.
-      call write_u_accel(I, j, u_old, h, ADp, CDp, dt, G, GV, US, CS%PointAccel_CSp, &
-                         vel_report(I,j), forces%taux(I,j), a=CS%a_u, hv=CS%h_u)
-    endif ; enddo ; enddo
   endif
 
   if (len_trim(CS%v_trunc_file) > 0) then
