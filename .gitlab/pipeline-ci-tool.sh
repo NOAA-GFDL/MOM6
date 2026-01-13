@@ -166,7 +166,7 @@ nolibs-ocean-ice-compile () {
       ../src/MOM6/src \
       ../src/SIS2/src \
       ../src/SIS2/config_src/dynamic_symmetric \
-      ../src/SIS2/config_src/Icepack_interfaces \
+      ../src/SIS2/config_src/external/Icepack_interfaces \
       ../src/icebergs/src \
       ../src/{FMS1,coupler,ice_param,land_null,atmos_null}
     sed -i '/FMS1\/.*\/test_/d' path_names
