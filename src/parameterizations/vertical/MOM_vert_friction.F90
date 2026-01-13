@@ -2577,7 +2577,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
   H_report = 3.0 * GV%Angstrom_H
 
   if (len_trim(CS%u_trunc_file) > 0) then
-    do j=js,je ; do k=1,nz ; do I=Isq,Ieq
+    do k=1,nz ; do j=js,je ; do I=Isq,Ieq
       trunc_any_array(I,j,k) = .false.
     enddo ; enddo ; enddo
 
@@ -2586,7 +2586,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       vel_report(I,j) = 3.0e8 * US%m_s_to_L_T
     enddo ; enddo
 
-    do j=js,je ; do k=1,nz ; do I=Isq,Ieq
+    do k=1,nz ; do j=js,je ; do I=Isq,Ieq
       if (abs(u(I,j,k)) < CS%vel_underflow) u(I,j,k) = 0.0
       if (u(i,j,k) < 0.0) then
         CFL = (-u(I,j,k) * dt) * (G%dy_Cu(I,j) * G%IareaT(i+1,j))
@@ -2604,7 +2604,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       u_old(I,j,:) = u(I,j,:)
     endif ; enddo ; enddo
 
-    do j=js,je ; do k=1,nz ; do I=Isq,Ieq ; if (trunc_any_array(I,j,k)) then
+    do k=1,nz ; do j=js,je ; do I=Isq,Ieq ; if (trunc_any_array(I,j,k)) then 
       if ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
         u(I,j,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
         if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
@@ -2639,7 +2639,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
   endif
 
   if (len_trim(CS%v_trunc_file) > 0) then
-    do J=Jsq,Jeq ; do k=1,nz ; do i=is,ie
+    do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
       trunc_any_array(i,J,k) = .false.
     enddo ; enddo ; enddo
 
@@ -2648,7 +2648,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       vel_report(i,J) = 3.0e8 * US%m_s_to_L_T
     enddo ; enddo
 
-    do J=Jsq,Jeq ; do k=1,nz ; do i=is,ie
+    do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
       if (abs(v(i,j,k)) < CS%vel_underflow) v(i,J,k) = 0.0
       if (v(i,j,k) < 0.0) then
         CFL = (-v(i,J,k) * dt) * (G%dx_Cv(i,J) * G%IareaT(i,j+1))
@@ -2666,7 +2666,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       v_old(i,J,:) = v(i,J,:)
     endif ; enddo ; enddo
 
-    do J=Jsq,Jeq ; do k=1,nz ; do i=is,ie ; if (trunc_any_array(i,j,k)) then
+      do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie ; if (trunc_any_array(i,j,k)) then
       if ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j+1) < -CS%CFL_trunc) then
         v(i,J,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i,j+1) / (dt * G%dx_Cv(i,J)))
         if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
