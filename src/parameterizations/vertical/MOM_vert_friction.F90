@@ -2568,7 +2568,6 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
   real :: vel_report(SZIB_(G),SZJB_(G))   ! The velocity to report [L T-1 ~> m s-1]
   real :: u_old(SZIB_(G),SZJ_(G),SZK_(GV)) ! The previous u-velocity [L T-1 ~> m s-1]
   real :: v_old(SZI_(G),SZJB_(G),SZK_(GV)) ! The previous v-velocity [L T-1 ~> m s-1]
-  logical :: trunc_any_array(SZIB_(G), SZJB_(G), SZK_(GV))
   logical :: trunc_any, dowrite(SZIB_(G),SZJB_(G))
   logical :: do_any_write
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
@@ -2607,7 +2606,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       u_old(I,j,:) = u(I,j,:)
     endif ; enddo ; enddo
 
-    do k=1,nz ; do j=js,je ; do I=Isq,Ieq ; if (trunc_any_array(I,j,k)) then 
+    do k=1,nz ; do j=js,je ; do I=Isq,Ieq 
       if ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
         u(I,j,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
         if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
@@ -2617,7 +2616,8 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         if (((I >= G%isc) .and. (I <= G%iec) .and. (j >= G%jsc) .and. (j <= G%jec)) .and. &
             (CS%h_u(I,j,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
       endif
-    endif ; enddo ; enddo ; enddo
+    enddo ; enddo ; enddo
+
   else
     do k=1,nz ; do j=js,je ; do I=Isq,Ieq
       if (abs(u(I,j,k)) < CS%vel_underflow) then ; u(I,j,k) = 0.0
@@ -2673,7 +2673,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       v_old(i,J,:) = v(i,J,:)
     endif ; enddo ; enddo
 
-      do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie ; if (trunc_any_array(i,j,k)) then
+      do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
       if ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j+1) < -CS%CFL_trunc) then
         v(i,J,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i,j+1) / (dt * G%dx_Cv(i,J)))
         if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
@@ -2683,7 +2683,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         if (((i >= G%isc) .and. (i <= G%iec) .and. (J >= G%jsc) .and. (J <= G%jec)) .and. &
             (CS%h_v(i,J,k) > H_report)) CS%ntrunc = CS%ntrunc + 1
       endif
-    endif ; enddo ; enddo ; enddo
+    enddo ; enddo ; enddo
   else
     do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
       if (abs(v(i,J,k)) < CS%vel_underflow) then ; v(i,J,k) = 0.0
