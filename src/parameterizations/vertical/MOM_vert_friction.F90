@@ -2578,9 +2578,6 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
   do_any_write = .false.
 
   if (len_trim(CS%u_trunc_file) > 0) then
-    do k=1,nz ; do j=js,je ; do I=Isq,Ieq
-      trunc_any_array(I,j,k) = .false.
-    enddo ; enddo ; enddo
 
     do j=js,je ; do I=Isq,Ieq
       dowrite(I,j) = .false.
@@ -2594,7 +2591,6 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       else
         CFL = (u(I,j,k) * dt) * (G%dy_Cu(I,j) * G%IareaT(i,j))
       endif
-      if (CFL > CS%CFL_trunc) trunc_any_array(I,j,k) = .true.
       if (CFL > CS%CFL_report) then
         dowrite(I,j) = .true.
         do_any_write = .true.
@@ -2646,7 +2642,6 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
 
   if (len_trim(CS%v_trunc_file) > 0) then
     do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
-      trunc_any_array(i,J,k) = .false.
     enddo ; enddo ; enddo
 
     do J=Jsq,Jeq ; do i=is,ie
@@ -2661,7 +2656,6 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       else
         CFL = (v(i,J,k) * dt) * (G%dx_Cv(i,J) * G%IareaT(i,j))
       endif
-      if (CFL > CS%CFL_trunc) trunc_any_array(i,j,k) = .true.
       if (CFL > CS%CFL_report) then
         dowrite(i,J) = .true.
         do_any_write = .true.
