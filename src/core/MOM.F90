@@ -3095,7 +3095,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
 
     ! This call allocates the arrays on the segments for open boundary data, but it must occur
     ! after any calls to call_tracer_register_obc_segments.
-    call initialize_segment_data(GV, US, CS%OBC, param_file, turns)
+    call initialize_segment_data(GV, US, CS%OBC, param_file, turns, use_temperature)
 
     if (CS%debug_OBCs) call write_OBC_info(CS%OBC, G, GV, US)
   endif

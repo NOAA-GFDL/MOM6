@@ -458,6 +458,8 @@ type, public :: ocean_OBC_type
                                 !! run from the interior tracer concentrations regardless of
                                 !! properties that may be explicitly specified for the reservoir
                                 !! concentrations.
+  logical :: ts_needed_bug      !< If true, recover a bug that temperature and salinity can be ignored
+                                !! even if they are registered tracers in the rest of the model.
 end type ocean_OBC_type
 
 !> Control structure for open boundaries that read from files.
@@ -732,6 +734,9 @@ subroutine open_boundary_config(G, US, param_file, OBC)
                  "If true, set the OBC tracer reservoirs at the startup of a new run from the "//&
                  "interior tracer concentrations regardless of properties that may be explicitly "//&
                  "specified for the reservoir concentrations.", default=enable_bugs, do_not_log=.true.)
+  call get_param(param_file, mdl, "OBC_TEMP_SALT_NEEDED_BUG", OBC%ts_needed_bug, &
+                 "If true, recover a bug that OBC temperature and salinity can be ignored "//&
+                 "even if they are registered tracers in the rest of the model.", default=.true.)
   call get_param(param_file, mdl, "REENTRANT_X", reentrant_x, default=.true.)
   call get_param(param_file, mdl, "REENTRANT_Y", reentrant_y, default=.false.)
 
@@ -978,13 +983,16 @@ end subroutine open_boundary_setup_vert
 
 !> Get and store properties about the fields on the OBC segments and allocate space for reading
 !! OBC data from files.  In the process, it does funky stuff with the MPI processes.
-subroutine initialize_segment_data(GV, US, OBC, PF, turns)
+subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
   type(verticalGrid_type),      intent(in)    :: GV  !< Container for vertical grid information
   type(unit_scale_type),        intent(in)    :: US  !< A dimensional unit scaling type
   type(ocean_OBC_type), target, intent(inout) :: OBC !< Open boundary control structure
   type(param_file_type),        intent(in)    :: PF  !< Parameter file handle
   integer,                      intent(in)    :: turns !< Number of quarter turns of the grid
+  logical,                      intent(in)    :: use_temperature !< If true, temperature and
+                                                 !! salinity used as state variables.
 
+  ! Local variables
   integer :: n, n_seg, m, num_manifest_fields, mm
   character(len=1024) :: segstr
   character(len=256) :: filename
@@ -1005,8 +1013,11 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns)
   type(external_tracers_segments_props), pointer :: obgc_segments_props_list =>NULL()
   !will be able to dynamically switch between sub-sampling refined grid data or model grid
   integer :: IO_needs(2) ! Sums to determine global OBC data use and update patterns.
+  logical :: check_ts_needed ! Check if temperature and salinity are explicitly specified.
 
   qturns = modulo(turns, 4)
+
+  check_ts_needed = use_temperature .and. (.not. OBC%ts_needed_bug)
 
   call get_param(PF, mdl, "INPUTDIR", inputdir, default=".")
   inputdir = slasher(inputdir)
@@ -1030,6 +1041,11 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns)
   do n=1,OBC%number_of_segments
     n_seg = n ; if (OBC%reverse_segment_order) n_seg = OBC%number_of_segments + 1 - n
     segment => OBC%segment(n_seg)
+
+    segment%t_values_needed = segment%on_pe .and. check_ts_needed
+    segment%s_values_needed = segment%on_pe .and. check_ts_needed
+    segment%values_needed = segment%values_needed .or. segment%t_values_needed .or. segment%s_values_needed
+
     ! segment%values_needed is only true if this segment is on the local PE and some values need to be read.
     if (.not. OBC%segment(n_seg)%values_needed) cycle
 
@@ -1205,8 +1221,15 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns)
       if (segment%field(m)%name == 'Vphase') segment%vphase_index = m
       if (segment%field(m)%name == 'SSHamp') segment%zamp_index = m
       if (segment%field(m)%name == 'SSHphase') segment%zphase_index = m
+    enddo ! m-loop for fields
 
-    enddo
+    ! Check if temperature and salinity are explicitly specified when use_temperature is True. Can
+    ! be removed once the bug flag is removed.
+    if (check_ts_needed .and. (segment%t_values_needed .or. segment%s_values_needed)) then
+      write(mesg,'("MOM_open_boundary, initialize_segment_data: TEMP or SALT is missing for '// &
+            'OBC segment ", I0, ".")') n
+      call MOM_error(FATAL, mesg)
+    endif
 
     ! Check for any values that have not been provided.
     if (segment%u_values_needed .or. segment%uamp_values_needed .or. segment%uphase_values_needed .or. &
@@ -1220,7 +1243,7 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns)
     ! write(stderr, '(A)') trim(suffix)//" segment checksum"
     if (OBC%debug) call chksum_OBC_segment_data(OBC%segment(n_seg), GV, US, OBC%nk_OBC_debug, n)
 
-  enddo
+  enddo ! n-loop for segments
 
   call Set_PElist(saved_pelist)
 
