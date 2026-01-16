@@ -51,8 +51,6 @@ public open_boundary_test_extern_uv
 public open_boundary_test_extern_h
 public open_boundary_zero_normal_flow
 public parse_segment_str
-public parse_segment_manifest_str
-public parse_segment_data_str
 public register_OBC, OBC_registry_init
 public register_file_OBC, file_OBC_end
 public segment_tracer_registry_init
@@ -2033,15 +2031,31 @@ subroutine parse_segment_manifest_str(segment_str, num_fields, fields)
                                         !< List of fieldnames for each segment
 
   ! Local variables
-  character(len=128) :: word1, word2
+  character(len=128) :: field_spec, field
+  integer :: i
 
   num_fields = 0
+  fields(:) = ''
+
   do
-    word1 = extract_word(segment_str, ',', num_fields+1)
-    if (trim(word1) == '') exit
+    field_spec = extract_word(segment_str, ',', num_fields + 1)
+    if (trim(field_spec) == '') exit
+
+    if (num_fields >= MAX_OBC_FIELDS) &
+      call MOM_error(FATAL, "MOM_open_boundary.F90, parse_segment_manifest_str: " // &
+                     "too many fields in OBC segment manifest '" //trim(segment_str) // "'.")
+
+    field = trim(extract_word(field_spec, '=', 1))
+
+    ! Check for duplicate fields
+    do i=1, num_fields
+      if (fields(i) == trim(field)) &
+        call MOM_error(FATAL, "MOM_open_boundary.F90, parse_segment_manifest_str: "//&
+                       "duplicate field '" // trim(field) // "' in '" // trim(segment_str) // "'.")
+    enddo
+
     num_fields = num_fields + 1
-    word2 = extract_word(word1, '=', 1)
-    fields(num_fields) = trim(word2)
+    fields(num_fields) = trim(field)
   enddo
 end subroutine parse_segment_manifest_str
 
