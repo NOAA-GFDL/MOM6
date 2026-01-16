@@ -24,7 +24,6 @@ use MOM_open_boundary, only : ocean_OBC_type, open_boundary_test_extern_h
 use MOM_open_boundary, only : fill_temp_salt_segments, setup_OBC_tracer_reservoirs
 use MOM_open_boundary, only : fill_thickness_segments
 use MOM_open_boundary, only : set_initialized_OBC_tracer_reservoirs
-use MOM_grid_initialize, only : initialize_masks, set_grid_metrics
 use MOM_restart, only : restore_state, is_new_run, copy_restart_var, copy_restart_vector
 use MOM_restart, only : restart_registry_lock, MOM_restart_CS
 use MOM_sponge, only : set_up_sponge_field, set_up_sponge_ML_density

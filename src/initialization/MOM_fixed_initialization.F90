@@ -60,7 +60,6 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
                                                  !! to parse for model parameter values.
 
   ! Local variables
-  character(len=200) :: inputdir   ! The directory where NetCDF input files are.
   character(len=200) :: config
   logical            :: OBC_projection_bug, open_corners, enable_bugs
   logical            :: read_porous_file, read_meanSL_file
@@ -71,20 +70,15 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
 # include "version_variable.h"
 
   call callTree_enter("MOM_initialize_fixed(), MOM_fixed_initialization.F90")
-  call log_version(PF, mdl, version, "")
   call get_param(PF, mdl, "DEBUG", debug, default=.false.)
-
-  call get_param(PF, mdl, "INPUTDIR", inputdir, &
-         "The directory in which input files are found.", default=".")
-  inputdir = slasher(inputdir)
 
   ! Set up the parameters of the physical domain (i.e. the grid), G
   call set_grid_metrics(G, PF, US)
 
-  ! Calculate time mean ocean total thickness
+  ! Read time mean sea level from file
   call get_param(PF, mdl, "READ_MEAN_SEA_LEVEL", read_meanSL_file, &
-                "If true, use a 2D map for time mean sea level, which is used to calculate "// &
-                "time mean ocean total thickness.", default=.False.)
+                 "If true, use a 2D map for time mean sea level, which is used to calculate "// &
+                 "time mean ocean total thickness.", default=.False.)
   if (read_meanSL_file) &
     call set_meanSL_from_file(G%meanSL, G, PF, US)
 
@@ -138,6 +132,9 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
     call qchksum(G%mask2dBu, 'MOM_initialize_fixed: mask2dBu ', G%HI)
   endif
 
+  ! Set up other fixed quantities
+  ! Parameters below are logged under "module MOM_fixed_initialization".
+  call log_version(PF, mdl, version, "")
   ! Modulate geometric scales according to geography.
   call get_param(PF, mdl, "CHANNEL_CONFIG", config, &
                  "A parameter that determines which set of channels are \n"//&
@@ -182,12 +179,12 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
   if (read_porous_file) &
     call set_subgrid_topo_at_vel_from_file(G, PF, US)
 
-!    Calculate the value of the Coriolis parameter at the latitude   !
-!  of the q grid points [T-1 ~> s-1].
+  !    Calculate the value of the Coriolis parameter at the latitude   !
+  !  of the q grid points [T-1 ~> s-1].
   call MOM_initialize_rotation(G%CoriolisBu, G, PF, US=US)
-!   Calculate the components of grad f (beta)
+  !   Calculate the components of grad f (beta)
   call MOM_calculate_grad_Coriolis(G%dF_dx, G%dF_dy, G, US=US)
-!   Calculate the square of the Coriolis parameter
+  !   Calculate the square of the Coriolis parameter
   do I=G%IsdB,G%IedB ; do J=G%JsdB,G%JedB
     G%Coriolis2Bu(I,J) = G%CoriolisBu(I,J)**2
   enddo ; enddo
@@ -201,7 +198,7 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
 
   call initialize_grid_rotation_angle(G, PF)
 
-! Compute global integrals of grid values for later use in scalar diagnostics !
+  ! Compute global integrals of grid values for later use in scalar diagnostics !
   call compute_global_grid_integrals(G, US=US)
 
   call callTree_leave('MOM_initialize_fixed()')
