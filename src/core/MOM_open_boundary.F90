@@ -72,6 +72,7 @@ public setup_OBC_tracer_reservoirs
 public setup_OBC_thickness_reservoirs
 public open_boundary_register_restarts
 public copy_thickness_reservoirs
+public copy_OBC_tracer_reservoirs
 public update_segment_tracer_reservoirs
 public update_segment_thickness_reservoirs
 public set_initialized_OBC_tracer_reservoirs
@@ -2731,6 +2732,37 @@ subroutine set_initialized_OBC_tracer_reservoirs(G, OBC, restart_CS)
 
 end subroutine set_initialized_OBC_tracer_reservoirs
 
+!> Copy restart fields OBC%tres_x/y to per-segment tracer reservoir segment%tr_Reg%Tr(m)%tres.
+subroutine copy_OBC_tracer_reservoirs(OBC)
+  type(ocean_OBC_type), pointer :: OBC !< Open boundary control structure
+
+  ! Local variables
+  type(OBC_segment_type), pointer :: segment => NULL()
+  integer :: n, m, i, j, k, is, ie, js, je, nz
+
+  if (.not. associated(OBC)) return
+  ! The allocated checks are needed for some user cases (e.g. "dyed_obcs"), where per-segment
+  ! tracers are registered after global restart arrays OBC%tres_x/y are allocated (or not).
+  if (.not. (allocated(OBC%tres_x) .or. allocated(OBC%tres_y))) return
+
+  nz = OBC%ke
+  do n=1, OBC%number_of_segments
+    segment => OBC%segment(n)
+    if (.not. (segment%on_pe .and. associated(segment%tr_Reg))) cycle
+    if (segment%is_E_or_W .and. allocated(OBC%tres_x)) then ! EW segment
+      I = segment%HI%IsdB ; js = segment%HI%jsd ; je = segment%HI%jed
+      do m=1, segment%tr_Reg%ntseg ; do k=1,nz ; do j=js,je
+        segment%tr_Reg%Tr(m)%tres(I,j,k) = segment%tr_Reg%Tr(m)%scale * OBC%tres_x(I,j,k,m)
+      enddo ; enddo ; enddo
+    elseif (segment%is_N_or_S .and. allocated(OBC%tres_y)) then ! NS segment
+      J = segment%HI%JsdB ; is = segment%HI%isd ; ie = segment%HI%ied
+      do m=1, segment%tr_Reg%ntseg ; do k=1,nz ; do i=is,ie
+        segment%tr_Reg%Tr(m)%tres(i,J,k) = segment%tr_Reg%Tr(m)%scale * OBC%tres_y(i,J,k,m)
+      enddo ; enddo ; enddo
+    endif
+  enddo ! end segment loop
+end subroutine copy_OBC_tracer_reservoirs
+
 !> Fill segment%h_Reg from restart fields.
 subroutine copy_thickness_reservoirs(OBC, G, GV)
   type(ocean_grid_type),          intent(inout) :: G     !< Ocean grid structure
@@ -2879,36 +2911,6 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
       endif
     enddo
   endif
-
-  ! Now tracers (if any)
-  do n=1,OBC%number_of_segments
-    segment => OBC%segment(n)
-    if (segment%on_pe .and. associated(segment%tr_Reg)) then
-      if (segment%is_E_or_W) then
-        I = segment%HI%IsdB
-        do m=1,segment%tr_Reg%ntseg
-          if (allocated(OBC%tres_x)) then
-            do k=1,GV%ke
-              do j=segment%HI%jsd,segment%HI%jed
-                segment%tr_Reg%Tr(m)%tres(I,j,k) = segment%tr_Reg%Tr(m)%scale * OBC%tres_x(I,j,k,m)
-              enddo
-            enddo
-          endif
-        enddo
-      else
-        J = segment%HI%JsdB
-        do m=1,segment%tr_Reg%ntseg
-          if (allocated(OBC%tres_y)) then
-            do k=1,GV%ke
-              do i=segment%HI%isd,segment%HI%ied
-                segment%tr_Reg%Tr(m)%tres(i,J,k) = segment%tr_Reg%Tr(m)%scale * OBC%tres_y(i,J,k,m)
-              enddo
-            enddo
-          endif
-        enddo
-      endif
-    endif
-  enddo
 
   gamma_u = OBC%gamma_uv
   rx_max = OBC%rx_max ; ry_max = OBC%rx_max
