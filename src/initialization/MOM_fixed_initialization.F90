@@ -90,39 +90,39 @@ subroutine MOM_initialize_fixed(G, US, OBC, PF)
   ! To initialize masks, the bathymetry in halo regions must be filled in
   call pass_var(G%bathyT, G%Domain)
 
-  ! Determine the position of any open boundaries
+  ! Determine the position of any open boundaries and create OBC
   call open_boundary_config(G, US, PF, OBC)
 
-  ! Make bathymetry consistent with open boundaries
-  call get_param(PF, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
-                 default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
-  call get_param(PF, mdl, "OBC_PROJECTION_BUG", OBC_projection_bug, &
-                 "If false, use only interior ocean points at OBCs to specify several "//&
-                 "calculations at OBC points, and it avoids applying a land mask at the bay-like "//&
-                 "intersection of orthogonal OBC segments.  Otherwise the calculation of terms "//&
-                 "like the potential vorticity used in the barotropic solver relies on bathymetry "//&
-                 "or other fields being projected outward across OBCs.  This option changes "//&
-                 "answers for some configurations that use OBCs.", &
-                 default=enable_bugs, do_not_log=.not.associated(OBC))
-  open_corners = .not.OBC_projection_bug
-
-  if (associated(OBC) .and. OBC_projection_bug .and. read_meanSL_file) &
-    ! OBC_projection_bug modifies bathyT outside of the open boundaries, so meanSL would have to be
-    ! modified as well.
-    call MOM_error(FATAL, "MOM_initialize_fixed: To read mean sea level file, "//&
-                   "OBC_PROJECTION_BUG needs to be False.")
-
-  ! This call sets masks that prohibit flow over any point interpreted as land
+  ! Make bathymetry (if OBC_PROJECTION_BUG) and masks consistent with open boundaries.
   if (associated(OBC)) then
+    call get_param(PF, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+                   default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
+    call get_param(PF, mdl, "OBC_PROJECTION_BUG", OBC_projection_bug, &
+                   "If false, use only interior ocean points at OBCs to specify several "//&
+                   "calculations at OBC points, and it avoids applying a land mask at the "//&
+                   "bay-like intersection of orthogonal OBC segments.  Otherwise the "//&
+                   "calculation of terms like the potential vorticity used in the barotropic "//&
+                   "solver relies on bathymetry or other fields being projected outward across "//&
+                   "OBCs.  This option changes answers for some configurations that use OBCs.", &
+                   default=enable_bugs)
+    open_corners = .not.OBC_projection_bug
+
+    if (OBC_projection_bug .and. read_meanSL_file) &
+      ! OBC_projection_bug modifies bathyT outside of the open boundaries, so meanSL would have to be
+      ! modified as well.
+      call MOM_error(FATAL, "MOM_initialize_fixed: To read mean sea level file, "//&
+                     "OBC_PROJECTION_BUG needs to be False.")
+
+    ! This call sets masks that prohibit flow over any point interpreted as land
     if (OBC_projection_bug) &
       call open_boundary_impose_normal_slope(OBC, G, G%bathyT)
-    call initialize_masks(G, PF, US, OBC_dir_u=OBC%segnum_u, OBC_dir_v=OBC%segnum_v, open_corner_OBCs=open_corners)
+    call initialize_masks(G, PF, US, OBC_dir_u=OBC%segnum_u, OBC_dir_v=OBC%segnum_v, &
+                          open_corner_OBCs=open_corners)
+    ! Make OBC mask consistent with land mask
+    call open_boundary_impose_land_mask(OBC, G, G%areaCu, G%areaCv, US)
   else
     call initialize_masks(G, PF, US)
   endif
-
-  ! Make OBC mask consistent with land mask
-  call open_boundary_impose_land_mask(OBC, G, G%areaCu, G%areaCv, US)
 
   if (debug) then
     call hchksum(G%bathyT, 'MOM_initialize_fixed: depth ', G%HI, haloshift=1, unscale=US%Z_to_m)

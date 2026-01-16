@@ -506,6 +506,7 @@ subroutine open_boundary_config(G, US, param_file, OBC)
   type(ocean_OBC_type),    pointer       :: OBC !< Open boundary control structure
 
   ! Local variables
+  integer :: num_of_segs ! Number of open boundary segments
   integer :: n, n_seg ! For looping over segments
   logical :: debug, mask_outside, reentrant_x, reentrant_y
   character(len=15) :: segment_param_str ! The run-time parameter name for each segment
@@ -522,17 +523,17 @@ subroutine open_boundary_config(G, US, param_file, OBC)
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
 
-  allocate(OBC)
-
-  call get_param(param_file, mdl, "OBC_NUMBER_OF_SEGMENTS", OBC%number_of_segments, &
-                 default=0, do_not_log=.true.)
   call log_version(param_file, mdl, version, &
                  "Controls where open boundaries are located, what kind of boundary condition "//&
-                 "to impose, and what data to apply, if any.", &
-                 all_default=(OBC%number_of_segments<=0))
-  call get_param(param_file, mdl, "OBC_NUMBER_OF_SEGMENTS", OBC%number_of_segments, &
-                 "The number of open boundary segments.", &
-                 default=0)
+                 "to impose, and what data to apply, if any.", all_default=.false.)
+  ! Parameter OBC_NUMBER_OF_SEGMENTS is always logged.
+  call get_param(param_file, mdl, "OBC_NUMBER_OF_SEGMENTS", num_of_segs, &
+                 "The number of open boundary segments.", default=0)
+  if (num_of_segs <= 0) & ! Do nothing if there is no OBC segments
+    return
+
+  allocate(OBC)
+  OBC%number_of_segments = num_of_segs
   call get_param(param_file, mdl, "OBC_USER_CONFIG", config1, &
                  "A string that sets how the open boundary conditions are "//&
                  " configured: \n", default="none", do_not_log=.true.)
@@ -606,12 +607,7 @@ subroutine open_boundary_config(G, US, param_file, OBC)
     call get_param(param_file, mdl, "OBC_TIDE_N_CONSTITUENTS", OBC%n_tide_constituents, &
          "Number of tidal constituents being added to the open boundary.", &
          default=0)
-
-    if (OBC%n_tide_constituents > 0) then
-      OBC%add_tide_constituents = .true.
-    else
-      OBC%add_tide_constituents = .false.
-    endif
+    OBC%add_tide_constituents = (OBC%n_tide_constituents > 0)
 
     call get_param(param_file, mdl, "DEBUG", debug, default=.false.)
     call get_param(param_file, mdl, "DEBUG_OBCS", OBC%debug, &
@@ -634,7 +630,6 @@ subroutine open_boundary_config(G, US, param_file, OBC)
                  "for dependencies on the order with which the OBC segments are applied.", &
                  default=.false., debuggingParam=.true., do_not_log=(OBC%number_of_segments<2))
 
-
     call get_param(param_file, mdl, "OBC_SILLY_THICK", OBC%silly_h, &
                  "A silly value of thicknesses used outside of open boundary "//&
                  "conditions for debugging.", units="m", default=0.0, scale=US%m_to_Z, &
@@ -656,9 +651,7 @@ subroutine open_boundary_config(G, US, param_file, OBC)
                  "If true, set the OBC tracer reservoirs at the startup of a new run from the "//&
                  "interior tracer concentrations regardless of properties that may be explicitly "//&
                  "specified for the reservoir concentrations.", default=enable_bugs, do_not_log=.true.)
-    reentrant_x = .false.
     call get_param(param_file, mdl, "REENTRANT_X", reentrant_x, default=.true.)
-    reentrant_y = .false.
     call get_param(param_file, mdl, "REENTRANT_Y", reentrant_y, default=.false.)
 
     ! Allocate everything
@@ -732,8 +725,8 @@ subroutine open_boundary_config(G, US, param_file, OBC)
       ! Need this for ocean_only mode boundary interpolation.
       call time_interp_external_init()
     endif
-    !    if (open_boundary_query(OBC, needs_ext_seg_data=.true.)) &
- !   call initialize_segment_data(G, OBC, param_file)
+    ! if (open_boundary_query(OBC, needs_ext_seg_data=.true.)) &
+    !   call initialize_segment_data(G, OBC, param_file)
 
     if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
       call get_param(param_file, mdl, "OBC_RADIATION_MAX", OBC%rx_max, &
@@ -847,7 +840,7 @@ subroutine open_boundary_config(G, US, param_file, OBC)
 
   endif ! OBC%number_of_segments > 0
 
-    ! Safety check
+  ! Safety check
   if ((OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) .and. &
        .not.G%symmetric ) call MOM_error(FATAL, &
        "MOM_open_boundary, open_boundary_config: "//&
