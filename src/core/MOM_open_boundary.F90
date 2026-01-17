@@ -2264,9 +2264,9 @@ subroutine open_boundary_impose_land_mask(OBC, G, areaCu, areaCv, US)
       enddo
       do J=segment%HI%JsdB+1,segment%HI%JedB-1
         if (segment%direction == OBC_DIRECTION_W) then
-          G%mask2dCv(i,J) = 0 ; G%OBCmaskCv(i,J) = 0.0
+          G%mask2dCv(i,J) = 0 ; G%OBCmaskCv(i,J) = 0.0 ; G%IdyCv_OBCmask(i,J) = 0.0
         else
-          G%mask2dCv(i+1,J) = 0.0 ; G%OBCmaskCv(i+1,J) = 0.0
+          G%mask2dCv(i+1,J) = 0.0 ; G%OBCmaskCv(i+1,J) = 0.0 ; G%IdyCv_OBCmask(i+1,J) = 0.0
         endif
       enddo
     else
@@ -2282,9 +2282,9 @@ subroutine open_boundary_impose_land_mask(OBC, G, areaCu, areaCv, US)
       enddo
       do I=segment%HI%IsdB+1,segment%HI%IedB-1
         if (segment%direction == OBC_DIRECTION_S) then
-          G%mask2dCu(I,j) = 0.0 ; G%OBCmaskCu(I,j) = 0.0
+          G%mask2dCu(I,j) = 0.0 ; G%OBCmaskCu(I,j) = 0.0 ; G%IdxCu_OBCmask(I,j) = 0.0
         else
-          G%mask2dCu(I,j+1) = 0.0 ; G%OBCmaskCu(I,j+1) = 0.0
+          G%mask2dCu(I,j+1) = 0.0 ; G%OBCmaskCu(I,j+1) = 0.0 ; G%IdxCu_OBCmask(I,j+1) = 0.0
         endif
       enddo
     endif
@@ -2298,12 +2298,12 @@ subroutine open_boundary_impose_land_mask(OBC, G, areaCu, areaCv, US)
     if (segment%is_E_or_W) then
       I=segment%HI%IsdB
       do j=segment%HI%jsd,segment%HI%jed
-        G%OBCmaskCu(I,j) = 0.0
+        G%OBCmaskCu(I,j) = 0.0 ; G%IdxCu_OBCmask(I,j) = 0.0
       enddo
     else
       J=segment%HI%JsdB
       do i=segment%HI%isd,segment%HI%ied
-        G%OBCmaskCv(i,J) = 0.0
+        G%OBCmaskCv(i,J) = 0.0 ; G%IdyCv_OBCmask(i,J) = 0.0
       enddo
     endif
   enddo
