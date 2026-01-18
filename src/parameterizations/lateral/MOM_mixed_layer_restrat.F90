@@ -510,7 +510,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
     timescale = timescale * CS%ml_restrat_coef
 
     if (res_upscale) timescale = timescale * res_scaling_fac
-    uDml(I) = timescale * G%OBCmaskCu(I,j)*G%dyCu(I,j)*G%IdxCu(I,j) * &
+    uDml(I) = timescale * G%dyCu(I,j)*G%IdxCu_OBCmask(I,j) * &
         (Rml_av_fast(i+1,j)-Rml_av_fast(i,j)) * (h_vel**2)
 
     ! As above but using the slow filtered MLD
@@ -525,7 +525,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
     timescale = timescale * CS%ml_restrat_coef2
 
     if (res_upscale) timescale = timescale * res_scaling_fac
-    uDml_slow(I) = timescale * G%OBCmaskCu(I,j)*G%dyCu(I,j)*G%IdxCu(I,j) * &
+    uDml_slow(I) = timescale * G%dyCu(I,j)*G%IdxCu_OBCmask(I,j) * &
         (Rml_av_slow(i+1,j)-Rml_av_slow(i,j)) * (h_vel**2)
 
     if (uDml(I) + uDml_slow(I) == 0.) then
@@ -600,7 +600,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
     timescale = timescale * CS%ml_restrat_coef
 
     if (res_upscale) timescale = timescale * res_scaling_fac
-    vDml(i) = timescale * G%OBCmaskCv(i,J)*G%dxCv(i,J)*G%IdyCv(i,J) * &
+    vDml(i) = timescale * G%dxCv(i,J)*G%IdyCv_OBCmask(i,J) * &
         (Rml_av_fast(i,j+1)-Rml_av_fast(i,j)) * (h_vel**2)
 
     ! As above but using the slow filtered MLD
@@ -615,7 +615,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
     timescale = timescale * CS%ml_restrat_coef2
 
     if (res_upscale) timescale = timescale * res_scaling_fac
-    vDml_slow(i) = timescale * G%OBCmaskCv(i,J)*G%dxCv(i,J)*G%IdyCv(i,J) * &
+    vDml_slow(i) = timescale * G%dxCv(i,J)*G%IdyCv_OBCmask(i,J) * &
         (Rml_av_slow(i,j+1)-Rml_av_slow(i,j)) * (h_vel**2)
 
     if (vDml(i) + vDml_slow(i) == 0.) then
@@ -1383,7 +1383,7 @@ subroutine mixedlayer_restrat_BML(h, uhtr, vhtr, tv, forces, dt, G, GV, US, CS)
     timescale = timescale * CS%ml_restrat_coef
 !      timescale = timescale*(2?)*(L_def/L_MLI) * min(EKE/MKE,1.0 + (G%dyCv(i,j)/L_def)**2)
 
-    uDml(I) = timescale * G%OBCmaskCu(I,j)*G%dyCu(I,j)*G%IdxCu(I,j) * &
+    uDml(I) = timescale * G%dyCu(I,j)*G%IdxCu_OBCmask(I,j) * &
         (Rml_av(i+1,j)-Rml_av(i,j)) * (h_vel**2)
 
     if (uDml(I) == 0) then
@@ -1434,7 +1434,7 @@ subroutine mixedlayer_restrat_BML(h, uhtr, vhtr, tv, forces, dt, G, GV, US, CS)
     timescale = timescale * CS%ml_restrat_coef
 !     timescale = timescale*(2?)*(L_def/L_MLI) * min(EKE/MKE,1.0 + (G%dyCv(i,j)/L_def)**2)
 
-    vDml(i) = timescale * G%OBCmaskCv(i,J)*G%dxCv(i,J)*G%IdyCv(i,J) * &
+    vDml(i) = timescale * G%dxCv(i,J)*G%IdyCv_OBCmask(i,J) * &
         (Rml_av(i,j+1)-Rml_av(i,j)) * (h_vel**2)
     if (vDml(i) == 0) then
       do k=1,nkml ; vhml(i,J,k) = 0.0 ; enddo

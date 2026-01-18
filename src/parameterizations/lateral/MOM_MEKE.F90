@@ -617,7 +617,7 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
       !$OMP parallel do default(shared)
       do j=js-1,je+1 ; do I=is-2,ie+1
         ! MEKE_uflux is used here as workspace with units of [L2 T-2 ~> m2 s-2].
-        MEKE_uflux(I,j) = ((G%dy_Cu(I,j)*G%IdxCu(I,j)) * G%OBCmaskCu(I,j)) * &
+        MEKE_uflux(I,j) = (G%dy_Cu(I,j)*G%IdxCu_OBCmask(I,j)) * &
             (MEKE%MEKE(i+1,j) - MEKE%MEKE(i,j))
       ! This would have units of [R Z L2 T-2 ~> kg s-2]
       ! MEKE_uflux(I,j) = ((G%dy_Cu(I,j)*G%IdxCu(I,j)) * &
@@ -627,7 +627,7 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
       !$OMP parallel do default(shared)
       do J=js-2,je+1 ; do i=is-1,ie+1
         ! MEKE_vflux is used here as workspace with units of [L2 T-2 ~> m2 s-2].
-        MEKE_vflux(i,J) = ((G%dx_Cv(i,J)*G%IdyCv(i,J)) * G%OBCmaskCv(i,J)) * &
+        MEKE_vflux(i,J) = (G%dx_Cv(i,J)*G%IdyCv_OBCmask(i,J)) * &
             (MEKE%MEKE(i,j+1) - MEKE%MEKE(i,j))
       ! This would have units of [R Z L2 T-2 ~> kg s-2]
       ! MEKE_vflux(i,J) = ((G%dx_Cv(i,J)*G%IdyCv(i,J)) * &

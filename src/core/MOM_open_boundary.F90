@@ -2576,7 +2576,7 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
   type(verticalGrid_type),                    intent(in)    :: GV    !< The ocean's vertical grid structure
   type(ocean_OBC_type),                       pointer       :: OBC   !< Open boundary control structure
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(inout) :: u_new !< On exit, new u values on open boundaries
-                                                                     !! On entry, the old time-level v but including
+                                                                     !! On entry, the old time-level u but including
                                                                      !! barotropic accelerations [L T-1 ~> m s-1].
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in)    :: u_old !< Original unadjusted u [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(inout) :: v_new !< On exit, new v values on open boundaries.

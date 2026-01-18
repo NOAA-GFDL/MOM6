@@ -1086,7 +1086,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
             if (present_slope_x) then
               Slope = slope_x(I,j,k)
             else
-              Slope = ((e(i+1,j,K)-e(i,j,K))*G%IdxCu(I,j)) * G%OBCmaskCu(I,j)
+              Slope = (e(i+1,j,K)-e(i,j,K)) * G%IdxCu_OBCmask(I,j)
             endif
             if (CS%id_slope_x > 0) CS%diagSlopeX(I,j,k) = Slope
             Sfn_unlim_u(I,K) = -(KH_u(I,j,K)*G%dy_Cu(I,j))*Slope
@@ -1406,7 +1406,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
             if (present_slope_y) then
               Slope = slope_y(i,J,k)
             else
-              Slope = ((e(i,j+1,K)-e(i,j,K))*G%IdyCv(i,J)) * G%OBCmaskCv(i,J)
+              Slope = (e(i,j+1,K)-e(i,j,K)) * G%IdyCv_OBCmask(i,J)
             endif
             if (CS%id_slope_y > 0) CS%diagSlopeY(I,j,k) = Slope
             Sfn_unlim_v(i,K) = -((KH_v(i,J,K)*G%dx_Cv(i,J))*Slope)

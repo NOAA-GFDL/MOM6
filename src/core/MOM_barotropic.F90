@@ -6039,10 +6039,10 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   ! This sets pressure force diagnostics on land, at coastlines and at OBC points to zero.
   if (mask_coastal_pressure_force) then
     do j=G%jsd,G%jed ; do I=G%IsdB,G%IedB
-      CS%IdxCu(I,j) = G%OBCmaskCu(I,j) * G%IdxCu(I,j)
+      CS%IdxCu(I,j) = G%IdxCu_OBCmask(I,j)
     enddo ; enddo
     do J=G%JsdB,G%JedB ; do i=G%isd,G%ied
-      CS%IdyCv(i,J) = G%OBCmaskCv(i,J) * G%IdyCv(i,J)
+      CS%IdyCv(i,J) = G%IdyCv_OBCmask(i,J)
     enddo ; enddo
   endif
 
