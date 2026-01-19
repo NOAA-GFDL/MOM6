@@ -676,7 +676,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
     endif
 
     ! Calculate KE and the gradient of KE
-    call gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
+    call gradKE(u(:,:,k), v(:,:,k), h(:,:,k), KE, KEx, KEy, G, GV, US, CS)
 
     ! Calculate the tendencies of zonal velocity due to the Coriolis
     ! force and momentum advection.  On a Cartesian grid, this is
@@ -1231,22 +1231,20 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
 end subroutine CorAdCalc
 
 
-!> Calculates the acceleration due to the gradient of kinetic energy.
-subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
-  type(ocean_grid_type),                      intent(in)  :: G   !< Ocean grid structure
-  type(verticalGrid_type),                    intent(in)  :: GV  !< Vertical grid structure
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in)  :: u   !< Zonal velocity [L T-1 ~> m s-1]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in)  :: v   !< Meridional velocity [L T-1 ~> m s-1]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)  :: h   !< Layer thickness [H ~> m or kg m-2]
-  real, dimension(SZI_(G) ,SZJ_(G) ),         intent(out) :: KE  !< Kinetic energy per unit mass [L2 T-2 ~> m2 s-2]
-  real, dimension(SZIB_(G),SZJ_(G) ),         intent(out) :: KEx !< Zonal acceleration due to kinetic
-                                                                 !! energy gradient [L T-2 ~> m s-2]
-  real, dimension(SZI_(G) ,SZJB_(G)),         intent(out) :: KEy !< Meridional acceleration due to kinetic
-                                                                 !! energy gradient [L T-2 ~> m s-2]
-  integer,                                    intent(in)  :: k   !< Layer number to calculate for
-  type(ocean_OBC_type),                       pointer     :: OBC !< Open boundary control structure
-  type(unit_scale_type),                      intent(in)  :: US  !< A dimensional unit scaling type
-  type(CoriolisAdv_CS),                       intent(in)  :: CS  !< Control structure for MOM_CoriolisAdv
+!> Calculates the acceleration due to the gradient of kinetic energy in one layer.
+subroutine gradKE(u, v, h, KE, KEx, KEy, G, GV, US, CS)
+  type(ocean_grid_type),             intent(in)  :: G   !< Ocean grid structure
+  type(verticalGrid_type),           intent(in)  :: GV  !< Vertical grid structure
+  real, dimension(SZIB_(G),SZJ_(G)), intent(in)  :: u   !< Zonal velocity [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJB_(G)), intent(in)  :: v   !< Meridional velocity [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJ_(G)),  intent(in)  :: h   !< Layer thickness [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G)),  intent(out) :: KE  !< Kinetic energy per unit mass [L2 T-2 ~> m2 s-2]
+  real, dimension(SZIB_(G),SZJ_(G)), intent(out) :: KEx !< Zonal acceleration due to kinetic
+                                                        !! energy gradient [L T-2 ~> m s-2]
+  real, dimension(SZI_(G),SZJB_(G)), intent(out) :: KEy !< Meridional acceleration due to kinetic
+                                                        !! energy gradient [L T-2 ~> m s-2]
+  type(unit_scale_type),             intent(in)  :: US  !< A dimensional unit scaling type
+  type(CoriolisAdv_CS),              intent(in)  :: CS  !< Control structure for MOM_CoriolisAdv
   ! Local variables
   real :: um, up, vm, vp         ! Temporary variables [L T-1 ~> m s-1].
   real :: um2, up2, vm2, vp2     ! Temporary variables [L2 T-2 ~> m2 s-2].
@@ -1265,29 +1263,29 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
     ! identified in Arakawa & Lamb 1982 as important for KE conservation.  It
     ! also includes the possibility of partially-blocked tracer cell faces.
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-      KE(i,j) = ( ( (G%areaCu( I ,j)*(u( I ,j,k)*u( I ,j,k))) + &
-                    (G%areaCu(I-1,j)*(u(I-1,j,k)*u(I-1,j,k))) ) + &
-                  ( (G%areaCv(i, J )*(v(i, J ,k)*v(i, J ,k))) + &
-                    (G%areaCv(i,J-1)*(v(i,J-1,k)*v(i,J-1,k))) ) )*0.25*G%IareaT(i,j)
+      KE(i,j) = ( ( (G%areaCu( I ,j)*(u( I ,j)*u( I ,j))) + &
+                    (G%areaCu(I-1,j)*(u(I-1,j)*u(I-1,j))) ) + &
+                  ( (G%areaCv(i, J )*(v(i, J )*v(i, J ))) + &
+                    (G%areaCv(i,J-1)*(v(i,J-1)*v(i,J-1))) ) )*0.25*G%IareaT(i,j)
     enddo ; enddo
   elseif (CS%KE_Scheme == KE_SIMPLE_GUDONOV) then
     ! The following discretization of KE is based on the one-dimensional Gudonov
     ! scheme which does not take into account any geometric factors
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-      up = 0.5*( u(I-1,j,k) + ABS( u(I-1,j,k) ) ) ; up2 = up*up
-      um = 0.5*( u( I ,j,k) - ABS( u( I ,j,k) ) ) ; um2 = um*um
-      vp = 0.5*( v(i,J-1,k) + ABS( v(i,J-1,k) ) ) ; vp2 = vp*vp
-      vm = 0.5*( v(i, J ,k) - ABS( v(i, J ,k) ) ) ; vm2 = vm*vm
+      up = 0.5*( u(I-1,j) + ABS( u(I-1,j) ) ) ; up2 = up*up
+      um = 0.5*( u( I ,j) - ABS( u( I ,j) ) ) ; um2 = um*um
+      vp = 0.5*( v(i,J-1) + ABS( v(i,J-1) ) ) ; vp2 = vp*vp
+      vm = 0.5*( v(i, J ) - ABS( v(i, J ) ) ) ; vm2 = vm*vm
       KE(i,j) = ( max(up2,um2) + max(vp2,vm2) ) *0.5
     enddo ; enddo
   elseif (CS%KE_Scheme == KE_GUDONOV) then
     ! The following discretization of KE is based on the one-dimensional Gudonov
     ! scheme but has been adapted to take horizontal grid factors into account
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-      up = 0.5*( u(I-1,j,k) + ABS( u(I-1,j,k) ) ) ; up2a = up*up*G%areaCu(I-1,j)
-      um = 0.5*( u( I ,j,k) - ABS( u( I ,j,k) ) ) ; um2a = um*um*G%areaCu( I ,j)
-      vp = 0.5*( v(i,J-1,k) + ABS( v(i,J-1,k) ) ) ; vp2a = vp*vp*G%areaCv(i,J-1)
-      vm = 0.5*( v(i, J ,k) - ABS( v(i, J ,k) ) ) ; vm2a = vm*vm*G%areaCv(i, J )
+      up = 0.5*( u(I-1,j) + ABS( u(I-1,j) ) ) ; up2a = up*up*G%areaCu(I-1,j)
+      um = 0.5*( u( I ,j) - ABS( u( I ,j) ) ) ; um2a = um*um*G%areaCu( I ,j)
+      vp = 0.5*( v(i,J-1) + ABS( v(i,J-1) ) ) ; vp2a = vp*vp*G%areaCv(i,J-1)
+      vm = 0.5*( v(i, J ) - ABS( v(i, J ) ) ) ; vm2a = vm*vm*G%areaCv(i, J )
       KE(i,j) = ( max(um2a,up2a) + max(vm2a,vp2a) )*0.5*G%IareaT(i,j)
     enddo ; enddo
   elseif (CS%KE_Scheme == KE_UP3) then
@@ -1300,14 +1298,14 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
                        G%mask2dCu(I,j) * G%mask2dCu(I+1,j))
 
         if (third_order_u == 1) then
-          up = (7.0 * (u(I-1,j,k) + u(I,j,k)) - (u(I-2,j,k) + u(I+1,j,k))) * C1_12
-          call UP3_Koren_limiter_reconstruction(u(I-2:I+1,j,k), up, um)
+          up = (7.0 * (u(I-1,j) + u(I,j)) - (u(I-2,j) + u(I+1,j))) * C1_12
+          call UP3_Koren_limiter_reconstruction(u(I-2:I+1,j), up, um)
         else
-          up = (u(I-1,j,k) + u(I,j,k))*0.5
+          up = (u(I-1,j) + u(I,j))*0.5
           if (up>0.) then
-            um = u(I-1,j,k)
+            um = u(I-1,j)
           elseif (up<0.) then
-            um = u(I,j,k)
+            um = u(I,j)
           else
             um = up
           endif
@@ -1316,14 +1314,14 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
         third_order_v = (G%mask2dCv(i,J-2) * G%mask2dCv(i,J-1)* &
                        G%mask2dCv(i,J) * G%mask2dCv(i,J+1))
         if (third_order_v ==1) then
-          vp = (7.0 * (v(i,J-1,k) + v(i,J,k)) - (v(i,J-2,k) + v(i,J+1,k))) * C1_12
-          call UP3_Koren_limiter_reconstruction(v(i,J-2:J+1,k), vp, vm)
+          vp = (7.0 * (v(i,J-1) + v(i,J)) - (v(i,J-2) + v(i,J+1))) * C1_12
+          call UP3_Koren_limiter_reconstruction(v(i,J-2:J+1), vp, vm)
         else
-          vp = (v(i,J-1,k) + v(i,J,k))*0.5
+          vp = (v(i,J-1) + v(i,J))*0.5
           if (vp>0.) then
-            vm = v(i,J-1,k)
+            vm = v(i,J-1)
           elseif (vp<0.) then
-            vm = v(i,J,k)
+            vm = v(i,J)
           else
             vm = vp
           endif
@@ -1338,14 +1336,14 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
                        G%mask2dCu(I,j) * G%mask2dCu(I+1,j))
 
         if (third_order_u == 1) then
-          up = (7.0 * (u(I-1,j,k) + u(I,j,k)) - (u(I-2,j,k) + u(I+1,j,k))) * C1_12
-          call UP3_reconstruction(u(I-2:I+1,j,k), up, um)
+          up = (7.0 * (u(I-1,j) + u(I,j)) - (u(I-2,j) + u(I+1,j))) * C1_12
+          call UP3_reconstruction(u(I-2:I+1,j), up, um)
         else
-          up = (u(I-1,j,k) + u(I,j,k))*0.5
+          up = (u(I-1,j) + u(I,j))*0.5
           if (up>0.) then
-            um = u(I-1,j,k)
+            um = u(I-1,j)
           elseif (up<0.) then
-            um = u(I,j,k)
+            um = u(I,j)
           else
             um = up
           endif
@@ -1354,14 +1352,14 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
         third_order_v = (G%mask2dCv(i,J-2) * G%mask2dCv(i,J-1)* &
                        G%mask2dCv(i,J) * G%mask2dCv(i,J+1))
         if (third_order_v ==1) then
-          vp = (7.0 * (v(i,J-1,k) + v(i,J,k)) - (v(i,J-2,k) + v(i,J+1,k))) * C1_12
-          call UP3_reconstruction(v(i,J-2:J+1,k), vp, vm)
+          vp = (7.0 * (v(i,J-1) + v(i,J)) - (v(i,J-2) + v(i,J+1))) * C1_12
+          call UP3_reconstruction(v(i,J-2:J+1), vp, vm)
         else
-          vp = (v(i,J-1,k) + v(i,J,k))*0.5
+          vp = (v(i,J-1) + v(i,J))*0.5
           if (vp>0.) then
-            vm = v(i,J-1,k)
+            vm = v(i,J-1)
           elseif (vp<0.) then
-            vm = v(i,J,k)
+            vm = v(i,J)
           else
             vm = vp
           endif
@@ -1374,27 +1372,13 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, k, OBC, G, GV, US, CS)
 
   ! Term - d(KE)/dx.
   do j=js,je ; do I=Isq,Ieq
-    KEx(I,j) = (KE(i+1,j) - KE(i,j)) * G%IdxCu(I,j)
+    KEx(I,j) = (KE(i+1,j) - KE(i,j)) * G%IdxCu_OBCmask(I,j)
   enddo ; enddo
 
   ! Term - d(KE)/dy.
   do J=Jsq,Jeq ; do i=is,ie
-    KEy(i,J) = (KE(i,j+1) - KE(i,j)) * G%IdyCv(i,J)
+    KEy(i,J) = (KE(i,j+1) - KE(i,j)) * G%IdyCv_OBCmask(i,J)
   enddo ; enddo
-
-  if (associated(OBC)) then
-    do n=1,OBC%number_of_segments
-      if (OBC%segment(n)%is_N_or_S) then
-        do i=OBC%segment(n)%HI%isd,OBC%segment(n)%HI%ied
-          KEy(i,OBC%segment(n)%HI%JsdB) = 0.
-        enddo
-      elseif (OBC%segment(n)%is_E_or_W) then
-        do j=OBC%segment(n)%HI%jsd,OBC%segment(n)%HI%jed
-          KEx(OBC%segment(n)%HI%IsdB,j) = 0.
-        enddo
-      endif
-    enddo
-  endif
 
 end subroutine gradKE
 
