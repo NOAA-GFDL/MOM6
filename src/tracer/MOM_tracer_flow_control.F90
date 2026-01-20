@@ -345,7 +345,7 @@ subroutine tracer_flow_control_init(restart, day, G, GV, US, h, param_file, diag
     call initialize_MARBL_tracers(restart, day, G, GV, US, h, param_file, diag, OBC, CS%MARBL_tracers_CSp, &
                                 sponge_CSp)
   if (CS%use_regional_dyes) &
-    call initialize_dye_tracer(restart, day, G, GV, h, diag, OBC, CS%dye_tracer_CSp, sponge_CSp, tv)
+    call initialize_dye_tracer(restart, day, G, GV, US, h, diag, OBC, CS%dye_tracer_CSp, sponge_CSp, tv)
   if (CS%use_oil) &
     call initialize_oil_tracer(restart, day, G, GV, US, h, diag, OBC, CS%oil_tracer_CSp, sponge_CSp)
   if (CS%use_advection_test_tracer) &
