@@ -243,7 +243,7 @@ subroutine initialize_dye_tracer(restart, day, G, GV, US, h, diag, OBC, CS, spon
     write(var_name,'(A,I3.3,A)') "dye",m,"_dia_diff"
     write(longname,'(A,I3.3,A)') "Vertical diffusive flux of dye ",m," (positive up)"
     CS%id_tr_dia_diff(m) = register_diag_field('ocean_model', trim(var_name), &
-        diag%axesTL, day, trim(longname), 'conc H s-1', conversion=GV%H_to_MKS*US%s_to_T)
+        diag%axesTi, day, trim(longname), 'conc H s-1', conversion=GV%H_to_MKS*US%s_to_T)
   enddo
 
   ! Establish location of source
@@ -306,7 +306,7 @@ subroutine dye_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, GV, US
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: h_work ! Used so that h can be modified [H ~> m or kg m-2]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: vert_flux ! Vertical tracer flux positive upward
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: vert_flux ! Vertical tracer flux positive upward
                                               !! [conc H T-1 ~> conc m s-1]
   real    :: dz(SZI_(G),SZK_(GV)) ! Height change across layers [Z ~> m]
   real    :: z_bot    ! Height of the bottom of the layer relative to the sea surface [Z ~> m]
@@ -333,11 +333,12 @@ subroutine dye_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, GV, US
       ! Calculate net vertical flux from entrainment
       ! Net flux = upward component - downward component
       ! Upward (from below): eb(k) * tr(k+1), Downward (from above): ea(k+1) * tr(k)
-      do k=1,nz ; do j=js,je ; do i=is,ie
-        vert_flux(i,j,k) = 0.0
-        if (k < nz) vert_flux(i,j,k) = vert_flux(i,j,k) + eb(i,j,k) * CS%tr(i,j,k+1,m) * Idt
-        if (k < nz) vert_flux(i,j,k) = vert_flux(i,j,k) - ea(i,j,k+1) * CS%tr(i,j,k,m) * Idt
+      do K=2,nz ; do j=js,je ; do i=is,ie
+        vert_flux(i,j,K) = 0.0
+        if (K < nz) vert_flux(i,j,K) = vert_flux(i,j,k) + (eb(i,j,k) * CS%tr(i,j,k+1,m)) * Idt
+        if (K < nz) vert_flux(i,j,K) = vert_flux(i,j,k) - (ea(i,j,k+1) * CS%tr(i,j,k,m)) * Idt
       enddo ; enddo ; enddo
+      do j=js,je ; do i=is,ie ; vert_flux(i,j,1) = 0.0 ; vert_flux(i,j,nz+1) = 0.0 ; enddo ; enddo
 
       ! Post diagnostic
       if (CS%id_tr_dia_diff(m) > 0) &
@@ -350,11 +351,12 @@ subroutine dye_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, GV, US
       ! Calculate net vertical flux from entrainment
       ! Net flux = upward component - downward component
       ! Upward (from below): eb(k) * tr(k+1), Downward (from above): ea(k+1) * tr(k)
-      do k=1,nz ; do j=js,je ; do i=is,ie
-        vert_flux(i,j,k) = 0.0
-        if (k < nz) vert_flux(i,j,k) = vert_flux(i,j,k) + eb(i,j,k) * CS%tr(i,j,k+1,m) * Idt
-        if (k < nz) vert_flux(i,j,k) = vert_flux(i,j,k) - ea(i,j,k+1) * CS%tr(i,j,k,m) * Idt
+      do K=2,nz ; do j=js,je ; do i=is,ie
+        vert_flux(i,j,K) = 0.0
+        if (k < nz) vert_flux(i,j,K) = vert_flux(i,j,k) + (eb(i,j,k) * CS%tr(i,j,k+1,m)) * Idt
+        if (k < nz) vert_flux(i,j,K) = vert_flux(i,j,k) - (ea(i,j,k+1) * CS%tr(i,j,k,m)) * Idt
       enddo ; enddo ; enddo
+      do j=js,je ; do i=is,ie ; vert_flux(i,j,1) = 0.0 ; vert_flux(i,j,nz+1) = 0.0 ; enddo ; enddo
 
       ! Post diagnostic
       if (CS%id_tr_dia_diff(m) > 0) &
