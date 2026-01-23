@@ -106,10 +106,11 @@ integer, parameter         :: MAX_OBC_FIELDS = 100  !< Maximum number of data fi
 type, public :: OBC_segment_data_type
   type(external_field) :: handle            !< handle from FMS associated with segment data on disk
   type(external_field) :: dz_handle         !< handle from FMS associated with segment thicknesses on disk
+  logical           :: required = .false.   !< True if this field is required
   logical           :: use_IO = .false.     !< True if segment data is based on file input
   character(len=32) :: name                 !< A name identifier for the segment data.  When there is grid
                                             !! rotation, this is the name on the rotated internal grid.
-  character(len=8)  :: genre                !< an identifier for the segment data
+  logical           :: bgc_tracer           !< True if this field is a BGC tracer
   logical           :: on_face              !< If true, this field is discretized on the OBC segment
                                             !! (velocity-point) faces, or if false it as the vorticiy points
   real              :: scale                !< A scaling factor for converting input data to
@@ -235,7 +236,6 @@ type, public :: OBC_segment_type
   logical :: on_pe          !< true if any portion of the segment is located in this PE's data domain
   logical :: temp_segment_data_exists !< true if temperature data arrays are present
   logical :: salt_segment_data_exists !< true if salinity data arrays are present
-  logical :: thickness_segment_data_exists !< true if thickness data arrays are present
   real, allocatable :: Cg(:,:)  !< The external gravity wave speed [L T-1 ~> m s-1]
                                 !! at OBC-points.
   real, allocatable :: Htot(:,:)  !< The total column thickness [H ~> m or kg m-2] at OBC-points.
@@ -981,6 +981,144 @@ subroutine open_boundary_setup_vert(GV, US, OBC)
 
 end subroutine open_boundary_setup_vert
 
+!> Allocate data (buffer_src, buffer_dst and dz_src) for a field at an OBC segment.
+subroutine allocate_segment_field_data(field, OBC, segment, US, inputdir, filename, varname, &
+                                       suffix, value, turns, nz)
+  type(OBC_segment_data_type), &
+                          intent(inout) :: field    !< A field of the segment
+  type(ocean_OBC_type),   intent(in)    :: OBC      !< Open boundary control structure
+  type(OBC_segment_type), intent(inout) :: segment  !< Segment to work on
+  type(unit_scale_type),  intent(in)    :: US       !< A dimensional unit scaling type
+  character(len=*),       intent(in)    :: inputdir !< The directory of input files
+  character(len=*),       intent(in)    :: filename !< Input file name
+  character(len=*),       intent(in)    :: varname  !< Variable name in the input file
+  character(len=*),       intent(in)    :: suffix   !< Variable name suffix, "_segment_xxx"
+  real,                   intent(in)    :: value    !< Unscaled specified value of the field [a]
+  integer,                intent(in)    :: turns    !< Number of quarter turns of the grid
+  integer,                intent(in)    :: nz       !< Default k-axis size in buffer_dst
+
+  ! Local variables
+  character(len=256) :: full_filename, full_varname ! Full filename and varname
+  character(len=512) :: mesg ! Error message
+  real :: init_value_dst ! Initial value for allocated buffer_dst array [a]
+  integer :: qturns ! The number of quarter turns in the range of 0 to 3
+  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB ! Aliases of segment geometry indices
+  integer, dimension(4) :: siz, siz_check ! Four-dimensional shape of a variable in input file
+  integer :: dim ! Loop index for siz/siz_check
+  integer :: nk_dst ! k-axis size of buffer_dst
+
+  isd = segment%HI%isd ; ied = segment%HI%ied ; IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
+  jsd = segment%HI%jsd ; jed = segment%HI%jed ; JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
+  nk_dst = nz
+
+  qturns = modulo(turns, 4)
+
+  field%on_face = field_is_on_face(field%name, segment%is_E_or_W)
+  ! The scale factor for tracers may also be set in register_segment_tracer, and a constant input
+  ! value is rescaled there.
+  field%scale = scale_factor_from_name(field%name, US, segment%tr_Reg)
+
+  if (trim(filename) /= 'none') then
+    field%use_IO = .true.
+
+    full_filename = trim(inputdir) // trim(filename)
+    full_varname = trim(varname) // trim(suffix)
+
+    if (.not.file_exists(full_filename)) &
+      call MOM_error(FATAL," Unable to open OBC file " // trim(full_filename))
+
+    call field_size(full_filename, full_varname, siz, no_domain=.true.)
+    field%nk_src = siz(3)
+
+    if (OBC%brushcutter_mode .and. (modulo(siz(1),2) == 0 .or. modulo(siz(2),2) == 0)) then
+      write(mesg, '("Brushcutter mode sizes ",I0," ",I0)') siz(1), siz(2)
+      call MOM_error(WARNING, mesg // " " // trim(full_filename) // " " // trim(full_varname))
+      call MOM_error(FATAL,'segment data are not on the supergrid')
+    endif
+
+    ! Allocate src array
+    if (.not.field%on_face) then
+      allocate(field%buffer_src(IsdB:IedB, JsdB:JedB, field%nk_src), source=0.0)
+    elseif (segment%is_E_or_W) then
+      allocate(field%buffer_src(IsdB:IedB, jsd:jed, field%nk_src), source=0.0)
+    else
+      allocate(field%buffer_src(isd:ied, JsdB:JedB, field%nk_src), source=0.0)
+    endif
+
+    field%handle = init_external_field(trim(full_filename), trim(full_varname), &
+                                       ignore_axis_atts=.true., threading=SINGLE_FILE)
+
+    if ((field%nk_src > 1) .and. (.not. field_is_tidal(field%name))) then ! nk_src is depth
+      full_varname = 'dz_' // trim(full_varname)
+      call field_size(full_filename, full_varname, siz_check, no_domain=.true.)
+      do dim = 1, 4 ; if (siz(dim) /= siz_check(dim)) &
+        call MOM_error(FATAL, "'dz' field size is inconsistent with "//&
+                       "its corresponding variable.")
+      enddo
+
+      if (.not.field%on_face) then
+        allocate(field%dz_src(IsdB:IedB, JsdB:JedB, field%nk_src), source=0.0)
+      elseif (segment%is_E_or_W) then
+        allocate(field%dz_src(IsdB:IedB, jsd:jed, field%nk_src), source=0.0)
+      else
+        allocate(field%dz_src(isd:ied, JsdB:JedB, field%nk_src), source=0.0)
+      endif
+      field%dz_handle = init_external_field(trim(full_filename), trim(full_varname), &
+                ignore_axis_atts=.true., threading=SINGLE_FILE)
+
+    elseif (field_is_tidal(field%name)) then ! nk_src is constituent for tidal variables
+      ! expect third dimension to be number of constituents in MOM_input
+      if (OBC%add_tide_constituents .and. (field%nk_src /= OBC%n_tide_constituents)) &
+        call MOM_error(FATAL, 'Number of constituents in input data is not '//&
+                       'the same as the number specified')
+      nk_dst = field%nk_src
+
+    else ! nk_src = 1
+      nk_dst = 1
+
+    endif
+
+    init_value_dst = 0.0
+  else  ! This data is not being read from a file.
+    field%use_IO = .false.
+
+    field%value = field%scale * value
+    ! Change the sign of the specified velocities, depending on the number of quarter turns of the grid.
+    if ( ( ((field%name == 'U') .or. (field%name == 'Uamp')) .and. &
+           ((qturns == 1) .or. (qturns == 2)) ) .or. &
+         ( ((field%name == 'V') .or. (field%name == 'Vamp')) .and. &
+           ((qturns == 3) .or. (qturns == 2)) ) ) &
+      field%value = -field%value
+
+    ! Check if this is a tidal field. If so, the number of expected constituents must be 1.
+    if (field_is_tidal(field%name)) then
+      if (OBC%add_tide_constituents .and. (OBC%n_tide_constituents > 1)) &
+        call MOM_error(FATAL, 'Only one constituent is supported when specifying '//&
+                       'tidal boundary conditions by value rather than file.')
+      nk_dst = 1
+    endif
+
+    if (field%name == 'SSH') &
+      nk_dst = 1
+
+    init_value_dst = field%value
+  endif
+
+  ! Allocate buffer_dst array
+  if (.not.field%on_face) then
+    allocate(field%buffer_dst(IsdB:IedB, JsdB:JedB, nk_dst), source=init_value_dst)
+  elseif (segment%is_E_or_W) then
+    allocate(field%buffer_dst(IsdB:IedB, jsd:jed, nk_dst), source=init_value_dst)
+  else
+    allocate(field%buffer_dst(isd:ied, JsdB:JedB, nk_dst), source=init_value_dst)
+  endif
+
+  ! This can be removed.
+  if (field%name == 'TEMP') segment%temp_segment_data_exists = .true.
+  if (field%name == 'SALT') segment%salt_segment_data_exists = .true.
+
+end subroutine allocate_segment_field_data
+
 !> Get and store properties about the fields on the OBC segments and allocate space for reading
 !! OBC data from files.  In the process, it does funky stuff with the MPI processes.
 subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
@@ -997,14 +1135,12 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
   character(len=1024) :: segstr
   character(len=256) :: filename
   character(len=20)  :: segname, suffix
-  character(len=32)  :: fieldname
+  character(len=32)  :: varname
   real               :: value  ! A value that is parsed from the segment data string [various units]
-  character(len=32), dimension(MAX_OBC_FIELDS) :: fields  ! segment field names
+  character(len=32), dimension(MAX_OBC_FIELDS) :: field_names  ! segment field names
   character(len=128) :: inputdir
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
   character(len=256) :: mesg    ! Message for error messages.
-  integer, dimension(4) :: siz, siz_check
-  integer :: dim
   integer :: isd, ied, jsd, jed
   integer :: IsdB, IedB, JsdB, JedB
   integer :: qturns ! The number of quarter turns in the range of 0 to 3
@@ -1016,8 +1152,6 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
   integer :: IO_needs(2) ! Sums to determine global OBC data use and update patterns.
   logical :: check_ts_needed ! Check if temperature and salinity are explicitly specified.
 
-  integer :: nk_dst
-  real :: init_value_dst
   qturns = modulo(turns, 4)
 
   check_ts_needed = use_temperature .and. (.not. OBC%ts_needed_bug)
@@ -1065,7 +1199,7 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
       call MOM_error(FATAL, mesg)
     endif
 
-    call parse_segment_manifest_str(trim(segstr), num_manifest_fields, fields)
+    call parse_segment_manifest_str(trim(segstr), num_manifest_fields, field_names)
     !There are OBC%num_obgc_tracers obgc tracers that are not listed in param file
     segment%num_fields = num_manifest_fields + OBC%num_obgc_tracers
 
@@ -1078,7 +1212,6 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
 
     segment%temp_segment_data_exists = .false.
     segment%salt_segment_data_exists = .false.
-    segment%thickness_segment_data_exists = .false.
 !!
 ! CODE HERE FOR OTHER OPTIONS (CLAMPED, NUDGED,..)
 !!
@@ -1091,141 +1224,35 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
     do m=1,segment%num_fields
       if (m <= num_manifest_fields) then
         ! These are tracers with segments specified in MOM6 style override files
-        call parse_segment_data_str(trim(segstr), m, trim(fields(m)), value, filename, fieldname)
-        segment%field(m)%genre = ''
+        call parse_segment_data_str(trim(segstr), m, trim(field_names(m)), value, filename, varname)
+        segment%field(m)%bgc_tracer = .false.
       else
         ! These are obgc tracers with segments specified by external modules.
         ! Set a flag so that these can be distinguished from native tracers as they may need
         ! extra steps for preparation and handling.
-        segment%field(m)%genre = 'obgc'
+        segment%field(m)%bgc_tracer = .true.
         ! Query the obgc segment properties by traversing the linkedlist
-        call get_obgc_segments_props(obgc_segments_props_list, fields(m), filename, fieldname, &
+        call get_obgc_segments_props(obgc_segments_props_list, field_names(m), filename, varname, &
                                      segment%field(m)%resrv_lfac_in, segment%field(m)%resrv_lfac_out)
         ! Make sure the obgc tracer is not specified in the MOM6 param file too.
         do mm=1,num_manifest_fields
-          if (trim(fields(m)) == trim(fields(mm))) then
+          if (trim(field_names(m)) == trim(field_names(mm))) then
             if (is_root_pe()) &
-              call MOM_error(FATAL,"MOM_open_boundary:initialize_segment_data(): obgc tracer " //trim(fields(m))// &
+              call MOM_error(FATAL,"MOM_open_boundary:initialize_segment_data(): obgc tracer "//trim(field_names(m))//&
                                " appears in OBC_SEGMENT_XXX_DATA string in MOM6 param file. This is not supported!")
           endif
         enddo
       endif
 
-      segment%field(m)%name = rotated_field_name(trim(fields(m)), turns)
-
-      ! The scale factor for tracers may also be set in register_segment_tracer, and a constant input
-      ! value is rescaled there.
-      segment%field(m)%scale = scale_factor_from_name(fields(m), GV, US, segment%tr_Reg)
-      segment%field(m)%on_face = field_is_on_face(segment%field(m)%name, segment%is_E_or_W)
-
-      nk_dst = GV%ke
+      segment%field(m)%name = rotated_field_name(trim(field_names(m)), turns)
 
       if (trim(filename) /= 'none') then
         OBC%update_OBC = .true. ! Data is assumed to be time-dependent if we are reading from file
         OBC%needs_IO_for_data = .true. ! At least one segment is using I/O for OBC data
-!       segment%values_needed = .true. ! Indicates that i/o will be needed for this segment
-        segment%field(m)%use_IO = .true.
-
-        filename = trim(inputdir)//trim(filename)
-        fieldname = trim(fieldname)//trim(suffix)
-
-        if (.not.file_exists(filename)) &
-          call MOM_error(FATAL," Unable to open OBC file " // trim(filename))
-
-        call field_size(filename, fieldname, siz, no_domain=.true.)
-        ! if (siz(4) == 1) segment%values_needed = .false.
-
-        if (OBC%brushcutter_mode .and. (modulo(siz(1),2) == 0 .or. modulo(siz(2),2) == 0)) then
-          write(mesg, '("Brushcutter mode sizes ",I0," ",I0)') siz(1), siz(2)
-          call MOM_error(WARNING, mesg // " " // trim(filename) // " " // trim(fieldname))
-          call MOM_error(FATAL,'segment data are not on the supergrid')
-        endif
-
-        if (.not.segment%field(m)%on_face) then
-          allocate(segment%field(m)%buffer_src(IsdB:IedB,JsdB:JedB,siz(3)), source=0.0)
-        elseif (segment%is_E_or_W) then
-          allocate(segment%field(m)%buffer_src(IsdB:IedB,jsd:jed,siz(3)), source=0.0)
-        else
-          allocate(segment%field(m)%buffer_src(isd:ied,JsdB:JedB,siz(3)), source=0.0)
-        endif
-
-        segment%field(m)%handle = init_external_field(trim(filename), trim(fieldname), &
-                  ignore_axis_atts=.true., threading=SINGLE_FILE)
-
-        segment%field(m)%nk_src = siz(3)
-        if (siz(3) > 1) then
-          if (field_is_tidal(segment%field(m)%name)) then
-            ! siz(3) is constituent for tidal variables
-            ! expect third dimension to be number of constituents in MOM_input
-            if (siz(3) /= OBC%n_tide_constituents .and. OBC%add_tide_constituents) then
-              call MOM_error(FATAL, 'Number of constituents in input data is not '//&
-                  'the same as the number specified')
-            endif
-            nk_dst = segment%field(m)%nk_src
-          else
-            ! siz(3) is depth for everything else
-            fieldname = 'dz_'//trim(fieldname)
-            call field_size(filename, fieldname, siz_check, no_domain=.true.)
-            do dim = 1, 4 ; if (siz(dim) /= siz_check(dim)) & ! This check may be redudant.
-              call MOM_error(FATAL, "'dz' field size is inconsistent with "//&
-                             "its corresponding variable.")
-            enddo
-            if (.not.segment%field(m)%on_face) then
-              allocate(segment%field(m)%dz_src(IsdB:IedB,JsdB:JedB,siz(3)), source=0.0)
-            elseif (segment%is_E_or_W) then
-              allocate(segment%field(m)%dz_src(IsdB:IedB,jsd:jed,siz(3)), source=0.0)
-            else
-              allocate(segment%field(m)%dz_src(isd:ied,JsdB:JedB,siz(3)), source=0.0)
-            endif
-            segment%field(m)%dz_handle = init_external_field(trim(filename), trim(fieldname), &
-                      ignore_axis_atts=.true., threading=SINGLE_FILE)
-          endif
-        endif
-        if (segment%field(m)%nk_src == 1) &
-          nk_dst = 1
-
-        if (segment%field(m)%name == 'TEMP') segment%temp_segment_data_exists = .true.
-        if (segment%field(m)%name == 'SALT') segment%salt_segment_data_exists = .true.
-        if (segment%field(m)%name == 'DZ') segment%thickness_segment_data_exists = .true.
-
-        init_value_dst = 0.0
-      else  ! This data is not being read from a file.
-        segment%field(m)%value = segment%field(m)%scale * value
-        ! Change the sign of the specified velocities, depending on the number of quarter turns of the grid.
-        if ( ( ((segment%field(m)%name == 'U') .or. (segment%field(m)%name == 'Uamp')) .and. &
-               ((qturns == 1) .or. (qturns == 2)) ) .or. &
-             ( ((segment%field(m)%name == 'V') .or. (segment%field(m)%name == 'Vamp')) .and. &
-               ((qturns == 3) .or. (qturns == 2)) ) ) &
-          segment%field(m)%value = -segment%field(m)%value
-
-        segment%field(m)%use_IO = .false.
-
-        ! Check if this is a tidal field. If so, the number
-        ! of expected constituents must be 1.
-        if (field_is_tidal(segment%field(m)%name)) then
-          if (OBC%n_tide_constituents > 1 .and. OBC%add_tide_constituents) &
-            call MOM_error(FATAL, 'Only one constituent is supported when specifying '//&
-                'tidal boundary conditions by value rather than file.')
-          nk_dst = 1
-        endif
-
-        if (segment%field(m)%name == 'SSH') &
-          nk_dst = 1
-
-        init_value_dst = segment%field(m)%value
       endif
 
-      ! Allocate buffer_dst arrays
-      if (.not.segment%field(m)%on_face) then
-        allocate(segment%field(m)%buffer_dst(IsdB:IedB, JsdB:JedB, nk_dst), &
-                 source=init_value_dst)
-      elseif (segment%is_E_or_W) then
-        allocate(segment%field(m)%buffer_dst(IsdB:IedB, jsd:jed, nk_dst), &
-                 source=init_value_dst)
-      else
-        allocate(segment%field(m)%buffer_dst(isd:ied, JsdB:JedB, nk_dst), &
-                 source=init_value_dst)
-      endif
+      call allocate_segment_field_data(segment%field(m), OBC, segment, US, &
+                                       inputdir, filename, varname, suffix, value, qturns, GV%ke)
 
       ! Check on which values this field is providing.
       if (segment%field(m)%name == 'TEMP') segment%t_values_needed = .false.
@@ -1385,9 +1412,8 @@ end subroutine set_segnum_signs
 !! name [various ~> 1], or 1 for tracers or other fields that do not match one of the specified names.
 !! Note that calls to register_segment_tracer can come before or after calls to scale_factor_from_name.
 
-real function scale_factor_from_name(name, GV, US, Tr_Reg)
+real function scale_factor_from_name(name, US, Tr_Reg)
   character(len=*),        intent(in) :: name  !< The OBC segment data name to interpret
-  type(verticalGrid_type), intent(in) :: GV  !< Container for vertical grid information
   type(unit_scale_type),   intent(in) :: US  !< A dimensional unit scaling type
   type(segment_tracer_registry_type), pointer :: Tr_Reg  !< pointer to tracer registry for this segment
 
@@ -4413,7 +4439,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
       !This field may not require a high frequency OBC segment update and might be allowed
       !a less frequent update as set by the parameter update_OBC_period_max in MOM.F90.
       !Cycle if it is not the time to update OBC segment data for this field.
-      if (trim(segment%field(m)%genre) == 'obgc' .and. (.not. OBC%update_OBC_seg_data)) cycle
+      if (segment%field(m)%bgc_tracer .and. (.not. OBC%update_OBC_seg_data)) cycle
       if (.not. segment%field(m)%use_IO) cycle
       ! read source data interpolated to the current model time
       ! NOTE: buffer is sized for vertex points, but may be used for faces
@@ -4664,7 +4690,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
     ! (split because tides depend on multiple variables).
     do m = 1,segment%num_fields
       !cycle if it is not the time to update OBGC tracers from source
-      if (trim(segment%field(m)%genre) == 'obgc' .and. (.not. OBC%update_OBC_seg_data)) cycle
+      if (segment%field(m)%bgc_tracer .and. (.not. OBC%update_OBC_seg_data)) cycle
       ! calculate external BT velocity and transport if needed
       if (trim(segment%field(m)%name) == 'U' .or. trim(segment%field(m)%name) == 'V') then
         if (trim(segment%field(m)%name) == 'U' .and. segment%is_E_or_W) then
@@ -4819,12 +4845,12 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
       ! Set the inflow and reservoir data for tracers.
       if ((trim(segment%field(m)%name) == 'TEMP') .or. (trim(segment%field(m)%name) == 'SALT') .or. &
-         (trim(segment%field(m)%genre) == 'obgc')) then
+         (segment%field(m)%bgc_tracer)) then
         if (trim(segment%field(m)%name) == 'TEMP') then
           nt = 1
         elseif (trim(segment%field(m)%name) == 'SALT') then
           nt = 2
-        elseif (trim(segment%field(m)%genre) == 'obgc') then
+        elseif (segment%field(m)%bgc_tracer) then
           nt = get_tracer_index(segment,trim(segment%field(m)%name))
           if (nt < 0) call MOM_error(FATAL,"update_OBC_segment_data: Did not find tracer "//trim(segment%field(m)%name))
         endif
@@ -7034,8 +7060,6 @@ subroutine write_OBC_info(OBC, G, GV, US)
 !    if (segment%is_E_or_W_2)    call MOM_mesg("  is_E_or_W_2", verb=1)
     if (segment%temp_segment_data_exists) call MOM_mesg("  temp_segment_data_exists", verb=1)
     if (segment%salt_segment_data_exists) call MOM_mesg("  salt_segment_data_exists", verb=1)
-    if (segment%thickness_segment_data_exists) call MOM_mesg("  thickness_segment_data_exists", &
-        verb=1)
 
     write(mesg, '("  Tr_InvLscale_out ", ES16.6)') segment%Tr_InvLscale_out*US%m_to_L
     call MOM_mesg(mesg, verb=1)
