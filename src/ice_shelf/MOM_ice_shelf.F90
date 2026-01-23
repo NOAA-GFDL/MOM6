@@ -877,8 +877,10 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
     mass_flux(i,j) = ISS%water_flux(i,j) * ISS%area_shelf_h(i,j)
 
     !Add frazil formation
-    if (add_frazil .and. (ISS%hmask(i,j) == 1 .or. ISS%hmask(i,j) == 2)) &
+    if (add_frazil .and. (ISS%hmask(i,j) == 1 .or. ISS%hmask(i,j) == 2)) then
       ISS%water_flux(i,j) = ISS%water_flux(i,j) - sfc_state%frazil(i,j) * I_dt_LHF
+      sfc_state%frazil(i,j) = 0.0
+    endif
     fluxes%iceshelf_melt(i,j) = ISS%water_flux(i,j)
   enddo ; enddo ! i- and j-loops
 
