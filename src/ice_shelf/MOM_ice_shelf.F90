@@ -372,7 +372,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   logical :: update_ice_vel ! If true, it is time to update the ice shelf velocities.
   logical :: coupled_GL     ! If true, the grounding line position is determined based on
                             ! coupled ice-ocean dynamics.
-
+  logical :: add_frazil ! If true, allow frazil formation to modify ice-shelf water flux
   real, parameter :: c2_3 = 2.0/3.0 ! Two thirds [nondim]
   character(len=320) :: mesg  ! The text of an error message
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
@@ -843,6 +843,11 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
     enddo ! i-loop
   enddo ! j-loop
 
+  if (allocated(sfc_state%frazil)) then
+    add_frazil = .true.
+  else
+    add_frazil = .false.
+  endif
 
   do j=js,je ; do i=is,ie
     ! ISS%water_flux = net liquid water into the ocean [R Z T-1 ~> kg m-2 s-1]
@@ -893,7 +898,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
     mass_flux(i,j) = ISS%water_flux(i,j) * ISS%area_shelf_h(i,j)
 
     !Add frazil formation
-    if (ISS%hmask(i,j) == 1 .or. ISS%hmask(i,j) == 2) &
+    if (add_frazil .and. (ISS%hmask(i,j) == 1 .or. ISS%hmask(i,j) == 2)) &
       ISS%water_flux(i,j) = ISS%water_flux(i,j) - sfc_state%frazil(i,j) * I_dt_LHF
     fluxes%iceshelf_melt(i,j) = ISS%water_flux(i,j)
   enddo ; enddo ! i- and j-loops
@@ -1458,8 +1463,6 @@ subroutine add_shelf_flux(G, US, CS, sfc_state, fluxes, time_step)
     ! The salt flux should be mostly from sea ice, so perhaps none should be intercepted and this should be changed.
     if (associated(fluxes%salt_flux)) &
       fluxes%salt_flux(i,j) = frac_shelf * ISS%salt_flux(i,j)*CS%flux_factor + frac_open * fluxes%salt_flux(i,j)
-    if (associated(fluxes%latent)) &
-      fluxes%latent(i,j) = fluxes%latent(i,j) - frac_shelf * ISS%water_flux(i,j) * CS%Lat_Fusion
   endif ; enddo ; enddo
 
   if (CS%debug) then

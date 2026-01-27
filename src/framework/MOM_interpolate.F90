@@ -12,7 +12,7 @@ use MOM_interp_infra,    only : get_external_field_info_infra => get_external_fi
 use MOM_interp_infra,    only : run_horiz_interp, build_horiz_interp_weights
 use MOM_interp_infra,    only : external_field
 use MOM_io_infra,        only : axistype
-use MOM_io_infra,        only : get_axis_data
+use MOM_io_infra,        only : get_axis_size, get_axis_data
 use MOM_io,              only : axis_info, set_axis_info
 use MOM_time_manager, only : time_type, set_date, operator(+), operator(<), operator(>)
 
@@ -303,16 +303,17 @@ subroutine get_external_field_info(field, size, axes, missing)
 
   integer :: n
     ! Axis index
+  integer :: ax_size
+    ! Axis size
 
   if (present(axes)) then
     call get_external_field_info_infra(field, size=size, axes=axes_infra, &
         missing=missing)
     ! TODO: Most of these methods were written to expect four dimensions.
-    ! I would not expect a generic field to be well-behaved, but I am unsure
-    ! how to validate such a field.
     do n=1,4
       ! Convert axistype to axis_info
-      allocate(ax_data(size(n)))
+      ax_size = get_axis_size(axes_infra(n))
+      allocate(ax_data(ax_size))
       call get_axis_data(axes_infra(n), axis_name, ax_data)
       call set_axis_info(axes(n), trim(axis_name), ax_data=ax_data)
       deallocate(ax_data)

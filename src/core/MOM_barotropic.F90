@@ -5373,14 +5373,14 @@ subroutine find_face_areas(Datu, Datv, G, GV, US, CS, MS, halo, eta, add_max)
         H1 = CS%bathyT(i,j)*GV%Z_to_H + eta(i,j) ; H2 = CS%bathyT(i+1,j)*GV%Z_to_H + eta(i+1,j)
         Datu(I,j) = 0.0 ; if ((H1 > 0.0) .and. (H2 > 0.0)) &
         Datu(I,j) = CS%dy_Cu(I,j) * (2.0 * H1 * H2) / (H1 + H2)
-!       Datu(I,j) = CS%dy_Cu(I,j) * 0.5 * (H1 + H2)
+        ! Datu(I,j) = CS%dy_Cu(I,j) * 0.5 * (H1 + H2)
       enddo ; enddo
       !$OMP do
       do J=js-1-hs,je+hs ; do i=is-hs,ie+hs
         H1 = CS%bathyT(i,j)*GV%Z_to_H + eta(i,j) ; H2 = CS%bathyT(i,j+1)*GV%Z_to_H + eta(i,j+1)
         Datv(i,J) = 0.0 ; if ((H1 > 0.0) .and. (H2 > 0.0)) &
         Datv(i,J) = CS%dx_Cv(i,J) * (2.0 * H1 * H2) / (H1 + H2)
-!       Datv(i,J) = CS%dy_v(i,J) * 0.5 * (H1 + H2)
+        ! Datv(i,J) = CS%dy_v(i,J) * 0.5 * (H1 + H2)
       enddo ; enddo
     else
       !$OMP do
@@ -5403,27 +5403,31 @@ subroutine find_face_areas(Datu, Datv, G, GV, US, CS, MS, halo, eta, add_max)
 
     !$OMP do
     do j=js-hs,je+hs ; do I=is-1-hs,ie+hs
-      Datu(I,j) = CS%dy_Cu(I,j) * Z_to_H * &
-                 max(max(CS%bathyT(i+1,j), CS%bathyT(i,j)) + (G%Z_ref + add_max), 0.0)
+      H1 = max((G%meanSL(i+1,j) + add_max) + G%bathyT(i+1,j), 0.0)
+      H2 = max((G%meanSL(i,j) + add_max) + G%bathyT(i,j), 0.0)
+      Datu(I,j) = CS%dy_Cu(I,j) * Z_to_H * max(H1, H2)
     enddo ; enddo
     !$OMP do
     do J=js-1-hs,je+hs ; do i=is-hs,ie+hs
-      Datv(i,J) = CS%dx_Cv(i,J) * Z_to_H * &
-                 max(max(CS%bathyT(i,j+1), CS%bathyT(i,j)) + (G%Z_ref + add_max), 0.0)
+      H1 = max((G%meanSL(i,j+1) + add_max) + G%bathyT(i,j+1), 0.0)
+      H2 = max((G%meanSL(i,j) + add_max) + G%bathyT(i,j), 0.0)
+      Datv(i,J) = CS%dx_Cv(i,J) * Z_to_H * max(H1, H2)
     enddo ; enddo
   else
     Z_to_H = GV%Z_to_H ; if (.not.GV%Boussinesq) Z_to_H = GV%RZ_to_H * CS%Rho_BT_lin
 
     !$OMP do
     do j=js-hs,je+hs ; do I=is-1-hs,ie+hs
-      H1 = (CS%bathyT(i,j) + G%Z_ref) * Z_to_H ; H2 = (CS%bathyT(i+1,j) + G%Z_ref) * Z_to_H
+      H1 = max(G%meanSL(i,j) + G%bathyT(i,j), 0.0) * Z_to_H
+      H2 = max(G%meanSL(i+1,j) + G%bathyT(i+1,j), 0.0) * Z_to_H
       Datu(I,j) = 0.0
       if ((H1 > 0.0) .and. (H2 > 0.0)) &
         Datu(I,j) = CS%dy_Cu(I,j) * (2.0 * H1 * H2) / (H1 + H2)
     enddo ; enddo
     !$OMP do
     do J=js-1-hs,je+hs ; do i=is-hs,ie+hs
-      H1 = (CS%bathyT(i,j) + G%Z_ref) * Z_to_H ; H2 = (CS%bathyT(i,j+1) + G%Z_ref) * Z_to_H
+      H1 = max(G%meanSL(i,j) + G%bathyT(i,j), 0.0) * Z_to_H
+      H2 = max(G%meanSL(i,j+1) + G%bathyT(i,j+1), 0.0) * Z_to_H
       Datv(i,J) = 0.0
       if ((H1 > 0.0) .and. (H2 > 0.0)) &
         Datv(i,J) = CS%dx_Cv(i,J) * (2.0 * H1 * H2) / (H1 + H2)
@@ -5546,8 +5550,6 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                                        ! name in wave_drag_file.
   character(len=80)  :: wave_drag_v    ! The wave drag piston velocity variable
                                        ! name in wave_drag_file.
-  real :: mean_SL     ! The mean sea level that is used along with the bathymetry to estimate the
-                      ! geometry when LINEARIZED_BT_CORIOLIS is true or BT_NONLIN_STRESS is false [Z ~> m].
   real :: htot        ! Total column thickness used when BT_NONLIN_STRESS is false [Z ~> m].
   real :: Z_to_H      ! A local unit conversion factor [H Z-1 ~> nondim or kg m-3]
   real :: H_to_Z      ! A local unit conversion factor [Z H-1 ~> nondim or m3 kg-1]
@@ -6150,25 +6152,26 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
 
     Z_to_H = GV%Z_to_H ; if (.not.GV%Boussinesq) Z_to_H = GV%RZ_to_H * CS%Rho_BT_lin
 
-    Mean_SL = G%Z_ref
     do j=js,je ; do I=is-1,ie
-      CS%D_u_Cor(I,j) = 0.5 * (max(Mean_SL+G%bathyT(i+1,j),0.0) + max(Mean_SL+G%bathyT(i,j),0.0)) * Z_to_H
+      CS%D_u_Cor(I,j) = 0.5 * ( max(G%meanSL(i+1,j) + G%bathyT(i+1,j), 0.0) &
+                              + max(G%meanSL(i,j) + G%bathyT(i,j), 0.0) ) * Z_to_H
     enddo ; enddo
     if (CS%interior_OBC_PV .and. CS%BT_OBC%u_OBCs_on_PE) then ; do j=js,je ; do I=is-1,ie
       if (CS%BT_OBC%u_OBC_type(I,j) < 0) & ! Western boundary condition
-        CS%D_u_Cor(I,j) = max(Mean_SL+G%bathyT(i+1,j),0.0) * Z_to_H
+        CS%D_u_Cor(I,j) = max(G%meanSL(i+1,j) + G%bathyT(i+1,j), 0.0) * Z_to_H
       if (CS%BT_OBC%u_OBC_type(I,j) > 0) & ! Eastern boundary condition
-        CS%D_u_Cor(I,j) = max(Mean_SL+G%bathyT(i,j),0.0) * Z_to_H
+        CS%D_u_Cor(I,j) = max(G%meanSL(i,j) + G%bathyT(i,j), 0.0) * Z_to_H
     enddo ; enddo ; endif
 
     do J=js-1,je ; do i=is,ie
-      CS%D_v_Cor(i,J) = 0.5 * (max(Mean_SL+G%bathyT(i,j+1),0.0) + max(Mean_SL+G%bathyT(i,j),0.0)) * Z_to_H
+      CS%D_v_Cor(i,J) = 0.5 * ( max(G%meanSL(i,j+1) + G%bathyT(i,j+1), 0.0) &
+                              + max(G%meanSL(i,j) + G%bathyT(i,j), 0.0) )  * Z_to_H
     enddo ; enddo
     if (CS%interior_OBC_PV .and. CS%BT_OBC%v_OBCs_on_PE) then ; do J=js-1,je ; do i=is,ie
       if (CS%BT_OBC%v_OBC_type(i,J) < 0) & ! Southern boundary condition
-        CS%D_v_Cor(i,J) = max(Mean_SL+G%bathyT(i,j+1),0.0) * Z_to_H
+        CS%D_v_Cor(i,J) = max(G%meanSL(i,j+1) + G%bathyT(i,j+1), 0.0) * Z_to_H
       if (CS%BT_OBC%v_OBC_type(i,J) > 0) & ! Northern boundary condition
-        CS%D_v_Cor(i,J) = max(Mean_SL+G%bathyT(i,j),0.0) * Z_to_H
+        CS%D_v_Cor(i,J) = max(G%meanSL(i,j) + G%bathyT(i,j), 0.0) * Z_to_H
     enddo ; enddo ; endif
 
     h_a_neglect = GV%H_subroundoff * 1.0 * US%m_to_L**2
@@ -6176,10 +6179,11 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
       if ((CS%q_wt(1,I,J) + CS%q_wt(4,I,J)) + (CS%q_wt(2,I,J) + CS%q_wt(3,I,J)) > 0.) then
         CS%q_D(I,J) = 0.25 * (CS%BT_Coriolis_scale * G%CoriolisBu(I,J)) * &
            ((CS%q_wt(1,I,J) + CS%q_wt(4,I,J)) + (CS%q_wt(2,I,J) + CS%q_wt(3,I,J))) / &
-           max(Z_to_H * (((CS%q_wt(1,I,J) * max(Mean_SL+G%bathyT(i,j),0.0)) + &
-                          (CS%q_wt(4,I,J) * max(Mean_SL+G%bathyT(i+1,j+1),0.0))) + &
-                         ((CS%q_wt(2,I,J) * max(Mean_SL+G%bathyT(i+1,j),0.0)) + &
-                          (CS%q_wt(3,I,J) * max(Mean_SL+G%bathyT(i,j+1),0.0)))), h_a_neglect)
+           max(Z_to_H * (((CS%q_wt(1,I,J) * max(G%meanSL(i,j) + G%bathyT(i,j), 0.0)) + &
+                          (CS%q_wt(4,I,J) * max(G%meanSL(i+1,j+1) + G%bathyT(i+1,j+1), 0.0))) + &
+                         ((CS%q_wt(2,I,J) * max(G%meanSL(i+1,j) + G%bathyT(i+1,j), 0.0)) + &
+                          (CS%q_wt(3,I,J) * max(G%meanSL(i,j+1) + G%bathyT(i,j+1), 0.0)))), &
+               h_a_neglect)
       else ! All four h points are masked out so q_D(I,J) is meaningless
         CS%q_D(I,J) = 0.
       endif
@@ -6450,10 +6454,9 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   ! Calculate other constants which are used for btstep.
 
   if (.not.CS%nonlin_stress) then
-    Mean_SL = G%Z_ref
     Z_to_H = GV%Z_to_H ; if (.not.GV%Boussinesq) Z_to_H = GV%RZ_to_H * CS%Rho_BT_lin
     do j=js,je ; do I=is-1,ie
-      htot = max(G%bathyT(i+1,j) + G%Z_ref, 0.0) + max(G%bathyT(i,j) + G%Z_ref, 0.0)
+      htot = max(G%meanSL(i+1,j) + G%bathyT(i+1,j), 0.0) + max(G%meanSL(i,j) + G%bathyT(i,j), 0.0)
       if (G%OBCmaskCu(I,j) * htot > 0.) then
         CS%IDatu(I,j) = G%OBCmaskCu(I,j) * 2.0 / (Z_to_H * htot)
       else ! Both neighboring H points are masked out or this is an OBC face so IDatu(I,j) is unused
@@ -6461,7 +6464,7 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
       endif
     enddo ; enddo
     do J=js-1,je ; do i=is,ie
-      htot = max(G%bathyT(i,j+1) + G%Z_ref, 0.0) + max(G%bathyT(i,j) + G%Z_ref, 0.0)
+      htot = max(G%meanSL(i,j+1) + G%bathyT(i,j+1), 0.0) + max(G%meanSL(i,j) + G%bathyT(i,j), 0.0)
       if (G%OBCmaskCv(i,J) * htot > 0.) then
         CS%IDatv(i,J) = G%OBCmaskCv(i,J) * 2.0 / (Z_to_H * htot)
       else ! Both neighboring H points are masked out or this is an OBC face so IDatv(i,J) is unused

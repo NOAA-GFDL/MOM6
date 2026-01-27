@@ -223,15 +223,15 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
   !$OMP end parallel
 
   isv = is ; iev = ie ; jsv = js ; jev = je
+  nsten_halo = min(is - isd, ied - ie, js - jsd, jed - je) / stencil
 
   do itt=1,max_iter
 
     if (isv > is-stencil) then
       call do_group_pass(CS%pass_uhr_vhr_t_hprev, G%Domain, clock=id_clock_pass)
 
-      nsten_halo = min(is-isd,ied-ie,js-jsd,jed-je)/stencil
-      isv = is-nsten_halo*stencil ; jsv = js-nsten_halo*stencil
-      iev = ie+nsten_halo*stencil ; jev = je+nsten_halo*stencil
+      isv = is - nsten_halo * stencil ; jsv = js - nsten_halo * stencil
+      iev = ie + nsten_halo * stencil ; jev = je + nsten_halo * stencil
       ! Reevaluate domore_u & domore_v unless the valid range is the same size as
       ! before.  Also, do this if there is Strang splitting.
       if ((nsten_halo > 1) .or. (itt==1)) then
@@ -680,13 +680,12 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
 
     ! Update do_i so that nothing changes outside of the OBC (problem for interior OBCs only)
     if (associated(OBC)) then
-      if ((.not.OBC%exterior_OBC_bug) .and. (OBC%OBC_pe)) then
-        if (OBC%specified_u_BCs_exist_globally .or. OBC%open_u_BCs_exist_globally) then
-          do i=is,ie-1
-            if (OBC%segnum_u(I,j) > 0) do_i(i+1,j) = .false.  ! OBC_DIRECTION_E
-            if (OBC%segnum_u(I,j) < 0) do_i(i,j) = .false.    ! OBC_DIRECTION_W
-          enddo
-        endif
+      if ((.not.OBC%exterior_OBC_bug) .and. (OBC%OBC_pe) .and. &
+          (OBC%specified_u_BCs_exist_globally .or. OBC%open_u_BCs_exist_globally)) then
+        ! OBC_DIRECTION_E / OBC_DIRECTION_W on the west / east edge
+        do i=is,ie ; if ((OBC%segnum_u(I-1,j) > 0) .or. (OBC%segnum_u(I,j) < 0)) &
+          do_i(i,j) = .false.
+        enddo
       endif
     endif
 
@@ -1093,13 +1092,12 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
 
     ! Update do_i so that nothing changes outside of the OBC (problem for interior OBCs only)
     if (associated(OBC)) then
-      if ((OBC%exterior_OBC_bug .eqv. .false.) .and. (OBC%OBC_pe)) then
-        if (OBC%specified_v_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) then
-          do i=is,ie
-            if (OBC%segnum_v(i,J-1) > 0) do_i(i,j) = .false.  ! OBC_DIRECTION_N
-            if (OBC%segnum_v(i,J) < 0) do_i(i,j) = .false.  ! OBC_DIRECTION_S
-          enddo
-        endif
+      if ((.not.OBC%exterior_OBC_bug) .and. (OBC%OBC_pe) .and. &
+          (OBC%specified_v_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally)) then
+        ! OBC_DIRECTION_N / OBC_DIRECTION_S on the south / north edge
+        do i=is,ie ; if ((OBC%segnum_v(i,J-1) > 0) .or. (OBC%segnum_v(i,J) < 0)) &
+          do_i(i,j) = .false.
+        enddo
       endif
     endif
 

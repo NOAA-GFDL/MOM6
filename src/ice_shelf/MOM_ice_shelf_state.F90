@@ -24,7 +24,7 @@ type, public :: ice_shelf_state
   real, pointer, dimension(:,:) :: &
     mass_shelf => NULL(), &    !< The mass per unit area of the ice shelf or sheet [R Z ~> kg m-2].
     area_shelf_h => NULL(), &  !< The area per cell covered by the ice shelf [L2 ~> m2].
-    melt_mask => NULL(), &     !< Mask is > 0 where melting is allowed
+    melt_mask => NULL(), &     !< Mask is > 0 where melting is allowed [nondim]
     h_shelf => NULL(), &       !< the thickness of the shelf [Z ~> m], redundant with mass but may
                                !! make the code more readable
     dhdt_shelf => NULL(), &       !< the change in thickness of the shelf over time [Z T-1 ~> m s-1]
