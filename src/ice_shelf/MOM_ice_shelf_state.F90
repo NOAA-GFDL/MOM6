@@ -48,10 +48,10 @@ type, public :: ice_shelf_state
                                !! ocean-ice interface [R Z T-1 ~> kg m-2 s-1].
     tflux_shelf => NULL(), &   !< The downward diffusive heat flux in the ice
                                !! shelf at the ice-ocean interface [Q R Z T-1 ~> W m-2].
-
     tfreeze => NULL(), &       !< The freezing point potential temperature
                                !! at the ice-ocean interface [C ~> degC].
-
+    frazil => NULL(), &        !< Accumulated heating [J m-2] from frazil formation in the ocean
+                               !! under ice-shelf cells
     !only active when calve_ice_shelf_bergs=true:
     calving => NULL(), &       !< The mass flux per unit area of the ice shelf to convert to
                                !! bergs [R Z T-1 ~> kg m-2 s-1].
@@ -88,6 +88,7 @@ subroutine ice_shelf_state_init(ISS, G)
   allocate(ISS%tflux_shelf(isd:ied,jsd:jed), source=0.0 )
   allocate(ISS%tfreeze(isd:ied,jsd:jed), source=0.0 )
 
+  allocate(ISS%frazil(isd:ied,jsd:jed), source=0.0 )
   allocate(ISS%calving(isd:ied,jsd:jed), source=0.0 )
   allocate(ISS%calving_hflx(isd:ied,jsd:jed), source=0.0 )
 end subroutine ice_shelf_state_init
@@ -102,7 +103,7 @@ subroutine ice_shelf_state_end(ISS)
   deallocate(ISS%mass_shelf, ISS%area_shelf_h, ISS%h_shelf, ISS%dhdt_shelf, ISS%hmask)
 
   deallocate(ISS%tflux_ocn, ISS%water_flux, ISS%salt_flux, ISS%tflux_shelf)
-  deallocate(ISS%tfreeze)
+  deallocate(ISS%tfreeze, ISS%frazil)
 
   deallocate(ISS%calving, ISS%calving_hflx)
 

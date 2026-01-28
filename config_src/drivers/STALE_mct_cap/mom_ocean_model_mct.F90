@@ -659,6 +659,8 @@ subroutine update_ocean_model(Ice_ocean_boundary, OS, Ocean_sfc, &
 
   if (OS%fluxes%fluxes_used) then
     call forcing_diagnostics(OS%fluxes, OS%sfc_state, OS%grid, OS%US, OS%Time, OS%diag, OS%forcing_CSp%handles)
+    if (OS%use_ice_shelf .and. allocated(OS%sfc_state%frazil)) &
+      call adjust_ice_sheet_frazil(OS%sfc_state, OS%fluxes, OS%Ice_shelf_CSp)
   endif
 
 ! Translate state into Ocean.

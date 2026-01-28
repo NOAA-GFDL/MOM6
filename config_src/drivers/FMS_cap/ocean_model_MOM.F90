@@ -56,7 +56,7 @@ use MOM_verticalGrid, only : verticalGrid_type
 use MOM_ice_shelf, only : initialize_ice_shelf, shelf_calc_flux, ice_shelf_CS
 use MOM_ice_shelf, only : initialize_ice_shelf_fluxes, initialize_ice_shelf_forces
 use MOM_ice_shelf, only : add_shelf_forces, ice_shelf_end, ice_shelf_save_restart
-use MOM_ice_shelf, only : ice_sheet_calving_to_ocean_sfc
+use MOM_ice_shelf, only : ice_sheet_calving_to_ocean_sfc, adjust_ice_sheet_frazil
 use MOM_wave_interface, only: wave_parameters_CS, MOM_wave_interface_init
 use MOM_wave_interface, only: Update_Surface_Waves
 use iso_fortran_env, only : int64
@@ -680,6 +680,8 @@ subroutine update_ocean_model(Ice_ocean_boundary, OS, Ocean_sfc, time_start_upda
 
   if (OS%fluxes%fluxes_used .and. do_thermo) then
     call forcing_diagnostics(OS%fluxes, OS%sfc_state, OS%grid, OS%US, OS%Time, OS%diag, OS%forcing_CSp%handles)
+    if (OS%use_ice_shelf .and. allocated(OS%sfc_state%frazil)) &
+      call adjust_ice_sheet_frazil(OS%sfc_state, OS%fluxes, OS%Ice_shelf_CSp)
   endif
 
 ! Translate state into Ocean.
