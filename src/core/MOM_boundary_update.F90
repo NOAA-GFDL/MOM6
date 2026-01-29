@@ -12,6 +12,7 @@ use MOM_file_parser,           only : get_param, log_version, param_file_type, l
 use MOM_grid,                  only : ocean_grid_type
 use MOM_dyn_horgrid,           only : dyn_horgrid_type
 use MOM_open_boundary,         only : ocean_obc_type, update_OBC_segment_data, chksum_OBC_segments
+use MOM_open_boundary,         only : read_OBC_segment_data
 use MOM_open_boundary,         only : OBC_registry_type, file_OBC_CS
 use MOM_open_boundary,         only : register_file_OBC, file_OBC_end
 use MOM_unit_scaling,          only : unit_scale_type
@@ -168,8 +169,10 @@ subroutine update_OBC_data(OBC, G, GV, US, tv, h, CS, Time)
       call shelfwave_set_OBC_data(OBC, CS%shelfwave_OBC_CSp, G, GV, US, h, Time)
   if (CS%use_dyed_channel) &
       call dyed_channel_update_flow(OBC, CS%dyed_channel_OBC_CSp, G, GV, US, h, Time)
-  if (OBC%any_needs_IO_for_data .or. OBC%add_tide_constituents)  &
-      call update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
+  if (OBC%any_needs_IO_for_data .or. OBC%add_tide_constituents) then
+    call read_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
+    call update_OBC_segment_data(G, GV, US, OBC, h, Time)
+  endif
   if (CS%debug_OBCs) call chksum_OBC_segments(OBC, G, GV, US, CS%nk_OBC_debug)
 
 end subroutine update_OBC_data

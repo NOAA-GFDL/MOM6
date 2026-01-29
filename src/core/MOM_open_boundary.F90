@@ -48,6 +48,7 @@ public open_boundary_end
 public open_boundary_impose_normal_slope
 public open_boundary_impose_land_mask
 public radiation_open_bdry_conds
+public read_OBC_segment_data
 public update_OBC_segment_data
 public open_boundary_test_extern_uv
 public open_boundary_test_extern_h
@@ -4136,8 +4137,6 @@ subroutine allocate_OBC_segment_data(OBC, segment)
 
   if (segment%is_E_or_W) then
     ! If these are just Flather, change update_OBC_segment_data accordingly
-    !   segment%Cg is never used. A version of Cg is calculated in MOM_barotropic.
-    allocate(segment%Cg(IsdB:IedB, jsd:jed), source=0.0)
     allocate(segment%Htot(IsdB:IedB,jsd:jed), source=0.0)
     ! Allocate dZtot with extra values at the end to avoid segmentation faults in cases where
     ! it is interpolated to OBC vorticity points.
@@ -4183,7 +4182,6 @@ subroutine allocate_OBC_segment_data(OBC, segment)
 
   if (segment%is_N_or_S) then
     ! If these are just Flather, change update_OBC_segment_data accordingly
-    allocate(segment%Cg(isd:ied,JsdB:JedB), source=0.0)
     allocate(segment%Htot(isd:ied,JsdB:JedB), source=0.0)
     ! Allocate dZtot with extra values at the end to avoid segmentation faults in cases where
     ! it is interpolated to OBC vorticity points.
@@ -4235,7 +4233,6 @@ subroutine deallocate_OBC_segment_data(segment)
 
   if (.not. segment%on_pe) return
 
-  if (allocated(segment%Cg)) deallocate(segment%Cg)
   if (allocated(segment%Htot)) deallocate(segment%Htot)
   if (allocated(segment%dZtot)) deallocate(segment%dZtot)
   if (allocated(segment%h)) deallocate(segment%h)
@@ -4356,18 +4353,18 @@ subroutine open_boundary_test_extern_h(G, GV, OBC, h)
 
 end subroutine open_boundary_test_extern_h
 
-!> Update the OBC values on the segments.
-subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
-  type(ocean_grid_type),                     intent(in)    :: G    !< Ocean grid structure
-  type(verticalGrid_type),                   intent(in)    :: GV   !<  Ocean vertical grid structure
-  type(unit_scale_type),                     intent(in)    :: US   !< A dimensional unit scaling type
-  type(ocean_OBC_type),                      pointer       :: OBC  !< Open boundary structure
-  type(thermo_var_ptrs),                     intent(in)    :: tv   !< Thermodynamics structure
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(inout) :: h    !< Thickness [H ~> m or kg m-2]
-  type(time_type),                           intent(in)    :: Time !< Model time
+!> Read OBC values on the segments from files
+subroutine read_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
+  type(ocean_grid_type),                     intent(in) :: G    !< Ocean grid structure
+  type(verticalGrid_type),                   intent(in) :: GV   !< Ocean vertical grid structure
+  type(unit_scale_type),                     intent(in) :: US   !< A dimensional unit scaling type
+  type(ocean_OBC_type),                      pointer    :: OBC  !< Open boundary structure
+  type(thermo_var_ptrs),                     intent(in) :: tv   !< Thermodynamics structure
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(in) :: h    !< Thickness [H ~> m or kg m-2]
+  type(time_type),                           intent(in) :: Time !< Model time
 
   ! Local variables
-  integer :: c, i, j, k, n, m, nz, nt !, nk_dst
+  integer :: i, j, k, n, m
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
   type(OBC_segment_type), pointer :: segment => NULL()
   real, dimension(:,:,:), pointer :: tmp_buffer_in => NULL()  ! Unrotated input [various units]
@@ -4377,26 +4374,16 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   real, dimension(:,:,:), allocatable, target :: tmp_buffer ! A buffer for input data [various units]
   real :: dz_stack(SZK_(GV)) ! Distance between the interfaces at corner points [Z ~> m]
   integer :: i_seg_offset, j_seg_offset, bug_offset
-  integer :: is_seg, ie_seg, js_seg, je_seg
   real :: net_dz_src  ! Total vertical extent of the incoming flow in the source field [Z ~> m]
   real :: net_dz_int  ! Total vertical extent of the incoming flow in the model [Z ~> m]
   real :: scl_fac     ! A scaling factor to compensate for differences in total thicknesses [nondim]
-  real :: ramp_value  ! If OBC%ramp is True, where we are on the ramp from 0 to 1, or 1 otherwise [nondim].
   integer :: turns    ! Number of index quarter turns
-  real :: time_delta  ! Time since tidal reference date [T ~> s]
   logical :: flip_buffer ! If true, the input buffer needs to be transposed
-  real :: tidal_amp, tidal_phase
-  integer :: F_G, F_VT, F_VTAMP, F_VTPHASE
 
   if (.not. associated(OBC)) return
   if (OBC%user_BCs_set_globally) return
 
-  nz = GV%ke
-
   turns = modulo(G%HI%turns, 4)
-
-  if (OBC%add_tide_constituents) time_delta = time_minus_signed(Time, OBC%time_ref, scale=US%s_to_T)
-
   dz(:,:,:) = 0.0
   call thickness_to_dz(h, tv, dz, G, GV, US)
   call pass_var(dz, G%Domain)
@@ -4414,25 +4401,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
     i_seg_offset = G%idg_offset - segment%HI%IsgB
     j_seg_offset = G%jdg_offset - segment%HI%JsgB
 
-    if (segment%is_E_or_W) then
-      is_seg = IsdB ; ie_seg = is_seg
-      js_seg = jsd ; je_seg = jed
-    else
-      is_seg = isd ; ie_seg = ied
-      js_seg = JsdB ; je_seg = js_seg
-    endif
-
-    ! Calculate auxiliary fields at staggered locations.
-    ! Segment indices are on q points:
-    !
-    !       |-----------|------------|-----------|-----------|  J_obc
-    !     Is_obc                                          Ie_obc
-    !
-    ! i2 has to start at Is_obc+1 and end at Ie_obc.
-    ! j2 is J_obc and jshift has to be +1 at both the north and south.
-
     ! Calculate auxiliary fields at staggered locations
-    segment%Htot(:,:) = 0.0
     segment%dZtot(:,:) = 0.0
     if (segment%is_E_or_W) then
       I = IsdB
@@ -4440,38 +4409,26 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
       do k = 1, GV%ke ; do j = max(jsd-1, G%jsd), min(jed+1, G%jed)
         segment%dZtot(I,j) = segment%dZtot(I,j) + dz(isd,j,k)
       enddo ; enddo
-      do k = 1, GV%ke ; do j = jsd, jed
-        segment%h(I,j,k) = h(isd,j,k)
-        segment%Htot(I,j) = segment%Htot(I,j) + segment%h(I,j,k)
-      enddo ; enddo
-      do j = jsd, jed
-        segment%Cg(I,j) = sqrt(GV%g_prime(1) * max(0.0, segment%dZtot(I,j)))
-      enddo
     else ! (segment%direction == OBC_DIRECTION_N .or. segment%direction == OBC_DIRECTION_S)
       J = JsdB
       ! dZtot may extend one point past the end of the segment on the current PE for use at vorticity points
       do k = 1, GV%ke ; do i = max(isd-1, G%isd), min(ied+1, G%ied)
         segment%dZtot(i,J) = segment%dZtot(i,J) + dz(i,jsd,k)
       enddo ; enddo
-      do k = 1, GV%ke ; do i = isd, ied
-        segment%h(i,J,k) = h(i,jsd,k)
-        segment%Htot(i,J) = segment%Htot(i,J) + segment%h(i,J,k)
-      enddo ; enddo
-      do i = isd, ied
-        segment%Cg(i,J) = sqrt(GV%g_prime(1) * max(0.0, segment%dZtot(i,J)))
-      enddo
     endif
 
     ! Read data from files to buffer_src
-    do m = 1,segment%num_fields
+    do m=1,segment%num_fields
       if (segment%field(m)%required .and. (.not. allocated(segment%field(m)%buffer_dst))) &
         call MOM_error(FATAL, 'buffer_dst not allocated')
 
-      !This field may not require a high frequency OBC segment update and might be allowed
-      !a less frequent update as set by the parameter update_OBC_period_max in MOM.F90.
-      !Cycle if it is not the time to update OBC segment data for this field.
-      if (segment%field(m)%bgc_tracer .and. (.not. OBC%update_OBC_seg_data)) cycle
-      if (.not. segment%field(m)%use_IO) cycle
+      if ( (.not. segment%field(m)%use_IO) .or. & ! .and. (.not. segment%field(m)%required)
+           (segment%field(m)%bgc_tracer .and. (.not. OBC%update_OBC_seg_data)) ) &
+        !This field may not require a high frequency OBC segment update and might be allowed
+        !a less frequent update as set by the parameter update_OBC_period_max in MOM.F90.
+        !Cycle if it is not the time to update OBC segment data for this field.
+        cycle
+
       ! read source data interpolated to the current model time
       ! NOTE: buffer is sized for vertex points, but may be used for faces
       if (segment%is_E_or_W) then
@@ -4716,6 +4673,70 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
       deallocate(tmp_buffer)
       if (turns /= 0) deallocate(tmp_buffer_in)
     enddo ! end field loop
+  enddo ! endd segment loop
+end subroutine read_OBC_segment_data
+
+!> Update the OBC values on the segments.
+subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
+  type(ocean_grid_type),                     intent(in) :: G    !< Ocean grid structure
+  type(verticalGrid_type),                   intent(in) :: GV   !< Ocean vertical grid structure
+  type(unit_scale_type),                     intent(in) :: US   !< A dimensional unit scaling type
+  type(ocean_OBC_type),                      pointer    :: OBC  !< Open boundary structure
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(in) :: h    !< Thickness [H ~> m or kg m-2]
+  type(time_type),                           intent(in) :: Time !< Model time
+
+  ! Local variables
+  type(OBC_segment_type), pointer :: segment => NULL()
+  integer :: c, i, j, k, n, m, nz, nt
+  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
+  integer :: is_seg, ie_seg, js_seg, je_seg ! Orientation-agnostic loop ranges
+  integer :: i_offset_in, j_offset_in ! Indexing offset for interior cells
+  real :: ramp_value  ! If OBC%ramp is True, where we are on the ramp from 0 to 1, or 1 otherwise [nondim].
+  real :: time_delta  ! Time since tidal reference date [T ~> s]
+  real :: tidal_amp, tidal_phase ! Tidal amplitude [Z ~> m] and phase [rad]
+  integer :: F_G, F_VT, F_VTAMP, F_VTPHASE
+
+  if (.not. associated(OBC)) return
+  if (OBC%user_BCs_set_globally) return
+
+  nz = GV%ke
+
+  if (OBC%add_tide_constituents) &
+    time_delta = time_minus_signed(Time, OBC%time_ref, scale=US%s_to_T)
+
+  do n=1,OBC%number_of_segments
+    segment => OBC%segment(n)
+
+    if (.not. segment%on_pe) cycle ! continue to next segment if not in data domain
+
+    isd = segment%HI%isd ; ied = segment%HI%ied ; IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
+    jsd = segment%HI%jsd ; jed = segment%HI%jed ; JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
+    i_offset_in = ied - IedB ! = 0 if East, South, North; = 1 if West
+    j_offset_in = jed - JedB ! = 0 if North, West, East ; = 1 if South
+
+    if (segment%is_E_or_W) then
+      is_seg = IsdB ; ie_seg = is_seg
+      js_seg = jsd ; je_seg = jed
+    else
+      is_seg = isd ; ie_seg = ied
+      js_seg = JsdB ; je_seg = js_seg
+    endif
+
+    ! Calculate auxiliary fields at staggered locations.
+    ! Segment indices are on q points:
+    !
+    !       |-----------|------------|-----------|-----------|  J_obc
+    !     Is_obc                                          Ie_obc
+    !
+    ! i2 has to start at Is_obc+1 and end at Ie_obc.
+    ! j2 is J_obc and jshift has to be +1 at both the north and south.
+
+    ! Calculate auxiliary fields at staggered locations
+    segment%Htot(:,:) = 0.0
+    do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
+      segment%h(i,j,k) = h(i+i_offset_in,j+j_offset_in,k)
+      segment%Htot(i,j) = segment%Htot(i,j) + segment%h(i,j,k)
+    enddo ; enddo ; enddo
 
     ! Update segment velocities, gradient, SSH and thickness/tracer reserviors
     if (segment%is_E_or_W .and. allocated(segment%field(F_U)%buffer_dst)) then
@@ -7078,7 +7099,6 @@ subroutine chksum_OBC_segment_data(segment, GV, US, nk, nseg_out)
       norm = -1.0 ; tang = 1.0
     endif
 
-    if (allocated(segment%Cg)) call write_2d_array_vals("Cg"//trim(sn), segment%Cg, dir, nk, unscale=US%L_T_to_m_s)
     if (allocated(segment%Htot)) call write_2d_array_vals("Htot"//trim(sn), segment%Htot, dir, nk, unscale=GV%H_to_mks)
     if (allocated(segment%dZtot)) call write_2d_array_vals("dZtot"//trim(sn), segment%dZtot, dir, nk, unscale=US%Z_to_m)
     if (allocated(segment%SSH)) call write_2d_array_vals("SSH"//trim(sn), segment%SSH, dir, nk, unscale=US%Z_to_m)
