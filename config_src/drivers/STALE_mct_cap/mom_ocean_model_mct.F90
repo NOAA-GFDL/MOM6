@@ -404,6 +404,9 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
 
     call extract_surface_state(OS%MOM_CSp, OS%sfc_state)
 
+    if (OS%use_ice_shelf .and. allocated(OS%sfc_state%frazil)) &
+      call adjust_ice_sheet_frazil(OS%sfc_state, OS%fluxes, OS%Ice_shelf_CSp)
+
     call convert_state_to_ocean_type(OS%sfc_state, Ocean_sfc, OS%grid, OS%US)
   endif
 
@@ -659,9 +662,11 @@ subroutine update_ocean_model(Ice_ocean_boundary, OS, Ocean_sfc, &
 
   if (OS%fluxes%fluxes_used) then
     call forcing_diagnostics(OS%fluxes, OS%sfc_state, OS%grid, OS%US, OS%Time, OS%diag, OS%forcing_CSp%handles)
-    if (OS%use_ice_shelf .and. allocated(OS%sfc_state%frazil)) &
-      call adjust_ice_sheet_frazil(OS%sfc_state, OS%fluxes, OS%Ice_shelf_CSp)
   endif
+
+  !only make ice-shelf frazil adjustments if sfc_state%frazil was updated (do_thermo=True)
+  if (do_thermo .and. OS%use_ice_shelf .and. allocated(OS%sfc_state%frazil)) &
+    call adjust_ice_sheet_frazil(OS%sfc_state, OS%fluxes, OS%Ice_shelf_CSp)
 
 ! Translate state into Ocean.
 !  call convert_state_to_ocean_type(OS%sfc_state, Ocean_sfc, OS%grid, &
@@ -976,6 +981,9 @@ subroutine ocean_model_init_sfc(OS, Ocean_sfc)
                           (/is,is,ie,ie/), (/js,js,je,je/), as_needed=.true.)
 
   call extract_surface_state(OS%MOM_CSp, OS%sfc_state)
+
+  if (OS%use_ice_shelf .and. allocated(OS%sfc_state%frazil)) &
+    call adjust_ice_sheet_frazil(OS%sfc_state, OS%fluxes, OS%Ice_shelf_CSp)
 
   call convert_state_to_ocean_type(OS%sfc_state, Ocean_sfc, OS%grid, OS%US)
 

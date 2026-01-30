@@ -316,6 +316,9 @@ program MOM6
 
   call extract_surface_state(MOM_CSp, sfc_state)
 
+  if (use_ice_shelf .and. allocated(sfc_state%frazil)) &
+    call adjust_ice_sheet_frazil(sfc_state, fluxes, Ice_shelf_CSp)
+
   call surface_forcing_init(Time, grid, US, param_file, diag, &
                             surface_forcing_CSp, tracer_flow_CSp)
   call callTree_waypoint("done surface_forcing_init")

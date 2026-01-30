@@ -781,6 +781,9 @@ subroutine ocean_model_init_sfc(OS, Ocean_sfc)
 
   call extract_surface_state(OS%MOM_CSp, OS%sfc_state)
 
+  if (OS%use_ice_shelf .and. allocated(OS%sfc_state%frazil)) &
+    call adjust_ice_sheet_frazil(OS%sfc_state, OS%fluxes, OS%Ice_shelf_CSp)
+
   call convert_state_to_ocean_type(OS%sfc_state, Ocean_sfc, OS%grid, OS%US)
 
 end subroutine ocean_model_init_sfc
