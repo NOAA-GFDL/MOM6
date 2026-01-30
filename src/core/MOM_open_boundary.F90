@@ -229,11 +229,8 @@ type, public :: OBC_segment_type
   logical :: on_pe          !< true if any portion of the segment is located in this PE's data domain
   logical :: temp_segment_data_exists !< true if temperature data arrays are present
   logical :: salt_segment_data_exists !< true if salinity data arrays are present
-  real, allocatable :: Cg(:,:)  !< The external gravity wave speed [L T-1 ~> m s-1]
-                                !! at OBC-points.
   real, allocatable :: Htot(:,:)  !< The total column thickness [H ~> m or kg m-2] at OBC-points.
   real, allocatable :: dZtot(:,:) !< The total column vertical extent [Z ~> m] at OBC segment faces.
-  real, allocatable :: h(:,:,:)   !< The cell thickness [H ~> m or kg m-2] at OBC segment faces
   real, allocatable :: normal_vel(:,:,:)      !< The layer velocity normal to the OB
                                               !! segment [L T-1 ~> m s-1].
   real, allocatable :: tangential_vel(:,:,:)  !< The layer velocity tangential to the OB segment
@@ -4142,7 +4139,6 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     ! Allocate dZtot with extra values at the end to avoid segmentation faults in cases where
     ! it is interpolated to OBC vorticity points.
     allocate(segment%dZtot(IsdB:IedB,jsd-1:jed+1), source=0.0)
-    allocate(segment%h(IsdB:IedB,jsd:jed,OBC%ke), source=0.0)
     allocate(segment%SSH(IsdB:IedB,jsd:jed), source=0.0)
     allocate(segment%tidal_elev(IsdB:IedB,jsd:jed), source=0.0)
     if (segment%radiation) &
@@ -4187,7 +4183,6 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     ! Allocate dZtot with extra values at the end to avoid segmentation faults in cases where
     ! it is interpolated to OBC vorticity points.
     allocate(segment%dZtot(isd-1:ied+1,JsdB:JedB), source=0.0)
-    allocate(segment%h(isd:ied,JsdB:JedB,OBC%ke), source=0.0)
     allocate(segment%SSH(isd:ied,JsdB:JedB), source=0.0)
     allocate(segment%tidal_elev(isd:ied,JsdB:JedB), source=0.0)
     if (segment%radiation) &
@@ -4236,7 +4231,6 @@ subroutine deallocate_OBC_segment_data(segment)
 
   if (allocated(segment%Htot)) deallocate(segment%Htot)
   if (allocated(segment%dZtot)) deallocate(segment%dZtot)
-  if (allocated(segment%h)) deallocate(segment%h)
   if (allocated(segment%SSH)) deallocate(segment%SSH)
   if (allocated(segment%tidal_elev)) deallocate(segment%tidal_elev)
   if (allocated(segment%rx_norm_rad)) deallocate(segment%rx_norm_rad)
@@ -4677,7 +4671,7 @@ subroutine read_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
   enddo ! endd segment loop
 end subroutine read_OBC_segment_data
 
-!> Update the OBC values on the segments.
+!> Update OBC segment velocities, gradient, SSH and the external fields %t of thickness/tracer reservoirs.
 subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
   type(ocean_grid_type),                     intent(in) :: G    !< Ocean grid structure
   type(verticalGrid_type),                   intent(in) :: GV   !< Ocean vertical grid structure
@@ -4692,10 +4686,10 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
   integer :: is_seg, ie_seg, js_seg, je_seg ! Orientation-agnostic loop ranges
   integer :: i_offset_in, j_offset_in ! Indexing offset for interior cells
+  integer :: F_G, F_VN, F_VNAMP, F_VNPHASE, F_VT, F_VTAMP, F_VTPHASE ! Field indices
   real :: ramp_value  ! If OBC%ramp is True, where we are on the ramp from 0 to 1, or 1 otherwise [nondim].
   real :: time_delta  ! Time since tidal reference date [T ~> s]
   real :: tidal_amp, tidal_phase ! Tidal amplitude [Z ~> m] and phase [rad]
-  integer :: F_G, F_VT, F_VTAMP, F_VTPHASE
 
   if (.not. associated(OBC)) return
   if (OBC%user_BCs_set_globally) return
@@ -4710,6 +4704,12 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
 
     if (.not. segment%on_pe) cycle ! continue to next segment if not in data domain
 
+    ! Segment indices are on q points:
+    !       |     x     |     x     |     x     |     x     |  jsd/jed (if southern boundary)
+    !       |-----------|-----------|-----------|-----------|  JsdB/JedB
+    !     IsdB   isd                                 ied   IedB
+    !       |     x     |     x     |     x     |     x     |  jsd/jed (if northern boundary)
+
     isd = segment%HI%isd ; ied = segment%HI%ied ; IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
     jsd = segment%HI%jsd ; jed = segment%HI%jed ; JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
     i_offset_in = ied - IedB ! = 0 if East, South, North; = 1 if West
@@ -4718,100 +4718,67 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
     if (segment%is_E_or_W) then
       is_seg = IsdB ; ie_seg = is_seg
       js_seg = jsd ; je_seg = jed
+      F_VN = F_U ; F_VNAMP = F_UAMP ; F_VNPHASE = F_UPHASE
+      F_VT = F_V ; F_VTAMP = F_VAMP ; F_VTPHASE = F_VPHASE ; F_G = F_VX
     else
       is_seg = isd ; ie_seg = ied
       js_seg = JsdB ; je_seg = js_seg
+      F_VN = F_V ; F_VNAMP = F_VAMP ; F_VNPHASE = F_VPHASE
+      F_VT = F_U ; F_VTAMP = F_UAMP ; F_VTPHASE = F_UPHASE ; F_G = F_UY
     endif
 
-    ! Calculate auxiliary fields at staggered locations.
-    ! Segment indices are on q points:
-    !
-    !       |-----------|------------|-----------|-----------|  J_obc
-    !     Is_obc                                          Ie_obc
-    !
-    ! i2 has to start at Is_obc+1 and end at Ie_obc.
-    ! j2 is J_obc and jshift has to be +1 at both the north and south.
-
-    ! Calculate auxiliary fields at staggered locations
-    segment%Htot(:,:) = 0.0
-    do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
-      segment%h(i,j,k) = h(i+i_offset_in,j+j_offset_in,k)
-      segment%Htot(i,j) = segment%Htot(i,j) + segment%h(i,j,k)
-    enddo ; enddo ; enddo
-
-    ! Update segment velocities, gradient, SSH and thickness/tracer reserviors
-    if (segment%is_E_or_W .and. allocated(segment%field(F_U)%buffer_dst)) then
+    ! Update normal velocity, transport. Split by orientation for now because of G%dyCu and G%dxCv.
+    if (allocated(segment%field(F_VN)%buffer_dst)) then
       ! Update tidal normal velocity
       segment%tidal_vn(:,:) = 0.0
       if (OBC%add_tide_constituents) then
-        do c=1,OBC%n_tide_constituents ; do j=jsd,jed ; do I=IsdB,IedB
-          tidal_amp = OBC%tide_fn(c) * segment%field(F_UAMP)%buffer_dst(I,j,c)
-          tidal_phase = (time_delta * OBC%tide_frequencies(c) - segment%field(F_UPHASE)%buffer_dst(I,j,c)) &
+        do c=1,OBC%n_tide_constituents ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
+          tidal_amp = OBC%tide_fn(c) * segment%field(F_VNAMP)%buffer_dst(i,j,c)
+          tidal_phase = (time_delta * OBC%tide_frequencies(c) - segment%field(F_VNPHASE)%buffer_dst(i,j,c)) &
             + (OBC%tide_eq_phases(c) + OBC%tide_un(c))
-          segment%tidal_vn(I,j) = segment%tidal_vn(I,j) + tidal_amp * cos(tidal_phase)
+          segment%tidal_vn(i,j) = segment%tidal_vn(i,j) + tidal_amp * cos(tidal_phase)
         enddo ; enddo ; enddo
       endif
 
+      segment%Htot(:,:) = 0.0
       segment%normal_trans_bt(:,:) = 0.0
-      do k=1,nz ; do j=jsd,jed ; do I=IsdB,IedB
-        segment%normal_vel(I,j,k) = segment%field(F_U)%buffer_dst(I,j,k) + segment%tidal_vn(I,j)
-        segment%normal_trans(I,j,k) = segment%normal_vel(I,j,k) * segment%h(I,j,k) * G%dyCu(I,j)
-        segment%normal_trans_bt(I,j) = segment%normal_trans_bt(I,j) + segment%normal_trans(I,j,k)
-      enddo ; enddo ; enddo
-
-      do j=jsd,jed ; do I=IsdB,IedB
-        segment%normal_vel_bt(I,j) = segment%normal_trans_bt(I,j) &
-            / (max(segment%Htot(I,j), 1.e-12 * GV%m_to_H) * G%dyCu(I,j))
-      enddo ; enddo
-
-      if (allocated(segment%nudged_normal_vel)) then
-        do k=1,nz ; do j=jsd,jed ; do I=IsdB,IedB
-          segment%nudged_normal_vel(I,j,k) = segment%normal_vel(I,j,k)
-        enddo ; enddo ; enddo
-      endif
-    endif
-
-    if (segment%is_N_or_S .and. allocated(segment%field(F_V)%buffer_dst)) then
-      ! Update tidal normal velocity
-      segment%tidal_vn(:,:) = 0.0
-      if (OBC%add_tide_constituents) then
-        do c=1,OBC%n_tide_constituents ; do J=JsdB,JedB ; do i=isd,ied
-          tidal_amp = OBC%tide_fn(c) * segment%field(F_VAMP)%buffer_dst(i,J,c)
-          tidal_phase = (time_delta * OBC%tide_frequencies(c) - segment%field(F_VPHASE)%buffer_dst(i,J,c)) &
-            + (OBC%tide_eq_phases(c) + OBC%tide_un(c))
-          segment%tidal_vn(i,J) = segment%tidal_vn(i,J) + tidal_amp * cos(tidal_phase)
-        enddo ; enddo ; enddo
-      endif
-
-      segment%normal_trans_bt(:,:) = 0.0
-      do k=1,nz ; do J=JsdB,JedB ; do i=isd,ied
-        segment%normal_vel(i,J,k) = segment%field(F_V)%buffer_dst(i,J,k) + segment%tidal_vn(i,J)
-        segment%normal_trans(i,J,k) = segment%normal_vel(i,J,k) * segment%h(i,J,k) * G%dxCv(i,J)
-        segment%normal_trans_bt(i,J) = segment%normal_trans_bt(i,J) + segment%normal_trans(i,J,k)
-      enddo ; enddo ; enddo
-
-      do J=JsdB,JedB ; do i=isd,ied
-        segment%normal_vel_bt(i,J) = segment%normal_trans_bt(i,J) &
-            / (max(segment%Htot(i,J), 1.e-12 * GV%m_to_H) * G%dxCv(i,J))
-      enddo ; enddo
-
-      if (allocated(segment%nudged_normal_vel)) then
-        do k=1,nz ; do J=JsdB,JedB ; do i=isd,ied
-          segment%nudged_normal_vel(i,J,k) = segment%normal_vel(i,J,k)
-        enddo ; enddo ; enddo
-      endif
-    endif
-
-    if (((segment%is_E_or_W .and. allocated(segment%field(F_V)%buffer_dst)) .or. &
-         (segment%is_N_or_S .and. allocated(segment%field(F_U)%buffer_dst))) .and. &
-        allocated(segment%tangential_vel)) then
       if (segment%is_E_or_W) then
-        F_VT = F_V ; F_VTAMP = F_VAMP ; F_VTPHASE = F_VPHASE
+        do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
+          segment%Htot(i,j) = segment%Htot(i,j) + h(i+i_offset_in,j+j_offset_in,k)
+          segment%normal_vel(i,j,k) = segment%field(F_VN)%buffer_dst(i,j,k) + segment%tidal_vn(i,j)
+          segment%normal_trans(i,j,k) = &
+              segment%normal_vel(i,j,k) * h(i+i_offset_in,j+j_offset_in,k) * G%dyCu(i,j)
+          segment%normal_trans_bt(i,j) = segment%normal_trans_bt(i,j) + segment%normal_trans(i,j,k)
+        enddo ; enddo ; enddo
+        do j=js_seg,je_seg ; do i=is_seg,ie_seg
+          segment%normal_vel_bt(i,j) = segment%normal_trans_bt(i,j) &
+              / (max(segment%Htot(i,j), 1.e-12 * GV%m_to_H) * G%dyCu(i,j))
+        enddo ; enddo
       else
-        F_VT = F_U ; F_VTAMP = F_UAMP ; F_VTPHASE = F_UPHASE
+        do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
+          segment%Htot(i,j) = segment%Htot(i,j) + h(i+i_offset_in,j+j_offset_in,k)
+          segment%normal_vel(i,j,k) = segment%field(F_VN)%buffer_dst(i,j,k) + segment%tidal_vn(i,j)
+          segment%normal_trans(i,j,k) = &
+              segment%normal_vel(i,j,k) * h(i+i_offset_in,j+j_offset_in,k) * G%dxCv(i,j)
+          segment%normal_trans_bt(i,j) = segment%normal_trans_bt(i,j) + segment%normal_trans(i,j,k)
+        enddo ; enddo ; enddo
+        do j=js_seg,je_seg ; do i=is_seg,ie_seg
+          segment%normal_vel_bt(i,j) = segment%normal_trans_bt(i,j) &
+              / (max(segment%Htot(i,j), 1.e-12 * GV%m_to_H) * G%dxCv(i,j))
+        enddo ; enddo
       endif
-      segment%tidal_vt(:,:) = 0.0
+
+      if (allocated(segment%nudged_normal_vel)) then
+        do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
+          segment%nudged_normal_vel(i,j,k) = segment%normal_vel(i,j,k)
+        enddo ; enddo ; enddo
+      endif
+    endif
+
+    ! Update tangential velocity
+    if (allocated(segment%tangential_vel) .and. allocated(segment%field(F_VT)%buffer_dst)) then
       ! Update tidal tangential velocity
+      segment%tidal_vt(:,:) = 0.0
       if (OBC%add_tide_constituents) then
         do c=1,OBC%n_tide_constituents ; do J=JsdB,JedB ; do I=IsdB,IedB
           tidal_amp = OBC%tide_fn(c) * segment%field(F_VTAMP)%buffer_dst(I,J,c)
@@ -4832,12 +4799,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
       endif
     endif
 
-    if (segment%is_E_or_W) then
-      F_G = F_VX
-    else
-      F_G = F_UY
-    endif
-
+    ! Update tangential gradient dvdx and dudy
     if (allocated(segment%tangential_grad) .and. allocated(segment%field(F_G)%buffer_dst)) then
       do k=1,nz ; do J=JsdB,JedB ; do I=IsdB,IedB
         segment%tangential_grad(I,J,k) = segment%field(F_G)%buffer_dst(I,J,k)
@@ -4850,6 +4812,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
       endif
     endif
 
+    ! Update SSH
     if (allocated(segment%field(F_Z)%buffer_dst)) then
       ! Update tidal SSH
       segment%tidal_elev(:,:) = 0.0
@@ -4868,13 +4831,14 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
       enddo ; enddo
     endif
 
-    ! Set the thickness reservoir data.
+    ! Update thickness registry
     if (OBC%thickness_x_reservoirs_used .or. OBC%thickness_y_reservoirs_used) then
       do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
         segment%h_Reg%h(i,j,k) = h(i+i_offset_in,j+j_offset_in,k)
       enddo ; enddo ; enddo
     endif
 
+    ! Update tracer registry
     do m = NUM_PHYS_FIELDS-1, segment%num_fields ! F_T = NUM_PHYS_FIELDS-1 and F_S = NUM_PHYS_FIELDS
       if (.not. allocated(segment%field(m)%buffer_dst) .or. &
           (segment%field(m)%bgc_tracer .and. (.not. OBC%update_OBC_seg_data))) then
@@ -7140,7 +7104,6 @@ subroutine chksum_OBC_segment_data(segment, GV, US, nk, nseg_out)
     if (allocated(segment%Htot)) call write_2d_array_vals("Htot"//trim(sn), segment%Htot, dir, nk, unscale=GV%H_to_mks)
     if (allocated(segment%dZtot)) call write_2d_array_vals("dZtot"//trim(sn), segment%dZtot, dir, nk, unscale=US%Z_to_m)
     if (allocated(segment%SSH)) call write_2d_array_vals("SSH"//trim(sn), segment%SSH, dir, nk, unscale=US%Z_to_m)
-    if (allocated(segment%h)) call write_3d_array_vals("h"//trim(sn), segment%h, dir, nk, unscale=GV%H_to_mks)
     if (allocated(segment%normal_vel)) &
       call write_3d_array_vals("normal_vel"//trim(sn), segment%normal_vel, dir, nk, unscale=norm*US%L_T_to_m_s)
     if (allocated(segment%normal_vel_bt)) &
