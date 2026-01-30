@@ -6,7 +6,8 @@
 module MOM_open_boundary
 
 use MOM_array_transform,      only : rotate_array, rotate_array_pair
-use MOM_coms,                 only : sum_across_PEs, Set_PElist, Get_PElist, PE_here, num_PEs
+use MOM_coms,                 only : sum_across_PEs, any_across_PEs
+use MOM_coms,                 only : Set_PElist, Get_PElist, PE_here, num_PEs
 use MOM_cpu_clock,            only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_ROUTINE
 use MOM_debugging,            only : hchksum, uvchksum, chksum
 use MOM_diag_mediator,        only : diag_ctrl, time_type
@@ -333,7 +334,6 @@ type, public :: ocean_OBC_type
   logical :: update_OBC = .false.                     !< Is OBC data time-dependent
   logical :: update_OBC_seg_data = .false.            !< Is it the time for OBC segment data update for fields that
                                                       !! require less frequent update
-  logical :: needs_IO_for_data = .false.              !< Is any i/o needed for OBCs on the current PE
   logical :: any_needs_IO_for_data = .false.          !< Is any i/o needed for OBCs globally
   integer :: vorticity_config                         !< An integer indicating OBC relative vorticity configuration
   integer :: strain_config                            !< An integer indicating OBC strain configuration
@@ -968,7 +968,6 @@ end subroutine open_boundary_setup_vert
 !> Determine which physical fields are required for this segment based on boundary-condition type
 !! and segment orientation. Also enable groups of physical fields required by tides or thermodynamics.
 !! Note the tidal group could be further narrowed based on modes.
-!! This subroutine could turn into a TBP for OBC_segment_type.
 subroutine segment_determine_required_fields(segment, tides, temp_salt)
   type(OBC_segment_type), intent(inout) :: segment !< OBC segment
   logical, optional, intent(in) :: tides         !< Switch for tidal variables
@@ -1031,6 +1030,28 @@ integer function find_phys_field_index(name)
   endif ; enddo
 end function find_phys_field_index
 
+!> Set global flag OBC%any_needs_IO_for_data.
+subroutine OBC_any_IO(OBC)
+  type(ocean_OBC_type), intent(inout) :: OBC !< Open boundary control structure
+
+  ! Local variables
+  integer :: m, n
+  logical :: use_IO
+
+  use_IO = .false.
+  do n=1,OBC%number_of_segments
+    do m=1,OBC%segment(n)%num_fields
+      if (OBC%segment(n)%field(m)%use_IO) then
+        use_IO = .true.
+        exit
+      endif
+    enddo
+    if (use_IO) exit
+  enddo
+
+  OBC%any_needs_IO_for_data = any_across_PEs(use_IO)
+end subroutine OBC_any_IO
+
 !> Allocate data (buffer_src, buffer_dst and dz_src) for a field at an OBC segment.
 subroutine allocate_segment_field_data(field, OBC, segment, US, inputdir, filename, varname, &
                                        suffix, value, turns, nz)
@@ -1057,6 +1078,8 @@ subroutine allocate_segment_field_data(field, OBC, segment, US, inputdir, filena
   integer :: dim ! Loop index for siz/siz_check
   integer :: nk_dst ! k-axis size of buffer_dst
 
+  if (.not. segment%on_pe) return
+
   isd = segment%HI%isd ; ied = segment%HI%ied ; IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
   jsd = segment%HI%jsd ; jed = segment%HI%jed ; JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
   nk_dst = nz
@@ -1067,10 +1090,9 @@ subroutine allocate_segment_field_data(field, OBC, segment, US, inputdir, filena
   ! The scale factor for tracers may also be set in register_segment_tracer, and a constant input
   ! value is rescaled there.
   field%scale = scale_factor_from_name(field%name, US, segment%tr_Reg)
+  field%use_IO = (trim(filename) /= 'none')
 
-  if (trim(filename) /= 'none') then
-    field%use_IO = .true.
-
+  if (field%use_IO) then
     full_filename = trim(inputdir) // trim(filename)
     full_varname = trim(varname) // trim(suffix)
 
@@ -1130,8 +1152,6 @@ subroutine allocate_segment_field_data(field, OBC, segment, US, inputdir, filena
 
     init_value_dst = 0.0
   else  ! This data is not being read from a file.
-    field%use_IO = .false.
-
     field%value = field%scale * value
     ! Change the sign of the specified velocities, depending on the number of quarter turns of the grid.
     if ( ( ((field%name == 'U') .or. (field%name == 'Uamp')) .and. &
@@ -1197,7 +1217,6 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
   integer :: current_pe
   integer, dimension(1) :: single_pelist
   type(external_tracers_segments_props), pointer :: obgc_segments_props_list =>NULL()
-  integer :: IO_needs(2) ! Sums to determine global OBC data use and update patterns.
   logical :: check_ts_needed ! Check if temperature and salinity are explicitly specified.
   integer :: idx
   character(len=256) :: routine_name ! Name of this subroutine
@@ -1205,6 +1224,8 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
   if (OBC%user_BCs_set_globally) return
 
   routine_name = trim(mdl) // ', initialize_segment_data'
+
+  OBC%update_OBC = .true. ! Data is time-dependent if not using user BC.
 
   check_ts_needed = use_temperature .and. (.not. OBC%ts_needed_bug)
 
@@ -1302,10 +1323,10 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
     enddo
 
     ! Allocate BGC tracer fields
-    obgc_segments_props_list => OBC%obgc_segments_props !pointer to the head node
+    obgc_segments_props_list => OBC%obgc_segments_props ! pointer to the head node
     do m = NUM_PHYS_FIELDS+1, segment%num_fields
       segment%field(m)%bgc_tracer = .true.
-      ! Query the obgc segment properties by traversing the linkedlist
+      ! Query the obgc segment properties by traversing the linked list
       call get_obgc_segments_props(obgc_segments_props_list, bgc_input, filename, varname, &
                                    segment%field(m)%resrv_lfac_in, segment%field(m)%resrv_lfac_out)
       ! Make sure the obgc tracer is not specified in the MOM6 param file too.
@@ -1320,16 +1341,6 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
                                        inputdir, filename, varname, suffix, 0.0, turns, GV%ke)
     enddo
 
-    !!
-    ! CODE HERE FOR OTHER OPTIONS (CLAMPED, NUDGED,..)
-    !!
-    do m=1,segment%num_fields
-      if (segment%field(m)%use_IO) then
-        OBC%update_OBC = .true. ! Data is assumed to be time-dependent if we are reading from file
-        OBC%needs_IO_for_data = .true. ! At least one segment is using I/O for OBC data
-      endif
-    enddo
-
     ! write(stderr, '(A)') trim(suffix)//" segment checksum"
     if (OBC%debug) call chksum_OBC_segment_data(OBC%segment(n_seg), GV, US, OBC%nk_OBC_debug, n)
 
@@ -1338,12 +1349,7 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
   call Set_PElist(saved_pelist)
 
   ! Determine global IO data requirement patterns.
-  IO_needs(1) = 0 ; if (OBC%needs_IO_for_data) IO_needs(1) = 1
-  IO_needs(2) = 0 ; if (OBC%update_OBC) IO_needs(2) = 1
-  call sum_across_PES(IO_needs, 2)
-  OBC%any_needs_IO_for_data = (IO_needs(1) > 0)
-  OBC%update_OBC = (IO_needs(2) > 0)
-
+  call OBC_any_IO(OBC)
 end subroutine initialize_segment_data
 
 !> Determine whether a particular field is descretized at the normal-velocity faces of an open
@@ -6615,7 +6621,6 @@ subroutine rotate_OBC_config(OBC_in, G_in, OBC, G, turns)
   ! These are set by initialize_segment_data
   OBC%brushcutter_mode = OBC_in%brushcutter_mode
   OBC%update_OBC = OBC_in%update_OBC
-  OBC%needs_IO_for_data = OBC_in%needs_IO_for_data
   OBC%any_needs_IO_for_data = OBC_in%any_needs_IO_for_data
 
   OBC%update_OBC_seg_data = OBC_in%update_OBC_seg_data
@@ -6953,7 +6958,6 @@ subroutine write_OBC_info(OBC, G, GV, US)
   if (OBC%user_BCs_set_globally) call MOM_mesg("user_BCs_set_globally", verb=1)
   if (OBC%update_OBC) call MOM_mesg("update_OBC", verb=1)
   if (OBC%update_OBC_seg_data) call MOM_mesg("update_OBC_seg_data", verb=1)
-  if (OBC%needs_IO_for_data) call MOM_mesg("needs_IO_for_data", verb=1)
   if (OBC%any_needs_IO_for_data) call MOM_mesg("any_needs_IO_for_data", verb=1)
   if (OBC%zero_biharmonic) call MOM_mesg("zero_biharmonic", verb=1)
   if (OBC%brushcutter_mode) call MOM_mesg("brushcutter_mode", verb=1)
