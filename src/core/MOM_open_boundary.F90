@@ -50,6 +50,7 @@ public open_boundary_impose_land_mask
 public radiation_open_bdry_conds
 public read_OBC_segment_data
 public update_OBC_segment_data
+public initialize_OBC_segment_reservoirs
 public open_boundary_test_extern_uv
 public open_boundary_test_extern_h
 public open_boundary_zero_normal_flow
@@ -4870,15 +4871,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
     ! Set the thickness reservoir data.
     if (OBC%thickness_x_reservoirs_used .or. OBC%thickness_y_reservoirs_used) then
       do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
-        segment%h_Reg%h(i,j,k) = segment%h(i,j,k)
+        segment%h_Reg%h(i,j,k) = h(i+i_offset_in,j+j_offset_in,k)
       enddo ; enddo ; enddo
-      if (.not. segment%h_Reg%is_initialized) then
-        ! If the thickness reservoir has not yet been initialized, then set to external value.
-        do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
-          segment%h_Reg%h_res(i,j,k) = segment%h_Reg%h(i,j,k)
-        enddo ; enddo ; enddo
-        segment%h_Reg%is_initialized = .true.
-      endif
     endif
 
     do m = NUM_PHYS_FIELDS-1, segment%num_fields ! F_T = NUM_PHYS_FIELDS-1 and F_S = NUM_PHYS_FIELDS
@@ -4886,12 +4880,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
           (segment%field(m)%bgc_tracer .and. (.not. OBC%update_OBC_seg_data))) then
         cycle
       endif
-
       nt = segment%field(m)%tr_index
-      if (nt < 0) &
-        call MOM_error(FATAL, "update_OBC_segment_data: Did not find tracer " // &
-                       trim(segment%field(m)%name))
-
       ! Note the following unnecessary IF-branch is kept from the old code (as recent as Jan 2026).
       ! In the old code segment%field(m)%buffer_dst is always allocated at this point, and therefore
       ! the "else" section is unreachable. This will be fixed when OBC_inflow_conc is reworked.
@@ -4899,21 +4888,70 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
         do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
           segment%tr_Reg%Tr(nt)%t(i,j,k) = segment%field(m)%buffer_dst(i,j,k)
         enddo ; enddo ; enddo
-        if (.not. segment%tr_Reg%Tr(nt)%is_initialized) then
-          ! If the tracer reservoir has not yet been initialized, then set to external value.
-          do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
-            segment%tr_Reg%Tr(nt)%tres(i,j,k) = segment%tr_Reg%Tr(nt)%t(i,j,k)
-          enddo ; enddo ; enddo
-          segment%tr_Reg%Tr(nt)%is_initialized = .true.
-        endif
       else
         segment%tr_Reg%Tr(nt)%OBC_inflow_conc = segment%field(m)%value
       endif
     enddo ! end tracer field loop
-
   enddo ! end segment loop
-
 end subroutine update_OBC_segment_data
+
+!> Initialize thickness and tracer reservoirs to external value.
+subroutine initialize_OBC_segment_reservoirs(GV, OBC)
+  type(verticalGrid_type), intent(in) :: GV  !< Ocean vertical grid structure
+  type(ocean_OBC_type),    pointer    :: OBC !< Open boundary structure
+
+  ! Local variables
+  type(OBC_segment_type), pointer :: segment => NULL()
+  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
+  integer :: is_seg, ie_seg, js_seg, je_seg, nz
+  integer :: n, m, nt, i, j, k
+  character(len=256) :: msg ! Error message
+
+  if (.not. associated(OBC)) return
+
+  nz = GV%ke
+
+  do n=1,OBC%number_of_segments
+    segment => OBC%segment(n)
+
+    if (.not. segment%on_pe) cycle
+
+    isd = segment%HI%isd ; ied = segment%HI%ied ; IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
+    jsd = segment%HI%jsd ; jed = segment%HI%jed ; JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
+
+    if (segment%is_E_or_W) then
+      is_seg = IsdB ; ie_seg = IedB ! = is_seg
+      js_seg = jsd ; je_seg = jed
+    else
+      is_seg = isd ; ie_seg = ied
+      js_seg = JsdB ; je_seg = JedB ! = js_seg
+    endif
+
+    ! Thickness
+    ! If the thickness reservoir has not yet been initialized, then set to external value.
+    if (OBC%thickness_x_reservoirs_used .or. OBC%thickness_y_reservoirs_used) then
+      if (.not. segment%h_Reg%is_initialized) then ! h_Reg may be initialized by fill_thickness_segments
+        do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
+          segment%h_Reg%h_res(i,j,k) = segment%h_Reg%h(i,j,k)
+        enddo ; enddo ; enddo
+        segment%h_Reg%is_initialized = .true.
+      endif
+    endif
+
+    ! Tracers
+    ! If the tracer reservoir has not yet been initialized, then set to external value.
+    do m=NUM_PHYS_FIELDS-1, segment%num_fields ! F_T = NUM_PHYS_FIELDS-1 and F_S = NUM_PHYS_FIELDS
+      if (.not. allocated(segment%field(m)%buffer_dst)) cycle
+      nt = segment%field(m)%tr_index
+      if (.not. segment%tr_Reg%Tr(nt)%is_initialized) then ! T/S may be initialized by fill_temp_salt_segments
+        do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
+          segment%tr_Reg%Tr(nt)%tres(i,j,k) = segment%tr_Reg%Tr(nt)%t(i,j,k)
+        enddo ; enddo ; enddo
+        segment%tr_Reg%Tr(nt)%is_initialized = .true.
+      endif
+    enddo ! end tracer field loop
+  enddo ! end segment loop
+end subroutine initialize_OBC_segment_reservoirs
 
 !> Update the OBC ramp value as a function of time.
 !! If called with the optional argument activate=.true., record the
