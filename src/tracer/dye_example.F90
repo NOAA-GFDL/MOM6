@@ -334,9 +334,7 @@ subroutine dye_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, GV, US
       ! Net flux = upward component - downward component
       ! Upward (from below): eb(k) * tr(k+1), Downward (from above): ea(k+1) * tr(k)
       do K=2,nz ; do j=js,je ; do i=is,ie
-        vert_flux(i,j,K) = 0.0
-        if (K < nz) vert_flux(i,j,K) = vert_flux(i,j,k) + (eb(i,j,k) * CS%tr(i,j,k+1,m)) * Idt
-        if (K < nz) vert_flux(i,j,K) = vert_flux(i,j,k) - (ea(i,j,k+1) * CS%tr(i,j,k,m)) * Idt
+        vert_flux(i,j,K) = (eb(i,j,k-1) * CS%tr(i,j,k,m) - ea(i,j,k) * CS%tr(i,j,k-1,m)) * Idt
       enddo ; enddo ; enddo
       do j=js,je ; do i=is,ie ; vert_flux(i,j,1) = 0.0 ; vert_flux(i,j,nz+1) = 0.0 ; enddo ; enddo
 
@@ -352,9 +350,7 @@ subroutine dye_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, GV, US
       ! Net flux = upward component - downward component
       ! Upward (from below): eb(k) * tr(k+1), Downward (from above): ea(k+1) * tr(k)
       do K=2,nz ; do j=js,je ; do i=is,ie
-        vert_flux(i,j,K) = 0.0
-        if (k < nz) vert_flux(i,j,K) = vert_flux(i,j,k) + (eb(i,j,k) * CS%tr(i,j,k+1,m)) * Idt
-        if (k < nz) vert_flux(i,j,K) = vert_flux(i,j,k) - (ea(i,j,k+1) * CS%tr(i,j,k,m)) * Idt
+        vert_flux(i,j,K) = (eb(i,j,k-1) * CS%tr(i,j,k,m) - ea(i,j,k) * CS%tr(i,j,k-1,m)) * Idt
       enddo ; enddo ; enddo
       do j=js,je ; do i=is,ie ; vert_flux(i,j,1) = 0.0 ; vert_flux(i,j,nz+1) = 0.0 ; enddo ; enddo
 
