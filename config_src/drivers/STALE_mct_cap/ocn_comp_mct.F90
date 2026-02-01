@@ -31,7 +31,7 @@ use MOM,                  only: extract_surface_state
 use MOM_variables,        only: surface
 use MOM_domains,          only: MOM_infra_init
 use MOM_restart,          only: save_restart
-use MOM_ice_shelf,        only: ice_shelf_save_restart
+use MOM_ice_shelf,        only: ice_shelf_save_restart, adjust_ice_sheet_frazil
 use MOM_domains,          only: num_pes, root_pe, pe_here
 use MOM_grid,             only: ocean_grid_type, get_global_grid_size
 use MOM_error_handler,    only: MOM_error, FATAL, is_root_pe, WARNING

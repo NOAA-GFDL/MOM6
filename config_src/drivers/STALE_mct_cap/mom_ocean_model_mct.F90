@@ -53,6 +53,7 @@ use MOM_variables,            only : surface
 use MOM_verticalGrid,         only : verticalGrid_type
 use MOM_ice_shelf,            only : initialize_ice_shelf, shelf_calc_flux, ice_shelf_CS
 use MOM_ice_shelf,            only : add_shelf_forces, ice_shelf_end, ice_shelf_save_restart
+use MOM_ice_shelf,            only : adjust_ice_sheet_frazil
 use MOM_coupler_types,        only : coupler_1d_bc_type, coupler_2d_bc_type
 use MOM_coupler_types,        only : coupler_type_spawn, coupler_type_write_chksums
 use MOM_coupler_types,        only : coupler_type_initialized, coupler_type_copy_data
