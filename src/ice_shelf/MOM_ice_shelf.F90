@@ -2022,8 +2022,6 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
                               "ice sheet/shelf thickness", "m", conversion=US%Z_to_m)
   call register_restart_field(ISS%melt_mask, "melt_mask", .false., CS%restart_CSp, &
                               "Mask that is >0 where ice-shelf melting is allowed", "none")
-  call register_restart_field(ISS%frazil, "frazil", .false., CS%restart_CSp, &
-                              "Frazil heat rejected by the ocean","J m-2",conversion=US%Q_to_J_kg*US%RZ_to_kg_m2)
   if (CS%calve_ice_shelf_bergs) then
     call register_restart_field(ISS%calving, "shelf_calving", .true., CS%restart_CSp, &
                                 "Calving flux from ice shelf into icebergs", "kg m-2", conversion=US%RZ_to_kg_m2)
