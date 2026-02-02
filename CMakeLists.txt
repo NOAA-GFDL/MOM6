@@ -25,8 +25,9 @@ option(MOM6_SOLO              "Build solo driver executable"       ON)
 option(MOM6_ASYMMETRIC        "Use asymmetric memory layout"       OFF)
 option(MOM6_FMS1              "Use FMS1 I/O infrastructure"        OFF)
 option(MOM6_OPENMP            "Enable OpenMP threading"            OFF)
+option(MOM6_ACCESS            "Use find_package for FMS (spack)"   OFF)
 
-# FMS configuration
+# FMS configuration (only used when MOM6_ACCESS=OFF)
 set(FMS_GIT_URL "https://github.com/NOAA-GFDL/FMS.git"
     CACHE STRING "FMS Git repository URL")
 set(FMS_GIT_TAG "2026.01"
@@ -137,7 +138,10 @@ message(STATUS "  Memory layout:      ${MOM6_ASYMMETRIC}")
 message(STATUS "  FMS infrastructure: ${MOM6_FMS1}")
 message(STATUS "  OpenMP:             ${MOM6_OPENMP}")
 message(STATUS "  Solo driver:        ${MOM6_SOLO}")
-message(STATUS "  FMS URL:            ${FMS_GIT_URL}")
-message(STATUS "  FMS tag:            ${FMS_GIT_TAG}")
+message(STATUS "  ACCESS mode:        ${MOM6_ACCESS}")
+if(NOT MOM6_ACCESS)
+  message(STATUS "  FMS URL:            ${FMS_GIT_URL}")
+  message(STATUS "  FMS tag:            ${FMS_GIT_TAG}")
+endif()
 message(STATUS "================================")
 message(STATUS "")
