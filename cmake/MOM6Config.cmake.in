@@ -1,0 +1,25 @@
+# MOM6Config.cmake.in - Package configuration file for MOM6
+#
+# This file is configured by CMake and provides the necessary information
+# for other projects to find and use MOM6.
+
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find required dependencies
+find_dependency(MPI REQUIRED COMPONENTS Fortran)
+find_dependency(NetCDF REQUIRED COMPONENTS Fortran)
+
+if(@MOM6_OPENMP@)
+  find_dependency(OpenMP REQUIRED COMPONENTS Fortran)
+endif()
+
+# Include targets file
+include("${CMAKE_CURRENT_LIST_DIR}/MOM6Targets.cmake")
+
+# Provide version information
+set(MOM6_VERSION @PROJECT_VERSION@)
+
+# Check requested components
+check_required_components(MOM6)

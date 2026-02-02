@@ -60,6 +60,16 @@
 #   BUILD   Compiled executables and libraries
 #   DEPS    Compiled dependencies
 #   WORK    Test model output
+#
+# CMake build support:
+#   USE_CMAKE=1         Build with CMake on-the-fly (recommended)
+#                       Example: make test USE_CMAKE=1
+#   CMAKE_BUILD_DIR     Use pre-built CMake executable (skips build)
+#                       Example: make test CMAKE_BUILD_DIR=../build
+#   CMAKE_BUILD_TYPE    CMake build type (default: Debug)
+#   CMAKE_FLAGS         Extra flags to pass to cmake (e.g., -DCMAKE_PREFIX_PATH=...)
+#   CMAKE_QUIET=        Disable quiet mode for verbose cmake output (quiet by default)
+#                       Example: make test USE_CMAKE=1 CMAKE_QUIET=
 
 # TODO: POSIX shell compatibility
 SHELL = bash
@@ -144,6 +154,44 @@ BUILD ?= $(WORKSPACE)/build
 DEPS ?= $(BUILD)/deps
 WORK ?= $(WORKSPACE)/work
 
+# CMake build support
+# Set USE_CMAKE=1 to build with CMake instead of autoconf (builds on-the-fly)
+# Example: make test USE_CMAKE=1
+#
+# Or set CMAKE_BUILD_DIR to use a pre-built CMake executable:
+# Example: make test CMAKE_BUILD_DIR=../build
+#
+# For full test suite, you can specify separate builds for each configuration:
+#   CMAKE_SYMMETRIC_DIR   - Symmetric build (default: CMAKE_BUILD_DIR)
+#   CMAKE_ASYMMETRIC_DIR  - Asymmetric build (requires -DMOM6_ASYMMETRIC=ON)
+#   CMAKE_OPENMP_DIR      - OpenMP build (requires -DMOM6_OPENMP=ON)
+#
+# Example: make test CMAKE_SYMMETRIC_DIR=../build-sym CMAKE_ASYMMETRIC_DIR=../build-asym
+USE_CMAKE ?=
+CMAKE_BUILD_DIR ?=
+CMAKE_BUILD_TYPE ?= Debug
+CMAKE_FLAGS ?=
+CMAKE_QUIET ?= 1
+
+# Build verbosity control (redirect to /dev/null when quiet)
+ifdef CMAKE_QUIET
+CMAKE_QUIET_REDIRECT := >/dev/null 2>&1
+else
+CMAKE_QUIET_REDIRECT :=
+endif
+
+# When USE_CMAKE is set, configure build directories
+ifdef USE_CMAKE
+CMAKE_BUILD_DIR := $(BUILD)/cmake
+CMAKE_SYMMETRIC_DIR := $(BUILD)/cmake-symmetric
+CMAKE_ASYMMETRIC_DIR := $(BUILD)/cmake-asymmetric
+CMAKE_OPENMP_DIR := $(BUILD)/cmake-openmp
+endif
+
+CMAKE_SYMMETRIC_DIR ?= $(CMAKE_BUILD_DIR)
+CMAKE_ASYMMETRIC_DIR ?= $(CMAKE_BUILD_DIR)
+CMAKE_OPENMP_DIR ?= $(CMAKE_BUILD_DIR)
+
 # Experiment configuration
 EXECS ?= symmetric/MOM6 asymmetric/MOM6 openmp/MOM6
 CONFIGS ?= $(wildcard tc*)
@@ -218,6 +266,126 @@ all: $(foreach b,$(EXECS),$(BUILD)/$(b))
 
 # Executable
 .PRECIOUS: $(foreach b,$(EXECS),$(BUILD)/$(b))
+
+#---
+# CMake build support
+# When USE_CMAKE is set, build with CMake on-the-fly
+# When CMAKE_BUILD_DIR is set, use pre-built CMake executables
+
+# CMake executable path helper
+cmake_mom6_path = $(1)/config_src/drivers/solo_driver/MOM6
+
+ifdef USE_CMAKE
+# Build with CMake on-the-fly
+
+.PHONY: cmake-symmetric cmake-asymmetric cmake-openmp
+
+cmake-symmetric: $(call cmake_mom6_path,$(CMAKE_SYMMETRIC_DIR))
+cmake-asymmetric: $(call cmake_mom6_path,$(CMAKE_ASYMMETRIC_DIR))
+cmake-openmp: $(call cmake_mom6_path,$(CMAKE_OPENMP_DIR))
+
+$(call cmake_mom6_path,$(CMAKE_SYMMETRIC_DIR)):
+	@echo "Building symmetric MOM6 with CMake..."
+	@cmake -B $(CMAKE_SYMMETRIC_DIR) -S .. \
+		-DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) $(CMAKE_FLAGS) $(if $(CMAKE_QUIET),>/dev/null,)
+	@cmake --build $(CMAKE_SYMMETRIC_DIR) --target MOM6 -j $(CMAKE_QUIET_REDIRECT)
+
+$(call cmake_mom6_path,$(CMAKE_ASYMMETRIC_DIR)):
+	@echo "Building asymmetric MOM6 with CMake..."
+	@cmake -B $(CMAKE_ASYMMETRIC_DIR) -S .. \
+		-DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) \
+		-DMOM6_ASYMMETRIC=ON $(CMAKE_FLAGS) $(if $(CMAKE_QUIET),>/dev/null,)
+	@cmake --build $(CMAKE_ASYMMETRIC_DIR) --target MOM6 -j $(CMAKE_QUIET_REDIRECT)
+
+$(call cmake_mom6_path,$(CMAKE_OPENMP_DIR)):
+	@echo "Building OpenMP MOM6 with CMake..."
+	@cmake -B $(CMAKE_OPENMP_DIR) -S .. \
+		-DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) \
+		-DMOM6_OPENMP=ON $(CMAKE_FLAGS) $(if $(CMAKE_QUIET),>/dev/null,)
+	@cmake --build $(CMAKE_OPENMP_DIR) --target MOM6 -j $(CMAKE_QUIET_REDIRECT)
+
+# Symlink rules that depend on CMake builds
+$(BUILD)/symmetric/MOM6: $(call cmake_mom6_path,$(CMAKE_SYMMETRIC_DIR))
+	@mkdir -p $(@D)
+	@ln -sf $(abspath $<) $@
+
+$(BUILD)/asymmetric/MOM6: $(call cmake_mom6_path,$(CMAKE_ASYMMETRIC_DIR))
+	@mkdir -p $(@D)
+	@ln -sf $(abspath $<) $@
+
+$(BUILD)/openmp/MOM6: $(call cmake_mom6_path,$(CMAKE_OPENMP_DIR))
+	@mkdir -p $(@D)
+	@ln -sf $(abspath $<) $@
+
+$(BUILD)/repro/MOM6: $(call cmake_mom6_path,$(CMAKE_SYMMETRIC_DIR))
+	@mkdir -p $(@D)
+	@ln -sf $(abspath $<) $@
+
+$(BUILD)/nan/MOM6: $(call cmake_mom6_path,$(CMAKE_SYMMETRIC_DIR))
+	@mkdir -p $(@D)
+	@ln -sf $(abspath $<) $@
+
+$(BUILD)/cov/MOM6: $(call cmake_mom6_path,$(CMAKE_SYMMETRIC_DIR))
+	@mkdir -p $(@D)
+	@ln -sf $(abspath $<) $@
+
+else ifdef CMAKE_BUILD_DIR
+# Use pre-built CMake executables
+
+# Helper function to find MOM6 executable in a CMake build directory
+cmake_mom6 = $(if $(wildcard $(1)/config_src/drivers/solo_driver/MOM6),$(abspath $(1))/config_src/drivers/solo_driver/MOM6,$(if $(wildcard $(1)/MOM6),$(abspath $(1))/MOM6,))
+
+CMAKE_SYMMETRIC_MOM6 := $(call cmake_mom6,$(CMAKE_SYMMETRIC_DIR))
+CMAKE_ASYMMETRIC_MOM6 := $(call cmake_mom6,$(CMAKE_ASYMMETRIC_DIR))
+CMAKE_OPENMP_MOM6 := $(call cmake_mom6,$(CMAKE_OPENMP_DIR))
+
+ifneq ($(CMAKE_SYMMETRIC_MOM6),)
+$(BUILD)/symmetric/MOM6:
+	@echo "Using CMake symmetric build: $(CMAKE_SYMMETRIC_MOM6)"
+	@mkdir -p $(@D)
+	@ln -sf $(CMAKE_SYMMETRIC_MOM6) $@
+
+$(BUILD)/repro/MOM6:
+	@echo "Using CMake build: $(CMAKE_SYMMETRIC_MOM6)"
+	@mkdir -p $(@D)
+	@ln -sf $(CMAKE_SYMMETRIC_MOM6) $@
+
+$(BUILD)/nan/MOM6:
+	@echo "Using CMake build: $(CMAKE_SYMMETRIC_MOM6)"
+	@mkdir -p $(@D)
+	@ln -sf $(CMAKE_SYMMETRIC_MOM6) $@
+
+$(BUILD)/cov/MOM6:
+	@echo "Using CMake build: $(CMAKE_SYMMETRIC_MOM6)"
+	@mkdir -p $(@D)
+	@ln -sf $(CMAKE_SYMMETRIC_MOM6) $@
+else
+$(BUILD)/symmetric/MOM6:
+	$(error CMAKE_SYMMETRIC_DIR is set but MOM6 not found in $(CMAKE_SYMMETRIC_DIR))
+endif
+
+ifneq ($(CMAKE_ASYMMETRIC_MOM6),)
+$(BUILD)/asymmetric/MOM6:
+	@echo "Using CMake asymmetric build: $(CMAKE_ASYMMETRIC_MOM6)"
+	@mkdir -p $(@D)
+	@ln -sf $(CMAKE_ASYMMETRIC_MOM6) $@
+else
+$(BUILD)/asymmetric/MOM6:
+	$(error CMAKE_ASYMMETRIC_DIR is set but MOM6 not found in $(CMAKE_ASYMMETRIC_DIR). Build with: cmake -DMOM6_ASYMMETRIC=ON)
+endif
+
+ifneq ($(CMAKE_OPENMP_MOM6),)
+$(BUILD)/openmp/MOM6:
+	@echo "Using CMake OpenMP build: $(CMAKE_OPENMP_MOM6)"
+	@mkdir -p $(@D)
+	@ln -sf $(CMAKE_OPENMP_MOM6) $@
+else
+$(BUILD)/openmp/MOM6:
+	$(error CMAKE_OPENMP_DIR is set but MOM6 not found in $(CMAKE_OPENMP_DIR). Build with: cmake -DMOM6_OPENMP=ON)
+endif
+
+endif
+# end CMAKE_BUILD_DIR
 
 
 # Compiler flags
@@ -342,6 +510,15 @@ endif
 
 ## FMS
 
+# Skip FMS build when using CMake (it's already built by CMake)
+ifdef CMAKE_BUILD_DIR
+# Dummy rule to satisfy dependencies - CMake already built FMS
+$(DEPS)/lib/libFMS.a:
+	@echo "Skipping FMS build (using CMake)"
+	@mkdir -p $(@D)
+	@touch $@
+else
+
 # Set up the FMS build environment variables
 FMS_ENV = \
   PATH="${PATH}:$(realpath ../ac)" \
@@ -365,6 +542,8 @@ $(DEPS)/m4: ../ac/deps/m4 | $(DEPS)
 
 $(DEPS):
 	mkdir -p $(DEPS)
+
+endif
 
 
 #---

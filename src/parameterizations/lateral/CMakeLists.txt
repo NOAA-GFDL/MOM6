@@ -1,0 +1,17 @@
+target_sources(mom6_core PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_hor_visc.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_interface_filter.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_internal_tides.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_lateral_mixing_coeffs.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_load_love_numbers.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_MEKE.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_MEKE_types.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_mixed_layer_restrat.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_self_attr_load.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_spherical_harmonics.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_streaming_filter.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_thickness_diffuse.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_tidal_forcing.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_wave_drag.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_Zanna_Bolton.F90
+)

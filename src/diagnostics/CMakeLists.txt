@@ -1,0 +1,13 @@
+target_sources(mom6_core PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_debugging.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_diagnose_KdWork.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_diagnose_MLD.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_diagnostics.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_harmonic_analysis.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_obsolete_diagnostics.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_obsolete_params.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_PointAccel.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_spatial_means.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_sum_output.F90
+  ${CMAKE_CURRENT_SOURCE_DIR}/MOM_wave_speed.F90
+)
