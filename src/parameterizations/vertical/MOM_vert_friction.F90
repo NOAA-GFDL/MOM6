@@ -2617,6 +2617,14 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       enddo ; enddo ; enddo
     endif
 
+    if (do_any_write) then
+      do j=js,je ; do I=Isq,Ieq ; if (dowrite(I,j)) then
+        ! Call a diagnostic reporting subroutines are called if unphysically large values are found.
+        call write_u_accel(I, j, u_old, h, ADp, CDp, dt, G, GV, US, CS%PointAccel_CSp, &
+                           vel_report(I,j), forces%taux(I,j), a=CS%a_u, hv=CS%h_u)
+      endif ; enddo ; enddo
+    endif
+
   else
     do k=1,nz ; do j=js,je ; do I=Isq,Ieq
       if (abs(u(I,j,k)) < CS%vel_underflow) then ; u(I,j,k) = 0.0
@@ -2632,15 +2640,6 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
     enddo ; enddo ; enddo
   endif
 
-  if (len_trim(CS%u_trunc_file) > 0) then
-    if (do_any_write) then
-      do j=js,je ; do I=Isq,Ieq ; if (dowrite(I,j)) then
-        ! Call a diagnostic reporting subroutines are called if unphysically large values are found.
-        call write_u_accel(I, j, u_old, h, ADp, CDp, dt, G, GV, US, CS%PointAccel_CSp, &
-                           vel_report(I,j), forces%taux(I,j), a=CS%a_u, hv=CS%h_u)
-      endif ; enddo ; enddo
-    endif
-  endif
 
 
   if (len_trim(CS%v_trunc_file) > 0) then
@@ -2683,6 +2682,15 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         endif
       enddo ; enddo ; enddo
     endif
+
+    if (do_any_write) then
+      do J=Jsq,Jeq ; do i=is,ie ; if (dowrite(i,J)) then
+        ! Call a diagnostic reporting subroutines are called if unphysically large values are found.
+        call write_v_accel(i, J, v_old, h, ADp, CDp, dt, G, GV, US, CS%PointAccel_CSp, &
+                           vel_report(i,J), forces%tauy(i,J), a=CS%a_v, hv=CS%h_v)
+      endif ; enddo ; enddo
+    endif
+
   else
     do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
       if (abs(v(i,J,k)) < CS%vel_underflow) then ; v(i,J,k) = 0.0
@@ -2698,15 +2706,6 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
     enddo ; enddo ; enddo
   endif
 
-  if (len_trim(CS%v_trunc_file) > 0) then
-    if (do_any_write) then
-      do J=Jsq,Jeq ; do i=is,ie ; if (dowrite(i,J)) then
-        ! Call a diagnostic reporting subroutines are called if unphysically large values are found.
-        call write_v_accel(i, J, v_old, h, ADp, CDp, dt, G, GV, US, CS%PointAccel_CSp, &
-                           vel_report(i,J), forces%tauy(i,J), a=CS%a_v, hv=CS%h_v)
-      endif ; enddo ; enddo
-    endif
-  endif
 
 end subroutine vertvisc_limit_vel
 
