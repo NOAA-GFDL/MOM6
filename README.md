@@ -27,6 +27,7 @@ The top level directory structure groups source code and input files as follow:
 | ```docs/```       | Workspace for generated documentation.  See [docs/README.md](docs/README.md) |
 | ```.testing/```   | Contains the verification test suite.  See [.testing/README.md](.testing/README.md) |
 | ```ac/```         | Contains the autoconf build configuration files. See [ac/README.md](ac/README.md) |
+| ```cmake/```         | Contains some cmake tools and instructions. See [cmake/README.md](cmake/README.md) |
 
 
 # Quick start guide

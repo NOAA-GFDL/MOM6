@@ -31,6 +31,8 @@ set(FMS_GIT_URL "https://github.com/NOAA-GFDL/FMS.git"
     CACHE STRING "FMS Git repository URL")
 set(FMS_GIT_TAG "2026.01"
     CACHE STRING "FMS Git tag/branch/commit")
+set(FMS_Fortran_FLAGS ""
+    CACHE STRING "Additional Fortran flags for FMS compilation")
 
 #------------------------------------------------------------------------------
 # CMake modules

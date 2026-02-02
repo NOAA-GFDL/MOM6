@@ -2,6 +2,8 @@
 #
 # This module provides a macro to download and build FMS as part of the MOM6 build.
 # It follows the MetalQuicha pattern for fetching dependencies.
+#
+# FMS_Fortran_FLAGS can be set to pass additional compiler flags to FMS.
 
 include(FetchContent)
 
@@ -12,7 +14,7 @@ include(FetchContent)
 #
 # Arguments:
 #   URL - Git repository URL (default: https://github.com/NOAA-GFDL/FMS.git)
-#   TAG - Git tag, branch, or commit hash (default: 2025.02.01)
+#   TAG - Git tag, branch, or commit hash (default: 2026.01)
 #
 # This macro will:
 #   1. Configure FMS build options
@@ -32,6 +34,12 @@ macro(fetch_fms)
   endif()
 
   message(STATUS "Fetching FMS from ${FMS_URL} (tag: ${FMS_TAG})")
+
+  # Apply FMS-specific Fortran flags if provided
+  if(FMS_Fortran_FLAGS)
+    message(STATUS "FMS additional Fortran flags: ${FMS_Fortran_FLAGS}")
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${FMS_Fortran_FLAGS}")
+  endif()
 
   # Configure FMS build options before fetching
   # These must be set as cache variables to affect the FMS build

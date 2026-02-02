@@ -287,13 +287,16 @@ cmake-openmp: $(call cmake_mom6_path,$(CMAKE_OPENMP_DIR))
 $(call cmake_mom6_path,$(CMAKE_SYMMETRIC_DIR)):
 	@echo "Building symmetric MOM6 with CMake..."
 	@cmake -B $(CMAKE_SYMMETRIC_DIR) -S .. \
-		-DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) $(CMAKE_FLAGS) $(if $(CMAKE_QUIET),>/dev/null,)
+		-DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) \
+		-DFMS_Fortran_FLAGS="$(FCFLAGS_FMS)" \
+		$(CMAKE_FLAGS) $(if $(CMAKE_QUIET),>/dev/null,)
 	@cmake --build $(CMAKE_SYMMETRIC_DIR) --target MOM6 -j $(CMAKE_QUIET_REDIRECT)
 
 $(call cmake_mom6_path,$(CMAKE_ASYMMETRIC_DIR)):
 	@echo "Building asymmetric MOM6 with CMake..."
 	@cmake -B $(CMAKE_ASYMMETRIC_DIR) -S .. \
 		-DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) \
+		-DFMS_Fortran_FLAGS="$(FCFLAGS_FMS)" \
 		-DMOM6_ASYMMETRIC=ON $(CMAKE_FLAGS) $(if $(CMAKE_QUIET),>/dev/null,)
 	@cmake --build $(CMAKE_ASYMMETRIC_DIR) --target MOM6 -j $(CMAKE_QUIET_REDIRECT)
 
@@ -301,6 +304,7 @@ $(call cmake_mom6_path,$(CMAKE_OPENMP_DIR)):
 	@echo "Building OpenMP MOM6 with CMake..."
 	@cmake -B $(CMAKE_OPENMP_DIR) -S .. \
 		-DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) \
+		-DFMS_Fortran_FLAGS="$(FCFLAGS_FMS)" \
 		-DMOM6_OPENMP=ON $(CMAKE_FLAGS) $(if $(CMAKE_QUIET),>/dev/null,)
 	@cmake --build $(CMAKE_OPENMP_DIR) --target MOM6 -j $(CMAKE_QUIET_REDIRECT)
 
