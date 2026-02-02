@@ -207,6 +207,7 @@ Tests
 
 The ``test`` rule will run all of the tests.::
 
+   $ make test
 
 Tests are based on configurations which are designed to give identical output.
 When the output differs, the test reports a failure.
