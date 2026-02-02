@@ -207,11 +207,13 @@ Tests
 
 The ``test`` rule will run all of the tests.::
 
-   $ make test
 
 Tests are based on configurations which are designed to give identical output.
 When the output differs, the test reports a failure.
 
+To build MOM6 with cmake instead of autoconf here, use::
+
+   $ make test USE_CMAKE=1
 
 Test groups
 -----------
