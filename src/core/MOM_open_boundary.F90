@@ -2264,9 +2264,9 @@ subroutine open_boundary_impose_land_mask(OBC, G, areaCu, areaCv, US)
       enddo
       do J=segment%HI%JsdB+1,segment%HI%JedB-1
         if (segment%direction == OBC_DIRECTION_W) then
-          G%mask2dCv(i,J) = 0 ; G%OBCmaskCv(i,J) = 0.0
+          G%mask2dCv(i,J) = 0 ; G%OBCmaskCv(i,J) = 0.0 ; G%IdyCv_OBCmask(i,J) = 0.0
         else
-          G%mask2dCv(i+1,J) = 0.0 ; G%OBCmaskCv(i+1,J) = 0.0
+          G%mask2dCv(i+1,J) = 0.0 ; G%OBCmaskCv(i+1,J) = 0.0 ; G%IdyCv_OBCmask(i+1,J) = 0.0
         endif
       enddo
     else
@@ -2282,9 +2282,9 @@ subroutine open_boundary_impose_land_mask(OBC, G, areaCu, areaCv, US)
       enddo
       do I=segment%HI%IsdB+1,segment%HI%IedB-1
         if (segment%direction == OBC_DIRECTION_S) then
-          G%mask2dCu(I,j) = 0.0 ; G%OBCmaskCu(I,j) = 0.0
+          G%mask2dCu(I,j) = 0.0 ; G%OBCmaskCu(I,j) = 0.0 ; G%IdxCu_OBCmask(I,j) = 0.0
         else
-          G%mask2dCu(I,j+1) = 0.0 ; G%OBCmaskCu(I,j+1) = 0.0
+          G%mask2dCu(I,j+1) = 0.0 ; G%OBCmaskCu(I,j+1) = 0.0 ; G%IdxCu_OBCmask(I,j+1) = 0.0
         endif
       enddo
     endif
@@ -2298,12 +2298,12 @@ subroutine open_boundary_impose_land_mask(OBC, G, areaCu, areaCv, US)
     if (segment%is_E_or_W) then
       I=segment%HI%IsdB
       do j=segment%HI%jsd,segment%HI%jed
-        G%OBCmaskCu(I,j) = 0.0
+        G%OBCmaskCu(I,j) = 0.0 ; G%IdxCu_OBCmask(I,j) = 0.0
       enddo
     else
       J=segment%HI%JsdB
       do i=segment%HI%isd,segment%HI%ied
-        G%OBCmaskCv(i,J) = 0.0
+        G%OBCmaskCv(i,J) = 0.0 ; G%IdyCv_OBCmask(i,J) = 0.0
       enddo
     endif
   enddo
@@ -2576,7 +2576,7 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
   type(verticalGrid_type),                    intent(in)    :: GV    !< The ocean's vertical grid structure
   type(ocean_OBC_type),                       pointer       :: OBC   !< Open boundary control structure
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(inout) :: u_new !< On exit, new u values on open boundaries
-                                                                     !! On entry, the old time-level v but including
+                                                                     !! On entry, the old time-level u but including
                                                                      !! barotropic accelerations [L T-1 ~> m s-1].
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in)    :: u_old !< Original unadjusted u [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(inout) :: v_new !< On exit, new v values on open boundaries.

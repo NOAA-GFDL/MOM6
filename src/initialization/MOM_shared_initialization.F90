@@ -30,6 +30,7 @@ public reset_face_lengths_named, reset_face_lengths_file, reset_face_lengths_lis
 public read_face_length_list, set_velocity_depth_max, set_velocity_depth_min
 public set_subgrid_topo_at_vel_from_file
 public compute_global_grid_integrals, write_ocean_geometry_file
+public set_meanSL_from_file
 
 ! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
 ! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
@@ -136,6 +137,42 @@ function diagnoseMaximumDepth(D, G)
   call max_across_PEs(diagnoseMaximumDepth)
 end function diagnoseMaximumDepth
 
+!> Read time mean ocean sea level from a file
+subroutine set_meanSL_from_file(meanSL, G, param_file, US)
+  type(dyn_horgrid_type),           intent(in)  :: G !< The dynamic horizontal grid type
+  real, dimension(G%isd:G%ied,G%jsd:G%jed), &
+                                    intent(out) :: meanSL !< Mean sea level referenced to a zero
+                                                          !! reference height at tracer points [Z ~> m].
+  type(param_file_type),            intent(in)  :: param_file !< Parameter file structure
+  type(unit_scale_type),            intent(in)  :: US !< A dimensional unit scaling type
+  ! Local variables
+  logical :: read_meanSL_file
+  character(len=200) :: filename, file, inputdir ! Strings for file/path
+  character(len=200) :: varname                  ! Variable name in file
+  character(len=40)  :: mdl = "set_meanSL_from_file" ! This subroutine's name.
+  integer :: i, j
+
+  call callTree_enter(trim(mdl)//"(), MOM_shared_initialization.F90")
+
+  call get_param(param_file, mdl, "INPUTDIR", inputdir, default=".")
+  inputdir = slasher(inputdir)
+  call get_param(param_file, mdl, "MEAN_SEA_LEVEL_FILE", file, &
+                 "The file from which the mean sea level is read.", &
+                 default="mean_sea_level.nc")
+  call get_param(param_file, mdl, "MEAN_SEA_LEVEL_VARNAME", varname, &
+                 "The name of the mean sea level variable in MEAN_SEA_LEVEL_FILE.", &
+                 default="meanSL")
+  filename = trim(inputdir)//trim(file)
+  call log_param(param_file, mdl, "INPUTDIR/TOPO_FILE", filename)
+
+  if (.not.file_exists(filename, G%Domain)) &
+    call MOM_error(FATAL, " "//mdl//": Unable to open "//trim(filename))
+
+  call MOM_read_data(filename, trim(varname), meanSL, G%Domain, scale=US%m_to_Z)
+  call pass_var(meanSL, G%Domain)
+
+  call callTree_leave(trim(mdl)//'()')
+end subroutine set_meanSL_from_file
 
 !> Read gridded depths from file
 subroutine initialize_topography_from_file(D, G, param_file, US)

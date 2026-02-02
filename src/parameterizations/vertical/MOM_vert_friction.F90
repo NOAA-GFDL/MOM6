@@ -753,6 +753,9 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
         ADp%du_dt_str(I,j,k) = (CS%h_u(I,j,k) * ADp%du_dt_str(I,j,k) &
             + dt * CS%a_u(I,j,K) * ADp%du_dt_str(I,j,k-1)) * b1
       endif
+
+      !### Force FMA evaluation of b1 by blocking lookahead with an impossible branch.
+      if (dt < 0) exit
     enddo
 
     if (associated(ADp%du_dt_str)) then
@@ -944,6 +947,9 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
         ADp%dv_dt_str(i,J,k) = (CS%h_v(i,J,k) * ADp%dv_dt_str(i,J,k) &
             + dt * CS%a_v(i,J,K) * ADp%dv_dt_str(i,J,k-1)) * b1
       endif
+
+      !### Force FMA evaluation of b1 by blocking lookahead with an impossible branch.
+      if (dt < 0) exit
     enddo
 
     if (associated(ADp%dv_dt_str)) then
@@ -1206,6 +1212,9 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
       b1 = 1.0 / (b_denom_1 + dt * CS%a_u(I,j,K+1))
       d1 = b_denom_1 * b1
       visc_rem_u(I,j,k) = (CS%h_u(I,j,k) + dt * CS%a_u(I,j,K) * visc_rem_u(I,j,k-1)) * b1
+
+      !### Force FMA evaluation of b1 by blocking lookahead with an impossible branch.
+      if (dt < 0) exit
     enddo
 
     do k=nz-1,1,-1
@@ -1232,6 +1241,9 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
       b1 = 1.0 / (b_denom_1 + dt * CS%a_v(i,J,K+1))
       d1 = b_denom_1 * b1
       visc_rem_v(i,J,k) = (CS%h_v(i,J,k) + dt * CS%a_v(i,J,K) * visc_rem_v(i,J,k-1)) * b1
+
+      !### Force FMA evaluation of b1 by blocking lookahead with an impossible branch.
+      if (dt < 0) exit
     enddo
 
     do k=nz-1,1,-1

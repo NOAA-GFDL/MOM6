@@ -414,7 +414,7 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
         call cons_temp_to_pot_temp(tv%T(:,j,k), tv%S(:,j,k), work_3d(:,j,k), tv%eqn_of_state, EOSdom)
       enddo ; enddo
       if (CS%id_Tpot > 0) call post_data(CS%id_Tpot, work_3d, CS%diag)
-      if (CS%id_tob > 0) call post_data(CS%id_tob, work_3d(:,:,nz), CS%diag, mask=G%mask2dT)
+      if (CS%id_tob > 0) call post_data(CS%id_tob, work_3d(:,:,nz), CS%diag)
       ! volume mean potential temperature
       if (CS%id_thetaoga>0) then
         thetaoga = global_volume_mean(work_3d, h, G, GV, tmp_scale=US%C_to_degC)
@@ -454,7 +454,7 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
     endif
   else
     ! Internal T&S variables are potential temperature & practical salinity
-    if (CS%id_tob > 0) call post_data(CS%id_tob, tv%T(:,:,nz), CS%diag, mask=G%mask2dT)
+    if (CS%id_tob > 0) call post_data(CS%id_tob, tv%T(:,:,nz), CS%diag)
     if (CS%id_tosq > 0) then
       do k=1,nz ; do j=js,je ; do i=is,ie
         work_3d(i,j,k) = tv%T(i,j,k)*tv%T(i,j,k)
@@ -490,7 +490,7 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
         call abs_saln_to_prac_saln(tv%S(:,j,k), work_3d(:,j,k), tv%eqn_of_state, EOSdom)
       enddo ; enddo
       if (CS%id_Sprac > 0) call post_data(CS%id_Sprac, work_3d, CS%diag)
-      if (CS%id_sob > 0) call post_data(CS%id_sob, work_3d(:,:,nz), CS%diag, mask=G%mask2dT)
+      if (CS%id_sob > 0) call post_data(CS%id_sob, work_3d(:,:,nz), CS%diag)
       ! volume mean salinity
       if (CS%id_soga>0) then
         soga = global_volume_mean(work_3d, h, G, GV, tmp_scale=US%S_to_ppt)
@@ -530,7 +530,7 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
     endif
   else
     ! Internal T&S variables are potential temperature & practical salinity
-    if (CS%id_sob > 0) call post_data(CS%id_sob, tv%S(:,:,nz), CS%diag, mask=G%mask2dT)
+    if (CS%id_sob > 0) call post_data(CS%id_sob, tv%S(:,:,nz), CS%diag)
     if (CS%id_sosq > 0) then
       do k=1,nz ; do j=js,je ; do i=is,ie
         work_3d(i,j,k) = tv%S(i,j,k)*tv%S(i,j,k)
@@ -1535,20 +1535,20 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
 
   if (IDs%id_ssh > 0) &
-    call post_data(IDs%id_ssh, ssh, diag, mask=G%mask2dT)
+    call post_data(IDs%id_ssh, ssh, diag)
 
   if (IDs%id_ssu > 0) &
-    call post_data(IDs%id_ssu, sfc_state%u, diag, mask=G%mask2dCu)
+    call post_data(IDs%id_ssu, sfc_state%u, diag)
 
   if (IDs%id_ssv > 0) &
-    call post_data(IDs%id_ssv, sfc_state%v, diag, mask=G%mask2dCv)
+    call post_data(IDs%id_ssv, sfc_state%v, diag)
 
   if (IDs%id_speed > 0) then
     do j=js,je ; do i=is,ie
       speed(i,j) = sqrt(0.5*((sfc_state%u(I-1,j)**2) + (sfc_state%u(I,j)**2)) + &
                         0.5*((sfc_state%v(i,J-1)**2) + (sfc_state%v(i,J)**2)))
     enddo ; enddo
-    call post_data(IDs%id_speed, speed, diag, mask=G%mask2dT)
+    call post_data(IDs%id_speed, speed, diag)
   endif
 
   if (IDs%id_ssu_east > 0 .or. IDs%id_ssv_north > 0) then
@@ -1558,8 +1558,8 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
       ssv_north(i,j) = ((0.5*(sfc_state%v(i,J-1) + sfc_state%v(i,J))) * G%cos_rot(i,j)) - &
                        ((0.5*(sfc_state%u(I-1,j) + sfc_state%u(I,j))) * G%sin_rot(i,j))
     enddo ; enddo
-    if (IDs%id_ssu_east > 0 ) call post_data(IDs%id_ssu_east, ssu_east, diag, mask=G%mask2dT)
-    if (IDs%id_ssv_north > 0 ) call post_data(IDs%id_ssv_north, ssv_north, diag, mask=G%mask2dT)
+    if (IDs%id_ssu_east > 0 ) call post_data(IDs%id_ssu_east, ssu_east, diag)
+    if (IDs%id_ssv_north > 0 ) call post_data(IDs%id_ssv_north, ssv_north, diag)
   endif
 
 end subroutine post_surface_dyn_diags
@@ -1607,12 +1607,12 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     do j=js,je ; do i=is,ie
       zos(i,j) = ssh_ibc(i,j) - G%mask2dT(i,j)*zos_area_mean
     enddo ; enddo
-    if (IDs%id_zos > 0) call post_data(IDs%id_zos, zos, diag, mask=G%mask2dT)
+    if (IDs%id_zos > 0) call post_data(IDs%id_zos, zos, diag)
     if (IDs%id_zossq > 0) then
       do j=js,je ; do i=is,ie
         work_2d(i,j) = zos(i,j)*zos(i,j)
       enddo ; enddo
-      call post_data(IDs%id_zossq, work_2d, diag, mask=G%mask2dT)
+      call post_data(IDs%id_zossq, work_2d, diag)
     endif
   endif
 
@@ -1633,7 +1633,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     do j=js,je ; do i=is,ie
       work_2d(i,j) = tv%frazil(i,j) * I_time_int
     enddo ; enddo
-    call post_data(IDs%id_fraz, work_2d, diag, mask=G%mask2dT)
+    call post_data(IDs%id_fraz, work_2d, diag)
   endif
 
   ! post time-averaged salt deficit
@@ -1641,7 +1641,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     do j=js,je ; do i=is,ie
       work_2d(i,j) = tv%salt_deficit(i,j) * I_time_int
     enddo ; enddo
-    call post_data(IDs%id_salt_deficit, work_2d, diag, mask=G%mask2dT)
+    call post_data(IDs%id_salt_deficit, work_2d, diag)
   endif
 
   ! post temperature of P-E+R
@@ -1649,7 +1649,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     do j=js,je ; do i=is,ie
       work_2d(i,j) = tv%TempxPmE(i,j) * (tv%C_p * I_time_int)
     enddo ; enddo
-    call post_data(IDs%id_Heat_PmE, work_2d, diag, mask=G%mask2dT)
+    call post_data(IDs%id_Heat_PmE, work_2d, diag)
   endif
 
   ! post geothermal heating or internal heat source/sinks
@@ -1657,50 +1657,50 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     do j=js,je ; do i=is,ie
       work_2d(i,j) = tv%internal_heat(i,j) * (tv%C_p * I_time_int)
     enddo ; enddo
-    call post_data(IDs%id_intern_heat, work_2d, diag, mask=G%mask2dT)
+    call post_data(IDs%id_intern_heat, work_2d, diag)
   endif
 
   if (tv%T_is_conT) then
     ! Internal T&S variables are conservative temperature & absolute salinity
-    if (IDs%id_sstcon > 0) call post_data(IDs%id_sstcon, sfc_state%SST, diag, mask=G%mask2dT)
+    if (IDs%id_sstcon > 0) call post_data(IDs%id_sstcon, sfc_state%SST, diag)
     ! Use TEOS-10 function calls convert T&S diagnostics from conservative temp
     ! to potential temperature.
     EOSdom(:) = EOS_domain(G%HI)
     do j=js,je
       call cons_temp_to_pot_temp(sfc_state%SST(:,j), sfc_state%SSS(:,j), work_2d(:,j), tv%eqn_of_state, EOSdom)
     enddo
-    if (IDs%id_sst > 0) call post_data(IDs%id_sst, work_2d, diag, mask=G%mask2dT)
+    if (IDs%id_sst > 0) call post_data(IDs%id_sst, work_2d, diag)
   else
     ! Internal T&S variables are potential temperature & practical salinity
-    if (IDs%id_sst > 0) call post_data(IDs%id_sst, sfc_state%SST, diag, mask=G%mask2dT)
+    if (IDs%id_sst > 0) call post_data(IDs%id_sst, sfc_state%SST, diag)
   endif
 
   if (tv%S_is_absS) then
     ! Internal T&S variables are conservative temperature & absolute salinity
-    if (IDs%id_sssabs > 0) call post_data(IDs%id_sssabs, sfc_state%SSS, diag, mask=G%mask2dT)
+    if (IDs%id_sssabs > 0) call post_data(IDs%id_sssabs, sfc_state%SSS, diag)
     ! Use TEOS-10 function calls convert T&S diagnostics from absolute salinity
     ! to practical salinity.
     EOSdom(:) = EOS_domain(G%HI)
     do j=js,je
       call abs_saln_to_prac_saln(sfc_state%SSS(:,j), work_2d(:,j), tv%eqn_of_state, EOSdom)
     enddo
-    if (IDs%id_sss > 0) call post_data(IDs%id_sss, work_2d, diag, mask=G%mask2dT)
+    if (IDs%id_sss > 0) call post_data(IDs%id_sss, work_2d, diag)
   else
     ! Internal T&S variables are potential temperature & practical salinity
-    if (IDs%id_sss > 0) call post_data(IDs%id_sss, sfc_state%SSS, diag, mask=G%mask2dT)
+    if (IDs%id_sss > 0) call post_data(IDs%id_sss, sfc_state%SSS, diag)
   endif
 
   if (IDs%id_sst_sq > 0) then
     do j=js,je ; do i=is,ie
       work_2d(i,j) = sfc_state%SST(i,j)*sfc_state%SST(i,j)
     enddo ; enddo
-    call post_data(IDs%id_sst_sq, work_2d, diag, mask=G%mask2dT)
+    call post_data(IDs%id_sst_sq, work_2d, diag)
   endif
   if (IDs%id_sss_sq > 0) then
     do j=js,je ; do i=is,ie
       work_2d(i,j) = sfc_state%SSS(i,j)*sfc_state%SSS(i,j)
     enddo ; enddo
-    call post_data(IDs%id_sss_sq, work_2d, diag, mask=G%mask2dT)
+    call post_data(IDs%id_sss_sq, work_2d, diag)
   endif
 
   call coupler_type_send_data(sfc_state%tr_fields, get_diag_time_end(diag))
@@ -2430,6 +2430,7 @@ subroutine write_static_fields(G, GV, US, tv, diag)
         x_cell_method='mean', y_cell_method='mean', area_cell_method='mean')
   if (id > 0) then
     do j=G%jsc,G%jec ; do i=G%isc,G%iec ; work_2d(i,j) = G%bathyT(i,j)+G%Z_ref ; enddo ; enddo
+    ! A mask argument is required here because masks are not applied to static fields by default.
     call post_data(id, work_2d, diag, .true., mask=G%mask2dT)
   endif
 

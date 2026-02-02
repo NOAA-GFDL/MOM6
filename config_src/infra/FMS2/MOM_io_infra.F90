@@ -45,7 +45,7 @@ public :: open_file, open_ASCII_file, file_is_open, close_file, flush_file, file
 public :: get_file_info, get_file_fields, get_file_times, get_filename_suffix
 public :: read_field, read_vector, write_metadata, write_field
 public :: field_exists, get_field_atts, get_field_size, read_field_chksum
-public :: get_axis_data, set_axis_data
+public :: get_axis_size, get_axis_data, set_axis_data
 public :: io_infra_init, io_infra_end, MOM_namelist_file, check_namelist_error, write_version
 public :: stdout_if_root
 ! These types act as containers for information about files, fields and axes, respectively,
@@ -712,6 +712,17 @@ function find_index(vec) result(loc)
     endif
   enddo
 end function find_index
+
+
+!> Get the axis size from an axistype
+function get_axis_size(axis) result(axis_size)
+  type(axistype), intent(in) :: axis
+    !< Infra axis
+  integer :: axis_size
+    !< Axis size
+
+  axis_size = size(axis%ax_data)
+end function get_axis_size
 
 
 !> Extracts and returns the axis data stored in an axistype.

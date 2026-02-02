@@ -29,7 +29,7 @@ use MOM_interface_heights, only : thickness_to_dz
 use MOM_io,               only : slasher, vardesc, query_vardesc, MOM_read_data
 use MOM_io,               only : get_filename_appendix
 use MOM_safe_alloc,       only : safe_alloc_ptr, safe_alloc_alloc
-use MOM_string_functions, only : lowercase
+use MOM_string_functions, only : lowercase, ints_to_string, trim_trailing_commas
 use MOM_time_manager,     only : time_type
 use MOM_time_manager,     only : get_time
 use MOM_unit_scaling,     only : unit_scale_type
@@ -1056,7 +1056,7 @@ subroutine define_axes_group(diag_cs, handles, axes, nz, vertical_coordinate_num
   n = size(handles)
   if (n<1 .or. n>3) call MOM_error(FATAL, "define_axes_group: wrong size for list of handles!")
   allocate( axes%handles(n) )
-  axes%id = i2s(handles, n) ! Identifying string
+  axes%id = ints_to_string(handles, max(n,3)) ! Identifying string
   axes%rank = n
   axes%handles(:) = handles(:)
   axes%diag_cs => diag_cs ! A [circular] link back to the diag_cs structure
@@ -1169,7 +1169,7 @@ subroutine define_axes_group_dsamp(diag_cs, handles, axes, dl, nz, vertical_coor
   n = size(handles)
   if (n<1 .or. n>3) call MOM_error(FATAL, "define_axes_group: wrong size for list of handles!")
   allocate( axes%handles(n) )
-  axes%id = i2s(handles, n) ! Identifying string
+  axes%id = ints_to_string(handles, max(n,3)) ! Identifying string
   axes%rank = n
   axes%handles(:) = handles(:)
   axes%diag_cs => diag_cs ! A [circular] link back to the diag_cs structure
@@ -1356,11 +1356,7 @@ subroutine post_data_1d_k(diag_field_id, field, diag_cs, is_static)
       allocate( locfield( ks:ke ) )
 
       do k=ks,ke
-        if (field(k) == diag_cs%missing_value) then
-          locfield(k) = diag_cs%missing_value
-        else
-          locfield(k) = field(k) * diag%conversion_factor
-        endif
+        locfield(k) = field(k) * diag%conversion_factor
       enddo
     else
       locfield => field
@@ -1482,13 +1478,8 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
   if ((diag%conversion_factor /= 0.) .and. (diag%conversion_factor /= 1.)) then
     allocate( locfield( lbound(field,1):ubound(field,1), lbound(field,2):ubound(field,2) ) )
     do j=jsv,jev ; do i=isv,iev
-      if (field(i,j) == diag_cs%missing_value) then
-        locfield(i,j) = diag_cs%missing_value
-      else
-        locfield(i,j) = field(i,j) * diag%conversion_factor
-      endif
+      locfield(i,j) = field(i,j) * diag%conversion_factor
     enddo ; enddo
-    locfield(isv:iev,jsv:jev) = field(isv:iev,jsv:jev) * diag%conversion_factor
   else
     locfield => field
   endif
@@ -1829,11 +1820,7 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
     endif
 
     do k=ks,ke ; do j=jsv,jev ; do i=isv,iev
-      if (field(i,j,k) == diag_cs%missing_value) then
-        locfield(i,j,k) = diag_cs%missing_value
-      else
-        locfield(i,j,k) = field(i,j,k) * diag%conversion_factor
-      endif
+      locfield(i,j,k) = field(i,j,k) * diag%conversion_factor
     enddo ; enddo ; enddo
   else
     locfield => field
@@ -2437,14 +2424,7 @@ integer function register_diag_field(module_name, field_name, axes_in, init_time
   if (axes_in%is_v_point)   dimensions = trim(dimensions)//" xh, yq,"
   if (axes_in%is_layer)     dimensions = trim(dimensions)//" zl,"
   if (axes_in%is_interface) dimensions = trim(dimensions)//" zi,"
-
-  if (len_trim(dimensions) > 0) then
-    dimensions = trim(adjustl(dimensions))
-    if (dimensions(len_trim(dimensions):len_trim(dimensions)) == ",") then
-        dimensions = dimensions(1:len_trim(dimensions) - 1)
-    endif
-    dimensions = trim(dimensions)
-  endif
+  if (len_trim(dimensions) > 0) dimensions = trim_trailing_commas(dimensions)
 
   if (is_root_pe() .and. (diag_CS%available_diag_doc_unit > 0)) then
     msg = ''
@@ -3181,14 +3161,7 @@ function register_static_field(module_name, field_name, axes, &
   if (axes%is_v_point)   dimensions = trim(dimensions)//" xh, yq,"
   if (axes%is_layer)     dimensions = trim(dimensions)//" zl,"
   if (axes%is_interface) dimensions = trim(dimensions)//" zi,"
-
-  if (len_trim(dimensions) > 0) then
-    dimensions = trim(adjustl(dimensions))
-    if (dimensions(len_trim(dimensions):len_trim(dimensions)) == ",") then
-        dimensions = dimensions(1:len_trim(dimensions) - 1)
-    endif
-    dimensions = trim(dimensions)
-  endif
+  if (len_trim(dimensions) > 0) dimensions = trim_trailing_commas(dimensions)
 
   ! Document diagnostics in list of available diagnostics
   if (is_root_pe() .and. diag_CS%available_diag_doc_unit > 0) then
@@ -3859,28 +3832,6 @@ subroutine diag_mediator_end(time, diag_CS, end_diag_manager)
   endif
 
 end subroutine diag_mediator_end
-
-!> Convert the first n elements (up to 3) of an integer array to an underscore delimited string.
-function i2s(a,n_in)
-  ! "Convert the first n elements of an integer array to a string."
-  ! Perhaps this belongs elsewhere in the MOM6 code?
-  integer, dimension(:), intent(in) :: a    !< The array of integers to translate
-  integer, optional    , intent(in) :: n_in !< The number of elements to translate, by default all
-  character(len=15) :: i2s !< The returned string
-
-  character(len=15) :: i2s_temp
-  integer :: i,n
-
-  n=size(a)
-  if (present(n_in)) n = n_in
-
-  i2s = ''
-  do i=1,min(n,3)
-    write (i2s_temp, '(I4.4)') a(i)
-    i2s = trim(i2s) //'_'// trim(i2s_temp)
-  enddo
-  i2s = adjustl(i2s)
-end function i2s
 
 !> Returns a new diagnostic id, it may be necessary to expand the diagnostics array.
 integer function get_new_diag_id(diag_cs)

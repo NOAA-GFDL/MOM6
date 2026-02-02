@@ -1738,15 +1738,24 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
                         RHSu, RHSv, & ! Right hand side of the stress balance [R L3 Z T-2 ~> m kg s-2]
                         Au, Av, & ! The retarding lateral stress contributions [R L3 Z T-2 ~> kg m s-2]
                         Du, Dv, & ! Velocity changes [L T-1 ~> m s-1]
-                        sum_vec, sum_vec_2, sum_vec_3 !, &
-                        !ubd, vbd   ! Boundary stress contributions [R L3 Z T-2 ~> kg m s-2]
-  real    :: beta_k, dot_p1, resid0tol2, cg_halo, max_cg_halo
+                        sum_vec ! Sum of squares of residuals in stress calculations [m2 kg2 s-4]
+  real, dimension(SZDIB_(G),SZDJB_(G),3) :: sum_vec_3d ! Array used for various residuals
+                                                       ! sum_vec_3d(:,:,1:2) [m s-1] [m kg s-2]
+                                                       ! sum_vec_3d(:,:,3)   [m2 kg2 s-4]
+  real    :: beta_k      ! Ratio of residuals used to update search direction [nondim]
+  real    :: resid0tol2  ! Convergence tolerance times the initial residual [m2 kg2 s-4]
+  real    :: sv3dsum     ! An unused variable returned when taking global sum of residuals [various]
+  real    :: sv3dsums(3) ! The index-wise global sums of sum_vec_3d
+                         ! sv3dsums(:,:,1:2) [m s-1] [m kg s-2]
+                         ! sv3dsums(:,:,3)   [m2 kg2 s-4]
   real    :: alpha_k     ! A scaling factor for iterative corrections [nondim]
-  real    :: resid_scale ! A scaling factor for redimensionalizing the global residuals [m2 L-2 ~> 1]
-                         ! [m2 L-2 ~> 1] [R L3 Z T-2 ~> m kg s-2]
+  real    :: resid_scale ! A scaling factor for redimensionalizing the global residuals
+                         ! [L T-1 ~> m s-1] [R L3 Z T-2 ~> m kg s-2]
   real    :: resid2_scale ! A scaling factor for redimensionalizing the global squared residuals
-                         ! [m2 L-2 ~> 1] [R L3 Z T-2 ~> m kg s-2]
+                         ! [R2 L6 Z2 T-4 ~> m2 kg2 s-4]
   real    :: rhoi_rhow  ! The density of ice divided by a typical water density [nondim]
+  integer :: cg_halo     ! Number of halo vertices to include during a CG iteration
+  integer :: max_cg_halo ! Maximum possible number of halo vertices to include in the CG iterations
   integer :: iter, i, j, isd, ied, jsd, jed, isc, iec, jsc, jec, is, js, ie, je
   integer :: Is_sum, Js_sum, Ie_sum, Je_sum ! Loop bounds for global sums or arrays starting at 1.
   integer :: Isdq, Iedq, Jsdq, Jedq, Iscq, Iecq, Jscq, Jecq, nx_halo, ny_halo
@@ -1763,7 +1772,6 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
   Zu(:,:) = 0 ; Zv(:,:) = 0 ; DIAGu(:,:) = 0 ; DIAGv(:,:) = 0
   Ru(:,:) = 0 ; Rv(:,:) = 0 ; Au(:,:) = 0 ; Av(:,:) = 0 ; RHSu(:,:) = 0 ; RHSv(:,:) = 0
   Du(:,:) = 0 ; Dv(:,:) = 0
-  dot_p1 = 0
 
   ! Determine the loop limits for sums, bearing in mind that the arrays will be starting at 1.
   ! Includes the edge of the tile is at the western/southern bdry (if symmetric)
@@ -1848,23 +1856,24 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
 
     call pass_vector(Au,Av,G%domain, TO_ALL, BGRID_NE)
 
-    sum_vec(:,:) = 0.0 ; sum_vec_2(:,:) = 0.0
+    sum_vec_3d(:,:,1:2) = 0.0
 
     do J=Jscq_sv,Jecq ; do I=Iscq_sv,Iecq
       if (CS%umask(I,J) == 1) then
-        sum_vec(I,J)   = resid_scale * (Zu(I,J) * Ru(I,J))
-        sum_vec_2(I,J) = resid_scale * (Du(I,J) * Au(I,J))
+        sum_vec_3d(I,J,1) = resid_scale * (Zu(I,J) * Ru(I,J))
+        sum_vec_3d(I,J,2) = resid_scale * (Du(I,J) * Au(I,J))
         Ru_old(I,J) = Ru(I,J) ; Zu_old(I,J) = Zu(I,J)
       endif
       if (CS%vmask(I,J) == 1) then
-        sum_vec(I,J)   = sum_vec(I,J)   + resid_scale * (Zv(I,J) * Rv(I,J))
-        sum_vec_2(I,J) = sum_vec_2(I,J) + resid_scale * (Dv(I,J) * Av(I,J))
+        sum_vec_3d(I,J,1) = sum_vec_3d(I,J,1) + resid_scale * (Zv(I,J) * Rv(I,J))
+        sum_vec_3d(I,J,2) = sum_vec_3d(I,J,2) + resid_scale * (Dv(I,J) * Av(I,J))
         Rv_old(I,J) = Rv(I,J) ; Zv_old(I,J) = Zv(I,J)
       endif
     enddo ; enddo
 
-    alpha_k = reproducing_sum( sum_vec, Is_sum, Ie_sum, Js_sum, Je_sum ) / &
-              reproducing_sum( sum_vec_2, Is_sum, Ie_sum, Js_sum, Je_sum )
+    sv3dsum = reproducing_sum( sum_vec_3d(:,:,1:2), Is_sum, Ie_sum, Js_sum, Je_sum, sums=sv3dsums(1:2) )
+
+    alpha_k = sv3dsums(1)/sv3dsums(2)
 
     do J=js,je-1 ; do I=is,ie-1
       if (CS%umask(I,J) == 1) then
@@ -1883,23 +1892,24 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
     ! R,u,v,Z valid region moves in by 1
 
     ! beta_k = (Z \dot R) / (Zold \dot Rold)
-    sum_vec(:,:) = 0.0 ; sum_vec_2(:,:) = 0.0 ; sum_vec_3(:,:) = 0.0
+    sum_vec_3d(:,:,:) = 0.0; sv3dsums(:)=0.0
 
     do J=jscq_sv,jecq ; do i=iscq_sv,iecq
       if (CS%umask(I,J) == 1) then
-        sum_vec(I,J)   = resid_scale  * (Zu(I,J) * Ru(I,J))
-        sum_vec_2(I,J) = resid_scale  * (Zu_old(I,J) * Ru_old(I,J))
-        sum_vec_3(I,J) = resid2_scale * Ru(I,J)**2
+        sum_vec_3d(I,J,1) = resid_scale  * (Zu(I,J) * Ru(I,J))
+        sum_vec_3d(I,J,2) = resid_scale  * (Zu_old(I,J) * Ru_old(I,J))
+        sum_vec_3d(I,J,3) = resid2_scale * Ru(I,J)**2
       endif
       if (CS%vmask(I,J) == 1) then
-        sum_vec(I,J)   = sum_vec(I,J)   + resid_scale  * (Zv(I,J) * Rv(I,J))
-        sum_vec_2(I,J) = sum_vec_2(I,J) + resid_scale  * (Zv_old(I,J) * Rv_old(I,J))
-        sum_vec_3(I,J) = sum_vec_3(I,J) + resid2_scale * Rv(I,J)**2
+        sum_vec_3d(I,J,1) = sum_vec_3d(I,J,1) + resid_scale  * (Zv(I,J) * Rv(I,J))
+        sum_vec_3d(I,J,2) = sum_vec_3d(I,J,2) + resid_scale  * (Zv_old(I,J) * Rv_old(I,J))
+        sum_vec_3d(I,J,3) = sum_vec_3d(I,J,3) + resid2_scale * Rv(I,J)**2
       endif
     enddo ; enddo
 
-    beta_k = reproducing_sum(sum_vec, Is_sum, Ie_sum, Js_sum, Je_sum ) / &
-             reproducing_sum(sum_vec_2, Is_sum, Ie_sum, Js_sum, Je_sum )
+    sv3dsum = reproducing_sum( sum_vec_3d, Is_sum, Ie_sum, Js_sum, Je_sum, sums=sv3dsums )
+
+    beta_k = sv3dsums(1)/sv3dsums(2)
 
     do J=js,je-1 ; do I=is,ie-1
         if (CS%umask(I,J) == 1) Du(I,J) = Zu(I,J) + beta_k * Du(I,J)
@@ -1908,10 +1918,8 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
 
    ! D valid region moves in by 1
 
-    dot_p1 = reproducing_sum( sum_vec_3, Is_sum, Ie_sum, Js_sum, Je_sum )
-
-    !if sqrt(dot_p1) <= (CS%cg_tolerance * resid0)
-    if (dot_p1 <= resid0tol2) then
+    !if sqrt(sv3dsums(3)) <= (CS%cg_tolerance * resid0)
+    if (sv3dsums(3) <= resid0tol2) then
       iters = iter
       conv_flag = 1
       exit

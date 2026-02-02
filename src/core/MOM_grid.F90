@@ -95,6 +95,7 @@ type, public :: ocean_grid_type
     geoLonCu, &  !< The geographic longitude at u points [degrees_E] or [km] or [m].
     dxCu, &      !< dxCu is delta x at u points [L ~> m].
     IdxCu, &     !< 1/dxCu [L-1 ~> m-1].
+    IdxCu_OBCmask, & !< 1/dxCu or 0 at boundary or OBC points [L-1 ~> m-1].
     dyCu, &      !< dyCu is delta y at u points [L ~> m].
     IdyCu, &     !< 1/dyCu [L-1 ~> m-1].
     dy_Cu, &     !< The unblocked lengths of the u-faces of the h-cell [L ~> m].
@@ -110,6 +111,7 @@ type, public :: ocean_grid_type
     IdxCv, &     !< 1/dxCv [L-1 ~> m-1].
     dyCv, &      !< dyCv is delta y at v points [L ~> m].
     IdyCv, &     !< 1/dyCv [L-1 ~> m-1].
+    IdyCv_OBCmask, & !< 1/dxCv or 0 at boundary or OBC points [L-1 ~> m-1].
     dx_Cv, &     !< The unblocked lengths of the v-faces of the h-cell [L ~> m].
     IareaCv, &   !< The masked inverse areas of v-grid cells [L-2 ~> m-2].
     areaCv       !< The areas of the v-grid cells [L2 ~> m2].
@@ -158,7 +160,16 @@ type, public :: ocean_grid_type
     y_ax_unit_short     !< A short description of the y-axis units for documenting parameter units
 
   real ALLOCABLE_, dimension(NIMEM_,NJMEM_) :: &
-    bathyT           !< Ocean bottom depth at tracer points, in depth units [Z ~> m].
+    bathyT           !< Ocean bottom depth, referenced to Z_ref at tracer points. bathyT is in
+                     !! depth units and positive *below* Z_ref [Z ~> m].
+  real ALLOCABLE_, dimension(NIMEM_,NJMEM_) :: &
+    meanSL           !< Spatially varying time mean sea level, referenced to Z_ref at tracer points.
+                     !! meanSL is in height units and positive *above* Z_ref. It is used
+                     !! a) as the height where p = p_atm or zero;
+                     !! b) to calculate time mean thickness of the water column, where
+                     !!    mean thickness = max(meanSL + bathyT, 0.0).
+                     !! meanSL is 2D for the consideration of a domain with spatically varying mean
+                     !! height, e.g. the Great Lakes system [Z ~> m].
   real    :: Z_ref   !< A reference value for all geometric height fields, such as bathyT [Z ~> m].
 
   logical :: bathymetry_at_vel  !< If true, there are separate values for the
@@ -433,6 +444,7 @@ subroutine set_derived_metrics(G, US)
     if (G%dyCu(I,j) < 0.0) G%dyCu(I,j) = 0.0
     G%IdxCu(I,j) = Adcroft_reciprocal(G%dxCu(I,j))
     G%IdyCu(I,j) = Adcroft_reciprocal(G%dyCu(I,j))
+    G%IdxCu_OBCmask(I,j) = G%OBCmaskCu(I,j) * G%IdxCu(I,j) ! This may be reset if masks are reset.
   enddo ; enddo
 
   do J=JsdB,JedB ; do i=isd,ied
@@ -440,6 +452,7 @@ subroutine set_derived_metrics(G, US)
     if (G%dyCv(i,J) < 0.0) G%dyCv(i,J) = 0.0
     G%IdxCv(i,J) = Adcroft_reciprocal(G%dxCv(i,J))
     G%IdyCv(i,J) = Adcroft_reciprocal(G%dyCv(i,J))
+    G%IdyCv_OBCmask(i,J) = G%OBCmaskCv(i,J) * G%IdyCv(i,J) ! This may be reset if masks are reset.
   enddo ; enddo
 
   do J=JsdB,JedB ; do I=IsdB,IedB
@@ -535,6 +548,7 @@ subroutine allocate_metrics(G)
   ALLOC_(G%dxBu(IsdB:IedB,JsdB:JedB))  ; G%dxBu(:,:) = 0.0
   ALLOC_(G%IdxT(isd:ied,jsd:jed))      ; G%IdxT(:,:) = 0.0
   ALLOC_(G%IdxCu(IsdB:IedB,jsd:jed))   ; G%IdxCu(:,:) = 0.0
+  ALLOC_(G%IdxCu_OBCmask(IsdB:IedB,jsd:jed)) ; G%IdxCu_OBCmask(:,:) = 0.0
   ALLOC_(G%IdxCv(isd:ied,JsdB:JedB))   ; G%IdxCv(:,:) = 0.0
   ALLOC_(G%IdxBu(IsdB:IedB,JsdB:JedB)) ; G%IdxBu(:,:) = 0.0
 
@@ -545,6 +559,7 @@ subroutine allocate_metrics(G)
   ALLOC_(G%IdyT(isd:ied,jsd:jed))      ; G%IdyT(:,:) = 0.0
   ALLOC_(G%IdyCu(IsdB:IedB,jsd:jed))   ; G%IdyCu(:,:) = 0.0
   ALLOC_(G%IdyCv(isd:ied,JsdB:JedB))   ; G%IdyCv(:,:) = 0.0
+  ALLOC_(G%IdyCv_OBCmask(isd:ied,JsdB:JedB)) ; G%IdyCv_OBCmask(:,:) = 0.0
   ALLOC_(G%IdyBu(IsdB:IedB,JsdB:JedB)) ; G%IdyBu(:,:) = 0.0
 
   ALLOC_(G%areaT(isd:ied,jsd:jed))       ; G%areaT(:,:) = 0.0
@@ -584,6 +599,7 @@ subroutine allocate_metrics(G)
   ALLOC_(G%IareaCv(isd:ied,JsdB:JedB)) ; G%IareaCv(:,:) = 0.0
 
   ALLOC_(G%bathyT(isd:ied, jsd:jed)) ; G%bathyT(:,:) = -G%Z_ref
+  ALLOC_(G%meanSL(isd:ied, jsd:jed)) ; G%meanSL(:,:) = G%Z_ref
   ALLOC_(G%CoriolisBu(IsdB:IedB, JsdB:JedB)) ; G%CoriolisBu(:,:) = 0.0
   ALLOC_(G%Coriolis2Bu(IsdB:IedB, JsdB:JedB)) ; G%Coriolis2Bu(:,:) = 0.0
   ALLOC_(G%dF_dx(isd:ied, jsd:jed)) ; G%dF_dx(:,:) = 0.0
@@ -616,6 +632,8 @@ subroutine MOM_grid_end(G)
   DEALLOC_(G%dyT)  ; DEALLOC_(G%dyCu)  ; DEALLOC_(G%dyCv)  ; DEALLOC_(G%dyBu)
   DEALLOC_(G%IdyT) ; DEALLOC_(G%IdyCu) ; DEALLOC_(G%IdyCv) ; DEALLOC_(G%IdyBu)
 
+  DEALLOC_(G%IdxCu_OBCmask) ; DEALLOC_(G%IdyCv_OBCmask)
+
   DEALLOC_(G%areaT)  ; DEALLOC_(G%IareaT)
   DEALLOC_(G%areaBu) ; DEALLOC_(G%IareaBu)
   DEALLOC_(G%areaCu) ; DEALLOC_(G%IareaCu)
@@ -631,9 +649,10 @@ subroutine MOM_grid_end(G)
 
   DEALLOC_(G%dx_Cv) ; DEALLOC_(G%dy_Cu)
 
-  DEALLOC_(G%bathyT)  ; DEALLOC_(G%CoriolisBu) ; DEALLOC_(G%Coriolis2Bu)
-  DEALLOC_(G%dF_dx)   ; DEALLOC_(G%dF_dy)
-  DEALLOC_(G%sin_rot) ; DEALLOC_(G%cos_rot)
+  DEALLOC_(G%bathyT)     ; DEALLOC_(G%meanSL)
+  DEALLOC_(G%CoriolisBu) ; DEALLOC_(G%Coriolis2Bu)
+  DEALLOC_(G%dF_dx)      ; DEALLOC_(G%dF_dy)
+  DEALLOC_(G%sin_rot)    ; DEALLOC_(G%cos_rot)
 
   DEALLOC_(G%porous_DminU) ; DEALLOC_(G%porous_DmaxU) ; DEALLOC_(G%porous_DavgU)
   DEALLOC_(G%porous_DminV) ; DEALLOC_(G%porous_DmaxV) ; DEALLOC_(G%porous_DavgV)

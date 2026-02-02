@@ -296,7 +296,7 @@ subroutine filter_interface(h, e, Lsm2_u, Lsm2_v, uhD, vhD, tv, G, GV, US, halo_
     do I=is-1,ie ; uhtot(I,j) = 0.0 ; enddo
     do K=nz,2,-1
       do I=is-1,ie
-        Slope = ((e(i,j,K)-e(i+1,j,K))*G%IdxCu(I,j)) * G%OBCmaskCu(I,j)
+        Slope = (e(i,j,K)-e(i+1,j,K)) * G%IdxCu_OBCmask(I,j)
 
         if (allocated(tv%SpV_avg)) then
           ! This is the fully non-Boussinesq version.
@@ -336,7 +336,7 @@ subroutine filter_interface(h, e, Lsm2_u, Lsm2_v, uhD, vhD, tv, G, GV, US, halo_
     do i=is,ie ; vhtot(i,J) = 0.0 ; enddo
     do K=nz,2,-1
       do i=is,ie
-        Slope = ((e(i,j,K)-e(i,j+1,K))*G%IdyCv(i,J)) * G%OBCmaskCv(i,J)
+        Slope = (e(i,j,K)-e(i,j+1,K)) * G%IdyCv_OBCmask(i,J)
 
         if (allocated(tv%SpV_avg)) then
           ! This is the fully non-Boussinesq version.
