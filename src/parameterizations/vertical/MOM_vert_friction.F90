@@ -247,7 +247,7 @@ subroutine vertFPmix(ui, vi, uold, vold, hbl_h, h, forces, dt, lpost, Cemp_NL, G
   real :: Gat1, Gsig, dGdsig !< Shape parameters [nondim]
   real :: du, dv       !< Intermediate velocity differences [L T-1 ~> m s-1]
   real :: depth        !< Cumulative of thicknesses [H ~> m]
-  integer :: b, kbld, kp1, k, nz !< band and vertical indices
+  integer :: b, kp1, k, nz !< band and vertical indices
   integer :: i, j, is, ie, js, je, Isq, Ieq, Jsq, Jeq !< horizontal indices
 
   is = G%isc ; ie = G%iec; js = G%jsc; je = G%jec
@@ -1359,7 +1359,7 @@ subroutine vertvisc_coef(u, v, h, dz, forces, visc, tv, dt, G, GV, US, CS, OBC, 
   logical :: do_any_shelf
   integer :: zi_dir
     ! A ternary logical indicating which thickness to use for finding z_clear.
-  integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz, ij
+  integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB ; nz = GV%ke

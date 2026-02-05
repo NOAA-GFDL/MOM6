@@ -383,9 +383,7 @@ subroutine interface_filter_init(Time, G, GV, US, param_file, diag, CDp, CS)
   character(len=40)  :: mdl = "MOM_interface_filter" ! This module's name.
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
-  real :: grid_sp      ! The local grid spacing [L ~> m]
   real :: interface_filter_time   ! The grid-scale interface height filtering timescale [T ~> s]
-  integer :: i, j
 
   CS%initialized = .true.
   CS%diag => diag

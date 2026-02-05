@@ -1076,7 +1076,6 @@ subroutine KPP_compute_BLD(CS, G, GV, US, h, Temp, Salt, u, v, tv, uStar, buoyFl
                                                                  ! [L T-1 ~> m s-1]
   real :: StokesXI     ! Stokes similarity parameter [nondim]
   real, dimension( GV%ke )     :: StokesXI_1d ,   StokesVt_1d    !  Parameters of TKE production ratio [nondim]
-  real :: Llimit ! Stable boundary Layer Limit =  vonk Lstar [Z ~> m]
   integer :: kbl ! index of cell containing boundary layer depth
 
   if (CS%Stokes_Mixing .and. .not.associated(Waves)) call MOM_error(FATAL, &

@@ -1052,7 +1052,7 @@ subroutine calc_Eady_growth_rate_2D(CS, G, GV, US, h, e, dzu, dzv, dzSxN, dzSyN,
   real :: dz_neglect ! A negligibly small distance to avoid division by zero [Z ~> m]
   real :: r_crp_dist ! The inverse of the distance over which to scale the cropping [Z-1 ~> m-1]
   real :: dB, dT ! Elevation variables used when cropping [Z ~> m]
-  integer :: i, j, k, l_seg
+  integer :: i, j, k
   logical :: crop
 
   dz_neglect = GV%dZ_subroundoff
@@ -1073,7 +1073,7 @@ subroutine calc_Eady_growth_rate_2D(CS, G, GV, US, h, e, dzu, dzv, dzSxN, dzSyN,
     CS%SN_v(i,j) = 0.0
   enddo ; enddo
 
-  !$OMP parallel do default(shared) private(dnew,dz,weight,l_seg,vint_SN,sum_dz,dT,dB)
+  !$OMP parallel do default(shared) private(dnew,dz,weight,vint_SN,sum_dz,dT,dB)
   do j=G%jsc-1,G%jec+1
     do I=G%isc-1,G%iec
       vint_SN(I) = 0.
@@ -1116,7 +1116,7 @@ subroutine calc_Eady_growth_rate_2D(CS, G, GV, US, h, e, dzu, dzv, dzSxN, dzSyN,
     enddo
   enddo
 
-  !$OMP parallel do default(shared) private(dnew,dz,weight,l_seg,vint_SN,sum_dz,dT,dB)
+  !$OMP parallel do default(shared) private(dnew,dz,weight,vint_SN,sum_dz,dT,dB)
   do J=G%jsc-1,G%jec
     do i=G%isc-1,G%iec+1
       vint_SN(i) = 0.
@@ -1212,7 +1212,6 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e)
                         ! bathymetric depth for certain calculations.
   integer :: is, ie, js, je, nz
   integer :: i, j, k
-  integer :: l_seg
 
   if (.not. CS%initialized) call MOM_error(FATAL, "calc_slope_functions_using_just_e: "// &
          "Module must be initialized before it is used.")

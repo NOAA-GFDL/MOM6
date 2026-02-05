@@ -514,12 +514,10 @@ subroutine open_boundary_config(G, US, param_file, OBC)
   character(len=200) :: config1          ! String for OBC_USER_CONFIG
   real               :: Lscale_in, Lscale_out ! parameters controlling tracer values at the boundaries [L ~> m]
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
-  logical :: check_remapping, force_bounds_in_subcell
   logical :: enable_bugs     ! If true, the defaults for recently added bug-fix flags are set to
                              ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: debugging_tests ! If true, do additional calls resetting values to help debug the performance
                              ! of the open boundary condition code.
-  logical :: om4_remap_via_sub_cells ! If true, use the OM4 remapping algorithm
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
 
@@ -2494,7 +2492,7 @@ subroutine set_initialized_OBC_tracer_reservoirs(G, OBC, restart_CS)
   type(ocean_OBC_type),           intent(in)    :: OBC !< Open boundary control structure
   type(MOM_restart_CS),           intent(inout) :: restart_CS !< MOM restart control structure
   character(len=12) :: x_var_name, y_var_name
-  integer :: i, j, k, m, n
+  integer :: m
 
   do m=1,OBC%ntr
     ! Set the names of the reservoirs for this tracer in the restart file
@@ -4939,8 +4937,6 @@ subroutine segment_thickness_reservoir_init(GV, US, OBC, param_file)
                   ! salinity, or other various units depending on what rescaling has occurred previously.
   integer :: nseg, m, isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
   integer :: fd_id
-  character(len=256) :: mesg    ! Message for error messages.
-  character(len=32) :: name
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
   integer, save :: init_calls = 0
 
@@ -5198,8 +5194,8 @@ subroutine register_obgc_segments(GV, OBC, tr_Reg, param_file, tr_name)
   type(param_file_type),      intent(in)    :: param_file !< file to parse for  model parameter values
   character(len=*),           intent(in)    :: tr_name    !< Tracer name
 ! Local variables
-  integer :: isd, ied, IsdB, IedB, jsd, jed, JsdB, JedB, nz, nf, ntr_id, fd_id
-  integer :: i, j, k, n, m
+  integer :: ntr_id, fd_id
+  integer :: n, m
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
   type(tracer_type), pointer      :: tr_ptr => NULL()
 
@@ -5424,7 +5420,6 @@ subroutine mask_outside_OBCs(G, US, param_file, OBC)
 
   ! Local variables
   integer :: i, j
-  integer :: l_seg
   logical :: fatal_error = .False.
   real    :: min_depth  ! The minimum depth for ocean points [Z ~> m]
   real    :: mask_depth ! The masking depth for ocean points [Z ~> m]
@@ -5944,7 +5939,7 @@ subroutine update_segment_thickness_reservoirs(G, GV, uhr, vhr, h, OBC)
   real :: fac1            ! The denominator of the expression for tracer updates [nondim]
   real :: I_scale         ! The inverse of the scaling factor for the tracers.
                           ! For salinity the units would be [ppt S-1 ~> 1]
-  integer :: i, j, k, m, n, nz, fd_id
+  integer :: i, j, k, n, nz, fd_id
   integer :: ishift, idir, jshift, jdir
   real :: resrv_lfac_out  ! The reservoir inverse length scale scaling factor for the outward
                           ! direction per field [nondim]
@@ -7025,7 +7020,6 @@ subroutine chksum_OBC_segment_data(segment, GV, US, nk, nseg_out)
   real :: norm ! A sign change used when rotating a normal component [nondim]
   real :: tang ! A sign change used when rotating a tangential component [nondim]
   character(len=8) :: sn, segno
-  character(len=1024) :: mesg
   integer :: dir        ! This indicates the internal logical orientation of a segment
 
     dir = segment%direction

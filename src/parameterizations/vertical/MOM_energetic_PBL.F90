@@ -477,8 +477,7 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, visc, dt, Kd_int, G, GV, 
     diag_mstar_LT, &   ! mstar due to Langmuir turbulence [nondim]
     diag_LA, &         ! Langmuir number [nondim]
     diag_LA_mod, &     ! Modified Langmuir number [nondim]
-    diag_ustar, &      ! The surface boundary layer friction velocity [Z T-1 ~> m s-1]
-    diag_bflx          ! The surface boundary layer buoyancy flux  [Z2 T-3 ~> m2 s-3]
+    diag_ustar         ! The surface boundary layer friction velocity [Z T-1 ~> m s-1]
 
   ! The following variables are only used for diagnosing sensitivities to ePBL settings
   real, dimension(SZK_(GV)+1) :: &
@@ -2069,8 +2068,6 @@ subroutine ePBL_BBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, absf, &
     c1, &           ! c1 is used by the tridiagonal solver [nondim].
     Te, &           ! Estimated final values of T in the column [C ~> degC].
     Se, &           ! Estimated final values of S in the column [S ~> ppt].
-    dTe, &          ! Running (1-way) estimates of temperature change [C ~> degC].
-    dSe, &          ! Running (1-way) estimates of salinity change [S ~> ppt].
     hp_a, &         ! An effective pivot thickness of the layer including the effects
                     ! of coupling with layers above [H ~> m or kg m-2].  This is the first term
                     ! in the denominator of b1 in a downward-oriented tridiagonal solver.
@@ -2157,7 +2154,6 @@ subroutine ePBL_BBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, absf, &
   real :: min_BBLD, max_BBLD ! Iteration bounds on BBLD [Z ~> m], which are adjusted at each step
   real :: dBBLD_min  ! The change in diagnosed mixed layer depth when the guess is min_BLD [Z ~> m]
   real :: dBBLD_max  ! The change in diagnosed mixed layer depth when the guess is max_BLD [Z ~> m]
-  logical :: BBL_converged ! Flag for convergence of BBLD
   integer :: BBL_it        ! Iteration counter
 
   real :: Surface_Scale ! Surface decay scale for vstar [nondim]
@@ -2778,8 +2774,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
 
   ! variables used for optimizing computations:
   real :: sm_h     ! sigma_max multiplied by boundary layer depth [Z ~> m]
-  real :: sm_h_I   ! inverse of sm_h,[Z-1 ~> m-1]
-  real :: sm_h_I2  ! An inverse variable given by 1.0/(h - sm_h), [Z-1 ~> m-1]
+  real :: sm_h_I   ! inverse of sm_h [Z-1 ~> m-1]
   real :: hz_n     ! z depth to avoid calling hz multiple times [Z ~> m]
   real :: z_minus_sm_h  ! depth z minus \sigma_m * MLD_Guess [Z ~> m]
   real :: z_minus_sm_h2 ! (depth z minus \sigma_m * MLD_Guess)^2 [Z2 ~> m2]

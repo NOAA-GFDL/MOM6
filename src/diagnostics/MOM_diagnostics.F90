@@ -910,7 +910,6 @@ subroutine calculate_vertical_integrals(h, tv, p_surf, G, GV, US, CS)
     tr_int    ! vertical integral of a tracer times density,
               ! (Rho_0 in a Boussinesq model) [Conc R Z ~> Conc kg m-2].
   real :: tmp(SZI_(G),SZJ_(G),SZK_(GV)) ! Temporary array [defined at each usage]
-  real    :: IG_Earth  ! Inverse of gravitational acceleration [T2 Z L-2 ~> s2 m-1].
 
   integer :: i, j, k, is, ie, js, je, nz
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state

@@ -600,13 +600,9 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     uhbt0, &      ! The difference between the sum of the layer zonal thickness
                   ! fluxes and the barotropic thickness flux using the same
                   ! velocity [H L2 T-1 ~> m3 s-1 or kg s-1].
-    ubt_prev, &   ! The starting value of ubt in a barotropic step [L T-1 ~> m s-1].
     ubt_first, &  ! The starting value of ubt in a series of barotropic steps [L T-1 ~> m s-1].
-    ubt_trans, &  ! The latest value of ubt used for a transport [L T-1 ~> m s-1].
-    Cor_u, &      ! The zonal Coriolis acceleration [L T-2 ~> m s-2].
     Cor_ref_u, &  ! The zonal barotropic Coriolis acceleration due
                   ! to the reference velocities [L T-2 ~> m s-2].
-    PFu, &        ! The zonal pressure force acceleration [L T-2 ~> m s-2].
     Rayleigh_u, & ! A Rayleigh drag timescale operating at u-points for drag parameterizations
                   ! that introduced directly into the barotropic solver rather than coming in via
                   ! the visc_rem_u arrays from the layered equations [T-1 ~> s-1].
@@ -627,13 +623,9 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     vhbt0, &      ! The difference between the sum of the layer meridional
                   ! thickness fluxes and the barotropic thickness flux using
                   ! the same velocities [H L2 T-1 ~> m3 s-1 or kg s-1].
-    vbt_prev, &   ! The starting value of vbt in a barotropic step [L T-1 ~> m s-1].
     vbt_first, &  ! The starting value of vbt in a series of barotropic steps [L T-1 ~> m s-1].
-    vbt_trans, &  ! The latest value of vbt used for a transport [L T-1 ~> m s-1].
-    Cor_v, &      ! The meridional Coriolis acceleration [L T-2 ~> m s-2].
     Cor_ref_v, &  ! The meridional barotropic Coriolis acceleration due
                   ! to the reference velocities [L T-2 ~> m s-2].
-    PFv, &        ! The meridional pressure force acceleration [L T-2 ~> m s-2].
     Rayleigh_v, & ! A Rayleigh drag timescale operating at v-points for drag parameterizations
                   ! that introduced directly into the barotropic solver rather than coming
                   ! in via the visc_rem_v arrays from the layered equations [T-1 ~> s-1].
@@ -662,9 +654,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   real, dimension(SZI_(G),SZJB_(G)) :: Drag_v
                   ! The meridional acceleration due to frequency-dependent drag [L T-2 ~> m s-2]
   real, target, dimension(SZIW_(CS),SZJW_(CS)) :: &
-    eta, &        ! The barotropic free surface height anomaly or column mass
+    eta           ! The barotropic free surface height anomaly or column mass
                   ! anomaly [H ~> m or kg m-2]
-    eta_pred      ! A predictor value of eta [H ~> m or kg m-2] like eta.
   real, dimension(SZIW_(CS),SZJW_(CS)) :: &
     eta_sum, &    ! eta summed across the timesteps [H ~> m or kg m-2].
     eta_wtd, &    ! A weighted estimate used to calculate eta_out [H ~> m or kg m-2].
@@ -694,7 +685,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   ! End of wide-sized variables.
 
   real :: visc_rem    ! A work variable that may equal visc_rem_[uv] [nondim]
-  real :: vel_prev    ! The previous velocity [L T-1 ~> m s-1].
   real :: dtbt        ! The barotropic time step [T ~> s].
   real :: Idt         ! The inverse of dt [T-1 ~> s-1].
   real :: det_de      ! The partial derivative due to self-attraction and loading
@@ -755,13 +745,11 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   logical :: apply_OBCs, apply_OBC_flather
   type(memory_size_type) :: MS
   character(len=200) :: mesg
-  integer :: isv, iev, jsv, jev ! The valid array size at the end of a step.
   integer :: stencil  ! The stencil size of the algorithm, often 1 or 2.
   integer :: isvf, ievf, jsvf, jevf, num_cycles
   integer :: i, j, k, n
   integer :: is, ie, js, je, nz, Isq, Ieq, Jsq, Jeq
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
-  integer :: l_seg
 
   if (.not.CS%module_is_initialized) call MOM_error(FATAL, &
       "btstep: Module MOM_barotropic must be initialized before it is used.")
@@ -3057,7 +3045,7 @@ subroutine btstep_find_Cor(q, DCor_u, DCor_v, f_4_u, f_4_v, isvf, ievf, jsvf, je
   integer, intent(in) :: jsvf  !< The starting j-index of the largest valid range for tracer points
   integer, intent(in) :: jevf  !< The ending j-index of the largest valid range for tracer points
 
-  real :: C1_3 ! One third [nondim]
+  ! real :: C1_3 ! One third [nondim]
   integer :: i, j
 
   if (CS%Sadourny) then
@@ -3548,7 +3536,6 @@ subroutine btloop_update_u(dtbt, ubt, vbt, u_accel_bt, &
   type(unit_scale_type),   intent(in)  :: US      !< A dimensional unit scaling type
 
   ! Local variables
-  real :: vel_prev    ! The previous velocity [L T-1 ~> m s-1].
   integer :: i, j
 
   !$OMP do schedule(static)
@@ -4605,7 +4592,6 @@ subroutine btcalc(h, G, GV, CS, h_u, h_v, may_use_default, OBC)
 
   logical :: use_default, test_dflt
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz, i, j, k
-  integer :: is_v, ie_v, Js_v, Je_v
 
   if (.not.CS%module_is_initialized) call MOM_error(FATAL, &
       "btcalc: Module MOM_barotropic must be initialized before it is used.")

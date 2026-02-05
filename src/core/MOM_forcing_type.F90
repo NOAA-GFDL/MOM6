@@ -1186,7 +1186,7 @@ subroutine find_ustar_fluxes(fluxes, tv, U_star, G, GV, US, halo, H_T_units)
                        ! density [H2 Z-2 R-1 ~> m3 kg-1 or kg m-3]
   logical :: Z_T_units ! If true, U_star is returned in units of [Z T-1 ~> m s-1], otherwise it is
                        ! returned in [H T-1 ~> m s-1 or kg m-2 s-1]
-  integer :: i, j, k, is, ie, js, je, hs
+  integer :: i, j, is, ie, js, je, hs
 
   hs = 0 ; if (present(halo)) hs = max(halo, 0)
   is = G%isc - hs ; ie = G%iec + hs ; js = G%jsc - hs ; je = G%jec + hs
@@ -1251,7 +1251,7 @@ subroutine find_ustar_mech_forcing(forces, tv, U_star, G, GV, US, halo, H_T_unit
                        ! the rescaled reference density [H2 Z-2 R-1 ~> m3 kg-1 or kg m-3]
   logical :: Z_T_units ! If true, U_star is returned in units of [Z T-1 ~> m s-1], otherwise it is
                        ! returned in [H T-1 ~> m s-1 or kg m-2 s-1]
-  integer :: i, j, k, is, ie, js, je, hs
+  integer :: i, j, is, ie, js, je, hs
 
   hs = 0 ; if (present(halo)) hs = max(halo, 0)
   is = G%isc - hs ; ie = G%iec + hs ; js = G%jsc - hs ; je = G%jec + hs

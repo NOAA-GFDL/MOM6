@@ -338,15 +338,12 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   real :: U_mag    ! rescaled magnitude of horizontal profile [L Z T-1 ~> m2 s-1]
   real :: W0       ! rescaled magnitude of vertical profile [Z T-1 ~> m s-1]
   real :: c_phase  ! The phase speed [L T-1 ~> m s-1]
-  real :: loss_rate  ! An energy loss rate [T-1 ~> s-1]
+  ! real :: loss_rate  ! An energy loss rate [T-1 ~> s-1]
   real :: Fr2_max    ! The column maximum internal wave Froude number squared [nondim]
   real :: cn_subRO        ! A tiny wave speed to prevent division by zero [L T-1 ~> m s-1]
   real :: en_subRO        ! A tiny energy to prevent division by zero [H Z2 T-2 ~> m3 s-2 or J m-2]
   real :: En_a, En_b                                 ! Energies for time stepping [H Z2 T-2 ~> m3 s-2 or J m-2]
-  real :: En_new, En_check                           ! Energies for debugging [H Z2 T-2 ~> m3 s-2 or J m-2]
   real :: En_sumtmp                                  ! Energies for debugging [H Z2 L2 T-2 ~> m5 s-2 or J]
-  real :: En_initial, Delta_E_check                  ! Energies for debugging [H Z2 T-2 ~> m3 s-2 or J m-2]
-  real :: TKE_Froude_loss_check, TKE_Froude_loss_tot ! Energy losses for debugging [H Z2 T-3 ~> m3 s-3 or W m-2]
   real :: HZ2_T2_to_J_m2                             ! unit conversion factor for Energy from internal units
                                                      ! to mks [T2 kg H-1 Z-2 s-2 ~> kg m-3 or 1]
   real :: J_m2_to_HZ2_T2                             ! unit conversion factor for Energy from mks to internal
@@ -2105,8 +2102,6 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, test, halo_size, r
                          intent(inout) :: residual_loss !< internal tide energy loss due
                                                         !! to the residual at slopes [H Z2 T-3 ~> m3 s-3 or W m-2].
   ! Local variables
-  real, dimension(G%IsdB:G%IedB,G%JsdB:G%JedB) :: &
-    speed  ! The magnitude of the group velocity at the q points for corner adv [L T-1 ~> m s-1].
   integer, parameter :: stencil = 2
   real, dimension(SZIB_(G),SZJ_(G)) :: &
     speed_x  ! The magnitude of the group velocity at the Cu points [L T-1 ~> m s-1].
@@ -2648,7 +2643,6 @@ subroutine turning_latitude(En, NAngle, freq2, CS, G, LB)
   real, dimension(1:Nangle) :: En_reflected ! Energy reflected [H Z2 T-2 ~> m3 s-2 or J m-2].
 
   real    :: TwoPi                         ! 2*pi = 6.2831853... [nondim]
-  real    :: Pi_2                          ! pi/2 [nondim]
   real    :: Angle_size                    ! size of beam wedge [rad]
   real    :: I_Angle_size                  ! inverse of size of beam wedge [rad-1]
   real    :: f2
@@ -3256,10 +3250,9 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
   logical :: non_Bous          ! If true, this run is fully non-Boussinesq
   logical :: Boussinesq        ! If true, this run is fully Boussinesq
   logical :: semi_Boussinesq   ! If true, this run is partially non-Boussinesq
-  logical :: use_int_tides
-  integer :: num_freq, num_angle , num_mode, period_1
-  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB, i, j, a, fr, m
-  character(64) :: var_name, cfr, units
+  integer :: num_freq, num_angle, num_mode
+  integer :: isd, ied, jsd, jed, i, j, a, fr, m
+  character(64) :: units
 
   type(axis_info) :: axes_inttides(2)
   real, dimension(:), allocatable :: angles, freqs ! Lables for angles and frequencies [nondim]
@@ -3411,7 +3404,6 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   real    :: kappa_h2_factor    ! A roughness scaling factor [nondim]
   real    :: RMS_roughness_frac ! The maximum RMS topographic roughness as a fraction of the
                                 ! nominal ocean depth, or a negative value for no limit [nondim]
-  real    :: period_1           ! The period of the gravest modeled mode [T ~> s]
   real    :: period             ! A tidal period read from namelist [T ~> s]
   real    :: HZ2_T2_to_J_m2     ! unit conversion factor for Energy from internal units
                                 ! to mks [T2 kg H-1 Z-2 s-2 ~> kg m-3 or 1]

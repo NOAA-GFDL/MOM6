@@ -246,9 +246,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
   logical :: Stokes_VF
   real :: u_v, v_u      ! u_v is the u velocity at v point, v_u is the v velocity at u point [L T-1 ~> m s-1]
   real :: q_v, q_u      ! PV at the u and v points [H-1 T-1 ~> m-1 s-1 or m2 kg-1 s-1]
-  real :: h_v, h_u      ! h_v is the thickness at v point, h_u is the thickness at u point [H ~> m or kg m-2]
-  integer :: seventh_order, fifth_order, third_order, second_order ! Order of accuracy for the WENO calculations
-  real :: psi           ! Ratio of PV gradient for the Koren limiter [nondim]
+  integer :: seventh_order, fifth_order, third_order ! Order of accuracy for the WENO calculations
   real :: u_q8(8) ! Eight-point zonal velocity at WENO stencils [L T-1 ~> m s-1]
   real :: u_q6(6) ! Six-point zonal velocity at WENO stencils [L T-1 ~> m s-1]
   real :: u_q4(4) ! Four-point zonal velocity at WENO stencils [L T-1 ~> m s-1]

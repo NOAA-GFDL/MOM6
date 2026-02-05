@@ -184,8 +184,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, AD
     inty_dza    ! The change in inty_za through a layer [L2 T-2 ~> m2 s-2].
   real, dimension(SZI_(G),SZJ_(G)) :: &
     T_top, &    ! Temperature of top layer used with correction_intxpa [C ~> degC]
-    S_top, &    ! Salinity of top layer used with correction_intxpa [S ~> ppt]
-    SpV_top     ! Specific volume anomaly of top layer used with correction_intxpa [R-1 ~> m3 kg-1]
+    S_top       ! Salinity of top layer used with correction_intxpa [S ~> ppt]
   real, dimension(SZIB_(G),SZJ_(G)) :: &
     intx_za_cor ! Correction for curvature in intx_za [L2 T-2 ~> m2 s-2]
   real, dimension(SZI_(G),SZJB_(G)) :: &
@@ -197,8 +196,6 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, AD
     T_int_W, T_int_E, & ! Temperatures on the reference interface to the east and west of a u-point [C ~> degC]
     S_int_W, S_int_E, & ! Salinities on the reference interface to the east and west of a u-point [S ~> ppt]
     p_int_W, p_int_E, & ! Pressures on the reference interface to the east and west of a u-point [R L2 T-2 ~> Pa]
-    SpV_x_W, SpV_x_E, & ! Specific volume anomalies on the reference interface to the east and west
-                        ! of a u-point [R-1 ~> m3 kg-1]
     intx_za_nonlin, &   ! Deviations in the previous version of intx_pa for the reference interface
                         ! from the value that would be obtained from assuming that pressure varies
                         ! linearly with depth along that interface [R L2 T-2 ~> Pa].
@@ -208,8 +205,6 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, AD
     T_int_S, T_int_N, & ! Temperatures on the reference interface to the north and south of a v-point [C ~> degC]
     S_int_S, S_int_N, & ! Salinities on the reference interface to the north and south of a v-point [S ~> ppt]
     p_int_S, p_int_N, & ! Pressures on the reference interface to the north and south of a v-point [R L2 T-2 ~> Pa]
-    SpV_y_S, SpV_y_N, & ! Specific volume anomalies on the reference interface to the north and south
-                        ! of a v-point [R L2 T-2 ~> Pa]
     inty_za_nonlin, &   ! Deviations in the previous version of intx_pa for the reference interface
                         ! from the value that would be obtained from assuming that pressure varies
                         ! linearly with depth along that interface [L2 T-2 ~> m2 s-2].
@@ -1016,8 +1011,6 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, ADp, 
     T_int_W, T_int_E, & ! Temperatures on the reference interface to the east and west of a u-point [C ~> degC]
     S_int_W, S_int_E, & ! Salinities on the reference interface to the east and west of a u-point [S ~> ppt]
     p_int_W, p_int_E, & ! Pressures on the reference interface to the east and west of a u-point [R L2 T-2 ~> Pa]
-    rho_x_W, rho_x_E, & ! Density anomalies on the reference interface to the east and west
-                        ! of a u-point [R ~> kg m-3]
     intx_pa_nonlin, &   ! Deviations in the previous version of intx_pa for the reference interface
                         ! from the value that would be obtained from assuming that pressure varies
                         ! linearly with depth along that interface [R L2 T-2 ~> Pa].
@@ -1027,8 +1020,6 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, ADp, 
     T_int_S, T_int_N, & ! Temperatures on the reference interface to the north and south of a v-point [C ~> degC]
     S_int_S, S_int_N, & ! Salinities on the reference interface to the north and south of a v-point [S ~> ppt]
     p_int_S, p_int_N, & ! Pressures on the reference interface to the north and south of a v-point [R L2 T-2 ~> Pa]
-    rho_y_S, rho_y_N, & ! Density anomalies on the reference interface to the north and south
-                        ! of a v-point [R ~> kg m-3]
     inty_pa_nonlin, &   ! Deviations in the previous version of intx_pa for the reference interface
                         ! from the value that would be obtained from assuming that pressure varies
                         ! linearly with depth along that interface [R L2 T-2 ~> Pa].
@@ -1108,7 +1099,7 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, ADp, 
   integer, dimension(2) :: EOSdom_u ! The i-computational domain for the equation of state at u-velocity points
   integer, dimension(2) :: EOSdom_v ! The i-computational domain for the equation of state at v-velocity points
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz, nkmb
-  integer :: i, j, k, m, k2
+  integer :: i, j, k, m
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   nkmb=GV%nk_rho_varies
@@ -2045,7 +2036,6 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, ADp, SAL
   logical :: useMassWghtInterp ! If true, use near-bottom mass weighting for T and S
   logical :: MassWghtInterpTop ! If true, use near-surface mass weighting for T and S under ice shelves
   logical :: MassWghtInterp_NonBous_bug ! If true, use a buggy mass weighting when non-Boussinesq
-  logical :: MassWghtInterpVanOnly ! If true, turn of mass weighting unless one side is vanished
   logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
                           ! recreate the bugs, or if false bugs are only used if actively selected.
   ! This include declares and sets the variable "version".

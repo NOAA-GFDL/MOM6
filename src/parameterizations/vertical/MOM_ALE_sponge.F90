@@ -189,7 +189,6 @@ subroutine initialize_ALE_sponge_fixed(Iresttime, G, GV, param_file, CS, data_h,
 # include "version_variable.h"
   character(len=64)  :: remapScheme
   logical :: use_sponge
-  logical :: data_h_to_Z
   logical :: bndExtrapolation = .true. ! If true, extrapolate boundaries
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   logical :: om4_remap_via_sub_cells ! If true, use the OM4 remapping algorithm
