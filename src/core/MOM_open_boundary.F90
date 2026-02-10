@@ -165,7 +165,12 @@ type, public :: OBC_segment_tracer_type
                                                       !! data, like [S ppt-1 ~> 1] for salinity.
   logical                    :: is_initialized        !< reservoir values have been set when True
   integer                    :: ntr_index = -1        !< index of segment tracer in the global tracer registry
-  integer                    :: fd_index = -1         !< index of segment tracer in the input fields
+  real              :: resrv_lfac_in = 1.   !< The reservoir inverse length scale factor for the inward
+                                            !! direction per field [nondim].  The general 1/Lscale_in is
+                                            !! multiplied by this factor for a specific tracer or thickness.
+  real              :: resrv_lfac_out= 1.   !< The reservoir inverse length scale factor for the outward
+                                            !! direction per field [nondim].  The general 1/Lscale_out is
+                                            !! multiplied by this factor for a specific tracer or thickness.
 end type OBC_segment_tracer_type
 
 !> Thickness on OBC segment data structure, with a reservoir
@@ -5088,7 +5093,6 @@ subroutine segment_thickness_reservoir_init(GV, US, OBC, param_file)
   real :: rescale ! A multiplicatively corrected scaling factor, in units like [S ppt-1 ~> 1] for
                   ! salinity, or other various units depending on what rescaling has occurred previously.
   integer :: nseg, m, isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
-  integer :: fd_id
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
   integer, save :: init_calls = 0
 
@@ -5111,10 +5115,6 @@ subroutine segment_thickness_reservoir_init(GV, US, OBC, param_file)
     IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
     JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
 
-    fd_id = -1
-    do m=1,segment%num_fields
-      if (lowercase(segment%field(m)%name) == lowercase(segment%h_Reg%name)) fd_id = m
-    enddo
     segment%h_Reg%scale = US%Z_to_m
     do m=1,segment%num_fields
       if (uppercase(segment%field(m)%name) == uppercase(segment%h_Reg%name)) then
@@ -5147,7 +5147,7 @@ end subroutine segment_thickness_reservoir_init
 !> Register a tracer array that is active on an OBC segment, potentially also specifying how the
 !! tracer inflow values are specified.
 subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, &
-                                   OBC_scalar, OBC_array, scale, fd_index)
+                                   OBC_scalar, OBC_array, scale, resrv_lfac_in, resrv_lfac_out)
   type(verticalGrid_type), intent(in)   :: GV         !< ocean vertical grid structure
   type(tracer_type), target             :: tr_ptr     !< A target that can be used to set a pointer to the
                                                       !! stored value of tr. This target must be
@@ -5169,7 +5169,8 @@ subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, &
                                                       !! data that is read in to convert it to the internal
                                                       !! units of this tracer, in units like [S ppt-1 ~> 1]
                                                       !! for salinity.
-  integer,      optional, intent(in)    :: fd_index   !< index of segment tracer in the input field
+  real,         optional, intent(in)    :: resrv_lfac_in   !< The reservoir inverse length scale factor
+  real,         optional, intent(in)    :: resrv_lfac_out  !< The reservoir inverse length scale factor
 
 ! Local variables
   real :: rescale ! A multiplicatively corrected scaling factor, in units like [S ppt-1 ~> 1] for
@@ -5195,7 +5196,6 @@ subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, &
   segment%tr_Reg%Tr(ntseg)%Tr => tr_ptr
   segment%tr_Reg%Tr(ntseg)%name = tr_ptr%name
   segment%tr_Reg%Tr(ntseg)%ntr_index = ntr_index
-  if (present(fd_index)) segment%tr_Reg%Tr(ntseg)%fd_index = fd_index
 
   segment%tr_Reg%Tr(ntseg)%scale = 1.0
   if (present(scale)) then
@@ -5219,6 +5219,9 @@ subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, &
   if (segment%tr_Reg%locked) call MOM_error(FATAL, &
       "MOM register_segment_tracer was called for variable "//trim(segment%tr_Reg%Tr(ntseg)%name)//&
       " with a locked tracer registry.")
+
+  if (present(resrv_lfac_in)) segment%tr_Reg%Tr(ntseg)%resrv_lfac_in = resrv_lfac_in
+  if (present(resrv_lfac_out)) segment%tr_Reg%Tr(ntseg)%resrv_lfac_out = resrv_lfac_out
 
   if (present(OBC_scalar)) segment%tr_Reg%Tr(ntseg)%OBC_inflow_conc = OBC_scalar ! initialize tracer value later
   if (present(OBC_array)) then
@@ -5340,16 +5343,21 @@ end subroutine get_obgc_segments_props
 
 !> Registers a named tracer in the segment tracer registries for the OBC segments on which it is active.
 subroutine register_obgc_segments(GV, OBC, tr_Reg, param_file, tr_name)
-  type(verticalGrid_type),    intent(in)    :: GV         !< ocean vertical grid structure
-  type(ocean_OBC_type),       pointer       :: OBC        !< Open boundary structure
-  type(tracer_registry_type), pointer       :: tr_Reg     !< Tracer registry
-  type(param_file_type),      intent(in)    :: param_file !< file to parse for  model parameter values
-  character(len=*),           intent(in)    :: tr_name    !< Tracer name
-! Local variables
-  integer :: ntr_id, fd_id
+  type(verticalGrid_type),    intent(in) :: GV         !< ocean vertical grid structure
+  type(ocean_OBC_type),       pointer    :: OBC        !< Open boundary structure
+  type(tracer_registry_type), pointer    :: tr_Reg     !< Tracer registry
+  type(param_file_type),      intent(in) :: param_file !< file to parse for model parameter values
+  character(len=*),           intent(in) :: tr_name    !< Tracer name
+
+  ! Local variables
+  integer :: ntr_id
   integer :: n, m
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
-  type(tracer_type), pointer      :: tr_ptr => NULL()
+  type(tracer_type),      pointer :: tr_ptr => NULL()
+  real                            :: resrv_lfac_in  ! Per-tracer multiplier for the inward reservoir
+                                                    ! relaxation length scale [nondim].
+  real                            :: resrv_lfac_out ! Per-tracer multiplier for the outward reservoir
+                                                    ! relaxation length scale [nondim].
 
   if (.not. associated(OBC)) return
 
@@ -5357,14 +5365,17 @@ subroutine register_obgc_segments(GV, OBC, tr_Reg, param_file, tr_name)
     segment => OBC%segment(n)
     if (.not. segment%on_pe) cycle
     call tracer_name_lookup(tr_Reg, ntr_id, tr_ptr, tr_name)
-    ! get the obgc field index
-    fd_id = -1
+    resrv_lfac_in  = 1.0
+    resrv_lfac_out = 1.0
     do m=1,segment%num_fields
-      if (lowercase(segment%field(m)%name) == lowercase(tr_name)) fd_id = m
+      if (lowercase(segment%field(m)%name) == lowercase(tr_name)) then
+        resrv_lfac_in  = segment%field(m)%resrv_lfac_in
+        resrv_lfac_out = segment%field(m)%resrv_lfac_out
+      endif
     enddo
-    call register_segment_tracer(tr_ptr, ntr_id, param_file, GV, segment, OBC_array=.True., fd_index=fd_id)
+    call register_segment_tracer(tr_ptr, ntr_id, param_file, GV, segment, OBC_array=.True., &
+                                 resrv_lfac_in=resrv_lfac_in, resrv_lfac_out=resrv_lfac_out)
   enddo
-
 end subroutine register_obgc_segments
 
 !> Stores the interior tracer values on the segment, and in some cases also sets the tracer reservoir values.
@@ -5973,7 +5984,7 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, Reg)
   real    :: fac1           ! The denominator of the expression for tracer updates [nondim]
   real    :: I_scale        ! The inverse of the scaling factor for the tracers.
                             ! For salinity the units would be [ppt S-1 ~> 1]
-  integer :: i, j, k, m, n, nz, ntr_id, fd_id
+  integer :: i, j, k, m, n, nz, ntr_id
   integer :: is, ie, js, je, ii, ji
 
   if (.not. associated(OBC)) return
@@ -5998,14 +6009,8 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, Reg)
       ! Update the reservoir tracer concentration implicitly using a Backward-Euler timestep
       do m=1,segment%tr_Reg%ntseg ; if (allocated(segment%tr_Reg%Tr(m)%tres)) then
         ntr_id = segment%tr_Reg%Tr(m)%ntr_index
-        fd_id = segment%tr_Reg%Tr(m)%fd_index
-        if (fd_id == -1) then
-          resrv_lfac_out = 1.0
-          resrv_lfac_in  = 1.0
-        else
-          resrv_lfac_out = segment%field(fd_id)%resrv_lfac_out
-          resrv_lfac_in  = segment%field(fd_id)%resrv_lfac_in
-        endif
+        resrv_lfac_out = segment%tr_Reg%Tr(m)%resrv_lfac_out
+        resrv_lfac_in  = segment%tr_Reg%Tr(m)%resrv_lfac_in
         I_scale = 1.0 ; if (segment%tr_Reg%Tr(m)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(m)%scale
         do k=1,nz ; do j=js,je
           ! Calculate weights. Both a and u_L are nondim. Adding them together has no meaning.
@@ -6037,14 +6042,8 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, Reg)
       ! Update the reservoir tracer concentration implicitly using a Backward-Euler timestep
       do m=1,segment%tr_Reg%ntseg ; if (allocated(segment%tr_Reg%Tr(m)%tres)) then
         ntr_id = segment%tr_Reg%Tr(m)%ntr_index
-        fd_id = segment%tr_Reg%Tr(m)%fd_index
-        if (fd_id == -1) then
-          resrv_lfac_out = 1.0
-          resrv_lfac_in  = 1.0
-        else
-          resrv_lfac_out = segment%field(fd_id)%resrv_lfac_out
-          resrv_lfac_in  = segment%field(fd_id)%resrv_lfac_in
-        endif
+        resrv_lfac_out = segment%tr_Reg%Tr(m)%resrv_lfac_out
+        resrv_lfac_in  = segment%tr_Reg%Tr(m)%resrv_lfac_in
         I_scale = 1.0 ; if (segment%tr_Reg%Tr(m)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(m)%scale
         do k=1,nz ; do i=is,ie
           flux_to_res = dir * vhr(i,J,k)
