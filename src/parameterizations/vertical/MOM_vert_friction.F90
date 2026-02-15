@@ -2568,7 +2568,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
   real :: vel_report(SZIB_(G),SZJB_(G))   ! The velocity to report [L T-1 ~> m s-1]
   real :: u_old(SZIB_(G),SZJ_(G),SZK_(GV)) ! The previous u-velocity [L T-1 ~> m s-1]
   real :: v_old(SZI_(G),SZJB_(G),SZK_(GV)) ! The previous v-velocity [L T-1 ~> m s-1]
-  logical :: dowrite(SZIB_(G),SZJB_(G))
+  logical :: trunc_any, dowrite(SZIB_(G),SZJB_(G))
   logical :: do_any_write
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
@@ -2592,6 +2592,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         CFL = (u(I,j,k) * dt) * (G%dy_Cu(I,j) * G%IareaT(i,j))
       endif
       if (CFL > CS%CFL_report) then
+        trunc_any = .true.
         dowrite(I,j) = .true.
         do_any_write = .true.
         vel_report(I,j) = min(vel_report(I,j), abs(u(I,j,k)))
@@ -2602,7 +2603,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       u_old(I,j,:) = u(I,j,:)
     endif ; enddo ; enddo
 
-    if (do_any_write) then
+    if (trunc_any) then
       do k=1,nz ; do j=js,je ; do I=Isq,Ieq
         if ((u(I,j,k) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
           u(I,j,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
@@ -2657,6 +2658,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
         CFL = (v(i,J,k) * dt) * (G%dx_Cv(i,J) * G%IareaT(i,j))
       endif
       if (CFL > CS%CFL_report) then
+        trunc_any = .true.
         dowrite(i,J) = .true.
         do_any_write = .true.
         vel_report(i,J) = min(vel_report(i,J), abs(v(i,J,k)))
@@ -2667,7 +2669,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       v_old(i,J,:) = v(i,J,:)
     endif ; enddo ; enddo
 
-    if (do_any_write) then
+    if (trunc_any) then
       do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
         if ((v(i,J,k) * (dt * G%dx_Cv(i,J))) * G%IareaT(i,j+1) < -CS%CFL_trunc) then
           v(i,J,k) = (-0.9*CS%CFL_trunc) * (G%areaT(i,j+1) / (dt * G%dx_Cv(i,J)))
