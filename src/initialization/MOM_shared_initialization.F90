@@ -146,7 +146,6 @@ subroutine set_meanSL_from_file(meanSL, G, param_file, US)
   type(param_file_type),            intent(in)  :: param_file !< Parameter file structure
   type(unit_scale_type),            intent(in)  :: US !< A dimensional unit scaling type
   ! Local variables
-  logical :: read_meanSL_file
   character(len=200) :: filename, file, inputdir ! Strings for file/path
   character(len=200) :: varname                  ! Variable name in file
   character(len=40)  :: mdl = "set_meanSL_from_file" ! This subroutine's name.

@@ -884,9 +884,6 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, w_struct, u_struct, u_s
   real :: mode_struct_sq(SZK_(GV)+1) ! The square of mode structure [nondim]
   real :: mode_struct_fder_sq(SZK_(GV)) ! The square of mode structure 1st derivative [Z-2 ~> m-2]
 
-
-  real :: ms_min, ms_max ! The minimum and maximum mode structure values returned from tdma6 [L2 T-2 ~> m2 s-2]
-  real :: ms_sq          ! The sum of the square of the values returned from tdma6 [L4 T-4 ~> m4 s-4]
   real :: w2avg          ! A total for renormalization [H L4 T-4 ~> m5 s-4 or kg m2 s-4]
   real, parameter :: a_int = 0.5 ! Integral total for normalization [nondim]
   real :: renorm         ! Normalization factor [T2 L-2 ~> s2 m-2]

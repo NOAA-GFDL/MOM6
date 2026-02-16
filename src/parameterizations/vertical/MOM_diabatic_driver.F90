@@ -309,7 +309,7 @@ subroutine diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
   real, dimension(SZI_(G),SZK_(GV)) :: &
     pressure    ! The pressure at the middle of each layer [R L2 T-2 ~> Pa].
   real :: H_to_RL2_T2  ! A conversion factor from thicknesses in H to pressure [R L2 T-2 H-1 ~> Pa m-1 or Pa m2 kg-1]
-  integer :: i, j, k, m, is, ie, js, je, nz
+  integer :: i, j, k, is, ie, js, je, nz
   logical :: showCallTree ! If true, show the call tree
 
   real, allocatable, dimension(:,:,:)    :: h_in  ! thickness before thermodynamics [H ~> m or kg m-2]
@@ -594,7 +594,6 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
 
   real, dimension(SZI_(G)) :: &
     p_i ,&      ! Pressure at the interface [R L2 T-2 ~> Pa]
-    d_pres, &   ! pressure change across a layer [R L2 T-2 ~> Pa]
     T_i, &      ! Temperature at the interface [C ~> degC]
     S_i, &      ! Salinity at the interface [S ~> ppt]
     drhodS, &   ! Local change in density w.r.t. salinity using model EOS & state [R C-1 ~> kg m-3 ppt-1]
@@ -1312,7 +1311,6 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
 
   real, dimension(SZI_(G)) :: &
     p_i ,&      ! Pressure at the interface [R L2 T-2 ~> Pa]
-    d_pres, &   ! pressure change across a layer [R L2 T-2 ~> Pa]
     T_i, &      ! Temperature at the interface [C ~> degC]
     S_i, &      ! Salinity at the interface [S ~> ppt]
     drhodS, &   ! Local change in density w.r.t. salinity using model EOS & state [R C-1 ~> kg m-3 ppt-1]
@@ -3241,10 +3239,8 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_diabatic_driver" ! This module's name.
   character(len=48)  :: thickness_units
-  character(len=40)  :: var_name
-  character(len=160) :: var_descript
   logical :: physical_OBL_scheme
-  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB, nz, nbands, m
+  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB, nz, nbands
   isd  = G%isd  ; ied  = G%ied  ; jsd  = G%jsd  ; jed  = G%jed ; nz = GV%ke
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
 

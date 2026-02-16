@@ -92,6 +92,7 @@ type, public :: dyn_horgrid_type
     geoLonCu, &  !< The geographic longitude at u points [degrees of longitude] or [m].
     dxCu, &      !< dxCu is delta x at u points [L ~> m].
     IdxCu, &     !< 1/dxCu [L-1 ~> m-1].
+    IdxCu_OBCmask, & !< 1/dxCu or 0 at boundary or OBC points [L-1 ~> m-1].
     dyCu, &      !< dyCu is delta y at u points [L ~> m].
     IdyCu, &     !< 1/dyCu [L-1 ~> m-1].
     dy_Cu, &     !< The unblocked lengths of the u-faces of the h-cell [L ~> m].
@@ -107,6 +108,7 @@ type, public :: dyn_horgrid_type
     IdxCv, &     !< 1/dxCv [L-1 ~> m-1].
     dyCv, &      !< dyCv is delta y at v points [L ~> m].
     IdyCv, &     !< 1/dyCv [L-1 ~> m-1].
+    IdyCv_OBCmask, & !< 1/dxCv or 0 at boundary or OBC points [L-1 ~> m-1].
     dx_Cv, &     !< The unblocked lengths of the v-faces of the h-cell [L ~> m].
     IareaCv, &   !< The masked inverse areas of v-grid cells [L-2 ~> m-2].
     areaCv       !< The areas of the v-grid cells [L2 ~> m2].
@@ -251,6 +253,7 @@ subroutine create_dyn_horgrid(G, HI, bathymetry_at_vel)
   allocate(G%dxBu(IsdB:IedB,JsdB:JedB), source=0.0)
   allocate(G%IdxT(isd:ied,jsd:jed), source=0.0)
   allocate(G%IdxCu(IsdB:IedB,jsd:jed), source=0.0)
+  allocate(G%IdxCu_OBCmask(IsdB:IedB,jsd:jed), source=0.0)
   allocate(G%IdxCv(isd:ied,JsdB:JedB), source=0.0)
   allocate(G%IdxBu(IsdB:IedB,JsdB:JedB), source=0.0)
 
@@ -261,6 +264,7 @@ subroutine create_dyn_horgrid(G, HI, bathymetry_at_vel)
   allocate(G%IdyT(isd:ied,jsd:jed), source=0.0)
   allocate(G%IdyCu(IsdB:IedB,jsd:jed), source=0.0)
   allocate(G%IdyCv(isd:ied,JsdB:JedB), source=0.0)
+  allocate(G%IdyCv_OBCmask(isd:ied,JsdB:JedB), source=0.0)
   allocate(G%IdyBu(IsdB:IedB,JsdB:JedB), source=0.0)
 
   allocate(G%areaT(isd:ied,jsd:jed), source=0.0)
@@ -482,6 +486,7 @@ subroutine set_derived_dyn_horgrid(G, US)
     if (G%dyCu(I,j) < 0.0) G%dyCu(I,j) = 0.0
     G%IdxCu(I,j) = Adcroft_reciprocal(G%dxCu(I,j))
     G%IdyCu(I,j) = Adcroft_reciprocal(G%dyCu(I,j))
+    G%IdxCu_OBCmask(I,j) = G%OBCmaskCu(I,j) * G%IdxCu(I,j) ! This may be reset when the masks are set.
   enddo ; enddo
 
   do J=JsdB,JedB ; do i=isd,ied
@@ -489,6 +494,7 @@ subroutine set_derived_dyn_horgrid(G, US)
     if (G%dyCv(i,J) < 0.0) G%dyCv(i,J) = 0.0
     G%IdxCv(i,J) = Adcroft_reciprocal(G%dxCv(i,J))
     G%IdyCv(i,J) = Adcroft_reciprocal(G%dyCv(i,J))
+    G%IdyCv_OBCmask(i,J) = G%OBCmaskCv(i,J) * G%IdyCv(i,J) ! This may be reset when the masks are set.
   enddo ; enddo
 
   do J=JsdB,JedB ; do I=IsdB,IedB
@@ -534,6 +540,7 @@ subroutine destroy_dyn_horgrid(G)
 
   deallocate(G%mask2dT)  ; deallocate(G%mask2dCu) ; deallocate(G%OBCmaskCu)
   deallocate(G%mask2dCv) ; deallocate(G%OBCmaskCv) ; deallocate(G%mask2dBu)
+  deallocate(G%IdxCu_OBCmask) ; deallocate(G%IdyCv_OBCmask)
 
   deallocate(G%geoLatT)  ; deallocate(G%geoLatCu)
   deallocate(G%geoLatCv) ; deallocate(G%geoLatBu)

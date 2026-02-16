@@ -506,6 +506,7 @@ subroutine open_boundary_config(G, US, param_file, OBC)
   type(ocean_OBC_type),    pointer       :: OBC !< Open boundary control structure
 
   ! Local variables
+  integer :: num_of_segs ! Number of open boundary segments
   integer :: n, n_seg ! For looping over segments
   logical :: debug, mask_outside, reentrant_x, reentrant_y
   character(len=15) :: segment_param_str ! The run-time parameter name for each segment
@@ -513,26 +514,24 @@ subroutine open_boundary_config(G, US, param_file, OBC)
   character(len=200) :: config1          ! String for OBC_USER_CONFIG
   real               :: Lscale_in, Lscale_out ! parameters controlling tracer values at the boundaries [L ~> m]
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
-  logical :: check_remapping, force_bounds_in_subcell
   logical :: enable_bugs     ! If true, the defaults for recently added bug-fix flags are set to
                              ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: debugging_tests ! If true, do additional calls resetting values to help debug the performance
                              ! of the open boundary condition code.
-  logical :: om4_remap_via_sub_cells ! If true, use the OM4 remapping algorithm
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
 
-  allocate(OBC)
-
-  call get_param(param_file, mdl, "OBC_NUMBER_OF_SEGMENTS", OBC%number_of_segments, &
-                 default=0, do_not_log=.true.)
   call log_version(param_file, mdl, version, &
                  "Controls where open boundaries are located, what kind of boundary condition "//&
-                 "to impose, and what data to apply, if any.", &
-                 all_default=(OBC%number_of_segments<=0))
-  call get_param(param_file, mdl, "OBC_NUMBER_OF_SEGMENTS", OBC%number_of_segments, &
-                 "The number of open boundary segments.", &
-                 default=0)
+                 "to impose, and what data to apply, if any.", all_default=.false.)
+  ! Parameter OBC_NUMBER_OF_SEGMENTS is always logged.
+  call get_param(param_file, mdl, "OBC_NUMBER_OF_SEGMENTS", num_of_segs, &
+                 "The number of open boundary segments.", default=0)
+  if (num_of_segs <= 0) & ! Do nothing if there is no OBC segments
+    return
+
+  allocate(OBC)
+  OBC%number_of_segments = num_of_segs
   call get_param(param_file, mdl, "OBC_USER_CONFIG", config1, &
                  "A string that sets how the open boundary conditions are "//&
                  " configured: \n", default="none", do_not_log=.true.)
@@ -606,12 +605,7 @@ subroutine open_boundary_config(G, US, param_file, OBC)
     call get_param(param_file, mdl, "OBC_TIDE_N_CONSTITUENTS", OBC%n_tide_constituents, &
          "Number of tidal constituents being added to the open boundary.", &
          default=0)
-
-    if (OBC%n_tide_constituents > 0) then
-      OBC%add_tide_constituents = .true.
-    else
-      OBC%add_tide_constituents = .false.
-    endif
+    OBC%add_tide_constituents = (OBC%n_tide_constituents > 0)
 
     call get_param(param_file, mdl, "DEBUG", debug, default=.false.)
     call get_param(param_file, mdl, "DEBUG_OBCS", OBC%debug, &
@@ -634,7 +628,6 @@ subroutine open_boundary_config(G, US, param_file, OBC)
                  "for dependencies on the order with which the OBC segments are applied.", &
                  default=.false., debuggingParam=.true., do_not_log=(OBC%number_of_segments<2))
 
-
     call get_param(param_file, mdl, "OBC_SILLY_THICK", OBC%silly_h, &
                  "A silly value of thicknesses used outside of open boundary "//&
                  "conditions for debugging.", units="m", default=0.0, scale=US%m_to_Z, &
@@ -656,9 +649,7 @@ subroutine open_boundary_config(G, US, param_file, OBC)
                  "If true, set the OBC tracer reservoirs at the startup of a new run from the "//&
                  "interior tracer concentrations regardless of properties that may be explicitly "//&
                  "specified for the reservoir concentrations.", default=enable_bugs, do_not_log=.true.)
-    reentrant_x = .false.
     call get_param(param_file, mdl, "REENTRANT_X", reentrant_x, default=.true.)
-    reentrant_y = .false.
     call get_param(param_file, mdl, "REENTRANT_Y", reentrant_y, default=.false.)
 
     ! Allocate everything
@@ -732,8 +723,8 @@ subroutine open_boundary_config(G, US, param_file, OBC)
       ! Need this for ocean_only mode boundary interpolation.
       call time_interp_external_init()
     endif
-    !    if (open_boundary_query(OBC, needs_ext_seg_data=.true.)) &
- !   call initialize_segment_data(G, OBC, param_file)
+    ! if (open_boundary_query(OBC, needs_ext_seg_data=.true.)) &
+    !   call initialize_segment_data(G, OBC, param_file)
 
     if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
       call get_param(param_file, mdl, "OBC_RADIATION_MAX", OBC%rx_max, &
@@ -847,7 +838,7 @@ subroutine open_boundary_config(G, US, param_file, OBC)
 
   endif ! OBC%number_of_segments > 0
 
-    ! Safety check
+  ! Safety check
   if ((OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) .and. &
        .not.G%symmetric ) call MOM_error(FATAL, &
        "MOM_open_boundary, open_boundary_config: "//&
@@ -2264,9 +2255,9 @@ subroutine open_boundary_impose_land_mask(OBC, G, areaCu, areaCv, US)
       enddo
       do J=segment%HI%JsdB+1,segment%HI%JedB-1
         if (segment%direction == OBC_DIRECTION_W) then
-          G%mask2dCv(i,J) = 0 ; G%OBCmaskCv(i,J) = 0.0
+          G%mask2dCv(i,J) = 0 ; G%OBCmaskCv(i,J) = 0.0 ; G%IdyCv_OBCmask(i,J) = 0.0
         else
-          G%mask2dCv(i+1,J) = 0.0 ; G%OBCmaskCv(i+1,J) = 0.0
+          G%mask2dCv(i+1,J) = 0.0 ; G%OBCmaskCv(i+1,J) = 0.0 ; G%IdyCv_OBCmask(i+1,J) = 0.0
         endif
       enddo
     else
@@ -2282,9 +2273,9 @@ subroutine open_boundary_impose_land_mask(OBC, G, areaCu, areaCv, US)
       enddo
       do I=segment%HI%IsdB+1,segment%HI%IedB-1
         if (segment%direction == OBC_DIRECTION_S) then
-          G%mask2dCu(I,j) = 0.0 ; G%OBCmaskCu(I,j) = 0.0
+          G%mask2dCu(I,j) = 0.0 ; G%OBCmaskCu(I,j) = 0.0 ; G%IdxCu_OBCmask(I,j) = 0.0
         else
-          G%mask2dCu(I,j+1) = 0.0 ; G%OBCmaskCu(I,j+1) = 0.0
+          G%mask2dCu(I,j+1) = 0.0 ; G%OBCmaskCu(I,j+1) = 0.0 ; G%IdxCu_OBCmask(I,j+1) = 0.0
         endif
       enddo
     endif
@@ -2298,12 +2289,12 @@ subroutine open_boundary_impose_land_mask(OBC, G, areaCu, areaCv, US)
     if (segment%is_E_or_W) then
       I=segment%HI%IsdB
       do j=segment%HI%jsd,segment%HI%jed
-        G%OBCmaskCu(I,j) = 0.0
+        G%OBCmaskCu(I,j) = 0.0 ; G%IdxCu_OBCmask(I,j) = 0.0
       enddo
     else
       J=segment%HI%JsdB
       do i=segment%HI%isd,segment%HI%ied
-        G%OBCmaskCv(i,J) = 0.0
+        G%OBCmaskCv(i,J) = 0.0 ; G%IdyCv_OBCmask(i,J) = 0.0
       enddo
     endif
   enddo
@@ -2501,7 +2492,7 @@ subroutine set_initialized_OBC_tracer_reservoirs(G, OBC, restart_CS)
   type(ocean_OBC_type),           intent(in)    :: OBC !< Open boundary control structure
   type(MOM_restart_CS),           intent(inout) :: restart_CS !< MOM restart control structure
   character(len=12) :: x_var_name, y_var_name
-  integer :: i, j, k, m, n
+  integer :: m
 
   do m=1,OBC%ntr
     ! Set the names of the reservoirs for this tracer in the restart file
@@ -2576,7 +2567,7 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
   type(verticalGrid_type),                    intent(in)    :: GV    !< The ocean's vertical grid structure
   type(ocean_OBC_type),                       pointer       :: OBC   !< Open boundary control structure
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(inout) :: u_new !< On exit, new u values on open boundaries
-                                                                     !! On entry, the old time-level v but including
+                                                                     !! On entry, the old time-level u but including
                                                                      !! barotropic accelerations [L T-1 ~> m s-1].
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in)    :: u_old !< Original unadjusted u [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(inout) :: v_new !< On exit, new v values on open boundaries.
@@ -4946,8 +4937,6 @@ subroutine segment_thickness_reservoir_init(GV, US, OBC, param_file)
                   ! salinity, or other various units depending on what rescaling has occurred previously.
   integer :: nseg, m, isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
   integer :: fd_id
-  character(len=256) :: mesg    ! Message for error messages.
-  character(len=32) :: name
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
   integer, save :: init_calls = 0
 
@@ -5205,8 +5194,8 @@ subroutine register_obgc_segments(GV, OBC, tr_Reg, param_file, tr_name)
   type(param_file_type),      intent(in)    :: param_file !< file to parse for  model parameter values
   character(len=*),           intent(in)    :: tr_name    !< Tracer name
 ! Local variables
-  integer :: isd, ied, IsdB, IedB, jsd, jed, JsdB, JedB, nz, nf, ntr_id, fd_id
-  integer :: i, j, k, n, m
+  integer :: ntr_id, fd_id
+  integer :: n, m
   type(OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
   type(tracer_type), pointer      :: tr_ptr => NULL()
 
@@ -5431,7 +5420,6 @@ subroutine mask_outside_OBCs(G, US, param_file, OBC)
 
   ! Local variables
   integer :: i, j
-  integer :: l_seg
   logical :: fatal_error = .False.
   real    :: min_depth  ! The minimum depth for ocean points [Z ~> m]
   real    :: mask_depth ! The masking depth for ocean points [Z ~> m]
@@ -5951,7 +5939,7 @@ subroutine update_segment_thickness_reservoirs(G, GV, uhr, vhr, h, OBC)
   real :: fac1            ! The denominator of the expression for tracer updates [nondim]
   real :: I_scale         ! The inverse of the scaling factor for the tracers.
                           ! For salinity the units would be [ppt S-1 ~> 1]
-  integer :: i, j, k, m, n, nz, fd_id
+  integer :: i, j, k, n, nz, fd_id
   integer :: ishift, idir, jshift, jdir
   real :: resrv_lfac_out  ! The reservoir inverse length scale scaling factor for the outward
                           ! direction per field [nondim]
@@ -7032,7 +7020,6 @@ subroutine chksum_OBC_segment_data(segment, GV, US, nk, nseg_out)
   real :: norm ! A sign change used when rotating a normal component [nondim]
   real :: tang ! A sign change used when rotating a tangential component [nondim]
   character(len=8) :: sn, segno
-  character(len=1024) :: mesg
   integer :: dir        ! This indicates the internal logical orientation of a segment
 
     dir = segment%direction

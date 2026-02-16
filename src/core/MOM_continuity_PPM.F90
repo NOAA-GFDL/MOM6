@@ -930,7 +930,6 @@ subroutine zonal_flux_layer(u, h, h_W, h_E, uh, duhdu, visc_rem, dt, G, US, j, &
   real :: curv_3 ! A measure of the thickness curvature over a grid length [H ~> m or kg m-2]
   real :: h_marg ! The marginal thickness of a flux [H ~> m or kg m-2].
   integer :: i
-  integer :: l_seg
   logical :: local_open_BC
 
   local_open_BC = .false.

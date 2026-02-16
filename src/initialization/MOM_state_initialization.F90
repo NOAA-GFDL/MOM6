@@ -24,7 +24,6 @@ use MOM_open_boundary, only : ocean_OBC_type, open_boundary_test_extern_h
 use MOM_open_boundary, only : fill_temp_salt_segments, setup_OBC_tracer_reservoirs
 use MOM_open_boundary, only : fill_thickness_segments
 use MOM_open_boundary, only : set_initialized_OBC_tracer_reservoirs
-use MOM_grid_initialize, only : initialize_masks, set_grid_metrics
 use MOM_restart, only : restore_state, is_new_run, copy_restart_var, copy_restart_vector
 use MOM_restart, only : restart_registry_lock, MOM_restart_CS
 use MOM_sponge, only : set_up_sponge_field, set_up_sponge_ML_density
@@ -159,8 +158,6 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   real :: dz(SZI_(G),SZJ_(G),SZK_(GV)) ! The layer thicknesses in geopotential (z) units [Z ~> m]
   character(len=200) :: inputdir   ! The directory where NetCDF input files are.
   character(len=200) :: config, h_config
-  real :: H_rescale   ! A rescaling factor for thicknesses from the representation in
-                      ! a restart file to the internal representation in this run [various units ~> 1]
   real :: dt          ! The baroclinic dynamics timestep for this run [T ~> s].
 
   logical :: from_Z_file, useALE
@@ -2043,7 +2040,6 @@ subroutine initialize_sponges_file(G, GV, US, use_temperature, tv, u, v, depth_t
   ! Local variables
   real, allocatable, dimension(:,:,:) :: eta ! The target interface heights [Z ~> m].
   real, allocatable, dimension(:,:,:) :: dz  ! The target interface thicknesses in height units [Z ~> m]
-  real, allocatable, dimension(:,:,:) :: h   ! The target interface thicknesses [H ~> m or kg m-2].
 
   real, dimension (SZI_(G),SZJ_(G),SZK_(GV)) :: &
     tmp, &    ! A temporary array for temperatures [C ~> degC] or other tracers.
@@ -2646,11 +2642,8 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
                                    ! from data when finding the initial interface locations in
                                    ! layered mode from a dataset of T and S.
   character(len=64) :: remappingScheme
-  real :: tempAvg  ! Spatially averaged temperatures on a layer [C ~> degC]
-  real :: saltAvg  ! Spatially averaged salinities on a layer [S ~> ppt]
   logical :: om4_remap_via_sub_cells ! If true, use the OM4 remapping algorithm (only used if useALEremapping)
   logical :: do_conv_adj, ignore
-  integer :: nPoints
   integer :: id_clock_routine, id_clock_ALE
 
   id_clock_routine = cpu_clock_id('(Initialize from Z)', grain=CLOCK_ROUTINE)

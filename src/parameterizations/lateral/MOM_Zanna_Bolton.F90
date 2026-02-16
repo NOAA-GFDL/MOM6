@@ -444,13 +444,7 @@ subroutine ZB2020_lateral_stress(u, v, h, diffu, diffv, G, GV, CS, &
   real, dimension(SZIB_(G),SZJB_(G)), intent(in) :: dx2q    !< dx^2 at q points [L2 ~> m2]
   real, dimension(SZIB_(G),SZJB_(G)), intent(in) :: dy2q    !< dy^2 at q points [L2 ~> m2]
 
-  integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
-  integer :: i, j, k, n
-
   call cpu_clock_begin(CS%id_clock_module)
-
-  is  = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec ; nz = GV%ke
-  Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
 
   ! Compute attenuation if specified
   call compute_c_diss(G, GV, CS)
@@ -498,7 +492,7 @@ subroutine compute_c_diss(G, GV, CS)
   type(ZB2020_CS),         intent(inout) :: CS   !< ZB2020 control structure.
 
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
-  integer :: i, j, k, n
+  integer :: i, j, k
 
   real :: shear ! Shear in Klower2018 formula at h points [T-1 ~> s-1]
 
@@ -573,7 +567,7 @@ subroutine compute_stress(G, GV, CS)
   real :: vort_sh ! vort_xy*sh_xy in h point [T-2 ~> s-2]
 
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
-  integer :: i, j, k, n
+  integer :: i, j, k
 
   logical :: sum_sq_flag ! Flag to compute trace
   logical :: vort_sh_scheme_0, vort_sh_scheme_1 ! Flags to compute diagonal trace-free part
@@ -664,7 +658,7 @@ subroutine compute_stress_ANN_collocated(G, GV, CS)
   type(ZB2020_CS),         intent(inout) :: CS   !< ZB2020 control structure.
 
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
-  integer :: i, j, k, n, m
+  integer :: i, j, k, m
   integer :: ii, jj
   integer :: nij
 
@@ -676,7 +670,6 @@ subroutine compute_stress_ANN_collocated(G, GV, CS)
                                      ! (Txy,Txx,Tyy) [nondim]
   real :: yy(3)                      ! Vector of dimensional
                                      ! output features (Txy,Txx,Tyy) [L2 T-2 ~> m2 s-2]
-  real :: input_norm                 ! Norm of input features [T-1 ~> s-1]
   real :: tmp                        ! Temporal value of squared norm [T-2 ~> s-2]
   integer :: offset                  ! Half the stencil size. Used for selection
   integer :: stencil_points          ! The number of points after flattening
@@ -940,7 +933,7 @@ subroutine filter_velocity_gradients(G, GV, CS)
   integer :: niter                       ! required number of iterations
 
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
-  integer :: i, j, k, n
+  integer :: i, j, k
 
   niter = CS%HPF_iter
 

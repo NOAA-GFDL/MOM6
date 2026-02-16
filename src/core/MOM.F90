@@ -1598,13 +1598,11 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
 
   logical :: debug_redundant ! If true, check redundant values on PE boundaries when debugging.
   logical :: showCallTree
-  type(group_pass_type) :: pass_T_S, pass_T_S_h, pass_uv_T_S_h
+  type(group_pass_type) :: pass_T_S
   integer :: dynamics_stencil  ! The computational stencil for the calculations
                                ! in the dynamic core.
   integer :: halo_sz ! The size of a halo where data must be valid.
-  integer :: i, j, k, is, ie, js, je, nz
 
-  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   showCallTree = callTree_showQuery()
   if (showCallTree) call callTree_enter("step_MOM_thermo(), MOM.F90")
   if (CS%debug) call query_debugging_checks(do_redundant=debug_redundant)
@@ -1765,9 +1763,7 @@ subroutine ALE_regridding_and_remapping(CS, G, GV, US, u, v, h, tv, dtdia, Time_
   logical :: use_ice_shelf ! Needed for selecting the right ALE interface.
   logical :: debug_redundant ! If true, check redundant values on PE boundaries when debugging.
   logical :: showCallTree
-  type(group_pass_type) :: pass_T_S, pass_T_S_h, pass_uv_T_S_h
-  integer :: dynamics_stencil  ! The computational stencil for the calculations
-                               ! in the dynamic core.
+  type(group_pass_type) :: pass_T_S_h
   integer :: i, j, k, is, ie, js, je, nz
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
@@ -1930,12 +1926,10 @@ subroutine post_diabatic_halo_updates(CS, G, GV, US, u, v, h, tv)
 
   logical :: debug_redundant ! If true, check redundant values on PE boundaries when debugging.
   logical :: showCallTree
-  type(group_pass_type) :: pass_T_S, pass_T_S_h, pass_uv_T_S_h
+  type(group_pass_type) :: pass_uv_T_S_h
   integer :: dynamics_stencil  ! The computational stencil for the calculations
                                ! in the dynamic core.
-  integer :: i, j, k, is, ie, js, je, nz
 
-  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   showCallTree = callTree_showQuery()
   if (showCallTree) call callTree_enter("post_diabatic_halo_updates, MOM.F90")
   if (CS%debug) call query_debugging_checks(do_redundant=debug_redundant)
