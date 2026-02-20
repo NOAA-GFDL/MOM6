@@ -732,9 +732,11 @@ subroutine ocean_model_end(Ocean_sfc, Ocean_state, Time)
   call ocean_model_save_restart(Ocean_state, Time)
   call diag_mediator_end(Time, Ocean_state%diag, end_diag_manager=.true.)
   ! print time stats
-  call MOM_infra_end
   call MOM_end(Ocean_state%MOM_CSp)
   if (Ocean_state%use_ice_shelf) call ice_shelf_end(Ocean_state%Ice_shelf_CSp)
+
+  ! This closes out the infrastructure, including clocks, I/O and message passing communicators.
+  call MOM_infra_end()
 end subroutine ocean_model_end
 
 !> ocean_model_save_restart causes restart files associated with the ocean to be
