@@ -14,6 +14,8 @@ use MOM_file_parser,   only : get_param, log_version, param_file_type
 use MOM_grid,          only : ocean_grid_type
 use MOM_open_boundary, only : ocean_OBC_type, OBC_DIRECTION_E, OBC_DIRECTION_W
 use MOM_open_boundary, only : OBC_DIRECTION_N, OBC_DIRECTION_S
+use MOM_open_boundary, only : OBC_VORTICITY_ZERO, OBC_VORTICITY_FREESLIP
+use MOM_open_boundary, only : OBC_VORTICITY_COMPUTED, OBC_VORTICITY_SPECIFIED
 use MOM_string_functions, only : uppercase
 use MOM_unit_scaling,  only : unit_scale_type
 use MOM_variables,     only : accel_diag_ptrs, porous_barrier_type
@@ -375,26 +377,32 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
       if (.not. OBC%segment(n)%on_pe) cycle
       I = OBC%segment(n)%HI%IsdB ; J = OBC%segment(n)%HI%JsdB
       if (OBC%segment(n)%is_N_or_S .and. (J >= Js_q) .and. (J <= Je_q)) then
-        if (OBC%zero_vorticity) then ; do I=OBC%segment(n)%HI%IsdB,OBC%segment(n)%HI%IedB
-          dvdx(I,J) = 0. ; dudy(I,J) = 0.
-        enddo ; endif
-        if (OBC%freeslip_vorticity) then ; do I=OBC%segment(n)%HI%IsdB,OBC%segment(n)%HI%IedB
-          dudy(I,J) = 0.
-        enddo ; endif
-        if (OBC%computed_vorticity) then ; do I=OBC%segment(n)%HI%IsdB,OBC%segment(n)%HI%IedB
-          if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
-            dudy(I,J) = 2.0*(OBC%segment(n)%tangential_vel(I,J,k) - u(I,j,k))*G%dxCu(I,j)
-          else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
-            dudy(I,J) = 2.0*(u(I,j+1,k) - OBC%segment(n)%tangential_vel(I,J,k))*G%dxCu(I,j+1)
-          endif
-        enddo ; endif
-        if (OBC%specified_vorticity) then ; do I=OBC%segment(n)%HI%IsdB,OBC%segment(n)%HI%IedB
-          if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
-            dudy(I,J) = OBC%segment(n)%tangential_grad(I,J,k)*G%dxCu(I,j)*G%dyBu(I,J)
-          else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
-            dudy(I,J) = OBC%segment(n)%tangential_grad(I,J,k)*G%dxCu(I,j+1)*G%dyBu(I,J)
-          endif
-        enddo ; endif
+        select case (OBC%vorticity_config)
+          case (OBC_VORTICITY_ZERO)
+            do I=OBC%segment(n)%HI%IsdB,OBC%segment(n)%HI%IedB
+              dvdx(I,J) = 0. ; dudy(I,J) = 0.
+            enddo
+          case (OBC_VORTICITY_FREESLIP)
+            do I=OBC%segment(n)%HI%IsdB,OBC%segment(n)%HI%IedB
+              dudy(I,J) = 0.
+            enddo
+          case (OBC_VORTICITY_COMPUTED)
+            do I=OBC%segment(n)%HI%IsdB,OBC%segment(n)%HI%IedB
+              if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
+                dudy(I,J) = 2.0*(OBC%segment(n)%tangential_vel(I,J,k) - u(I,j,k))*G%dxCu(I,j)
+              else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
+                dudy(I,J) = 2.0*(u(I,j+1,k) - OBC%segment(n)%tangential_vel(I,J,k))*G%dxCu(I,j+1)
+              endif
+            enddo
+          case (OBC_VORTICITY_SPECIFIED)
+            do I=OBC%segment(n)%HI%IsdB,OBC%segment(n)%HI%IedB
+              if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
+                dudy(I,J) = OBC%segment(n)%tangential_grad(I,J,k)*G%dxCu(I,j)*G%dyBu(I,J)
+              else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
+                dudy(I,J) = OBC%segment(n)%tangential_grad(I,J,k)*G%dxCu(I,j+1)*G%dyBu(I,J)
+              endif
+            enddo
+        end select
 
         ! Project thicknesses across OBC points with a no-gradient condition.
         do i = max(Is_q,OBC%segment(n)%HI%isd), min(Ie_q+1,OBC%segment(n)%HI%ied)
@@ -415,26 +423,32 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
           enddo
         endif
       elseif (OBC%segment(n)%is_E_or_W .and. (I >= Is_q) .and. (I <= Ie_q)) then
-        if (OBC%zero_vorticity) then ; do J=OBC%segment(n)%HI%JsdB,OBC%segment(n)%HI%JedB
-          dvdx(I,J) = 0. ; dudy(I,J) = 0.
-        enddo ; endif
-        if (OBC%freeslip_vorticity) then ; do J=OBC%segment(n)%HI%JsdB,OBC%segment(n)%HI%JedB
-          dvdx(I,J) = 0.
-        enddo ; endif
-        if (OBC%computed_vorticity) then ; do J=OBC%segment(n)%HI%JsdB,OBC%segment(n)%HI%JedB
-          if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
-            dvdx(I,J) = 2.0*(OBC%segment(n)%tangential_vel(I,J,k) - v(i,J,k))*G%dyCv(i,J)
-          else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
-            dvdx(I,J) = 2.0*(v(i+1,J,k) - OBC%segment(n)%tangential_vel(I,J,k))*G%dyCv(i+1,J)
-          endif
-        enddo ; endif
-        if (OBC%specified_vorticity) then ; do J=OBC%segment(n)%HI%JsdB,OBC%segment(n)%HI%JedB
-          if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
-            dvdx(I,J) = OBC%segment(n)%tangential_grad(I,J,k)*G%dyCv(i,J)*G%dxBu(I,J)
-          else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
-            dvdx(I,J) = OBC%segment(n)%tangential_grad(I,J,k)*G%dyCv(i+1,J)*G%dxBu(I,J)
-          endif
-        enddo ; endif
+        select case (OBC%vorticity_config)
+          case (OBC_VORTICITY_ZERO)
+            do J=OBC%segment(n)%HI%JsdB,OBC%segment(n)%HI%JedB
+              dvdx(I,J) = 0. ; dudy(I,J) = 0.
+            enddo
+          case (OBC_VORTICITY_FREESLIP)
+            do J=OBC%segment(n)%HI%JsdB,OBC%segment(n)%HI%JedB
+              dvdx(I,J) = 0.
+            enddo
+          case (OBC_VORTICITY_COMPUTED)
+            do J=OBC%segment(n)%HI%JsdB,OBC%segment(n)%HI%JedB
+              if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
+                dvdx(I,J) = 2.0*(OBC%segment(n)%tangential_vel(I,J,k) - v(i,J,k))*G%dyCv(i,J)
+              else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
+                dvdx(I,J) = 2.0*(v(i+1,J,k) - OBC%segment(n)%tangential_vel(I,J,k))*G%dyCv(i+1,J)
+              endif
+            enddo
+          case (OBC_VORTICITY_SPECIFIED)
+            do J=OBC%segment(n)%HI%JsdB,OBC%segment(n)%HI%JedB
+              if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
+                dvdx(I,J) = OBC%segment(n)%tangential_grad(I,J,k)*G%dyCv(i,J)*G%dxBu(I,J)
+              else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
+                dvdx(I,J) = OBC%segment(n)%tangential_grad(I,J,k)*G%dyCv(i+1,J)*G%dxBu(I,J)
+              endif
+            enddo
+        end select
 
         ! Project thicknesses across OBC points with a no-gradient condition.
         do j = max(Js_q,OBC%segment(n)%HI%jsd), min(Je_q+1,OBC%segment(n)%HI%jed)
