@@ -419,10 +419,10 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
 !/BGR: New options for including Langmuir effects
 !/ 1. Options related to enhancing the mixing coefficient
   call get_param(paramFile, mdl, "USE_KPP_LT_K", CS%LT_K_Enhancement, &
-       'Flag for Langmuir turbulence enhancement of turbulent'//&
+       'Flag for Langmuir turbulence enhancement of turbulent '//&
        'mixing coefficient.', Default=.false.)
   call get_param(paramFile, mdl, "STOKES_MIXING", CS%Stokes_Mixing, &
-       'Flag for Langmuir turbulence enhancement of turbulent'//&
+       'Flag for Langmuir turbulence enhancement of turbulent '//&
        'mixing coefficient.', Default=.false.)
   if (CS%LT_K_Enhancement) then
     call get_param(paramFile, mdl, 'KPP_LT_K_SHAPE', string,                 &
@@ -469,7 +469,7 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
   endif
 !/ 2. Options related to enhancing the unresolved Vt2/entrainment in Rib
   call get_param(paramFile, mdl, "USE_KPP_LT_VT2", CS%LT_Vt2_Enhancement, &
-       'Flag for Langmuir turbulence enhancement of Vt2'//&
+       'Flag for Langmuir turbulence enhancement of Vt2 '//&
        'in Bulk Richardson Number.', Default=.false.)
   if (CS%LT_Vt2_Enhancement) then
     call get_param(paramFile, mdl, "KPP_LT_VT2_METHOD",string ,                  &
@@ -876,7 +876,7 @@ subroutine KPP_calculate(CS, G, GV, US, h, tv, uStar, buoyFlux, Kt, Ks, Kv, &
 
           call MOM_error(FATAL,"KPP_calculate, after CVMix_coeffs_kpp: "// &
                    "Negative vertical viscosity or diffusivity has been detected. " // &
-                   "This is likely related to the choice of MATCH_TECHNIQUE and INTERP_TYPE2." //&
+                   "This is likely related to the choice of MATCH_TECHNIQUE and INTERP_TYPE2. " //&
                    "You might consider using the default options for these parameters." )
         endif
       enddo

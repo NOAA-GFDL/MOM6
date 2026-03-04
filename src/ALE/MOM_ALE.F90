@@ -240,7 +240,7 @@ subroutine ALE_init( param_file, G, GV, US, max_depth, CS)
                  "extrapolated instead of piecewise constant", default=.false.)
   call get_param(param_file, mdl, "INIT_BOUNDARY_EXTRAP", init_boundary_extrap, &
                  "If true, values at the interfaces of boundary cells are "//&
-                 "extrapolated instead of piecewise constant during initialization."//&
+                 "extrapolated instead of piecewise constant during initialization.  "//&
                  "Defaults to REMAP_BOUNDARY_EXTRAP.", default=remap_boundary_extrap)
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
@@ -415,14 +415,14 @@ subroutine ALE_register_diags(Time, G, GV, US, diag, CS)
       'Layer thicknesses tendency due to ALE regridding and remapping', &
       trim(thickness_units)//" s-1", conversion=GV%H_to_MKS*US%s_to_T, v_extensive=.true.)
   CS%id_remap_delta_integ_u2 = register_diag_field('ocean_model', 'ale_u2', diag%axesCu1, Time, &
-      'Rate of change in half rho0 times depth integral of squared zonal'//&
-      ' velocity by remapping. If REMAP_VEL_CONSERVE_KE is .true. then '//&
-      ' this measures the change before the KE-conserving correction is applied.', &
+      'Rate of change in half rho0 times depth integral of squared zonal '//&
+      'velocity by remapping. If REMAP_VEL_CONSERVE_KE is .true. then '//&
+      'this measures the change before the KE-conserving correction is applied.', &
       'W m-2', conversion=GV%H_to_kg_m2 * US%L_T_to_m_s**2 * US%s_to_T)
   CS%id_remap_delta_integ_v2 = register_diag_field('ocean_model', 'ale_v2', diag%axesCv1, Time, &
-      'Rate of change in half rho0 times depth integral of squared meridional'//&
-      ' velocity by remapping. If REMAP_VEL_CONSERVE_KE is .true. then '//&
-      ' this measures the change before the KE-conserving correction is applied.', &
+      'Rate of change in half rho0 times depth integral of squared meridional '//&
+      'velocity by remapping. If REMAP_VEL_CONSERVE_KE is .true. then '//&
+      'this measures the change before the KE-conserving correction is applied.', &
       'W m-2', conversion=GV%H_to_kg_m2 * US%L_T_to_m_s**2 * US%s_to_T)
 
 end subroutine ALE_register_diags

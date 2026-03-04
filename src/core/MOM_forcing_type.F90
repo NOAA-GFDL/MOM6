@@ -1392,7 +1392,7 @@ subroutine MOM_forcing_chksum(mesg, fluxes, G, US, haloshift)
     call hchksum(fluxes%heat_content_frunoff_glc, mesg//" fluxes%heat_content_frunoff_glc", G%HI, &
                  haloshift=hshift, unscale=US%QRZ_T_to_W_m2)
   if (associated(fluxes%heat_content_lprec)) &
-    call hchksum(fluxes%heat_content_lprec, mesg//" fluxes%heat_content_lprec", G%HI,  &
+    call hchksum(fluxes%heat_content_lprec, mesg//" fluxes%heat_content_lprec", G%HI, &
                  haloshift=hshift, unscale=US%QRZ_T_to_W_m2)
   if (associated(fluxes%heat_content_fprec)) &
     call hchksum(fluxes%heat_content_fprec, mesg//" fluxes%heat_content_fprec", G%HI, &

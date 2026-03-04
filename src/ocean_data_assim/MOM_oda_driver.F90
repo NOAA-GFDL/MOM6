@@ -263,7 +263,7 @@ subroutine init_oda(Time, G, GV, US, diag_CS, CS)
   if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
   call get_param(PF, mdl, "REPRODUCE_2018_NMME_ANSWERS", CS%reproduce_2018_nmme, &
-               "Logical flag needed to reproduce older NMME forecast answers."//&
+               "Logical flag needed to reproduce older NMME forecast answers.  "//&
                "True gives old answers, the default of false gives different answers.", &
                default=.false.)
 

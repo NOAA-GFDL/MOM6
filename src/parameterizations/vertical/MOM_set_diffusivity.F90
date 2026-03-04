@@ -2665,7 +2665,7 @@ subroutine set_diffusivity_init(Time, G, GV, US, param_file, diag, CS, int_tide_
 
   if (CS%double_diffusion .and. CS%use_CVMix_ddiff) then
     call MOM_error(FATAL, 'set_diffusivity_init: '// &
-           'Multiple double-diffusion options selected (DOUBLE_DIFFUSION and'//&
+           'Multiple double-diffusion options selected (DOUBLE_DIFFUSION and '//&
            'USE_CVMIX_DDIFF), please disable all but one option to proceed.')
   endif
 

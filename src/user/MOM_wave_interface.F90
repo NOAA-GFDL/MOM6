@@ -455,8 +455,8 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
                  " INPUT         - Testing with fixed values.", default=NULL_STRING)
     select case (TRIM(TMPSTRING2))
     case (NULL_STRING)! Default
-      call MOM_error(FATAL, "wave_interface_init called with SURFACE_BANDS"//&
-                           " but no SURFBAND_SOURCE.")
+      call MOM_error(FATAL, "wave_interface_init called with SURFACE_BANDS "//&
+                            "but no SURFBAND_SOURCE.")
     case (DATAOVR_STRING)! Using Data Override
       CS%DataSource = DATAOVR
       call get_param(param_file, mdl, "SURFBAND_FILENAME", CS%SurfBandFileName, &
@@ -511,8 +511,8 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
 
   case (DHH85_STRING) !Donelan et al., 1985 spectrum
     CS%WaveMethod = DHH85
-    call MOM_error(WARNING,"DHH85 only ever set-up for uniform cases w/"//&
-                           " Stokes drift in x-direction.")
+    call MOM_error(WARNING,"DHH85 only ever set-up for uniform cases w/ "//&
+                           "Stokes drift in x-direction.")
     call get_param(param_file, mdl, "DHH85_AGE_FP", CS%WaveAgePeakFreq, &
          "Choose true to use waveage in peak frequency.", default=.false.)
     call get_param(param_file, mdl, "DHH85_AGE", CS%WaveAge, &

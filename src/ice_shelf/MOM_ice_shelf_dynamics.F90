@@ -577,8 +577,8 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
                  " If true, the domain is meridionally reentrant.", &
                  default=.false.)
     call get_param(param_file, mdl, "ICE_VISCOSITY_COMPUTE", CS%ice_viscosity_compute, &
-                 "If MODEL, compute ice viscosity internally using 1 or 4 quadrature points,"//&
-                 "if OBS read from a file,"//&
+                 "If MODEL, compute ice viscosity internally using 1 or 4 quadrature points, "//&
+                 "if OBS read from a file, "//&
                  "if CONSTANT a constant value (for debugging).", &
                  default="MODEL")
 

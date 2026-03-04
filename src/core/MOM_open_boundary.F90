@@ -679,8 +679,8 @@ subroutine open_boundary_config(G, US, param_file, OBC)
        "If true, set the areas outside open boundaries to be land.", &
        default=.false.)
   call get_param(param_file, mdl, "RAMP_OBCS", OBC%ramp, &
-       "If true, ramps from zero to the external values over time, with"//&
-       "a ramping timescale given by RAMP_TIMESCALE. Ramping SSH only so far", &
+       "If true, ramps from zero to the external values over time, with "//&
+       "a ramping timescale given by RAMP_TIMESCALE. Ramping SSH only so far.", &
        default=.false.)
   call get_param(param_file, mdl, "OBC_RAMP_TIMESCALE", OBC%ramp_timescale, &
        "If RAMP_OBCS is true, this sets the ramping timescale.", &
@@ -1910,7 +1910,7 @@ subroutine parse_segment_str(ni_global, nj_global, segment_str, l, m, n, action_
     if (.not. (word2(1:2)=='I=')) call MOM_error(FATAL, "MOM_open_boundary.F90, parse_segment_str: "//&
                      "Second word of string '"//trim(segment_str)//"' must start with 'I='.")
   else
-    call MOM_error(FATAL, "MOM_open_boundary.F90, parse_segment_str"//&
+    call MOM_error(FATAL, "MOM_open_boundary.F90, parse_segment_str: "//&
                    "String '"//segment_str//"' must start with 'I=' or 'J='.")
   endif
 
@@ -1979,7 +1979,7 @@ subroutine parse_segment_str(ni_global, nj_global, segment_str, l, m, n, action_
     integer slen
 
     slen = len_trim(string)
-    if (slen==0) call MOM_error(FATAL, "MOM_open_boundary.F90, parse_segment_str"//&
+    if (slen==0) call MOM_error(FATAL, "MOM_open_boundary.F90, parse_segment_str: "//&
                                 "Parsed string was empty!")
     if (len_trim(string)==1 .and. string(1:1)=='N') then
       interpret_int_expr = imax
@@ -1995,7 +1995,7 @@ subroutine parse_segment_str(ni_global, nj_global, segment_str, l, m, n, action_
       read(string(1:slen),*,err=911) interpret_int_expr
     endif
     return
-    911 call MOM_error(FATAL, "MOM_open_boundary.F90, parse_segment_str"//&
+    911 call MOM_error(FATAL, "MOM_open_boundary.F90, parse_segment_str: "//&
                        "Problem reading value from string '"//trim(string)//"'.")
   end function interpret_int_expr
 end subroutine parse_segment_str

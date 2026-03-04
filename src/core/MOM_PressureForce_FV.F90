@@ -275,7 +275,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, AD
        "MOM_PressureForce_FV_nonBouss: Module must be initialized before it is used.")
 
   if (CS%use_stanley_pgf) call MOM_error(FATAL, &
-       "MOM_PressureForce_FV_nonBouss: The Stanley parameterization is not yet"//&
+       "MOM_PressureForce_FV_nonBouss: The Stanley parameterization is not yet "//&
        "implemented in non-Boussinesq mode.")
 
   use_p_atm = associated(p_atm)

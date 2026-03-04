@@ -226,7 +226,7 @@ subroutine idealized_hurricane_wind_init(Time, G, US, param_file, CS)
                  default=6.88, units="degrees")
   call get_param(param_file, mdl, "IDL_HURR_INFLOW_DANGLE_TR_SPEED", CS%P1_speed, &
                  "The translation speed dependence of the angle difference between the "//&
-                 "translation direction and the inflow direction"//&
+                 "translation direction and the inflow direction "//&
                  "for the parametric idealized hurricane.", &
                  default=-9.60, units="degrees s m-1", scale=US%L_T_to_m_s)
 

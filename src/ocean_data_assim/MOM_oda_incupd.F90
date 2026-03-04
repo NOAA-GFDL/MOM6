@@ -223,8 +223,8 @@ subroutine initialize_oda_incupd( G, GV, US, param_file, CS, data_h, nz_data, re
   endif
   write(mesg,'(i12)') CS%nstep_incupd
   if (is_root_pe()) &
-    call MOM_error(NOTE,"initialize_oda_incupd: Number of Timestep of inc. update:"//&
-                       trim(mesg))
+    call MOM_error(NOTE, "initialize_oda_incupd: Number of Timestep of inc. update: "//&
+                         trim(mesg))
 
   ! number of inc. update already done, CS%ncount, either from restart or set to 0.0
   if (query_initialized(CS%ncount, "oda_incupd_ncount", restart_CS) .and. &
@@ -235,8 +235,8 @@ subroutine initialize_oda_incupd( G, GV, US, param_file, CS, data_h, nz_data, re
   endif
   write(mesg,'(f4.1)') CS%ncount
   if (is_root_pe()) &
-    call MOM_error(NOTE,"initialize_oda_incupd: Inc. update already done:"//&
-                       trim(mesg))
+    call MOM_error(NOTE, "initialize_oda_incupd: Inc. update already done: "//&
+                         trim(mesg))
 
   ! get the vertical grid (h_obs) of the increments
   CS%nz_data = nz_data

@@ -3505,8 +3505,8 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
                  "The number of angular resolution bands for the internal "//&
                  "tide calculations.", default=24)
   call get_param(param_file, mdl, "DT_ITIDES", CS%dt_itides, &
-                 "The timestep for internal tides ray-tracing scheme"//&
-                 "If set to -1 (default), it uses the same value as DT_THERM", &
+                 "The timestep for internal tides ray-tracing scheme.  "//&
+                 "If set to -1 (default), it uses the same value as DT_THERM.", &
                  units="s", default=-1., scale=US%s_to_T)
 
   if (use_int_tides) then

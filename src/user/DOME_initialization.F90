@@ -259,8 +259,8 @@ subroutine DOME_initialize_sponges(G, GV, US, tv, depth_tot, PF, CSp)
   !  The remaining calls to set_up_sponge_field can be in any order.
   if ( associated(tv%T) ) then
     temp(:,:,:) = 0.0
-    call MOM_error(FATAL,"DOME_initialize_sponges is not set up for use with"//&
-                         " a temperatures defined.")
+    call MOM_error(FATAL, "DOME_initialize_sponges is not set up for use with "//&
+                          "temperatures defined.")
     ! This should use the target values of T in temp.
     call set_up_sponge_field(temp, tv%T, G, GV, nz, CSp)
     ! This should use the target values of S in temp.

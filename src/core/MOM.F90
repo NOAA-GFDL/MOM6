@@ -2452,7 +2452,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
       call get_param(param_file, "MOM", "ADVECT_TS", advect_TS, &
                    "If True, advect temperature and salinity horizontally "//&
                    "If False, T/S are registered for advection. "//&
-                   "This is intended only to be used in offline tracer mode."//&
+                   "This is intended only to be used in offline tracer mode, "//&
                    "and is by default false in that case", &
                    default=.false. )
     endif
