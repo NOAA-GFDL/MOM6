@@ -104,7 +104,7 @@ logical function hor_bnd_diffusion_init(Time, G, GV, US, param_file, diag, diaba
            "This module implements horizontal diffusion of tracers near boundaries", &
            all_default=.not.hor_bnd_diffusion_init)
   call get_param(param_file, mdl, "USE_HORIZONTAL_BOUNDARY_DIFFUSION", hor_bnd_diffusion_init, &
-                 "If true, enables the horizonal boundary tracer's diffusion module.", &
+                 "If true, enables the horizontal boundary tracer's diffusion module.", &
                  default=.false.)
   if (.not. hor_bnd_diffusion_init) return
 

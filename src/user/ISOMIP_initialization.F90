@@ -435,9 +435,9 @@ subroutine ISOMIP_initialize_temperature_salinity ( T, S, h, depth_tot, G, GV, U
 
 end subroutine ISOMIP_initialize_temperature_salinity
 
-!> Sets up the the inverse restoration time (Idamp), and
-! the values towards which the interface heights and an arbitrary
-! number of tracers should be restored within each sponge.
+!> Sets up the inverse restoration time (Idamp), and
+!! the values towards which the interface heights and an arbitrary
+!! number of tracers should be restored within each sponge.
 subroutine ISOMIP_initialize_sponges(G, GV, US, tv, depth_tot, PF, use_ALE, CSp, ACSp)
   type(ocean_grid_type),   intent(in) :: G    !< The ocean's grid structure.
   type(verticalGrid_type), intent(in) :: GV   !< The ocean's vertical grid structure.

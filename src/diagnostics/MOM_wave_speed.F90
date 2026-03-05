@@ -1370,7 +1370,7 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, w_struct, u_struct, u_s
             ! Find other eigen values if c1 is of significant magnitude, > cn_thresh
             nrootsfound = 0    ! number of extra roots found (not including 1st root)
             if ((nmodes > 1) .and. (kc >= nmodes+1) .and. (cn(i,j,1) > CS%c1_thresh)) then
-              ! Set the the range to look for the other desired eigen values
+              ! Set the range to look for the other desired eigen values
               ! set min value just greater than the 1st root (found above)
               lamMin = lam_1*(1.0 + tol_solve)
               ! set max value based on a low guess at wavespeed for highest mode

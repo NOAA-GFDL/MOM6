@@ -6708,7 +6708,7 @@ subroutine rotate_OBC_segment_config(segment_in, G_in, segment, G, turns)
   endif
 
   ! Orientation is based on the index ordering, and setup_segment_indices
-  ! is based on the the original order in the intput files.
+  ! is based on the original order in the intput files.
   call setup_segment_indices(G, segment, Is_obc, Ie_obc, Js_obc, Je_obc)
 
   ! Re-order [IJ][se]_obc back to ascending, and remove the global indexing offset.

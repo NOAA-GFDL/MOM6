@@ -206,7 +206,7 @@ subroutine DOME_initialize_sponges(G, GV, US, tv, depth_tot, PF, CSp)
                  "The largest damping rate in the DOME sponges.", &
                  default=10.0, units="day-1", scale=1.0/(86400.0*US%s_to_T))
   call get_param(PF, mdl, "DOME_SPONGE_WIDTH", sponge_width, &
-                 "The width of the the DOME sponges.", &
+                 "The width of the DOME sponges.", &
                  default=200.0, units="km", scale=1.0e3*US%m_to_L)
 
   ! Here the inverse damping time [T-1 ~> s-1], is set. Set Idamp to 0 wherever

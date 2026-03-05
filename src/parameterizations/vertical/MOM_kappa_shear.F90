@@ -2212,7 +2212,7 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "LZ_RESCALE", CS%lz_rescale, &
                  "A coefficient to rescale the distance to the nearest solid boundary. "//&
                  "This adjustment is to account for regions where 3 dimensional turbulence "//&
-                 "prevents the growth of shear instabilies [nondim].", &
+                 "prevents the growth of shear instabilities [nondim].", &
                  units="nondim", default=1.0)
   call get_param(param_file, mdl, "KAPPA_SHEAR_TOL_ERR", CS%kappa_tol_err, &
                  "The fractional error in kappa that is tolerated. "//&

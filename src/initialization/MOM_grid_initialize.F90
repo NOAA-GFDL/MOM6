@@ -746,7 +746,7 @@ subroutine set_grid_metrics_mercator(G, param_file, US)
     fnRef = Int_dj_dy((GP%south_lat*PI/180.0), GP)
   endif
 
-  ! These calculations no longer depend on the the order in which they
+  ! These calculations no longer depend on the order in which they
   ! are performed because they all use the same (poor) starting guess and
   ! iterate to convergence.
   ! Note that the dynamic grid always uses symmetric memory for the global
@@ -786,7 +786,7 @@ subroutine set_grid_metrics_mercator(G, param_file, US)
   iRef = (G%isg-1) + GP%niglobal
   fnRef = Int_di_dx(((GP%west_lon+GP%len_lon)*PI/180.0), GP)
 
-  ! These calculations no longer depend on the the order in which they
+  ! These calculations no longer depend on the order in which they
   ! are performed because they all use the same (poor) starting guess and
   ! iterate to convergence.
   do I=G%isg-1,G%ieg

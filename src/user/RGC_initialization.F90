@@ -35,7 +35,7 @@ public RGC_initialize_sponges
 
 contains
 
-!> Sets up the the inverse restoration time, and the values towards which the interface heights,
+!> Sets up the inverse restoration time, and the values towards which the interface heights,
 !! velocities and tracers should be restored within the sponges for the RGC test case.
 subroutine RGC_initialize_sponges(G, GV, US, tv, u, v, depth_tot, PF, use_ALE, CSp, ACSp)
   type(ocean_grid_type),   intent(in) :: G  !< The ocean's grid structure.

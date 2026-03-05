@@ -47,8 +47,8 @@ type, public :: VarMix_CS
                                   !! speed and calculate the resolution function
                                   !! independently at each point.
   logical :: use_stored_slopes    !< If true, stores isopycnal slopes in this structure.
-  logical :: Resoln_use_ebt       !< If true, uses the equivalent barotropic wave speed instead
-                                  !! of first baroclinic wave for calculating the resolution fn.
+  logical :: Resoln_use_ebt       !< If true, use the equivalent barotropic wave speed instead of the
+                                  !! first baroclinic wave speed for calculating the resolution function.
   logical :: khth_use_ebt_struct  !< If true, uses the equivalent barotropic structure
                                   !! as the vertical structure of thickness diffusivity.
   logical :: kdgl90_use_ebt_struct  !< If true, uses the equivalent barotropic structure
@@ -1618,7 +1618,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   if (.not.use_MEKE) Resoln_scaled_MEKE_visc = .false.
   call get_param(param_file, mdl, "RESOLN_USE_EBT", CS%Resoln_use_ebt, &
                  "If true, uses the equivalent barotropic wave speed instead "//&
-                 "of first baroclinic wave for calculating the resolution fn.",&
+                 "of first baroclinic wave for calculating the resolution function.",&
                  default=.false.)
   call get_param(param_file, mdl, "BACKSCAT_EBT_POWER", CS%BS_EBT_power, &
                  "Power to raise EBT vertical structure to when backscatter "// &

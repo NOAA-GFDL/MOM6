@@ -117,7 +117,7 @@ subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
   ! get number of processors and PE list for stochastic physics initialization
   call get_param(param_file, mdl, "DO_SPPT", CS%do_sppt, &
                  "If true, then stochastically perturb the thermodynamic "//&
-                 "tendencies of T,S, amd h.  Amplitude and correlations are "//&
+                 "tendencies of T,S, and h.  Amplitude and correlations are "//&
                  "controlled by the nam_stoch namelist in the UFS model only.", &
                  default=.false.)
   call get_param(param_file, mdl, "DO_SKEB", CS%do_skeb, &

@@ -2434,7 +2434,7 @@ subroutine find_coupling_coef(a_cpl, hvel, i, j, h_harm, bbl_thick, kv_bbl, z_i,
       enddo
     elseif (CS%fixed_LOTW_ML .or. CS%apply_LOTW_floor) then
       ! Determine which interfaces are within CS%Hmix of the surface, and set the viscous
-      ! boundary layer thickness to the the smaller of CS%Hmix and the depth of the ocean.
+      ! boundary layer thickness to the smaller of CS%Hmix and the depth of the ocean.
       h_ml = 0.0
       do k=1,nz
         can_exit = .true.

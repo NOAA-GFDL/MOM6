@@ -2506,7 +2506,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "If true, the defaults for certain recently added bug-fix flags are set to "//&
                  "recreate the bugs so that the code can be moved forward without changing "//&
                  "answers for existing configurations.  The defaults for groups of bug-fix "//&
-                 "flags are periodcially changed to correct the bugs, at which point this "//&
+                 "flags are periodically changed to correct the bugs, at which point this "//&
                  "parameter will no longer be used to set their default.  Setting this to false "//&
                  "means that bugs are only used if they are actively selected, but it also "//&
                  "means that answers may change when code is updated due to newly found bugs.", &

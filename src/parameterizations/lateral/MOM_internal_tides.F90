@@ -1538,7 +1538,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
 
   do i=is,ie
 
-    ! create vertical profiles for diffusivites in layers
+    ! create vertical profiles for diffusivities in layers
     renorm_N = 0.0
     renorm_N2 = 0.0
     renorm_StLau = 0.0
@@ -1678,7 +1678,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
     ! note on units: TKE_to_Kd = 1 / ((g/rho0) * drho) Z-1 T2
     ! mult by dz gives -1/N2 in T2
 
-    ! get TKE loss value and compute diffusivites in layers
+    ! get TKE loss value and compute diffusivities in layers
     if (CS%apply_background_drag) then
       call get_lowmode_loss(i, j, G, CS, "LeakDrag", TKE_loss)
       ! insert logic to switch between profiles here
@@ -4060,9 +4060,9 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
 
   do m=1,CS%nMode
 
-    ! Register 3-D internal tide horizonal velocity profile for each mode
+    ! Register 3-D internal tide horizontal velocity profile for each mode
     write(var_name, '("Itide_Ustruct","_mode",i1)') m
-    write(var_descript, '("horizonal velocity profile for mode ",i1)') m
+    write(var_descript, '("horizontal velocity profile for mode ",i1)') m
     CS%id_Ustruct_mode(m) = register_diag_field('ocean_model', var_name, &
                  diag%axesTl, Time, var_descript, 'm-1', conversion=US%m_to_L)
     call MOM_mesg("Registering "//trim(var_name)//", Described as: "//var_descript, 5)

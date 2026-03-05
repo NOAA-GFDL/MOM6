@@ -2481,7 +2481,7 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
                  "If true, the Laplacian coefficient is locally limited "//&
                  "to be stable.", default=.true., do_not_log=.not.CS%Laplacian)
   call get_param(param_file, mdl, "EY24_EBT_BS", CS%EY24_EBT_BS, &
-                 "If true, use the the backscatter scheme (EBT mode with kill switch) "//&
+                 "If true, use the backscatter scheme (EBT mode with kill switch) "//&
                  "developed by Yankovsky et al. (2024). ", &
                  default=.false., do_not_log=.not.CS%Laplacian)
   if (.not.CS%Laplacian) CS%bound_Kh = .false.
