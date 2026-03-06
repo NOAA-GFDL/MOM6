@@ -427,12 +427,12 @@ subroutine ALE_register_diags(Time, G, GV, US, diag, CS)
       'Rate of change in half rho0 times depth integral of squared zonal '//&
       'velocity by remapping. If REMAP_VEL_CONSERVE_KE is .true. then '//&
       'this measures the change before the KE-conserving correction is applied.', &
-      'W m-2', conversion=GV%H_to_kg_m2 * US%L_T_to_m_s**2 * US%s_to_T)
+      'W m-2', conversion=US%RZ3_T3_to_W_m2*GV%H_to_RZ*US%L_to_Z**2)
   CS%id_remap_delta_integ_v2 = register_diag_field('ocean_model', 'ale_v2', diag%axesCv1, Time, &
       'Rate of change in half rho0 times depth integral of squared meridional '//&
       'velocity by remapping. If REMAP_VEL_CONSERVE_KE is .true. then '//&
       'this measures the change before the KE-conserving correction is applied.', &
-      'W m-2', conversion=GV%H_to_kg_m2 * US%L_T_to_m_s**2 * US%s_to_T)
+      'W m-2', conversion=US%RZ3_T3_to_W_m2*GV%H_to_RZ*US%L_to_Z**2)
 
 end subroutine ALE_register_diags
 
