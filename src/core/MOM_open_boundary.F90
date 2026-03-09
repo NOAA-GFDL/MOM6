@@ -13,14 +13,13 @@ use MOM_domains,              only : create_group_pass, do_group_pass, group_pas
 use MOM_domains,              only : To_All, EAST_FACE, NORTH_FACE, SCALAR_PAIR, CGRID_NE, CORNER
 use MOM_dyn_horgrid,          only : dyn_horgrid_type
 use MOM_error_handler,        only : MOM_mesg, MOM_error, FATAL, WARNING, NOTE, is_root_pe
-use MOM_file_parser,          only : get_param, log_version, param_file_type, log_param
+use MOM_file_parser,          only : get_param, log_version, param_file_type, read_param
 use MOM_grid,                 only : ocean_grid_type, hor_index_type
 use MOM_interface_heights,    only : thickness_to_dz
 use MOM_interpolate,          only : init_external_field, time_interp_external, time_interp_external_init
 use MOM_interpolate,          only : external_field
 use MOM_io,                   only : slasher, field_size, file_exists, stderr, SINGLE_FILE
 use MOM_io,                   only : vardesc, query_vardesc, var_desc
-use MOM_obsolete_params,      only : obsolete_logical, obsolete_int, obsolete_real, obsolete_char
 use MOM_regridding,           only : regridding_CS
 use MOM_remapping,            only : remappingSchemesDoc, remappingDefaultScheme, remapping_CS
 use MOM_remapping,            only : initialize_remapping, remapping_core_h, end_remapping
@@ -87,6 +86,20 @@ integer, parameter, public :: OBC_DIRECTION_N = 100 !< Indicates the boundary is
 integer, parameter, public :: OBC_DIRECTION_S = 200 !< Indicates the boundary is an effective southern boundary
 integer, parameter, public :: OBC_DIRECTION_E = 300 !< Indicates the boundary is an effective eastern boundary
 integer, parameter, public :: OBC_DIRECTION_W = 400 !< Indicates the boundary is an effective western boundary
+!>@{ Enumeration values for OBC relative vorticity configurations
+integer, parameter, public :: OBC_VORTICITY_NONE = 0
+integer, parameter, public :: OBC_VORTICITY_ZERO = 1
+integer, parameter, public :: OBC_VORTICITY_FREESLIP = 2
+integer, parameter, public :: OBC_VORTICITY_COMPUTED = 3
+integer, parameter, public :: OBC_VORTICITY_SPECIFIED = 4
+!>@}
+!>@{ Enumeration values for OBC strain configurations
+integer, parameter, public :: OBC_STRAIN_NONE = 0
+integer, parameter, public :: OBC_STRAIN_ZERO = 1
+integer, parameter, public :: OBC_STRAIN_FREESLIP = 2
+integer, parameter, public :: OBC_STRAIN_COMPUTED = 3
+integer, parameter, public :: OBC_STRAIN_SPECIFIED = 4
+!>@}
 integer, parameter         :: MAX_OBC_FIELDS = 100  !< Maximum number of data fields needed for OBC segments
 
 !> Open boundary segment data from files (mostly).
@@ -325,20 +338,8 @@ type, public :: ocean_OBC_type
                                                       !! require less frequent update
   logical :: needs_IO_for_data = .false.              !< Is any i/o needed for OBCs on the current PE
   logical :: any_needs_IO_for_data = .false.          !< Is any i/o needed for OBCs globally
-  logical :: zero_vorticity = .false.                 !< If True, sets relative vorticity to zero on open boundaries.
-  logical :: freeslip_vorticity = .false.             !< If True, sets normal gradient of tangential velocity to zero
-                                                      !! in the relative vorticity on open boundaries.
-  logical :: computed_vorticity = .false.             !< If True, uses external data for tangential velocity
-                                                      !! in the relative vorticity on open boundaries.
-  logical :: specified_vorticity = .false.            !< If True, uses external data for tangential velocity
-                                                      !! gradients in the relative vorticity on open boundaries.
-  logical :: zero_strain = .false.                    !< If True, sets strain to zero on open boundaries.
-  logical :: freeslip_strain = .false.                !< If True, sets normal gradient of tangential velocity to zero
-                                                      !! in the strain on open boundaries.
-  logical :: computed_strain = .false.                !< If True, uses external data for tangential velocity to compute
-                                                      !! normal gradient in the strain on open boundaries.
-  logical :: specified_strain = .false.               !< If True, uses external data for tangential velocity gradients
-                                                      !! to compute strain on open boundaries.
+  integer :: vorticity_config                         !< An integer indicating OBC relative vorticity configuration
+  integer :: strain_config                            !< An integer indicating OBC strain configuration
   logical :: zero_biharmonic = .false.                !< If True, zeros the Laplacian of flow on open boundaries for
                                                       !! use in the biharmonic viscosity term.
   logical :: brushcutter_mode = .false.               !< If True, read data on supergrid.
@@ -511,19 +512,22 @@ subroutine open_boundary_config(G, US, param_file, OBC)
   logical :: debug, mask_outside, reentrant_x, reentrant_y
   character(len=15) :: segment_param_str ! The run-time parameter name for each segment
   character(len=1024) :: segment_str      ! The contents (rhs) for parameter "segment_param_str"
-  character(len=200) :: config1          ! String for OBC_USER_CONFIG
+  character(len=200) :: config ! A string to temporarily store a few runtime parameters
   real               :: Lscale_in, Lscale_out ! parameters controlling tracer values at the boundaries [L ~> m]
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   logical :: enable_bugs     ! If true, the defaults for recently added bug-fix flags are set to
                              ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: debugging_tests ! If true, do additional calls resetting values to help debug the performance
                              ! of the open boundary condition code.
+  logical :: obsolete_param_set, param_set
+  logical :: zero_vorticity, freeslip_vorticity, computed_vorticity, specified_vorticity
+  logical :: zero_strain, freeslip_strain, computed_strain, specified_strain
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
 
-  call log_version(param_file, mdl, version, &
-                 "Controls where open boundaries are located, what kind of boundary condition "//&
-                 "to impose, and what data to apply, if any.", all_default=.false.)
+  call log_version(param_file, mdl, version, "Controls where open boundaries are located, "//&
+                   "what kind of boundary condition to impose, and what data to apply, if any.", &
+                   all_default=.false.)
   ! Parameter OBC_NUMBER_OF_SEGMENTS is always logged.
   call get_param(param_file, mdl, "OBC_NUMBER_OF_SEGMENTS", num_of_segs, &
                  "The number of open boundary segments.", default=0)
@@ -532,311 +536,388 @@ subroutine open_boundary_config(G, US, param_file, OBC)
 
   allocate(OBC)
   OBC%number_of_segments = num_of_segs
-  call get_param(param_file, mdl, "OBC_USER_CONFIG", config1, &
+  call get_param(param_file, mdl, "OBC_USER_CONFIG", config, &
                  "A string that sets how the open boundary conditions are "//&
                  " configured: \n", default="none", do_not_log=.true.)
   call get_param(param_file, mdl, "NK", OBC%ke, &
                  "The number of model layers", default=0, do_not_log=.true.)
 
-  if (config1 /= "none" .and. config1 /= "dyed_obcs") OBC%user_BCs_set_globally = .true.
+  if (config /= "none" .and. config /= "dyed_obcs") OBC%user_BCs_set_globally = .true.
 
-  if (OBC%number_of_segments > 0) then
-    call get_param(param_file, mdl, "OBC_ZERO_VORTICITY", OBC%zero_vorticity, &
-         "If true, sets relative vorticity to zero on open boundaries.", &
-         default=.false.)
-    call get_param(param_file, mdl, "OBC_FREESLIP_VORTICITY", OBC%freeslip_vorticity, &
-         "If true, sets the normal gradient of tangential velocity to "//&
-         "zero in the relative vorticity on open boundaries. This cannot "//&
-         "be true if another OBC_XXX_VORTICITY option is True.", default=.true.)
-    call get_param(param_file, mdl, "OBC_COMPUTED_VORTICITY", OBC%computed_vorticity, &
-         "If true, uses the external values of tangential velocity "//&
-         "in the relative vorticity on open boundaries. This cannot "//&
-         "be true if another OBC_XXX_VORTICITY option is True.", default=.false.)
-    call get_param(param_file, mdl, "OBC_SPECIFIED_VORTICITY", OBC%specified_vorticity, &
-         "If true, uses the external values of tangential velocity "//&
-         "in the relative vorticity on open boundaries. This cannot "//&
-         "be true if another OBC_XXX_VORTICITY option is True.", default=.false.)
-    if ((OBC%zero_vorticity .and. OBC%freeslip_vorticity) .or.  &
-        (OBC%zero_vorticity .and. OBC%computed_vorticity) .or.  &
-        (OBC%zero_vorticity .and. OBC%specified_vorticity) .or.  &
-        (OBC%freeslip_vorticity .and. OBC%computed_vorticity) .or.  &
-        (OBC%freeslip_vorticity .and. OBC%specified_vorticity) .or.  &
-        (OBC%computed_vorticity .and. OBC%specified_vorticity))  &
-         call MOM_error(FATAL, "MOM_open_boundary.F90, open_boundary_config:\n"//&
-         "Only one of OBC_ZERO_VORTICITY, OBC_FREESLIP_VORTICITY, OBC_COMPUTED_VORTICITY\n"//&
-         "and OBC_IMPORTED_VORTICITY can be True at once.")
-    call get_param(param_file, mdl, "OBC_ZERO_STRAIN", OBC%zero_strain, &
-         "If true, sets the strain used in the stress tensor to zero on open boundaries.", &
-         default=.false.)
-    call get_param(param_file, mdl, "OBC_FREESLIP_STRAIN", OBC%freeslip_strain, &
-         "If true, sets the normal gradient of tangential velocity to "//&
-         "zero in the strain use in the stress tensor on open boundaries. This cannot "//&
-         "be true if another OBC_XXX_STRAIN option is True.", default=.true.)
-    call get_param(param_file, mdl, "OBC_COMPUTED_STRAIN", OBC%computed_strain, &
-         "If true, sets the normal gradient of tangential velocity to "//&
-         "zero in the strain use in the stress tensor on open boundaries. This cannot "//&
-         "be true if another OBC_XXX_STRAIN option is True.", default=.false.)
-    call get_param(param_file, mdl, "OBC_SPECIFIED_STRAIN", OBC%specified_strain, &
-         "If true, sets the normal gradient of tangential velocity to "//&
-         "zero in the strain use in the stress tensor on open boundaries. This cannot "//&
-         "be true if another OBC_XXX_STRAIN option is True.", default=.false.)
-    if ((OBC%zero_strain .and. OBC%freeslip_strain) .or.  &
-        (OBC%zero_strain .and. OBC%computed_strain) .or.  &
-        (OBC%zero_strain .and. OBC%specified_strain) .or.  &
-        (OBC%freeslip_strain .and. OBC%computed_strain) .or.  &
-        (OBC%freeslip_strain .and. OBC%specified_strain) .or.  &
-        (OBC%computed_strain .and. OBC%specified_strain))  &
-         call MOM_error(FATAL, "MOM_open_boundary.F90, open_boundary_config: \n"//&
-         "Only one of OBC_ZERO_STRAIN, OBC_FREESLIP_STRAIN, OBC_COMPUTED_STRAIN \n"//&
-         "and OBC_IMPORTED_STRAIN can be True at once.")
-    call get_param(param_file, mdl, "OBC_ZERO_BIHARMONIC", OBC%zero_biharmonic, &
-         "If true, zeros the Laplacian of flow on open boundaries in the biharmonic "//&
-         "viscosity term.", default=.false.)
-    call get_param(param_file, mdl, "MASK_OUTSIDE_OBCS", mask_outside, &
-         "If true, set the areas outside open boundaries to be land.", &
-         default=.false.)
-    call get_param(param_file, mdl, "RAMP_OBCS", OBC%ramp, &
-         "If true, ramps from zero to the external values over time, with"//&
-         "a ramping timescale given by RAMP_TIMESCALE. Ramping SSH only so far", &
-         default=.false.)
-    call get_param(param_file, mdl, "OBC_RAMP_TIMESCALE", OBC%ramp_timescale, &
-         "If RAMP_OBCS is true, this sets the ramping timescale.", &
-         units="days", default=1.0, scale=86400.0*US%s_to_T)
-    call get_param(param_file, mdl, "OBC_TIDE_N_CONSTITUENTS", OBC%n_tide_constituents, &
-         "Number of tidal constituents being added to the open boundary.", &
-         default=0)
-    OBC%add_tide_constituents = (OBC%n_tide_constituents > 0)
+  ! Configuration for OBC relative vorticity.
+  !   Old setup method
+  obsolete_param_set = .false.
+  zero_vorticity = .false.
+  call read_param(param_file, "OBC_ZERO_VORTICITY", zero_vorticity, set=param_set)
+  obsolete_param_set = obsolete_param_set .or. param_set
+  freeslip_vorticity = .true.
+  call read_param(param_file, "OBC_FREESLIP_VORTICITY", freeslip_vorticity, set=param_set)
+  obsolete_param_set = obsolete_param_set .or. param_set
+  computed_vorticity = .false.
+  call read_param(param_file, "OBC_COMPUTED_VORTICITY", computed_vorticity, set=param_set)
+  obsolete_param_set = obsolete_param_set .or. param_set
+  specified_vorticity = .false.
+  call read_param(param_file, "OBC_SPECIFIED_VORTICITY", specified_vorticity, set=param_set)
+  obsolete_param_set = obsolete_param_set .or. param_set
+  if (obsolete_param_set) then
+    call MOM_error(WARNING, 'OBC_ZERO_VORTICITY, OBC_FREESLIP_VORTICITY, OBC_COMPUTED_VORTICITY'//&
+                   ' and OBC_SPECIFIED_VORTICITY are obsolete, use OBC_VORTICITY_CONFIG instead.')
+    if ((zero_vorticity .and. freeslip_vorticity) .or.  &
+        (zero_vorticity .and. computed_vorticity) .or.  &
+        (zero_vorticity .and. specified_vorticity) .or.  &
+        (freeslip_vorticity .and. computed_vorticity) .or.  &
+        (freeslip_vorticity .and. specified_vorticity) .or.  &
+        (computed_vorticity .and. specified_vorticity))  &
+      call MOM_error(FATAL, "MOM_open_boundary.F90, open_boundary_config:\n"//&
+      "Only one of OBC_ZERO_VORTICITY, OBC_FREESLIP_VORTICITY, OBC_COMPUTED_VORTICITY\n"//&
+      "and OBC_IMPORTED_VORTICITY can be True at once.")
+    ! "config" is set from OBC_XXX_VORTICITY if they are used.
+    if (zero_vorticity) then
+      config = 'zero'
+    elseif (freeslip_vorticity) then
+      config = 'freeslip'
+    elseif (computed_vorticity) then
+      config = 'computed'
+    elseif (specified_vorticity) then
+      config = 'specified'
+    else
+      config = 'none'
+    endif
+  else
+    config = 'freeslip' ! Default
+  endif
+  !   New setup method (overrides old method if specified)
+  call read_param(param_file, "OBC_VORTICITY_CONFIG", config)
+  call get_param(param_file, mdl, "OBC_VORTICITY_CONFIG", config, &
+                 "Configuration for relative vorticity in momentum advection at open "//&
+                 "boundaries.  Options are: \n"// &
+                 " \t none      - No adjustment.\n"//&
+                 " \t zero      - Sets relative vorticity to zero.\n"//&
+                 " \t freeslip  - Sets the normal gradient of tangential velocity to zero.\n"//&
+                 " \t computed  - Computes the normal gradient of tangential velocity using\n"//&
+                 " \t             external values of tangential velocity.\n"//&
+                 " \t specified - Uses the external values of the normal gradient of\n"//&
+                 " \t             tangential velocity.", default="freeslip", do_not_read=.true.)
+  select case (trim(config))
+    case ("none")      ; OBC%vorticity_config = OBC_VORTICITY_NONE
+    case ("zero")      ; OBC%vorticity_config = OBC_VORTICITY_ZERO
+    case ("freeslip")  ; OBC%vorticity_config = OBC_VORTICITY_FREESLIP
+    case ("computed")  ; OBC%vorticity_config = OBC_VORTICITY_COMPUTED
+    case ("specified") ; OBC%vorticity_config = OBC_VORTICITY_SPECIFIED
+    case default
+      call MOM_error(FATAL, "MOM_open_boundary: Unrecognized OBC_VORTICITY_CONFIG: "//trim(config))
+  end select
 
-    call get_param(param_file, mdl, "DEBUG", debug, default=.false.)
-    call get_param(param_file, mdl, "DEBUG_OBCS", OBC%debug, &
+  ! Configuration for OBC strain.
+  !   Old setup method
+  obsolete_param_set = .false.
+  zero_strain = .false.
+  call read_param(param_file, "OBC_ZERO_STRAIN", zero_strain, set=param_set)
+  obsolete_param_set = obsolete_param_set .or. param_set
+  freeslip_strain = .true.
+  call read_param(param_file, "OBC_FREESLIP_STRAIN", freeslip_strain, set=param_set)
+  obsolete_param_set = obsolete_param_set .or. param_set
+  computed_strain = .false.
+  call read_param(param_file, "OBC_COMPUTED_STRAIN", computed_strain, set=param_set)
+  obsolete_param_set = obsolete_param_set .or. param_set
+  specified_strain = .false.
+  call read_param(param_file, "OBC_SPECIFIED_STRAIN", specified_strain, set=param_set)
+  obsolete_param_set = obsolete_param_set .or. param_set
+  if (obsolete_param_set) then
+    call MOM_error(WARNING, 'OBC_ZERO_STRAIN, OBC_FREESLIP_STRAIN, OBC_COMPUTED_STRAIN'//&
+                   ' and OBC_SPECIFIED_STRAIN are obsolete, use OBC_STRAIN_CONFIG instead.')
+    if ((zero_strain .and. freeslip_strain) .or.  &
+        (zero_strain .and. computed_strain) .or.  &
+        (zero_strain .and. specified_strain) .or.  &
+        (freeslip_strain .and. computed_strain) .or.  &
+        (freeslip_strain .and. specified_strain) .or.  &
+        (computed_strain .and. specified_strain))  &
+      call MOM_error(FATAL, "MOM_open_boundary.F90, open_boundary_config: \n"//&
+      "Only one of OBC_ZERO_STRAIN, OBC_FREESLIP_STRAIN, OBC_COMPUTED_STRAIN \n"//&
+      "and OBC_IMPORTED_STRAIN can be True at once.")
+    ! "config" is set from OBC_XXX_STRAIN if they are used.
+    if (zero_strain) then
+      config = 'zero'
+    elseif (freeslip_strain) then
+      config = 'freeslip'
+    elseif (computed_strain) then
+      config = 'computed'
+    elseif (specified_strain) then
+      config = 'specified'
+    else
+      config = 'none'
+    endif
+  else
+    config = 'freeslip' ! Default
+  endif
+  !   New setup method (overrides old method if specified)
+  call read_param(param_file, "OBC_STRAIN_CONFIG", config)
+  call get_param(param_file, mdl, "OBC_STRAIN_CONFIG", config, &
+                 "Configuration for strain in horizontal viscosity at open boundaries.  "//&
+                 "Options are: \n"// &
+                 " \t none      - No adjustment.\n"//&
+                 " \t zero      - Sets strain to zero.\n"//&
+                 " \t freeslip  - Sets the normal gradient of tangential velocity to zero.\n"//&
+                 " \t computed  - Computes the normal gradient of tangential velocity using\n"//&
+                 " \t             external values of tangential velocity.\n"//&
+                 " \t specified - Uses the external values of the normal gradient of\n"//&
+                 " \t             tangential velocity.", default="freeslip", do_not_read=.true.)
+  select case (trim(config))
+    case ("none")      ; OBC%strain_config = OBC_STRAIN_NONE
+    case ("zero")      ; OBC%strain_config = OBC_STRAIN_ZERO
+    case ("freeslip")  ; OBC%strain_config = OBC_STRAIN_FREESLIP
+    case ("computed")  ; OBC%strain_config = OBC_STRAIN_COMPUTED
+    case ("specified") ; OBC%strain_config = OBC_STRAIN_SPECIFIED
+    case default
+      call MOM_error(FATAL, "MOM_open_boundary: Unrecognized OBC_STRAIN_CONFIG: "//trim(config))
+  end select
+
+  call get_param(param_file, mdl, "OBC_ZERO_BIHARMONIC", OBC%zero_biharmonic, &
+       "If true, zeros the Laplacian of flow on open boundaries in the biharmonic "//&
+       "viscosity term.", default=.false.)
+  call get_param(param_file, mdl, "MASK_OUTSIDE_OBCS", mask_outside, &
+       "If true, set the areas outside open boundaries to be land.", &
+       default=.false.)
+  call get_param(param_file, mdl, "RAMP_OBCS", OBC%ramp, &
+       "If true, ramps from zero to the external values over time, with"//&
+       "a ramping timescale given by RAMP_TIMESCALE. Ramping SSH only so far", &
+       default=.false.)
+  call get_param(param_file, mdl, "OBC_RAMP_TIMESCALE", OBC%ramp_timescale, &
+       "If RAMP_OBCS is true, this sets the ramping timescale.", &
+       units="days", default=1.0, scale=86400.0*US%s_to_T)
+  call get_param(param_file, mdl, "OBC_TIDE_N_CONSTITUENTS", OBC%n_tide_constituents, &
+       "Number of tidal constituents being added to the open boundary.", &
+       default=0)
+  OBC%add_tide_constituents = (OBC%n_tide_constituents > 0)
+
+  call get_param(param_file, mdl, "DEBUG", debug, default=.false.)
+  call get_param(param_file, mdl, "DEBUG_OBCS", OBC%debug, &
                  "If true, do additional calls to help debug the performance "//&
                  "of the open boundary condition code.", &
                  default=.false., debuggingParam=.true.)
-    if (OBC%debug .and. (num_PEs() > 1)) &
-      call MOM_error(FATAL, "DEBUG_OBCS = True is currently only supported for single PE runs.")
-    call get_param(param_file, mdl, "OBC_DEBUGGING_TESTS", debugging_tests, &
+  if (OBC%debug .and. (num_PEs() > 1)) &
+    call MOM_error(FATAL, "DEBUG_OBCS = True is currently only supported for single PE runs.")
+  call get_param(param_file, mdl, "OBC_DEBUGGING_TESTS", debugging_tests, &
                  "If true, do additional calls resetting certain values to help verify the correctness "//&
                  "of the open boundary condition code.", &
                  default=.false., old_name="DEBUG_OBC", debuggingParam=.true.)
-    call get_param(param_file, mdl, "NK_OBC_DEBUG", OBC%nk_OBC_debug, &
+  call get_param(param_file, mdl, "NK_OBC_DEBUG", OBC%nk_OBC_debug, &
                  "The number of layers of OBC segment data to write out in full "//&
                  "when DEBUG_OBCS is true.", &
                  default=0, debuggingParam=.true., do_not_log=.not.OBC%debug)
-    call get_param(param_file, mdl, "OBC_REVERSE_SEGMENT_ORDER", OBC%reverse_segment_order, &
+  call get_param(param_file, mdl, "OBC_REVERSE_SEGMENT_ORDER", OBC%reverse_segment_order, &
                  "If true, store the OBC segments internally and handle them in the reverse "//&
                  "order from that with which they are specified via external parameters to test "//&
                  "for dependencies on the order with which the OBC segments are applied.", &
                  default=.false., debuggingParam=.true., do_not_log=(OBC%number_of_segments<2))
 
-    call get_param(param_file, mdl, "OBC_SILLY_THICK", OBC%silly_h, &
+  call get_param(param_file, mdl, "OBC_SILLY_THICK", OBC%silly_h, &
                  "A silly value of thicknesses used outside of open boundary "//&
                  "conditions for debugging.", units="m", default=0.0, scale=US%m_to_Z, &
                  do_not_log=.not.debugging_tests, debuggingParam=.true.)
-    call get_param(param_file, mdl, "OBC_SILLY_VEL", OBC%silly_u, &
+  call get_param(param_file, mdl, "OBC_SILLY_VEL", OBC%silly_u, &
                  "A silly value of velocities used outside of open boundary "//&
                  "conditions for debugging.", units="m/s", default=0.0, scale=US%m_s_to_L_T, &
                  do_not_log=.not.debugging_tests, debuggingParam=.true.)
-    call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+  call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
                  default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
-    call get_param(param_file, mdl, "EXTERIOR_OBC_BUG", OBC%exterior_OBC_bug, &
+  call get_param(param_file, mdl, "EXTERIOR_OBC_BUG", OBC%exterior_OBC_bug, &
                  "If true, recover a bug in barotropic solver and other routines when "//&
                  "boundary contitions interior to the domain are used.", &
                  default=enable_bugs)
-    call get_param(param_file, mdl, "OBC_HOR_INDEXING_BUG", OBC%hor_index_bug, &
+  call get_param(param_file, mdl, "OBC_HOR_INDEXING_BUG", OBC%hor_index_bug, &
                  "If true, recover set of a horizontal indexing bugs in the OBC code.", &
                  default=enable_bugs)
-    call get_param(param_file, mdl, "OBC_RESERVOIR_INIT_BUG", OBC%reservoir_init_bug, &
+  call get_param(param_file, mdl, "OBC_RESERVOIR_INIT_BUG", OBC%reservoir_init_bug, &
                  "If true, set the OBC tracer reservoirs at the startup of a new run from the "//&
                  "interior tracer concentrations regardless of properties that may be explicitly "//&
                  "specified for the reservoir concentrations.", default=enable_bugs, do_not_log=.true.)
-    call get_param(param_file, mdl, "REENTRANT_X", reentrant_x, default=.true.)
-    call get_param(param_file, mdl, "REENTRANT_Y", reentrant_y, default=.false.)
+  call get_param(param_file, mdl, "REENTRANT_X", reentrant_x, default=.true.)
+  call get_param(param_file, mdl, "REENTRANT_Y", reentrant_y, default=.false.)
 
-    ! Allocate everything
-    allocate(OBC%segment(1:OBC%number_of_segments))
-    do n=1,OBC%number_of_segments
-      OBC%segment(n)%Flather = .false.
-      OBC%segment(n)%radiation = .false.
-      OBC%segment(n)%radiation_tan = .false.
-      OBC%segment(n)%radiation_grad = .false.
-      OBC%segment(n)%oblique = .false.
-      OBC%segment(n)%oblique_tan = .false.
-      OBC%segment(n)%oblique_grad = .false.
-      OBC%segment(n)%nudged = .false.
-      OBC%segment(n)%nudged_tan = .false.
-      OBC%segment(n)%nudged_grad = .false.
-      OBC%segment(n)%specified = .false.
-      OBC%segment(n)%specified_tan = .false.
-      OBC%segment(n)%specified_grad = .false.
-      OBC%segment(n)%open = .false.
-      OBC%segment(n)%gradient = .false.
-      OBC%segment(n)%values_needed = .false.
-      OBC%segment(n)%u_values_needed = .false.
-      OBC%segment(n)%uamp_values_needed = OBC%add_tide_constituents
-      OBC%segment(n)%uphase_values_needed = OBC%add_tide_constituents
-      OBC%segment(n)%v_values_needed = .false.
-      OBC%segment(n)%vamp_values_needed = OBC%add_tide_constituents
-      OBC%segment(n)%vphase_values_needed = OBC%add_tide_constituents
-      OBC%segment(n)%t_values_needed = .false.
-      OBC%segment(n)%s_values_needed = .false.
-      OBC%segment(n)%z_values_needed = .false.
-      OBC%segment(n)%zamp_values_needed = OBC%add_tide_constituents
-      OBC%segment(n)%zphase_values_needed = OBC%add_tide_constituents
-      OBC%segment(n)%g_values_needed = .false.
-      OBC%segment(n)%direction = OBC_NONE
-      OBC%segment(n)%is_N_or_S = .false.
-      OBC%segment(n)%is_E_or_W = .false.
-      OBC%segment(n)%is_E_or_W_2 = .false.
-      OBC%segment(n)%Velocity_nudging_timescale_in = 0.0
-      OBC%segment(n)%Velocity_nudging_timescale_out = 0.0
-      OBC%segment(n)%num_fields = 0
-    enddo
-    allocate(OBC%segnum_u(G%IsdB:G%IedB,G%jsd:G%jed), source=0)
-    allocate(OBC%segnum_v(G%isd:G%ied,G%JsdB:G%JedB), source=0)
-    OBC%u_OBCs_on_PE = .false.
-    OBC%v_OBCs_on_PE = .false.
+  ! Allocate everything
+  allocate(OBC%segment(1:OBC%number_of_segments))
+  do n=1,OBC%number_of_segments
+    OBC%segment(n)%Flather = .false.
+    OBC%segment(n)%radiation = .false.
+    OBC%segment(n)%radiation_tan = .false.
+    OBC%segment(n)%radiation_grad = .false.
+    OBC%segment(n)%oblique = .false.
+    OBC%segment(n)%oblique_tan = .false.
+    OBC%segment(n)%oblique_grad = .false.
+    OBC%segment(n)%nudged = .false.
+    OBC%segment(n)%nudged_tan = .false.
+    OBC%segment(n)%nudged_grad = .false.
+    OBC%segment(n)%specified = .false.
+    OBC%segment(n)%specified_tan = .false.
+    OBC%segment(n)%specified_grad = .false.
+    OBC%segment(n)%open = .false.
+    OBC%segment(n)%gradient = .false.
+    OBC%segment(n)%values_needed = .false.
+    OBC%segment(n)%u_values_needed = .false.
+    OBC%segment(n)%uamp_values_needed = OBC%add_tide_constituents
+    OBC%segment(n)%uphase_values_needed = OBC%add_tide_constituents
+    OBC%segment(n)%v_values_needed = .false.
+    OBC%segment(n)%vamp_values_needed = OBC%add_tide_constituents
+    OBC%segment(n)%vphase_values_needed = OBC%add_tide_constituents
+    OBC%segment(n)%t_values_needed = .false.
+    OBC%segment(n)%s_values_needed = .false.
+    OBC%segment(n)%z_values_needed = .false.
+    OBC%segment(n)%zamp_values_needed = OBC%add_tide_constituents
+    OBC%segment(n)%zphase_values_needed = OBC%add_tide_constituents
+    OBC%segment(n)%g_values_needed = .false.
+    OBC%segment(n)%direction = OBC_NONE
+    OBC%segment(n)%is_N_or_S = .false.
+    OBC%segment(n)%is_E_or_W = .false.
+    OBC%segment(n)%is_E_or_W_2 = .false.
+    OBC%segment(n)%Velocity_nudging_timescale_in = 0.0
+    OBC%segment(n)%Velocity_nudging_timescale_out = 0.0
+    OBC%segment(n)%num_fields = 0
+  enddo
+  allocate(OBC%segnum_u(G%IsdB:G%IedB,G%jsd:G%jed), source=0)
+  allocate(OBC%segnum_v(G%isd:G%ied,G%JsdB:G%JedB), source=0)
+  OBC%u_OBCs_on_PE = .false.
+  OBC%v_OBCs_on_PE = .false.
 
-    do n=1,OBC%number_of_segments
-      n_seg = n ; if (OBC%reverse_segment_order) n_seg = OBC%number_of_segments + 1 - n
-      write(segment_param_str(1:15),"('OBC_SEGMENT_',i3.3)") n
-      call get_param(param_file, mdl, segment_param_str, segment_str, &
-           "Documentation needs to be dynamic?????", &
-           fail_if_missing=.true.)
-      segment_str = remove_spaces(segment_str)
-      if (segment_str(1:2) == 'I=') then
-        call setup_u_point_obc(OBC, G, US, segment_str, n_seg, n, param_file, reentrant_y)
-      elseif (segment_str(1:2) == 'J=') then
-        call setup_v_point_obc(OBC, G, US, segment_str, n_seg, n, param_file, reentrant_x)
-      else
-        call MOM_error(FATAL, "MOM_open_boundary.F90, open_boundary_config: "//&
-             "Unable to interpret "//segment_param_str//" = "//trim(segment_str))
-      endif
-    enddo
-    ! Set arrays indicating the segment number and segment direction, and also store the
-    ! range of indices within which various orientations of OBCs can be found on this PE.
-    call set_segnum_signs(OBC, G)
-
-    ! Moved this earlier because time_interp_external_init needs to be called
-    ! before anything that uses time_interp_external (such as initialize_segment_data)
-    if (OBC%specified_u_BCs_exist_globally .or. OBC%specified_v_BCs_exist_globally .or. &
-      OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) then
-      ! Need this for ocean_only mode boundary interpolation.
-      call time_interp_external_init()
+  do n=1,OBC%number_of_segments
+    n_seg = n ; if (OBC%reverse_segment_order) n_seg = OBC%number_of_segments + 1 - n
+    write(segment_param_str(1:15),"('OBC_SEGMENT_',i3.3)") n
+    call get_param(param_file, mdl, segment_param_str, segment_str, &
+         "Documentation needs to be dynamic?????", &
+         fail_if_missing=.true.)
+    segment_str = remove_spaces(segment_str)
+    if (segment_str(1:2) == 'I=') then
+      call setup_u_point_obc(OBC, G, US, segment_str, n_seg, n, param_file, reentrant_y)
+    elseif (segment_str(1:2) == 'J=') then
+      call setup_v_point_obc(OBC, G, US, segment_str, n_seg, n, param_file, reentrant_x)
+    else
+      call MOM_error(FATAL, "MOM_open_boundary.F90, open_boundary_config: "//&
+           "Unable to interpret "//segment_param_str//" = "//trim(segment_str))
     endif
-    ! if (open_boundary_query(OBC, needs_ext_seg_data=.true.)) &
-    !   call initialize_segment_data(G, OBC, param_file)
+  enddo
+  ! Set arrays indicating the segment number and segment direction, and also store the
+  ! range of indices within which various orientations of OBCs can be found on this PE.
+  call set_segnum_signs(OBC, G)
 
-    if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
-      call get_param(param_file, mdl, "OBC_RADIATION_MAX", OBC%rx_max, &
+  ! Moved this earlier because time_interp_external_init needs to be called
+  ! before anything that uses time_interp_external (such as initialize_segment_data)
+  if (OBC%specified_u_BCs_exist_globally .or. OBC%specified_v_BCs_exist_globally .or. &
+    OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) then
+    ! Need this for ocean_only mode boundary interpolation.
+    call time_interp_external_init()
+  endif
+  ! if (open_boundary_query(OBC, needs_ext_seg_data=.true.)) &
+  !   call initialize_segment_data(G, OBC, param_file)
+
+  if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
+    call get_param(param_file, mdl, "OBC_RADIATION_MAX", OBC%rx_max, &
                    "The maximum magnitude of the baroclinic radiation velocity (or speed of "//&
                    "characteristics), in gridpoints per timestep.  This is only "//&
                    "used if one of the open boundary segments is using Orlanski.", &
                    units="nondim", default=1.0)
-      call get_param(param_file, mdl, "OBC_RAD_VEL_WT", OBC%gamma_uv, &
+    call get_param(param_file, mdl, "OBC_RAD_VEL_WT", OBC%gamma_uv, &
                    "The relative weighting for the baroclinic radiation "//&
                    "velocities (or speed of characteristics) at the new "//&
                    "time level (1) or the running mean (0) for velocities. "//&
                    "Valid values range from 0 to 1. This is only used if "//&
                    "one of the open boundary segments is using Orlanski.", &
                    units="nondim", default=0.3)
-    endif
+  endif
 
-    Lscale_in = 0.
-    Lscale_out = 0.
-    if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
-      call get_param(param_file, mdl, "OBC_TRACER_RESERVOIR_LENGTH_SCALE_OUT ", Lscale_out, &
-                 "An effective length scale for restoring the tracer concentration "//&
-                 "at the boundaries to externally imposed values when the flow "//&
-                 "is exiting the domain.", units="m", default=0.0, scale=US%m_to_L)
+  Lscale_in = 0.
+  Lscale_out = 0.
+  if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
+    call get_param(param_file, mdl, "OBC_TRACER_RESERVOIR_LENGTH_SCALE_OUT ", Lscale_out, &
+                   "An effective length scale for restoring the tracer concentration "//&
+                   "at the boundaries to externally imposed values when the flow "//&
+                   "is exiting the domain.", units="m", default=0.0, scale=US%m_to_L)
 
-      call get_param(param_file, mdl, "OBC_TRACER_RESERVOIR_LENGTH_SCALE_IN ", Lscale_in, &
-                 "An effective length scale for restoring the tracer concentration "//&
-                 "at the boundaries to values from the interior when the flow "//&
-                 "is entering the domain.", units="m", default=0.0, scale=US%m_to_L)
-    endif
+    call get_param(param_file, mdl, "OBC_TRACER_RESERVOIR_LENGTH_SCALE_IN ", Lscale_in, &
+                   "An effective length scale for restoring the tracer concentration "//&
+                   "at the boundaries to values from the interior when the flow "//&
+                   "is entering the domain.", units="m", default=0.0, scale=US%m_to_L)
+  endif
 
-    if (mask_outside) call mask_outside_OBCs(G, US, param_file, OBC)
+  if (mask_outside) call mask_outside_OBCs(G, US, param_file, OBC)
 
-    ! All tracers are using the same restoring length scale for now, but we may want to make this
-    ! tracer-specific in the future for example, in cases where certain tracers are poorly constrained
-    ! by data while others are well constrained - MJH.
-    do n=1,OBC%number_of_segments
-      OBC%segment(n)%Tr_InvLscale_in = 0.0
-      if (Lscale_in>0.) OBC%segment(n)%Tr_InvLscale_in =  1.0/Lscale_in
-      OBC%segment(n)%Tr_InvLscale_out = 0.0
-      if (Lscale_out>0.) OBC%segment(n)%Tr_InvLscale_out =  1.0/Lscale_out
-    enddo
+  ! All tracers are using the same restoring length scale for now, but we may want to make this
+  ! tracer-specific in the future for example, in cases where certain tracers are poorly constrained
+  ! by data while others are well constrained - MJH.
+  do n=1,OBC%number_of_segments
+    OBC%segment(n)%Tr_InvLscale_in = 0.0
+    if (Lscale_in>0.) OBC%segment(n)%Tr_InvLscale_in =  1.0/Lscale_in
+    OBC%segment(n)%Tr_InvLscale_out = 0.0
+    if (Lscale_out>0.) OBC%segment(n)%Tr_InvLscale_out =  1.0/Lscale_out
+  enddo
 
-    Lscale_in = 0.
-    Lscale_out = 0.
-    if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
-      call get_param(param_file, mdl, "OBC_THICKNESS_RESERVOIR_LENGTH_SCALE_OUT ", Lscale_out, &
-                 "An effective length scale for restoring the layer thickness "//&
-                 "at the boundaries to externally imposed values when the flow "//&
-                 "is exiting the domain.", units="m", default=0.0, scale=US%m_to_L)
+  Lscale_in = 0.
+  Lscale_out = 0.
+  if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
+    call get_param(param_file, mdl, "OBC_THICKNESS_RESERVOIR_LENGTH_SCALE_OUT ", Lscale_out, &
+                   "An effective length scale for restoring the layer thickness "//&
+                   "at the boundaries to externally imposed values when the flow "//&
+                   "is exiting the domain.", units="m", default=0.0, scale=US%m_to_L)
 
-      call get_param(param_file, mdl, "OBC_THICKNESS_RESERVOIR_LENGTH_SCALE_IN ", Lscale_in, &
-                 "An effective length scale for restoring the layer thickness "//&
-                 "at the boundaries to values from the interior when the flow "//&
-                 "is entering the domain.", units="m", default=0.0, scale=US%m_to_L)
-    endif
+    call get_param(param_file, mdl, "OBC_THICKNESS_RESERVOIR_LENGTH_SCALE_IN ", Lscale_in, &
+                   "An effective length scale for restoring the layer thickness "//&
+                   "at the boundaries to values from the interior when the flow "//&
+                   "is entering the domain.", units="m", default=0.0, scale=US%m_to_L)
+  endif
 
-    do n=1,OBC%number_of_segments
-      OBC%segment(n)%Th_InvLscale_in = 0.0
-      if (Lscale_in>0.) OBC%segment(n)%Th_InvLscale_in =  1.0/Lscale_in
-      OBC%segment(n)%Th_InvLscale_out = 0.0
-      if (Lscale_out>0.) OBC%segment(n)%Th_InvLscale_out =  1.0/Lscale_out
-      if (Lscale_in>0. .or. Lscale_out>0.) then
-        if (OBC%segment(n)%is_E_or_W_2) then
-          OBC%thickness_x_reservoirs_used = .true.
-          OBC%use_h_res = .true.
-        else
-          OBC%thickness_y_reservoirs_used = .true.
-          OBC%use_h_res = .true.
-        endif
+  do n=1,OBC%number_of_segments
+    OBC%segment(n)%Th_InvLscale_in = 0.0
+    if (Lscale_in>0.) OBC%segment(n)%Th_InvLscale_in =  1.0/Lscale_in
+    OBC%segment(n)%Th_InvLscale_out = 0.0
+    if (Lscale_out>0.) OBC%segment(n)%Th_InvLscale_out =  1.0/Lscale_out
+    if (Lscale_in>0. .or. Lscale_out>0.) then
+      if (OBC%segment(n)%is_E_or_W_2) then
+        OBC%thickness_x_reservoirs_used = .true.
+        OBC%use_h_res = .true.
+      else
+        OBC%thickness_y_reservoirs_used = .true.
+        OBC%use_h_res = .true.
       endif
-    enddo
+    endif
+  enddo
 
-    call get_param(param_file, mdl, "REMAPPING_SCHEME", OBC%remappingScheme, &
-          default=remappingDefaultScheme, do_not_log=.true.)
-    call get_param(param_file, mdl, "OBC_REMAPPING_SCHEME", OBC%remappingScheme, &
-          "This sets the reconstruction scheme used "//&
-          "for OBC vertical remapping for all variables. "//&
-          "It can be one of the following schemes: \n"//&
-          trim(remappingSchemesDoc), default=OBC%remappingScheme)
-    call get_param(param_file, mdl, "FATAL_CHECK_RECONSTRUCTIONS", OBC%check_reconstruction, &
-          "If true, cell-by-cell reconstructions are checked for "//&
-          "consistency and if non-monotonicity or an inconsistency is "//&
-          "detected then a FATAL error is issued.", default=.false., do_not_log=.true.)
-    call get_param(param_file, mdl, "FATAL_CHECK_REMAPPING", OBC%check_remapping, &
-          "If true, the results of remapping are checked for "//&
-          "conservation and new extrema and if an inconsistency is "//&
-          "detected then a FATAL error is issued.", default=.false., do_not_log=.true.)
-    call get_param(param_file, mdl, "BRUSHCUTTER_MODE", OBC%brushcutter_mode, &
-         "If true, read external OBC data on the supergrid.", &
-         default=.false.)
-    call get_param(param_file, mdl, "REMAP_BOUND_INTERMEDIATE_VALUES", OBC%force_bounds_in_subcell, &
-          "If true, the values on the intermediate grid used for remapping "//&
-          "are forced to be bounded, which might not be the case due to "//&
-          "round off.", default=.false., do_not_log=.true.)
-    call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
+  call get_param(param_file, mdl, "REMAPPING_SCHEME", OBC%remappingScheme, &
+       default=remappingDefaultScheme, do_not_log=.true.)
+  call get_param(param_file, mdl, "OBC_REMAPPING_SCHEME", OBC%remappingScheme, &
+       "This sets the reconstruction scheme used "//&
+       "for OBC vertical remapping for all variables. "//&
+       "It can be one of the following schemes: \n"//&
+       trim(remappingSchemesDoc), default=OBC%remappingScheme)
+  call get_param(param_file, mdl, "FATAL_CHECK_RECONSTRUCTIONS", OBC%check_reconstruction, &
+       "If true, cell-by-cell reconstructions are checked for "//&
+       "consistency and if non-monotonicity or an inconsistency is "//&
+       "detected then a FATAL error is issued.", default=.false., do_not_log=.true.)
+  call get_param(param_file, mdl, "FATAL_CHECK_REMAPPING", OBC%check_remapping, &
+       "If true, the results of remapping are checked for "//&
+       "conservation and new extrema and if an inconsistency is "//&
+       "detected then a FATAL error is issued.", default=.false., do_not_log=.true.)
+  call get_param(param_file, mdl, "BRUSHCUTTER_MODE", OBC%brushcutter_mode, &
+       "If true, read external OBC data on the supergrid.", &
+       default=.false.)
+  call get_param(param_file, mdl, "REMAP_BOUND_INTERMEDIATE_VALUES", OBC%force_bounds_in_subcell, &
+       "If true, the values on the intermediate grid used for remapping "//&
+       "are forced to be bounded, which might not be the case due to "//&
+       "round off.", default=.false., do_not_log=.true.)
+  call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
-    call get_param(param_file, mdl, "REMAPPING_ANSWER_DATE", OBC%remap_answer_date, &
+  call get_param(param_file, mdl, "REMAPPING_ANSWER_DATE", OBC%remap_answer_date, &
                  "The vintage of the expressions and order of arithmetic to use for remapping.  "//&
                  "Values below 20190101 result in the use of older, less accurate expressions "//&
                  "that were in use at the end of 2018.  Higher values result in the use of more "//&
                  "robust and accurate forms of mathematically equivalent expressions.", &
                  default=default_answer_date)
-    call get_param(param_file, mdl, "REMAPPING_USE_OM4_SUBCELLS", OBC%om4_remap_via_sub_cells, &
-                   do_not_log=.true., default=.true.)
+  call get_param(param_file, mdl, "REMAPPING_USE_OM4_SUBCELLS", OBC%om4_remap_via_sub_cells, &
+                 do_not_log=.true., default=.true.)
 
-    call get_param(param_file, mdl, "OBC_REMAPPING_USE_OM4_SUBCELLS", OBC%om4_remap_via_sub_cells, &
+  call get_param(param_file, mdl, "OBC_REMAPPING_USE_OM4_SUBCELLS", OBC%om4_remap_via_sub_cells, &
                  "If true, use the OM4 remapping-via-subcells algorithm for neutral diffusion. "//&
                  "See REMAPPING_USE_OM4_SUBCELLS for more details. "//&
                  "We recommend setting this option to false.", default=OBC%om4_remap_via_sub_cells)
-
-  endif ! OBC%number_of_segments > 0
 
   ! Safety check
   if ((OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) .and. &
@@ -3966,15 +4047,18 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     allocate(segment%normal_trans(IsdB:IedB,jsd:jed,OBC%ke), source=0.0)
     if (segment%nudged) &
       allocate(segment%nudged_normal_vel(IsdB:IedB,jsd:jed,OBC%ke), source=0.0)
-    if (segment%radiation_tan .or. segment%nudged_tan .or. segment%specified_tan .or. &
-        segment%oblique_tan .or. OBC%computed_vorticity .or. OBC%computed_strain) &
+    if (segment%radiation_tan .or. segment%nudged_tan .or. &
+        segment%specified_tan .or. segment%oblique_tan .or. &
+        (OBC%vorticity_config == OBC_VORTICITY_COMPUTED) .or. &
+        (OBC%strain_config == OBC_STRAIN_COMPUTED)) &
       allocate(segment%tangential_vel(IsdB:IedB,JsdB:JedB,OBC%ke), source=0.0)
     if (segment%nudged_tan) &
       allocate(segment%nudged_tangential_vel(IsdB:IedB,JsdB:JedB,OBC%ke), source=0.0)
     if (segment%nudged_grad) &
       allocate(segment%nudged_tangential_grad(IsdB:IedB,JsdB:JedB,OBC%ke), source=0.0)
-    if (OBC%specified_vorticity .or. OBC%specified_strain .or. segment%radiation_grad .or. &
-              segment%oblique_grad .or. segment%specified_grad) &
+    if (segment%radiation_grad .or. segment%oblique_grad .or. segment%specified_grad .or. &
+        (OBC%vorticity_config == OBC_VORTICITY_SPECIFIED) .or. &
+        (OBC%strain_config == OBC_STRAIN_SPECIFIED)) &
       allocate(segment%tangential_grad(IsdB:IedB,JsdB:JedB,OBC%ke), source=0.0)
     if (segment%oblique) then
       allocate(segment%grad_normal(JsdB:JedB,2,OBC%ke), source=0.0)
@@ -4004,15 +4088,18 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     allocate(segment%normal_trans(isd:ied,JsdB:JedB,OBC%ke), source=0.0)
     if (segment%nudged) &
       allocate(segment%nudged_normal_vel(isd:ied,JsdB:JedB,OBC%ke), source=0.0)
-    if (segment%radiation_tan .or. segment%nudged_tan .or. segment%specified_tan .or. &
-        segment%oblique_tan .or. OBC%computed_vorticity .or. OBC%computed_strain) &
+    if (segment%radiation_tan .or. segment%nudged_tan .or. &
+        segment%specified_tan .or. segment%oblique_tan .or. &
+        (OBC%vorticity_config == OBC_VORTICITY_COMPUTED) .or. &
+        (OBC%strain_config == OBC_STRAIN_COMPUTED)) &
       allocate(segment%tangential_vel(IsdB:IedB,JsdB:JedB,OBC%ke), source=0.0)
     if (segment%nudged_tan) &
       allocate(segment%nudged_tangential_vel(IsdB:IedB,JsdB:JedB,OBC%ke), source=0.0)
     if (segment%nudged_grad) &
       allocate(segment%nudged_tangential_grad(IsdB:IedB,JsdB:JedB,OBC%ke), source=0.0)
-    if (OBC%specified_vorticity .or. OBC%specified_strain .or. segment%radiation_grad .or. &
-              segment%oblique_grad .or. segment%specified_grad) &
+    if (segment%radiation_grad .or. segment%oblique_grad .or. segment%specified_grad .or. &
+        (OBC%vorticity_config == OBC_VORTICITY_SPECIFIED) .or. &
+        (OBC%strain_config == OBC_STRAIN_SPECIFIED)) &
       allocate(segment%tangential_grad(IsdB:IedB,JsdB:JedB,OBC%ke), source=0.0)
     if (segment%oblique) then
       allocate(segment%grad_normal(IsdB:IedB,2,OBC%ke), source=0.0)
@@ -6421,14 +6508,8 @@ subroutine rotate_OBC_config(OBC_in, G_in, OBC, G, turns)
   OBC%user_BCs_set_globally = OBC_in%user_BCs_set_globally
 
   ! These are conditionally read and set if number_of_segments > 0
-  OBC%zero_vorticity = OBC_in%zero_vorticity
-  OBC%freeslip_vorticity = OBC_in%freeslip_vorticity
-  OBC%computed_vorticity = OBC_in%computed_vorticity
-  OBC%specified_vorticity = OBC_in%specified_vorticity
-  OBC%zero_strain = OBC_in%zero_strain
-  OBC%freeslip_strain = OBC_in%freeslip_strain
-  OBC%computed_strain = OBC_in%computed_strain
-  OBC%specified_strain = OBC_in%specified_strain
+  OBC%vorticity_config = OBC_in%vorticity_config
+  OBC%strain_config = OBC_in%strain_config
   OBC%zero_biharmonic = OBC_in%zero_biharmonic
   OBC%silly_h = OBC_in%silly_h
   OBC%silly_u = OBC_in%silly_u
@@ -6863,14 +6944,6 @@ subroutine write_OBC_info(OBC, G, GV, US)
   if (OBC%update_OBC_seg_data) call MOM_mesg("update_OBC_seg_data", verb=1)
   if (OBC%needs_IO_for_data) call MOM_mesg("needs_IO_for_data", verb=1)
   if (OBC%any_needs_IO_for_data) call MOM_mesg("any_needs_IO_for_data", verb=1)
-  if (OBC%zero_vorticity) call MOM_mesg("zero_vorticity", verb=1)
-  if (OBC%freeslip_vorticity) call MOM_mesg("freeslip_vorticity", verb=1)
-  if (OBC%computed_vorticity) call MOM_mesg("computed_vorticity", verb=1)
-  if (OBC%specified_vorticity) call MOM_mesg("specified_vorticity", verb=1)
-  if (OBC%zero_strain) call MOM_mesg("zero_strain", verb=1)
-  if (OBC%freeslip_strain) call MOM_mesg("freeslip_strain", verb=1)
-  if (OBC%computed_strain) call MOM_mesg("computed_strain", verb=1)
-  if (OBC%specified_strain) call MOM_mesg("specified_strain", verb=1)
   if (OBC%zero_biharmonic) call MOM_mesg("zero_biharmonic", verb=1)
   if (OBC%brushcutter_mode) call MOM_mesg("brushcutter_mode", verb=1)
   if (OBC%check_reconstruction) call MOM_mesg("check_reconstruction", verb=1)
