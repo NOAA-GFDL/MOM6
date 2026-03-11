@@ -694,7 +694,8 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, visc, dt, Kd_int, G, GV, 
                          u_star, u_star_mean, mech_TKE, dt, MLD_io, Kd, mixvel, mixlen, GV, &
                          US, CS, eCD, Waves, G, i, j)
       endif
-      call post_data_3d_by_column(CS%id_Kd_ePBL_col_by_col, Kd, CS%diag, i, j)
+      if (CS%id_Kd_ePBL_col_by_col > 0) &
+        call post_data_3d_by_column(CS%id_Kd_ePBL_col_by_col, Kd, CS%diag, i, j)
 
       ! Add the diffusivity due to bottom boundary layer mixing, if there is energy to drive this mixing.
       if (BBL_mixing) then
@@ -830,7 +831,7 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, visc, dt, Kd_int, G, GV, 
     do K=1,nz+1 ; do i=is,ie ; Kd_int(i,j,K) = Kd_2d(i,K) ; enddo ; enddo
 
   enddo ! j-loop
-  call post_data_3d_final(CS%id_Kd_ePBL_col_by_col, CS%diag)
+  if (CS%id_Kd_ePBL_col_by_col > 0) call post_data_3d_final(CS%id_Kd_ePBL_col_by_col, CS%diag)
 
   if (CS%debug .and. BBL_mixing) then
     call hchksum(visc%BBL_meanKE_loss, "ePBL visc%BBL_meanKE_loss", G%HI, &

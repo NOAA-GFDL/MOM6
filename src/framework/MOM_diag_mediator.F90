@@ -1110,9 +1110,6 @@ subroutine define_axes_group(diag_cs, handles, axes, nz, vertical_coordinate_num
     if (axes%is_u_point) axes%mask2d => diag_cs%mask2dCu
     if (axes%is_v_point) axes%mask2d => diag_cs%mask2dCv
     if (axes%is_q_point) axes%mask2d => diag_cs%mask2dBu
-    call axes%piecemeal_2d%set_horizontal_extents(lbound(axes%mask2d,1), ubound(axes%mask2d,1), &
-                                               lbound(axes%mask2d,2), ubound(axes%mask2d,2))
-    call axes%piecemeal_2d%set_fill_value(diag_cs%missing_value)
   endif
   ! A static 3d mask for non-native coordinates can only be setup when a grid is available
   axes%mask3d => null()
@@ -1129,10 +1126,6 @@ subroutine define_axes_group(diag_cs, handles, axes, nz, vertical_coordinate_num
       if (axes%is_v_point) axes%mask3d => diag_cs%mask3dCvi
       if (axes%is_q_point) axes%mask3d => diag_cs%mask3dBi
     endif
-    call axes%piecemeal_3d%set_horizontal_extents(is=lbound(axes%mask3d,1), ie=ubound(axes%mask3d,1), &
-                                               js=lbound(axes%mask3d,2), je=ubound(axes%mask3d,2))
-    call axes%piecemeal_3d%set_vertical_extent(ks=lbound(axes%mask3d,3), ke=ubound(axes%mask3d,3))
-    call axes%piecemeal_3d%set_fill_value(diag_cs%missing_value)
   endif
 
 
@@ -3720,6 +3713,11 @@ subroutine diag_masks_set(G, nz, diag_cs)
   diag_cs%mask2dCu => G%mask2dCu
   diag_cs%mask2dCv => G%mask2dCv
 
+  call diag_cs%axesT1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dT, diag_cs%missing_value)
+  call diag_cs%axesB1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dBu, diag_cs%missing_value)
+  call diag_cs%axesCu1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dCu, diag_cs%missing_value)
+  call diag_cs%axesCv1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dCv, diag_cs%missing_value)
+
   ! 3d native masks are needed by diag_manager but the native variables
   ! can only be masked 2d - for ocean points, all layers exists.
   allocate(diag_cs%mask3dTL(G%isd:G%ied,G%jsd:G%jed,1:nz))
@@ -3742,6 +3740,16 @@ subroutine diag_masks_set(G, nz, diag_cs)
     diag_cs%mask3dCui(:,:,k) = diag_cs%mask2dCu(:,:)
     diag_cs%mask3dCvi(:,:,k) = diag_cs%mask2dCv(:,:)
   enddo
+
+  ! Initialize piecemeal_3d buffer extents and fill values for native axes now that masks are allocated
+  call diag_cs%axesTL%piecemeal_3d%set_extents_from_array(diag_cs%mask3dTL, diag_cs%missing_value)
+  call diag_cs%axesBL%piecemeal_3d%set_extents_from_array(diag_cs%mask3dBL, diag_cs%missing_value)
+  call diag_cs%axesCuL%piecemeal_3d%set_extents_from_array(diag_cs%mask3dCuL, diag_cs%missing_value)
+  call diag_cs%axesCvL%piecemeal_3d%set_extents_from_array(diag_cs%mask3dCvL, diag_cs%missing_value)
+  call diag_cs%axesTi%piecemeal_3d%set_extents_from_array(diag_cs%mask3dTi, diag_cs%missing_value)
+  call diag_cs%axesBi%piecemeal_3d%set_extents_from_array(diag_cs%mask3dBi, diag_cs%missing_value)
+  call diag_cs%axesCui%piecemeal_3d%set_extents_from_array(diag_cs%mask3dCui, diag_cs%missing_value)
+  call diag_cs%axesCvi%piecemeal_3d%set_extents_from_array(diag_cs%mask3dCvi, diag_cs%missing_value)
 
   !Allocate and initialize the downsampled masks
   call downsample_diag_masks_set(G, nz, diag_cs)

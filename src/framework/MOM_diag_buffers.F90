@@ -53,6 +53,7 @@ type, extends(diag_buffer_base), public :: diag_buffer_2d; private
 
   procedure, public :: grow => grow_2d !< Increase the size of the buffer
   procedure, public :: store => store_2d !< Store a field in the buffer, increasing as necessary
+  procedure, public :: set_extents_from_array => set_extents_from_array_2d !< Set extents from array bounds
 end type diag_buffer_2d
 
 !> Dynamically growing buffer for 3D arrays.
@@ -66,6 +67,7 @@ type, extends(diag_buffer_base), public :: diag_buffer_3d ; private
   procedure, public :: set_vertical_extent !< Set the vertical extents of the buffer
   procedure, public :: grow => grow_3d !< Increase the size of the buffer
   procedure, public :: store => store_3d !< Store a field in the buffer, increasing as necessary
+  procedure, public :: set_extents_from_array => set_extents_from_array_3d !< Set extents from array bounds
 end type diag_buffer_3d
 
 contains
@@ -165,6 +167,29 @@ subroutine set_vertical_extent(this, ks, ke)
 
   this%ks = ks; this%ke = ke
 end subroutine set_vertical_extent
+
+!> Set the extents of a 2D buffer from the bounds of a 2D array
+subroutine set_extents_from_array_2d(this, array, fill_value_in)
+  class(diag_buffer_2d), intent(inout) :: this !< The diagnostic buffer
+  real, dimension(:,:), intent(in)     :: array !< The array whose bounds define the buffer extents
+  real, optional,       intent(in)     :: fill_value_in !< Optional fill value
+
+  call this%set_horizontal_extents(lbound(array,1), ubound(array,1), &
+                                   lbound(array,2), ubound(array,2))
+  if (present(fill_value_in)) call this%set_fill_value(fill_value_in)
+end subroutine set_extents_from_array_2d
+
+!> Set the extents of a 3D buffer from the bounds of a 3D array
+subroutine set_extents_from_array_3d(this, array, fill_value_in)
+  class(diag_buffer_3d), intent(inout) :: this !< The diagnostic buffer
+  real, dimension(:,:,:), intent(in)   :: array !< The array whose bounds define the buffer extents
+  real, optional,         intent(in)   :: fill_value_in !< Optional fill value
+
+  call this%set_horizontal_extents(lbound(array,1), ubound(array,1), &
+                                   lbound(array,2), ubound(array,2))
+  call this%set_vertical_extent(lbound(array,3), ubound(array,3))
+  if (present(fill_value_in)) call this%set_fill_value(fill_value_in)
+end subroutine set_extents_from_array_3d
 
 !> Grow a 2d diagnostic buffer
 subroutine grow_2d(this)
