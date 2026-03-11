@@ -2494,7 +2494,8 @@ subroutine fluxes_accumulate(flux_tmp, fluxes, G, wt2, forces)
   endif
   if (associated(fluxes%carbon_content_lrunoff) .and. associated(flux_tmp%carbon_content_lrunoff)) then
     do j=js,je ; do i=is,ie
-      fluxes%carbon_content_lrunoff(i,j) = wt1*fluxes%carbon_content_lrunoff(i,j) + wt2*flux_tmp%carbon_content_lrunoff(i,j)
+      fluxes%carbon_content_lrunoff(i,j) = wt1*fluxes%carbon_content_lrunoff(i,j) + &
+                                           wt2*flux_tmp%carbon_content_lrunoff(i,j)
     enddo ; enddo
   endif
 
@@ -3747,7 +3748,7 @@ subroutine get_forcing_groups(fluxes, water, heat, ustar, tau_mag, press, shelf,
   iceberg = associated(fluxes%ustar_berg)
   heat_added = associated(fluxes%heat_added)
   buoy = associated(fluxes%buoy)
-  carbon = associated(fluxes%carbon_content_lrunoff)
+  if(present(carbon)) carbon = associated(fluxes%carbon_content_lrunoff)
 end subroutine get_forcing_groups
 
 
