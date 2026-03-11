@@ -290,7 +290,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   ! flux type has been used.
   if (fluxes%dt_buoy_accum < 0) then
     call allocate_forcing_type(G, fluxes, water=.true., heat=.true., ustar=.not.CS%nonBous, press=.true., &
-                               fix_accum_bug=.not.CS%ustar_gustless_bug, tau_mag=CS%nonBous)
+                               fix_accum_bug=.not.CS%ustar_gustless_bug, tau_mag=CS%nonBous, carbon=.true.)
 
     call safe_alloc_ptr(fluxes%sw_vis_dir,isd,ied,jsd,jed)
     call safe_alloc_ptr(fluxes%sw_vis_dif,isd,ied,jsd,jed)
@@ -507,7 +507,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     endif
 
     if (associated(IOB%runoff_carbon)) then
-      fluxes%carbon_content_lrunoff(i,j) = US%W_m2_to_QRZ_T * IOB%runoff_carbon(i-i0,j-j0) * G%mask2dT(i,j)
+      fluxes%carbon_content_lrunoff(i,j) = US%kg_m2s_to_RZ_T * IOB%runoff_carbon(i-i0,j-j0) * G%mask2dT(i,j)
       if (CS%check_no_land_fluxes) &
         call check_mask_val_consistency(IOB%runoff_carbon(i-i0,j-j0), G%mask2dT(i,j), i, j, 'runoff_carbon', G)
     endif
@@ -1343,6 +1343,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
   logical :: new_sim              ! False if this simulation was started from a restart file
                                   ! or other equivalent files.
   logical :: iceberg_flux_diags   ! If true, diagnostics of fluxes from icebergs are available.
+  logical :: carbon_runoff_diags  ! If true, diagnostics of fluxes of carbon from runoff are available.
   logical :: fix_ustar_gustless_bug  ! If false, include a bug using an older run-time parameter.
   logical :: test_value  ! This is used to determine whether a logical parameter is being set explicitly.
   logical :: explicit_bug, explicit_fix ! These indicate which parameters are set explicitly.
@@ -1715,8 +1716,12 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
   call get_param(param_file, mdl, "ALLOW_ICEBERG_FLUX_DIAGNOSTICS", iceberg_flux_diags, &
                  "If true, makes available diagnostics of fluxes from icebergs "//&
                  "as seen by MOM6.", default=.false.)
+  call get_param(param_file, mdl, "ALLOW_CARBON_FLUX_DIAGNOSTICS", carbon_runoff_diags, &
+                 "If true, makes available diagnostics of fluxes of carbon in runoff  "//&
+                 "as seen by MOM6.", default=.false.)
   call register_forcing_type_diags(Time, diag, US, CS%use_temperature, CS%handles, &
-                                   use_berg_fluxes=iceberg_flux_diags)
+                                   use_berg_fluxes=iceberg_flux_diags, &
+                                   use_carbon_runoff=carbon_runoff_diags)
 
   call get_param(param_file, mdl, "ALLOW_FLUX_ADJUSTMENTS", CS%allow_flux_adjustments, &
                  "If true, allows flux adjustments to specified via the "//&
