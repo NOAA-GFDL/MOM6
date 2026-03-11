@@ -1958,7 +1958,7 @@ subroutine post_data_3d_by_point(diag_field_id, field, diag_cs, i, j, k)
   integer :: buffer_slot
 
   diag => diag_cs%diags(diag_field_id)
-  buffer_slot = diag%axes%piecemeal_3d%find_buffer_slot(diag_field_id)
+  buffer_slot = diag%axes%piecemeal_3d%check_capacity_by_id(diag_field_id)
   diag%axes%piecemeal_3d%buffer(buffer_slot)%field(i,j,k) = field
 end subroutine post_data_3d_by_point
 
@@ -1973,8 +1973,11 @@ subroutine post_data_3d_final(diag_field_id, diag_cs)
 
   diag => diag_cs%diags(diag_field_id)
   buffer_slot = diag%axes%piecemeal_3d%find_buffer_slot(diag_field_id)
-  call post_data(diag_field_id, diag%axes%piecemeal_3d%buffer(buffer_slot)%field(:,:,:), diag_CS)
-  call diag%axes%piecemeal_3d%mark_available(diag_field_id)
+  ! Only perform an action if the buffer slot was actually used
+  if (buffer_slot>0) then
+    call post_data(diag_field_id, diag%axes%piecemeal_3d%buffer(buffer_slot)%field(:,:,:), diag_CS)
+    call diag%axes%piecemeal_3d%mark_available(diag_field_id)
+  endif
 end subroutine post_data_3d_final
 
 !> Calculate and write out diagnostics that are the product of two 3-d arrays at u-points
