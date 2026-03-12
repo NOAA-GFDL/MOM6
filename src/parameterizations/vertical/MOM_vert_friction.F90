@@ -2592,8 +2592,8 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       else
         CFL = (u(I,j,k) * dt) * (G%dy_Cu(I,j) * G%IareaT(i,j))
       endif
+      if (CFL > CS%CFL_trunc) trunc_any = .true.
       if (CFL > CS%CFL_report) then
-        trunc_any = .true.
         dowrite(I,j) = .true.
         do_any_write = .true.
         vel_report(I,j) = min(vel_report(I,j), abs(u(I,j,k)))
@@ -2660,8 +2660,8 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
       else
         CFL = (v(i,J,k) * dt) * (G%dx_Cv(i,J) * G%IareaT(i,j))
       endif
+      if (CFL > CS%CFL_trunc) trunc_any = .true.
       if (CFL > CS%CFL_report) then
-        trunc_any = .true.
         dowrite(i,J) = .true.
         do_any_write = .true.
         vel_report(i,J) = min(vel_report(i,J), abs(v(i,J,k)))
