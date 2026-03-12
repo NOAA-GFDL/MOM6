@@ -2578,6 +2578,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
 
   if (len_trim(CS%u_trunc_file) > 0) then
     do_any_write = .false.
+    trunc_any = .false.
 
     do j=js,je ; do I=Isq,Ieq
       dowrite(I,j) = .false.
@@ -2644,6 +2645,8 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
 
   if (len_trim(CS%v_trunc_file) > 0) then
     do_any_write =.false.
+    trunc_any = .false.
+
 
     do J=Jsq,Jeq ; do i=is,ie
       dowrite(i,J) = .false.
