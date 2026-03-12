@@ -111,6 +111,7 @@ type, public :: surface_forcing_CS ; private
   real    :: rigid_sea_ice_mass !< A mass per unit area of sea-ice beyond which sea-ice viscosity
                                 !! becomes effective [R Z ~> kg m-2], typically of order 1000 kg m-2.
   logical :: allow_flux_adjustments !< If true, use data_override to obtain flux adjustments
+  logical :: allow_carbon_flux_exchange !< If true, allows fluxes and diagnostics of carbon in runoff.
 
   logical :: restore_salt       !< If true, the coupled MOM driver adds a term to restore surface
                                 !! salinity to a specified value.
@@ -290,7 +291,8 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   ! flux type has been used.
   if (fluxes%dt_buoy_accum < 0) then
     call allocate_forcing_type(G, fluxes, water=.true., heat=.true., ustar=.not.CS%nonBous, press=.true., &
-                               fix_accum_bug=.not.CS%ustar_gustless_bug, tau_mag=CS%nonBous, carbon=.true.)
+                               fix_accum_bug=.not.CS%ustar_gustless_bug, tau_mag=CS%nonBous,&
+                               carbon=CS%allow_carbon_flux_exchange)
 
     call safe_alloc_ptr(fluxes%sw_vis_dir,isd,ied,jsd,jed)
     call safe_alloc_ptr(fluxes%sw_vis_dif,isd,ied,jsd,jed)
@@ -506,7 +508,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
         call check_mask_val_consistency(IOB%runoff_hflx(i-i0,j-j0), G%mask2dT(i,j), i, j, 'runoff_hflx', G)
     endif
 
-    if (associated(IOB%runoff_carbon)) then
+    if (associated(IOB%runoff_carbon) .and. CS%allow_carbon_flux_exchange) then
       fluxes%carbon_content_lrunoff(i,j) = US%kg_m2s_to_RZ_T * IOB%runoff_carbon(i-i0,j-j0) * G%mask2dT(i,j)
       if (CS%check_no_land_fluxes) &
         call check_mask_val_consistency(IOB%runoff_carbon(i-i0,j-j0), G%mask2dT(i,j), i, j, 'runoff_carbon', G)
@@ -1343,7 +1345,6 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
   logical :: new_sim              ! False if this simulation was started from a restart file
                                   ! or other equivalent files.
   logical :: iceberg_flux_diags   ! If true, diagnostics of fluxes from icebergs are available.
-  logical :: carbon_runoff_diags  ! If true, diagnostics of fluxes of carbon from runoff are available.
   logical :: fix_ustar_gustless_bug  ! If false, include a bug using an older run-time parameter.
   logical :: test_value  ! This is used to determine whether a logical parameter is being set explicitly.
   logical :: explicit_bug, explicit_fix ! These indicate which parameters are set explicitly.
@@ -1716,12 +1717,12 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
   call get_param(param_file, mdl, "ALLOW_ICEBERG_FLUX_DIAGNOSTICS", iceberg_flux_diags, &
                  "If true, makes available diagnostics of fluxes from icebergs "//&
                  "as seen by MOM6.", default=.false.)
-  call get_param(param_file, mdl, "ALLOW_CARBON_FLUX_DIAGNOSTICS", carbon_runoff_diags, &
-                 "If true, makes available diagnostics of fluxes of carbon in runoff  "//&
-                 "as seen by MOM6.", default=.false.)
+  call get_param(param_file, mdl, "ALLOW_CARBON_FLUX_EXCHANGE", CS%allow_carbon_flux_exchange, &
+                 "If true, makes available fluxes and diagnostics of carbon in runoff "//&
+                 "within MOM6.", default=.false.)
   call register_forcing_type_diags(Time, diag, US, CS%use_temperature, CS%handles, &
                                    use_berg_fluxes=iceberg_flux_diags, &
-                                   use_carbon_runoff=carbon_runoff_diags)
+                                   use_carbon_runoff=CS%allow_carbon_flux_exchange)
 
   call get_param(param_file, mdl, "ALLOW_FLUX_ADJUSTMENTS", CS%allow_flux_adjustments, &
                  "If true, allows flux adjustments to specified via the "//&

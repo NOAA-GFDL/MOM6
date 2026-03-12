@@ -3512,9 +3512,7 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
   call myAlloc(fluxes%latent_frunoff_glc_diag,isd,ied,jsd,jed, heat)
 
   call myAlloc(fluxes%salt_flux,isd,ied,jsd,jed, salt)
-  if (present(carbon)) then ; if (carbon) then
-    call myAlloc(fluxes%carbon_content_lrunoff,isd,ied,jsd,jed, .true.)
-  endif ; endif
+  call myAlloc(fluxes%carbon_content_lrunoff,isd,ied,jsd,jed, carbon)
 
   if (present(heat) .and. present(water)) then ; if (heat .and. water) then
     call myAlloc(fluxes%heat_content_cond,isd,ied,jsd,jed, .true.)
