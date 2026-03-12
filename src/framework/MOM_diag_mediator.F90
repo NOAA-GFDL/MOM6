@@ -60,6 +60,7 @@ public diag_mediator_close_registration, get_diag_time_end
 public diag_axis_init, ocean_register_diag, register_static_field
 public register_scalar_field
 public define_axes_group, diag_masks_set
+public set_piecemeal_extents
 public diag_register_area_ids
 public register_cell_measure, diag_associate_volume_cell_measure
 public diag_get_volume_cell_measure_dm_id
@@ -493,6 +494,9 @@ subroutine set_axes_info(G, GV, US, param_file, diag_cs, set_vertical)
        x_cell_method='point', y_cell_method='mean', is_u_point=.true.)
   call define_axes_group(diag_cs, (/ id_xh, id_yq /), diag_cs%axesCv1, &
        x_cell_method='mean', y_cell_method='point', is_v_point=.true.)
+
+  ! Define array extents for all piecemeal buffers
+  call set_piecemeal_extents(diag_cs)
 
   ! Axis group for special null axis from diag manager.
   id_null = diag_axis_init('scalar_axis', (/0./), 'none', 'N', 'none', null_axis=.true.)
@@ -3713,11 +3717,6 @@ subroutine diag_masks_set(G, nz, diag_cs)
   diag_cs%mask2dCu => G%mask2dCu
   diag_cs%mask2dCv => G%mask2dCv
 
-  call diag_cs%axesT1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dT, diag_cs%missing_value)
-  call diag_cs%axesB1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dBu, diag_cs%missing_value)
-  call diag_cs%axesCu1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dCu, diag_cs%missing_value)
-  call diag_cs%axesCv1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dCv, diag_cs%missing_value)
-
   ! 3d native masks are needed by diag_manager but the native variables
   ! can only be masked 2d - for ocean points, all layers exists.
   allocate(diag_cs%mask3dTL(G%isd:G%ied,G%jsd:G%jed,1:nz))
@@ -3741,7 +3740,23 @@ subroutine diag_masks_set(G, nz, diag_cs)
     diag_cs%mask3dCvi(:,:,k) = diag_cs%mask2dCv(:,:)
   enddo
 
-  ! Initialize piecemeal_3d buffer extents and fill values for native axes now that masks are allocated
+  !Allocate and initialize the downsampled masks
+  call downsample_diag_masks_set(G, nz, diag_cs)
+
+end subroutine diag_masks_set
+
+!> Set the extents and fill values for the piecemeal buffers for all axes
+subroutine set_piecemeal_extents(diag_cs)
+  type(diag_ctrl), intent(inout) :: diag_cs !< A pointer to a type with many variables
+                                                       !! used for diagnostics
+
+  ! Piecemeal buffers for 2d axes
+  call diag_cs%axesT1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dT, diag_cs%missing_value)
+  call diag_cs%axesB1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dBu, diag_cs%missing_value)
+  call diag_cs%axesCu1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dCu, diag_cs%missing_value)
+  call diag_cs%axesCv1%piecemeal_2d%set_extents_from_array(diag_cs%mask2dCv, diag_cs%missing_value)
+
+  ! Piecemeal buffers for 3d axes
   call diag_cs%axesTL%piecemeal_3d%set_extents_from_array(diag_cs%mask3dTL, diag_cs%missing_value)
   call diag_cs%axesBL%piecemeal_3d%set_extents_from_array(diag_cs%mask3dBL, diag_cs%missing_value)
   call diag_cs%axesCuL%piecemeal_3d%set_extents_from_array(diag_cs%mask3dCuL, diag_cs%missing_value)
@@ -3751,10 +3766,7 @@ subroutine diag_masks_set(G, nz, diag_cs)
   call diag_cs%axesCui%piecemeal_3d%set_extents_from_array(diag_cs%mask3dCui, diag_cs%missing_value)
   call diag_cs%axesCvi%piecemeal_3d%set_extents_from_array(diag_cs%mask3dCvi, diag_cs%missing_value)
 
-  !Allocate and initialize the downsampled masks
-  call downsample_diag_masks_set(G, nz, diag_cs)
-
-end subroutine diag_masks_set
+end subroutine set_piecemeal_extents
 
 subroutine diag_mediator_close_registration(diag_CS)
   type(diag_ctrl), intent(inout) :: diag_CS !< Structure used to regulate diagnostic output
