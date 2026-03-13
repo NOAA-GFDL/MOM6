@@ -5,7 +5,7 @@
 !> Inline harmonic analysis (conventional)
 module MOM_harmonic_analysis
 
-use MOM_time_manager,  only : time_type, real_to_time, time_type_to_real
+use MOM_time_manager,  only : time_type, real_to_time, time_type_to_real, time_minus_signed
 use MOM_time_manager,  only : set_date, get_date, increment_date
 use MOM_time_manager,  only : operator(+), operator(-), operator(<), operator(>), operator(>=)
 use MOM_grid,          only : ocean_grid_type
@@ -337,7 +337,7 @@ subroutine HA_accum(key, data, Time, G, CS)
   enddo
 
   nc  = CS%nc
-  now = CS%US%s_to_T * time_type_to_real(Time - CS%time_ref)
+  now = CS%US%s_to_T * time_minus_signed(Time, CS%time_ref)
 
   !!! Additional processing at the initial accumulating step !!!
   if (ha1%old_time < 0.0) then
@@ -410,7 +410,8 @@ subroutine HA_accum(key, data, Time, G, CS)
   enddo ! c=1,nc
 
   !!! Compute harmonic constants and write output as Time approaches CS%time_end !!!
-  ! This guarantees that HA_write will be called before Time becomes larger than CS%time_end
+  ! This guarantees that HA_write will be called before Time becomes larger than CS%time_end.
+  ! Result of subtracting time types is always >= 0, which is acceptable here.
   if (time_type_to_real(CS%time_end - Time) <= dt) then
     call HA_write(ha1, Time, G, CS)
 

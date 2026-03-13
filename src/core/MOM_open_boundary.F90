@@ -29,7 +29,7 @@ use MOM_restart,              only : register_restart_field, register_restart_pa
 use MOM_restart,              only : query_initialized, set_initialized, MOM_restart_CS
 use MOM_string_functions,     only : extract_word, remove_spaces, uppercase, lowercase
 use MOM_tidal_forcing,        only : astro_longitudes, astro_longitudes_init, eq_phase, nodal_fu, tidal_frequency
-use MOM_time_manager,         only : set_date, time_type, time_type_to_real, operator(-)
+use MOM_time_manager,         only : set_date, time_type, time_minus_signed
 use MOM_tracer_registry,      only : tracer_type, tracer_registry_type, tracer_name_lookup
 use MOM_unit_scaling,         only : unit_scale_type
 use MOM_variables,            only : thermo_var_ptrs
@@ -4322,7 +4322,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
   if (.not. associated(OBC)) return
 
-  if (OBC%add_tide_constituents) time_delta = US%s_to_T * time_type_to_real(Time - OBC%time_ref)
+  if (OBC%add_tide_constituents) time_delta = US%s_to_T * time_minus_signed(Time, OBC%time_ref)
 
   if (OBC%number_of_segments >= 1) then
     dz(:,:,:) = 0.0
@@ -4924,7 +4924,7 @@ subroutine update_OBC_ramp(Time, OBC, US, activate)
     endif
   endif
   if (.not.OBC%ramping_is_activated) return
-  deltaTime = max( 0., US%s_to_T*time_type_to_real( Time - OBC%ramp_start_time ) )
+  deltaTime = max(0., US%s_to_T * time_minus_signed(Time, OBC%ramp_start_time))
   if (deltaTime >= OBC%trunc_ramp_time) then
     OBC%ramp_value = 1.0
     OBC%ramp = .false. ! This turns off ramping after this call
