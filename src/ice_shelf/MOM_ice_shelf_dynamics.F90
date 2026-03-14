@@ -155,6 +155,9 @@ type, public :: ice_shelf_dyn_CS ; private
   character(len=40) :: ice_viscosity_compute !< Specifies whether the ice viscosity is computed internally
                                    !! according to Glen's flow law; is constant (for debugging purposes)
                                    !! or using observed strain rates and read from a file
+  logical :: shelf_top_slope_bugs !< If true, use directionally inconsistent estimates of the grid
+                            !! spacing when calculating the ice shelf surface slope, and underestimate
+                            !! slopes near the edge of the ice shelf by a factor of 2.
   logical :: GL_regularize  !< Specifies whether to regularize the floatation condition
                             !! at the grounding line as in Goldberg Holland Schoof 2009
   integer :: n_sub_regularize
@@ -440,6 +443,8 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
   character(len=40)  :: var_name
   character(len=40)  :: mdl = "MOM_ice_shelf_dyn"  ! This module's name.
   logical :: shelf_mass_is_dynamic, override_shelf_movement, active_shelf_dynamics
+  logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
+                          ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: debug
   integer :: i, j, isd, ied, jsd, jed, Isdq, Iedq, Jsdq, Jedq, iters
   character(len=200) :: IS_energyfile  ! The name of the energy file.
@@ -583,6 +588,13 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
                  "if OBS read from a file, "//&
                  "if CONSTANT a constant value (for debugging).", &
                  default="MODEL")
+
+    call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+                 default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
+    call get_param(param_file, mdl, "ICE_SHELF_TOP_SLOPE_BUG", CS%shelf_top_slope_bugs, &
+                 "If true, use directionally inconsistent estimates of the grid spacing when "//&
+                 "calculating the ice shelf surface slope, and underestimate slopes near the "//&
+                 "edge of the ice shelf by a factor of 2.", default=enable_bugs)
 
     if ((CS%visc_qps/=1) .and. (trim(CS%ice_viscosity_compute) /= "MODEL")) then
       call MOM_error(FATAL, "NUMBER_OF_ICE_VISCOSITY_QUADRATURE_POINTS must be 1 unless ICE_VISCOSITY_COMPUTE==MODEL.")
@@ -822,11 +834,11 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
        'y-driving stress of ice', 'kPa', conversion=1.e-3*US%RLZ_T2_to_Pa)
     CS%id_taud_shelf = register_diag_field('ice_shelf_model','taud_shelf',CS%diag%axesB1, Time, &
        'magnitude of driving stress of ice', 'kPa', conversion=1.e-3*US%RLZ_T2_to_Pa)
-    CS%id_sx_shelf = register_diag_field('ice_shelf_model','sx_shelf',CS%diag%axesB1, Time, &
+    CS%id_sx_shelf = register_diag_field('ice_shelf_model', 'sx_shelf', CS%diag%axesT1, Time, &
        'x-surface slope of ice', 'none')
-    CS%id_sy_shelf = register_diag_field('ice_shelf_model','sy_shelf',CS%diag%axesB1, Time, &
+    CS%id_sy_shelf = register_diag_field('ice_shelf_model', 'sy_shelf', CS%diag%axesT1, Time, &
        'y-surface slope of ice', 'none')
-    CS%id_surf_slope_mag_shelf = register_diag_field('ice_shelf_model','surf_slope_mag_shelf', CS%diag%axesB1, Time, &
+    CS%id_surf_slope_mag_shelf = register_diag_field('ice_shelf_model', 'surf_slope_mag_shelf', CS%diag%axesT1, Time, &
        'magnitude of surface slope of ice', 'none')
     CS%id_u_mask = register_diag_field('ice_shelf_model','u_mask',CS%diag%axesB1, Time, &
        'mask for u-nodes', 'none')
@@ -1088,10 +1100,11 @@ subroutine IS_dynamics_post_data(time_step, Time, CS, ISS, G)
                                                   !! [R L2 Z T-1 ~> Pa s m]
   real, dimension(SZDI_(G),SZDJ_(G))  :: basal_tr ! area-averaged taub_beta field related to basal traction,
                                                   !! [R L T-1 ~> Pa s m-1]
-  real, dimension(SZDIB_(G),SZDJB_(G)) :: surf_slope ! the surface slope of the ice shelf/sheet [nondim]
+  real, dimension(SZDI_(G),SZDJ_(G))   :: surf_slope ! the surface slope of the ice shelf/sheet [nondim]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: ice_speed ! ice sheet flow speed [L T-1 ~> m s-1]
 
-  integer :: i,j
+  integer :: i, j
+
     call enable_averages(time_step, Time, CS%diag)
     if (CS%id_col_thick > 0) call post_data(CS%id_col_thick, CS%OD_av, CS%diag)
     if (CS%id_u_shelf > 0) call post_data(CS%id_u_shelf, CS%u_shelf, CS%diag)
@@ -1124,8 +1137,8 @@ subroutine IS_dynamics_post_data(time_step, Time, CS, ISS, G)
     if (CS%id_sx_shelf > 0) call post_data(CS%id_sx_shelf, CS%sx_shelf, CS%diag)
     if (CS%id_sy_shelf > 0) call post_data(CS%id_sy_shelf, CS%sy_shelf, CS%diag)
     if (CS%id_surf_slope_mag_shelf > 0) then
-      do J=G%jscB,G%jecB ; do I=G%iscB,G%iecB
-        surf_slope(I,J) = sqrt((CS%sx_shelf(I,J)**2)+(CS%sy_shelf(I,J)**2))
+      do j=G%jsc,G%jec ; do i=G%isc,G%iec
+        surf_slope(i,j) = sqrt((CS%sx_shelf(i,j)**2)+(CS%sy_shelf(i,j)**2))
       enddo ; enddo
       call post_data(CS%id_surf_slope_mag_shelf, surf_slope, CS%diag)
     endif
@@ -2413,13 +2426,13 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
   real, dimension(SIZE(OD,1),SIZE(OD,2))  :: S     ! surface elevation [Z ~> m].
   real, dimension(SZDI_(G),SZDJ_(G)) :: sx_e, sy_e !element contributions to driving stress
   real    :: rho, rhow, rhoi_rhow ! Ice and ocean densities [R ~> kg m-3]
-  real    :: sx, sy    ! Ice shelf top slopes [Z L-1 ~> nondim]
+  real    :: sx, sy    ! Ice shelf top slopes at tracer points [Z L-1 ~> nondim]
   real    :: neumann_val ! [R Z L2 T-2 ~> kg s-2]
-  real    :: dxh, dyh,Dx,Dy  ! Local grid spacing [L ~> m]
   real    :: grav      ! The gravitational acceleration [L2 Z-1 T-2 ~> m s-2]
   real    :: scale     ! Scaling factor used to ensure surface slope magnitude does not exceed CS%max_surface_slope
+  logical :: valid_N, valid_S, valid_E, valid_W
   integer :: i, j, iscq, iecq, jscq, jecq, isd, jsd, ied, jed, is, js, iegq, jegq
-  integer :: giec, gjec, gisc, gjsc, cnt, isc, jsc, iec, jec
+  integer :: giec, gjec, gisc, gjsc, isc, jsc, iec, jec
   integer :: i_off, j_off
 
   isc = G%isc ; jsc = G%jsc ; iec = G%iec ; jec = G%jec
@@ -2441,115 +2454,95 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
   ! prelim - go through and calculate S
 
   if (CS%GL_couple) then
-    do j=jsc-G%domain%njhalo,jec+G%domain%njhalo
-      do i=isc-G%domain%nihalo,iec+G%domain%nihalo
-        S(i,j) = -CS%bed_elev(i,j) + (OD(i,j) + max(ISS%h_shelf(i,j),CS%min_h_shelf))
-      enddo
-    enddo
+    do j=jsc-2,jec+2 ; do i=isc-2,iec+2
+      S(i,j) = -CS%bed_elev(i,j) + (OD(i,j) + max(ISS%h_shelf(i,j),CS%min_h_shelf))
+    enddo ; enddo
   else
     ! check whether the ice is floating or grounded
-    do j=jsc-G%domain%njhalo,jec+G%domain%njhalo
-      do i=isc-G%domain%nihalo,iec+G%domain%nihalo
-        if (rhoi_rhow * max(ISS%h_shelf(i,j),CS%min_h_shelf) - CS%bed_elev(i,j) <= 0) then
-          S(i,j) = (1 - rhoi_rhow)*max(ISS%h_shelf(i,j),CS%min_h_shelf)
-        else
-          S(i,j) = max(ISS%h_shelf(i,j),CS%min_h_shelf)-CS%bed_elev(i,j)
-        endif
-      enddo
-    enddo
+    do j=jsc-2,jec+2 ; do i=isc-2,iec+2
+      if (rhoi_rhow * max(ISS%h_shelf(i,j),CS%min_h_shelf) - CS%bed_elev(i,j) <= 0) then
+        S(i,j) = (1 - rhoi_rhow)*max(ISS%h_shelf(i,j),CS%min_h_shelf)
+      else
+        S(i,j) = max(ISS%h_shelf(i,j),CS%min_h_shelf)-CS%bed_elev(i,j)
+      endif
+    enddo ; enddo
   endif
 
   call pass_var(S, G%domain)
 
-  sx_e(:,:)=0.0; sy_e(:,:)=0.0
-
   do j=jsc-1,jec+1
     do i=isc-1,iec+1
-      cnt = 0
-      sx = 0
-      sy = 0
-      dxh = G%dxT(i,j)
-      dyh = G%dyT(i,j)
-      Dx=dxh
-      Dy=dyh
+
       if (ISS%hmask(i,j) == 1 .or. ISS%hmask(i,j) == 3) then
         ! we are inside the global computational bdry, at an ice-filled cell
 
-        ! calculate sx
-        if (((i+i_off) == gisc) .and. (.not. CS%reentrant_x)) then ! at west computational bdry
-         if (ISS%hmask(i+1,j) == 1 .or. ISS%hmask(i+1,j) == 3) then
-            sx = (S(i+1,j)-S(i,j))/dxh
-          else
-            sx = 0
+        ! Calculate the x-direction surface slope at tracer points.
+        sx = 0.0
+        valid_E = (ISS%hmask(i+1,j) == 1 .or. ISS%hmask(i+1,j) == 3)
+        valid_W = (ISS%hmask(i-1,j) == 1 .or. ISS%hmask(i-1,j) == 3)
+        if (CS%shelf_top_slope_bugs) then
+          if (((i+i_off) == gisc) .and. (.not.CS%reentrant_x)) then ! at west computational bdry
+            if (valid_E) sx = (S(i+1,j)-S(i,j)) / G%dxT(i,j)
+          elseif (((i+i_off) == giec) .and. (.not.CS%reentrant_x)) then ! at east computational bdry
+            if (valid_W) sx = (S(i,j)-S(i-1,j)) / G%dxT(i,j)
+          elseif (valid_E .and. valid_W) then
+            ! This is the usual interior point
+            sx = (S(i+1,j) - S(i-1,j)) / (G%dxT(i,j) + G%dxT(i-1,j))
+          elseif (valid_E) then
+            sx = (S(i+1,j) - S(i,j)) / (G%dxT(i,j) + G%dxT(i+1,j))
+          elseif (valid_W) then
+            sx = (S(i,j) - S(i-1,j)) / (G%dxT(i,j) + G%dxT(i-1,j))
           endif
-        elseif (((i+i_off) == giec) .and. (.not. CS%reentrant_x)) then ! at east computational bdry
-          if (ISS%hmask(i-1,j) == 1 .or. ISS%hmask(i-1,j) == 3) then
-            sx = (S(i,j)-S(i-1,j))/dxh
-          else
-            sx = 0
-          endif
-        else ! interior
-          if (ISS%hmask(i+1,j) == 1 .or. ISS%hmask(i+1,j) == 3) then
-            cnt = cnt+1
-            Dx = dxh + G%dxT(i+1,j)
-            sx = S(i+1,j)
-          else
-            sx = S(i,j)
-          endif
-          if (ISS%hmask(i-1,j) == 1 .or. ISS%hmask(i-1,j) == 3) then
-            cnt = cnt+1
-            Dx = dxh + G%dxT(i-1,j)
-            sx = sx - S(i-1,j)
-          else
-            sx = sx - S(i,j)
-          endif
-          if (cnt == 0) then
-            sx = 0
-          else
-            sx = sx / Dx
+        else ! Correct the bugs in the version above.
+          if (((i+i_off) == gisc) .and. (.not.CS%reentrant_x)) then ! at west computational bdry
+            if (valid_E) sx = (S(i+1,j) - S(i,j)) * G%IdxCu(I,j)
+          elseif (((i+i_off) == giec) .and. (.not.CS%reentrant_x)) then ! at east computational bdry
+            if (valid_W) sx = (S(i,j) - S(i-1,j)) * G%IdxCu(I-1,j)
+          elseif (valid_E .and. valid_W) then
+            ! This is the usual interior point
+            sx = 0.5*(S(i+1,j) - S(i-1,j)) * G%IdxT(i,j)
+          elseif (valid_E) then ! Use a one-sided estimate from the east.
+            sx = (S(i+1,j) - S(i,j)) * G%IdxCu(I,j)
+          elseif (valid_W) then ! Use a one-sided estimate from the west.
+            sx = (S(i,j) - S(i-1,j)) * G%IdxCu(I-1,j)
           endif
         endif
 
-        cnt = 0
-
-        ! calculate sy, similarly
-        if (((j+j_off) == gjsc) .and. (.not. CS%reentrant_y)) then ! at south computational bdry
-          if (ISS%hmask(i,j+1) == 1 .or. ISS%hmask(i,j+1) == 3) then
-            sy = (S(i,j+1)-S(i,j))/dyh
-          else
-            sy = 0
+        ! Calculate the y-direction surface slope at tracer points.
+        sy = 0.0
+        valid_N = (ISS%hmask(i,j+1) == 1 .or. ISS%hmask(i,j+1) == 3)
+        valid_S = (ISS%hmask(i,j-1) == 1 .or. ISS%hmask(i,j-1) == 3)
+        if (CS%shelf_top_slope_bugs) then
+          if (((j+j_off) == gjsc) .and. (.not. CS%reentrant_y)) then ! at south computational bdry
+            if (valid_N) sy = (S(i,j+1)-S(i,j)) / G%dyT(i,j)
+          elseif (((j+j_off) == gjec) .and. (.not. CS%reentrant_y)) then ! at north computational bdry
+            if (valid_S) sy = (S(i,j)-S(i,j-1)) / G%dyT(i,j)
+          elseif (valid_N .and. valid_S) then
+            ! This is the usual interior point
+            sy = (S(i,j+1) - S(i,j-1)) / (G%dyT(i,j) + G%dyT(i,j-1))
+          elseif (valid_N) then
+            sy = (S(i,j+1) - S(i,j)) / (G%dyT(i,j) + G%dyT(i,j+1))
+          elseif (valid_S) then
+            sy = (S(i,j) - S(i,j-1)) / (G%dyT(i,j) + G%dyT(i,j-1))
           endif
-        elseif (((j+j_off) == gjec) .and. (.not. CS%reentrant_y)) then ! at north computational bdry
-          if (ISS%hmask(i,j-1) == 1 .or. ISS%hmask(i,j-1) == 3) then
-            sy = (S(i,j)-S(i,j-1))/dyh
-          else
-            sy = 0
-          endif
-        else ! interior
-          if (ISS%hmask(i,j+1) == 1 .or. ISS%hmask(i,j+1) == 3) then
-            cnt = cnt+1
-            Dy = dyh + G%dyT(i,j+1)
-            sy = S(i,j+1)
-          else
-            sy = S(i,j)
-          endif
-          if (ISS%hmask(i,j-1) == 1 .or. ISS%hmask(i,j-1) == 3) then
-            cnt = cnt+1
-            Dy = dyh + G%dyT(i,j-1)
-            sy = sy - S(i,j-1)
-          else
-            sy = sy - S(i,j)
-          endif
-          if (cnt == 0) then
-            sy = 0
-          else
-            sy = sy / Dy
+        else ! Correct the bugs in the version above.
+          if (((j+j_off) == gjsc) .and. (.not. CS%reentrant_y)) then ! at south computational bdry
+            if (valid_N) sy = (S(i,j+1) - S(i,j)) * G%IdyCv(i,J)
+          elseif (((j+j_off) == gjec) .and. (.not. CS%reentrant_y)) then ! at north computational bdry
+            if (valid_S) sy = (S(i,j) - S(i,j-1)) * G%IdyCv(i,J-1)
+          elseif (valid_N .and. valid_S) then
+            ! This is the usual interior point
+            sy = 0.5*(S(i,j+1) - S(i,j-1)) * G%IdyT(i,j)
+          elseif (valid_N) then ! Use a one-sided estimate from the north.
+            sy = (S(i,j+1) - S(i,j)) * G%IdyCv(i,J)
+          elseif (valid_S) then ! Use a one-sided estimate from the south.
+            sy = (S(i,j) - S(i,j-1)) * G%IdyCv(i,J-1)
           endif
         endif
 
         if (CS%max_surface_slope>0) then
           scale = CS%max_surface_slope / max( sqrt((sx**2) + (sy**2)), CS%max_surface_slope )
-          sx = scale*sx; sy = scale*sy
+          sx = scale*sx ; sy = scale*sy
         endif
 
         sx_e(i,j) = (-.25 * G%areaT(i,j)) * ((rho * grav) * (max(ISS%h_shelf(i,j),CS%min_h_shelf) * sx))
@@ -2574,35 +2567,39 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
           !     is not above the base of the ice in the current cell
 
           ! Note the negative sign due to the direction of the normal vector
-          taudx(I-1,J-1) = taudx(I-1,J-1) - .5 * dyh * neumann_val
-          taudx(I-1,J) = taudx(I-1,J) - .5 * dyh * neumann_val
+          taudx(I-1,J-1) = taudx(I-1,J-1) - .5 * G%dyT(i,j) * neumann_val
+          taudx(I-1,J) = taudx(I-1,J) - .5 * G%dyT(i,j) * neumann_val
         endif
 
         if ((CS%u_face_mask_bdry(I,j) == 2) .OR. &
           ((ISS%hmask(i+1,j) == 0 .OR. ISS%hmask(i+1,j) == 2) .and. (CS%reentrant_x .OR. (i+i_off /= giec)))) then
           ! east face of the cell is at a stress boundary
-          taudx(I,J-1) = taudx(I,J-1) + .5 * dyh * neumann_val
-          taudx(I,J) = taudx(I,J) + .5 * dyh * neumann_val
+          taudx(I,J-1) = taudx(I,J-1) + .5 * G%dyT(i,j) * neumann_val
+          taudx(I,J) = taudx(I,J) + .5 * G%dyT(i,j) * neumann_val
         endif
 
         if ((CS%v_face_mask_bdry(i,J-1) == 2) .OR. &
           ((ISS%hmask(i,j-1) == 0 .OR. ISS%hmask(i,j-1) == 2) .and. (CS%reentrant_y .OR. (j+j_off /= gjsc)))) then
           ! south face of the cell is at a stress boundary
-          taudy(I-1,J-1) = taudy(I-1,J-1) - .5 * dxh * neumann_val
-          taudy(I,J-1) = taudy(I,J-1) - .5 * dxh * neumann_val
+          taudy(I-1,J-1) = taudy(I-1,J-1) - .5 * G%dxT(i,j) * neumann_val
+          taudy(I,J-1) = taudy(I,J-1) - .5 * G%dxT(i,j) * neumann_val
         endif
 
         if ((CS%v_face_mask_bdry(i,J) == 2) .OR. &
           ((ISS%hmask(i,j+1) == 0 .OR. ISS%hmask(i,j+1) == 2) .and. (CS%reentrant_y .OR. (j+j_off /= gjec)))) then
           ! north face of the cell is at a stress boundary
-          taudy(I-1,J) = taudy(I-1,J) + .5 * dxh * neumann_val
-          taudy(I,J) = taudy(I,J) + .5 * dxh * neumann_val
+          taudy(I-1,J) = taudy(I-1,J) + .5 * G%dxT(i,j) * neumann_val
+          taudy(I,J) = taudy(I,J) + .5 * G%dxT(i,j) * neumann_val
         endif
+      else ! This is not an ice-filled cell, so zero out the slopes here
+        CS%sx_shelf(i,j) = 0.0 ; CS%sy_shelf(i,j) = 0.0
+        sx_e(i,j) = 0.0
+        sy_e(i,j) = 0.0
       endif
     enddo
   enddo
 
-  do J=jsc-2,jec+1; do I=isc-2,iec+1
+  do J=jsc-1,jec ; do I=isc-1,iec
     taudx(I,J) = taudx(I,J) + ((sx_e(i,j)+sx_e(i+1,j+1)) + (sx_e(i+1,j)+sx_e(i,j+1)))
     taudy(I,J) = taudy(I,J) + ((sy_e(i,j)+sy_e(i+1,j+1)) + (sy_e(i+1,j)+sy_e(i,j+1)))
   enddo; enddo
