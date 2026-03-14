@@ -1186,7 +1186,7 @@ end function Adcroft_reciprocal
 !! are 0.0 at any points adjacent to a land point.  mask2dBu is 0.0 at
 !! any land or boundary point.  For points in the ocean interior or at open boundary
 !! condition points, mask2dCu, mask2dCv, and mask2dBu are all 1.0.
-subroutine initialize_masks(G, PF, US, OBC_dir_u, OBC_dir_v, open_corner_OBCs)
+subroutine initialize_masks(G, PF, US, OBC_dir_u, OBC_dir_v, open_corner_OBCs, maskT)
   type(dyn_horgrid_type), intent(inout) :: G  !< The dynamic horizontal grid type
   type(param_file_type),  intent(in)    :: PF !< Parameter file structure
   type(unit_scale_type),  intent(in)    :: US !< A dimensional unit scaling type
@@ -1205,6 +1205,10 @@ subroutine initialize_masks(G, PF, US, OBC_dir_u, OBC_dir_v, open_corner_OBCs)
   logical,      optional, intent(in)   :: open_corner_OBCs  !< If present and true, the bay-like corner
                                               !! between two orthogonal open boundary segments is open,
                                               !! otherwise it is closed.
+  real, dimension(G%isd:G%ied,G%jsd:G%jed), &
+                optional, intent(in)   :: maskT !< If present, this array is used to set the
+                                              !! the mask at tracer points instead of using the
+                                              !! bathymetry to determine the masks [nondim]
 
   ! Local variables
   real :: Dmask      ! The depth for masking in the same units as G%bathyT [Z ~> m].
@@ -1226,40 +1230,40 @@ subroutine initialize_masks(G, PF, US, OBC_dir_u, OBC_dir_v, open_corner_OBCs)
                  "The depth below which to mask points as land points, for which all "//&
                  "fluxes are zeroed out. MASKING_DEPTH is ignored if it has the special "//&
                  "default value.", &
-                 units="m", default=-9999.0, scale=US%m_to_Z)
+                 units="m", default=-9999.0, scale=US%m_to_Z, do_not_log=present(maskT))
 
   Dmask = mask_depth
   if (mask_depth == -9999.0*US%m_to_Z) Dmask = min_depth
 
   open_corners = .false. ; if (present(open_corner_OBCs)) open_corners = open_corner_OBCs
 
-  G%mask2dCu(:,:) = 0.0 ; G%mask2dCv(:,:) = 0.0 ; G%mask2dBu(:,:) = 0.0
+  G%mask2dT(:,:) = 0.0 ; G%mask2dCu(:,:) = 0.0 ; G%mask2dCv(:,:) = 0.0 ; G%mask2dBu(:,:) = 0.0
 
   ! Construct the h-point or T-point mask
-  do j=G%jsd,G%jed ; do i=G%isd,G%ied
-    if (G%bathyT(i,j) <= Dmask) then
-      G%mask2dT(i,j) = 0.0
-    else
-      G%mask2dT(i,j) = 1.0
-    endif
-  enddo ; enddo
+  if (present(maskT)) then
+    do j=G%jsd,G%jed ; do i=G%isd,G%ied
+      G%mask2dT(i,j) = max(min(maskT(i,j), 1.0), 0.0)
+    enddo ; enddo
+  else
+    do j=G%jsd,G%jed ; do i=G%isd,G%ied
+      if (G%bathyT(i,j) <= Dmask) then
+        G%mask2dT(i,j) = 0.0
+      else
+        G%mask2dT(i,j) = 1.0
+      endif
+    enddo ; enddo
+  endif
+
+  call pass_var(G%mask2dT, G%Domain)
 
   do j=G%jsd,G%jed ; do I=G%isd,G%ied-1
-    if ((G%bathyT(i,j) <= Dmask) .or. (G%bathyT(i+1,j) <= Dmask)) then
-      G%mask2dCu(I,j) = 0.0
-    else
-      G%mask2dCu(I,j) = 1.0
-    endif
+    G%mask2dCu(I,j) = G%mask2dT(i,j) * G%mask2dT(i+1,j)
   enddo ; enddo
 
   if (present(OBC_dir_u)) then
     do j=G%jsd,G%jed ; do I=G%isd,G%ied-1
-      if (OBC_dir_u(I,j) > 0) then
-        if (G%bathyT(i,j) > Dmask) G%mask2dCu(I,j) = 1.0
-      endif
-      if (OBC_dir_u(I,j) < 0) then
-        if (G%bathyT(i+1,j) > Dmask) G%mask2dCu(I,j) = 1.0
-      endif
+      if (OBC_dir_u(I,j) > 0) G%mask2dCu(I,j) = G%mask2dT(i,j)
+      if (OBC_dir_u(I,j) < 0) G%mask2dCu(I,j) = G%mask2dT(i+1,j)
     enddo ; enddo
   endif
 
@@ -1269,21 +1273,13 @@ subroutine initialize_masks(G, PF, US, OBC_dir_u, OBC_dir_v, open_corner_OBCs)
   enddo ; enddo
 
   do J=G%jsd,G%jed-1 ; do i=G%isd,G%ied
-    if ((G%bathyT(i,j) <= Dmask) .or. (G%bathyT(i,j+1) <= Dmask)) then
-      G%mask2dCv(i,J) = 0.0
-    else
-      G%mask2dCv(i,J) = 1.0
-    endif
+    G%mask2dCv(i,J) = G%mask2dT(i,j) * G%mask2dT(i,j+1)
   enddo ; enddo
 
   if (present(OBC_dir_v)) then
     do J=G%jsd,G%jed-1 ; do i=G%isd,G%ied
-      if (OBC_dir_v(i,J) > 0) then
-        if (G%bathyT(i,j) > Dmask) G%mask2dCv(i,J) = 1.0
-      endif
-      if (OBC_dir_v(i,J) < 0) then
-        if (G%bathyT(i,j+1) > Dmask) G%mask2dCv(i,J) = 1.0
-      endif
+      if (OBC_dir_v(i,J) > 0) G%mask2dCv(i,J) = G%mask2dT(i,j)
+      if (OBC_dir_v(i,J) < 0) G%mask2dCv(i,J) = G%mask2dT(i,j+1)
     enddo ; enddo
   endif
 
