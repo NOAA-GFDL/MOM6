@@ -37,7 +37,7 @@ use MOM_restart,           only : register_restart_field, register_restart_pair
 use MOM_restart,           only : query_initialized, set_initialized, save_restart
 use MOM_restart,           only : only_read_from_restarts
 use MOM_restart,           only : restart_init, is_new_run, MOM_restart_CS
-use MOM_time_manager,      only : time_type, time_type_to_real, operator(+)
+use MOM_time_manager,      only : time_type, operator(+)
 use MOM_time_manager,      only : operator(-), operator(>), operator(*), operator(/)
 
 use MOM_ALE,                   only : ALE_CS, ALE_remap_velocities
