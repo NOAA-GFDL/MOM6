@@ -1,3 +1,7 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> This module contains the routines used to apply incremental updates
 !! from data assimilation.
 !
@@ -13,7 +17,6 @@
 module MOM_oda_incupd
 
 
-! This file is part of MOM6. See LICENSE.md for the license.
 use MOM_array_transform, only : rotate_array
 use MOM_coms,            only : sum_across_PEs
 use MOM_diag_mediator,   only : post_data, query_averaging_enabled, register_diag_field
@@ -223,8 +226,8 @@ subroutine initialize_oda_incupd( G, GV, US, param_file, CS, data_h, nz_data, re
   endif
   write(mesg,'(i12)') CS%nstep_incupd
   if (is_root_pe()) &
-    call MOM_error(NOTE,"initialize_oda_incupd: Number of Timestep of inc. update:"//&
-                       trim(mesg))
+    call MOM_error(NOTE, "initialize_oda_incupd: Number of Timestep of inc. update: "//&
+                         trim(mesg))
 
   ! number of inc. update already done, CS%ncount, either from restart or set to 0.0
   if (query_initialized(CS%ncount, "oda_incupd_ncount", restart_CS) .and. &
@@ -235,8 +238,8 @@ subroutine initialize_oda_incupd( G, GV, US, param_file, CS, data_h, nz_data, re
   endif
   write(mesg,'(f4.1)') CS%ncount
   if (is_root_pe()) &
-    call MOM_error(NOTE,"initialize_oda_incupd: Inc. update already done:"//&
-                       trim(mesg))
+    call MOM_error(NOTE, "initialize_oda_incupd: Inc. update already done: "//&
+                         trim(mesg))
 
   ! get the vertical grid (h_obs) of the increments
   CS%nz_data = nz_data
@@ -599,19 +602,19 @@ subroutine apply_oda_incupd(h, tv, u, v, dt, G, GV, US, CS)
   tmp_val1(:) = 0.0
   tmp_t(:,:,:) = 0.0 ; tmp_s(:,:,:) = 0.0 ! diagnostics
   do j=js,je ; do i=is,ie
-    ! account for the different SSH
-    sum_h1 = 0.0
-    do k=1,nz
-      sum_h1 = sum_h1+h(i,j,k)
-    enddo
-    sum_h2 = 0.0
-    do k=1,nz_data
-      sum_h2 = sum_h2+h_obs(i,j,k)
-    enddo
-    do k=1,nz_data
-      tmp_h(k) = ( sum_h1 / sum_h2 ) * h_obs(i,j,k)
-    enddo
     if (G%mask2dT(i,j) == 1) then
+      ! account for the different SSH
+      sum_h1 = 0.0
+      do k=1,nz
+        sum_h1 = sum_h1+h(i,j,k)
+      enddo
+      sum_h2 = 0.0
+      do k=1,nz_data
+        sum_h2 = sum_h2+h_obs(i,j,k)
+      enddo
+      do k=1,nz_data
+        tmp_h(k) = ( sum_h1 / sum_h2 ) * h_obs(i,j,k)
+      enddo
       ! get temperature increment
       do k=1,nz_data
         tmp_val2(k) = CS%Inc(1)%p(i,j,k)

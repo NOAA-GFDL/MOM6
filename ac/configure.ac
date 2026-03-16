@@ -1,45 +1,26 @@
-# Autoconf configuration
+# This file is part of MOM6, the Modular Ocean Model version 6.
+# See the LICENSE file for licensing information.
+# SPDX-License-Identifier: Apache-2.0
 
-# NOTE:
-# - We currently do not use a MOM6 version tag, but this would be one option in
-#   the future:
-#     [m4_esyscmd_s([git describe])]
-# - Another option is `git rev-parse HEAD` for the full hash.
-# - We would probably run this inside of a script to avoid the explicit
-#   dependency on git.
+# Autoconf configuration
 
 AC_PREREQ([2.63])
 
 AC_INIT(
   [MOM6],
-  [ ],
+  [],
   [https://github.com/NOAA-GFDL/MOM6/issues],
   [],
-  [https://github.com/NOAA-GFDL/MOM6])
+  [https://github.com/NOAA-GFDL/MOM6]
+)
 
-#---
-# NOTE: For the autoconf-adverse, the configuration files and autoreconf output
-#   are kept in the `ac` directory.
-#
-# This breaks the convention where configure.ac resides in the top directory.
-#
-# As a result, $srcdir initially points to the `ac` directory, rather than the
-# top directory of the codebase.
-#
-# In order to balance this, we up-path (../) srcdir and point AC_CONFIG_SRCDIR
-# to srcdir and point AC_CONFIG_SRCDIR to the parent directory.
-#
-# Someday we may revert this and work from the top-level directory.  But for
-# now we will isolate autoconf to a subdirectory.
-#---
 
 # Validate srdcir and configure input
-AC_CONFIG_SRCDIR([../src/core/MOM.F90])
+AC_CONFIG_SRCDIR([src/core/MOM.F90])
 AC_CONFIG_MACRO_DIR([m4])
-srcdir=$srcdir/..
 
 
-# Configure the memory layout header
+# MOM6 memory layout configuration
 
 AC_ARG_VAR([MOM_MEMORY],
   [Path to MOM_memory.h header, describing the field memory layout: dynamic
@@ -64,16 +45,33 @@ MOM_MEMORY_DIR=$(AS_DIRNAME(["${MOM_MEMORY}"]))
 AC_SUBST([MOM_MEMORY_DIR])
 
 
-# Default to solo_driver
+# Driver configuration
 DRIVER_DIR=${srcdir}/config_src/drivers/solo_driver
 AC_ARG_WITH([driver],
   AS_HELP_STRING(
-    [--with-driver=coupled_driver|solo_driver|unit_tests],
+    [--with-driver=FMS_cap|solo_driver|unit_tests],
     [Select directory for driver source code]
   )
 )
-AS_IF([test "x$with_driver" != "x"],
-  [DRIVER_DIR=${srcdir}/config_src/drivers/${with_driver}])
+AS_IF([test -n "$with_driver"],
+  [DRIVER_DIR=${srcdir}/config_src/drivers/${with_driver}]
+)
+
+# External library configuration
+AC_ARG_WITH([gsw],
+  [AS_HELP_STRING(
+    [--with-gsw],
+    [use external Gibbs Sea Water library instead of linked source]
+  )], [], [with_gsw=no]
+)
+
+AC_ARG_WITH([cvmix],
+  [AS_HELP_STRING(
+    [--with-cvmix],
+    [use external CVMix library instead of linked source]
+  )], [], [with_cvmix=no]
+)
+
 
 # TODO: Rather than point to a pre-configured header file, autoconf could be
 # used to configure a header based on a template.
@@ -165,7 +163,8 @@ MOM6_FC_CHECK_LIB([netcdff], [nf90_create], [netcdf], [path,cmode,ncid], [rc], [
 
 # Force 8-byte reals
 AX_FC_REAL8
-AS_IF([test "$enable_real8" != no],
+AS_IF(
+  [test "$enable_real8" != no],
   [FCFLAGS="$FCFLAGS $REAL8_FCFLAGS"]
 )
 
@@ -182,7 +181,8 @@ m4_version_prereq([2.69], [AC_OPENMP], [
 ])
 
 # NOTE: Only apply OpenMP flags if explicitly enabled.
-AS_IF([test "$enable_openmp" = yes], [
+AS_IF(
+  [test "$enable_openmp" = yes], [
   FCFLAGS="$FCFLAGS $OPENMP_FCFLAGS"
   LDFLAGS="$LDFLAGS $OPENMP_FCFLAGS"
 ])
@@ -239,28 +239,32 @@ AX_FC_CHECK_MODULE([fms2_io_mod], [
 
 
 # GSW configuration
-AX_FC_CHECK_MODULE([gsw_mod_toolbox], [], [
-  AC_MSG_ERROR([Could not find module gsw_mod_toolbox.])
+AS_IF([test "$with_gsw" = yes], [
+  AX_FC_CHECK_MODULE([gsw_mod_toolbox], [], [
+    AC_MSG_ERROR([Could not find module gsw_mod_toolbox.])
+  ])
+  MOM6_FC_CHECK_LIB([gsw], [gsw_rho], [gsw_mod_toolbox], [sa,ct,p], [rho], [],
+    [], [
+      AC_MSG_ERROR([Could not find gsw_rho in gsw_mod_toolbox.])
+    ]
+  )
 ])
-MOM6_FC_CHECK_LIB([gsw], [gsw_rho], [gsw_mod_toolbox], [sa,ct,p], [rho], [],
-  [], [
-    AC_MSG_ERROR([Could not find gsw_rho in gsw_mod_toolbox.])
-  ]
-)
 
 
 # CVMix configuration
-AX_FC_CHECK_MODULE([cvmix_kpp], [], [
-  AC_MSG_ERROR([Could not find module cvmix_kpp.])
+AS_IF([test "$with_cvmix" = yes], [
+  AX_FC_CHECK_MODULE([cvmix_kpp], [], [
+    AC_MSG_ERROR([Could not find module cvmix_kpp.])
+  ])
+  MOM6_FC_CHECK_LIB([cvmix], [cvmix_init_kpp], [cvmix_kpp], [], [], [],
+    [], [
+      AC_MSG_ERROR([Could not find cvmix_update_wrap in cvmix_utils.])
+    ]
+  )
 ])
-MOM6_FC_CHECK_LIB([cvmix], [cvmix_init_kpp], [cvmix_kpp], [], [], [],
-  [], [
-    AC_MSG_ERROR([Could not find cvmix_update_wrap in cvmix_utils.])
-  ]
-)
 
 
-## Python configuration
+# Python configuration
 
 # Declare the Python interpreter variable
 AC_ARG_VAR([PYTHON], [Python interpreter command])
@@ -279,24 +283,22 @@ AS_VAR_IF([PYTHON], [none], [
 ])
 
 
-# Makedep test
+# Makedep configuration
 AC_PATH_PROG([MAKEDEP], [makedep], [${srcdir}/ac/makedep])
 AC_SUBST([MAKEDEP])
-
 
 # Generate Makedep source list and configure dependency command
 MAKEDEP_FLAGS="-e"
 
-# NOTE: Some pattern rules for this multiline flag constructor.
-#   - Previous args have no line continuation, so the next arg leads with `\\`.
-#   - Flag lines precede with a space ` -s` for syntax clarity.
-EXCLUDE_DIRS="\\
-  -s ${srcdir}/src/equation_of_state/TEOS10 \\
-  -s ${srcdir}/src/parameterizations/CVmix"
+# Exclude linked source files from makedep search
+AS_IF([test "$with_gsw" = yes], [
+  MAKEDEP_FLAGS="${MAKEDEP_FLAGS} \\
+    -s ${srcdir}/src/equation_of_state/TEOS10"
+])
 
-# TODO: This may be optional in the future, so we use AS_IF.
-AS_IF([test -n "${EXCLUDE_DIRS}"], [
-  MAKEDEP_FLAGS="${MAKEDEP_FLAGS} ${EXCLUDE_DIRS}"
+AS_IF([test "$with_cvmix" = yes], [
+  MAKEDEP_FLAGS="${MAKEDEP_FLAGS} \\
+    -s ${srcdir}/src/parameterizations/CVmix"
 ])
 
 SRC_DIRS="\\
@@ -371,5 +373,5 @@ AC_LANG_POP([C])
 
 # Prepare output
 AC_SUBST([CPPFLAGS])
-AC_CONFIG_FILES([Makefile:${srcdir}/ac/Makefile.in])
+AC_CONFIG_FILES([Makefile:Makefile.in])
 AC_OUTPUT

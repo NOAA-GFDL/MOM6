@@ -1,3 +1,7 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Interfaces for MOM6 ensembles and data assimilation.
 module MOM_oda_driver_mod
 
@@ -263,7 +267,7 @@ subroutine init_oda(Time, G, GV, US, diag_CS, CS)
   if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
   call get_param(PF, mdl, "REPRODUCE_2018_NMME_ANSWERS", CS%reproduce_2018_nmme, &
-               "Logical flag needed to reproduce older NMME forecast answers."//&
+               "Logical flag needed to reproduce older NMME forecast answers.  "//&
                "True gives old answers, the default of false gives different answers.", &
                default=.false.)
 

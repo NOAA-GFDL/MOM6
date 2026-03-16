@@ -1,9 +1,12 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Implements the thermodynamic aspects of ocean / ice-shelf interactions,
 !!  along with a crude placeholder for a later implementation of full
 !!  ice shelf dynamics, all using the MOM framework and coding style.
 module MOM_ice_shelf
 
-! This file is part of MOM6. See LICENSE.md for the license.
 use MOM_array_transform,      only : rotate_array
 use MOM_constants, only : hlf
 use MOM_cpu_clock, only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
@@ -1887,7 +1890,7 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
   call get_param(param_file, mdl, "RHO_0", CS%Rho_ocn, &
                  "The mean ocean density used with BOUSSINESQ true to "//&
                  "calculate accelerations and the mass for conservation "//&
-                 "properties, or with BOUSSINSEQ false to convert some "//&
+                 "properties, or with BOUSSINESQ false to convert some "//&
                  "parameters from vertical units of m to kg m-2.", &
                  units="kg m-3", default=1035.0, scale=US%kg_m3_to_R)
   call get_param(param_file, mdl, "C_P_ICE", CS%Cp_ice, &

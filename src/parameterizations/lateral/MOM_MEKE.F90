@@ -1,9 +1,12 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Implements the Mesoscale Eddy Kinetic Energy framework
 !! with topographic beta effect included in computing beta in Rhines scale
 
 module MOM_MEKE
 
-! This file is part of MOM6. See LICENSE.md for the license.
 use iso_fortran_env,       only : real32
 
 use MOM_coms,              only : PE_here
@@ -1364,7 +1367,7 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
   if (.not. MEKE_init) return
   CS%initialized = .true.
   call get_param(param_file, mdl, "MEKE_IN_DYNAMICS", meke_in_dynamics, &
-                 "If true, step MEKE forward with the dynamics"// &
+                 "If true, step MEKE forward with the dynamics "// &
                  "otherwise with the tracer timestep.", &
                  default=.true.)
 
@@ -1428,7 +1431,7 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
                    "The nondimensional coefficient governing the efficiency of the GEOMETRIC \n"//&
                    "thickness diffusion.", units="nondim", default=0.05)
     call get_param(param_file, mdl, "MEKE_EQUILIBRIUM_ALT", CS%MEKE_equilibrium_alt, &
-                   "If true, use an alternative formula for computing the (equilibrium)"//&
+                   "If true, use an alternative formula for computing the (equilibrium) "//&
                    "initial value of MEKE.", default=.false.)
     call get_param(param_file, mdl, "MEKE_EQUILIBRIUM_RESTORING", CS%MEKE_equilibrium_restoring, &
                    "If true, restore MEKE back to its equilibrium value, which is calculated at "//&
@@ -1522,15 +1525,15 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
                  "the deformation radius or grid-spacing. Only used if "//&
                  "MEKE_OLD_LSCALE=True", default=.false.)
   call get_param(param_file, mdl, "MEKE_VISCOSITY_COEFF_KU", CS%viscosity_coeff_Ku, &
-                 "If non-zero, is the scaling coefficient in the expression for"//&
-                 "viscosity used to parameterize harmonic lateral momentum mixing by"//&
-                 "unresolved eddies represented by MEKE. Can be negative to"//&
+                 "If non-zero, is the scaling coefficient in the expression for "//&
+                 "viscosity used to parameterize harmonic lateral momentum mixing by "//&
+                 "unresolved eddies represented by MEKE. Can be negative to "//&
                  "represent backscatter from the unresolved eddies.", &
                  units="nondim", default=0.0)
   call get_param(param_file, mdl, "MEKE_VISCOSITY_COEFF_AU", CS%viscosity_coeff_Au, &
-                 "If non-zero, is the scaling coefficient in the expression for"//&
-                 "viscosity used to parameterize biharmonic lateral momentum mixing by"//&
-                 "unresolved eddies represented by MEKE. Can be negative to"//&
+                 "If non-zero, is the scaling coefficient in the expression for "//&
+                 "viscosity used to parameterize biharmonic lateral momentum mixing by "//&
+                 "unresolved eddies represented by MEKE. Can be negative to "//&
                  "represent backscatter from the unresolved eddies.", &
                  units="nondim", default=0.0)
   call get_param(param_file, mdl, "MEKE_FIXED_MIXING_LENGTH", CS%Lfixed, &
@@ -1539,7 +1542,7 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
                  units="m", default=0.0, scale=US%m_to_L)
   call get_param(param_file, mdl, "MEKE_FIXED_TOTAL_DEPTH", CS%fixed_total_depth, &
                  "If true, use the nominal bathymetric depth as the estimate of the "//&
-                 "time-varying ocean depth.  Otherwise base the depth on the total ocean mass"//&
+                 "time-varying ocean depth.  Otherwise base the depth on the total ocean mass "//&
                  "per unit area.", default=.true.)
   call get_param(param_file, mdl, "MEKE_TOTAL_DEPTH_RHO", CS%rho_fixed_total_depth, &
                  "A density used to translate the nominal bathymetric depth into an estimate "//&

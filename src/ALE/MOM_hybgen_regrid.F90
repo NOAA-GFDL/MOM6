@@ -1,8 +1,10 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> This module contains the hybgen regridding routines from HYCOM, with minor
 !! modifications to follow the MOM6 coding conventions
 module MOM_hybgen_regrid
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_EOS,              only : EOS_type, calculate_density
 use MOM_error_handler,    only : MOM_mesg, MOM_error, FATAL, WARNING, assert
@@ -427,7 +429,7 @@ subroutine hybgen_regrid(G, GV, US, dp, nom_depth_H, tv, CS, dzInterface, PCM_ce
   real :: dilate            ! A factor by which to dilate the target positions from z to z* [nondim]
   integer :: fixlay         ! Deepest fixed coordinate layer
   integer, dimension(0:CS%nk) :: k_end ! The index of the deepest source layer that contributes to
-                            ! each target layer, in the unusual case where the the input grid is
+                            ! each target layer, in the unusual case where the input grid is
                             ! larger than the new grid.  This situation only occurs during certain
                             ! types of initialization or when generating output diagnostics.
   integer :: i, j, k, nk, k2, nk_in

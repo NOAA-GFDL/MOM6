@@ -1,3 +1,7 @@
+# This file is part of MOM6, the Modular Ocean Model version 6.
+# See the LICENSE file for licensing information.
+# SPDX-License-Identifier: Apache-2.0
+
 # MOM6 Test suite Makefile
 #
 # Usage:
@@ -263,6 +267,7 @@ $(BUILD)/unit/Makefile: MOM_ENV += $(COV_FCFLAGS) $(COV_LDFLAGS)
 $(BUILD)/timing/Makefile: MOM_ENV += $(OPT_FCFLAGS) $(MOM_LDFLAGS)
 
 # Configure script flags
+MOM_ACFLAGS := --with-gsw --with-cvmix
 $(BUILD)/openmp/Makefile: MOM_ACFLAGS += --enable-openmp
 $(BUILD)/coupled/Makefile: MOM_ACFLAGS += --with-driver=FMS_cap
 $(BUILD)/nuopc/Makefile: MOM_ACFLAGS += --with-driver=nuopc_cap
@@ -317,7 +322,7 @@ $(BUILD)/%/Makefile: $(BUILD)/%/Makefile.in $(BUILD)/%/config.status
 	cd $(@D) && ./config.status
 
 $(BUILD)/%/config.status: $(BUILD)/%/configure $(DEPS)/lib/libFMS.a $(DEPS)/lib/libgsw.a $(DEPS)/lib/libcvmix.a
-	cd $(@D) && $(MOM_ENV) ./configure -n --srcdir=$(AC_SRCDIR) $(MOM_ACFLAGS) \
+	cd $(@D) && $(MOM_ENV) ./configure -n --srcdir=$(CODEBASE) $(MOM_ACFLAGS) \
 	 || (cat config.log && false)
 
 $(BUILD)/%/Makefile.in: ../ac/Makefile.in | $(BUILD)/%/

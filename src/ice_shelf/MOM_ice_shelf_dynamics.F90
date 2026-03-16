@@ -1,8 +1,10 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Implements a crude placeholder for a later implementation of full
 !! ice shelf dynamics.
 module MOM_ice_shelf_dynamics
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_cpu_clock, only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock, only : CLOCK_COMPONENT, CLOCK_ROUTINE
@@ -582,8 +584,8 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
                  " If true, the domain is meridionally reentrant.", &
                  default=.false.)
     call get_param(param_file, mdl, "ICE_VISCOSITY_COMPUTE", CS%ice_viscosity_compute, &
-                 "If MODEL, compute ice viscosity internally using 1 or 4 quadrature points,"//&
-                 "if OBS read from a file,"//&
+                 "If MODEL, compute ice viscosity internally using 1 or 4 quadrature points, "//&
+                 "if OBS read from a file, "//&
                  "if CONSTANT a constant value (for debugging).", &
                  default="MODEL")
 

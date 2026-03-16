@@ -1,9 +1,11 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Calculates and applies diffusive fluxes as a parameterization of horizontal mixing (non-neutral) by
 !! mesoscale eddies near the top and bottom (to be implemented) boundary layers of the ocean.
 
 module MOM_hor_bnd_diffusion
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_cpu_clock,             only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock,             only : CLOCK_MODULE
@@ -104,7 +106,7 @@ logical function hor_bnd_diffusion_init(Time, G, GV, US, param_file, diag, diaba
            "This module implements horizontal diffusion of tracers near boundaries", &
            all_default=.not.hor_bnd_diffusion_init)
   call get_param(param_file, mdl, "USE_HORIZONTAL_BOUNDARY_DIFFUSION", hor_bnd_diffusion_init, &
-                 "If true, enables the horizonal boundary tracer's diffusion module.", &
+                 "If true, enables the horizontal boundary tracer's diffusion module.", &
                  default=.false.)
   if (.not. hor_bnd_diffusion_init) return
 

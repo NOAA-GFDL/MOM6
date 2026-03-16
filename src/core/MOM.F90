@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> The central module of the MOM6 ocean model
 module MOM
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 ! Infrastructure modules
 use MOM_array_transform,      only : rotate_array, rotate_vector
@@ -483,6 +485,7 @@ public save_MOM_restart
 integer :: id_clock_ocean
 integer :: id_clock_dynamics
 integer :: id_clock_thermo
+integer :: id_clock_MOM_end
 integer :: id_clock_remap
 integer :: id_clock_tracer
 integer :: id_clock_diabatic
@@ -501,6 +504,7 @@ integer :: id_clock_pass_init  ! also in dynamics d/r
 integer :: id_clock_ALE
 integer :: id_clock_other
 integer :: id_clock_offline_tracer
+integer :: id_clock_save_restart
 integer :: id_clock_unit_tests
 integer :: id_clock_stoch
 integer :: id_clock_varT
@@ -2333,8 +2337,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
 
   CS%Time => Time
 
+  id_clock_ocean    = cpu_clock_id('Ocean', grain=CLOCK_COMPONENT)
   id_clock_init = cpu_clock_id('Ocean Initialization', grain=CLOCK_SUBCOMPONENT)
-  call cpu_clock_begin(id_clock_init)
+  call cpu_clock_begin(id_clock_ocean) ; call cpu_clock_begin(id_clock_init)
 
   Start_time = Time ; if (present(Time_in)) Start_time = Time_in
 
@@ -2450,7 +2455,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
       call get_param(param_file, "MOM", "ADVECT_TS", advect_TS, &
                    "If True, advect temperature and salinity horizontally "//&
                    "If False, T/S are registered for advection. "//&
-                   "This is intended only to be used in offline tracer mode."//&
+                   "This is intended only to be used in offline tracer mode, "//&
                    "and is by default false in that case", &
                    default=.false. )
     endif
@@ -2504,7 +2509,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "If true, the defaults for certain recently added bug-fix flags are set to "//&
                  "recreate the bugs so that the code can be moved forward without changing "//&
                  "answers for existing configurations.  The defaults for groups of bug-fix "//&
-                 "flags are periodcially changed to correct the bugs, at which point this "//&
+                 "flags are periodically changed to correct the bugs, at which point this "//&
                  "parameter will no longer be used to set their default.  Setting this to false "//&
                  "means that bugs are only used if they are actively selected, but it also "//&
                  "means that answers may change when code is updated due to newly found bugs.", &
@@ -3093,7 +3098,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
 
     ! This call allocates the arrays on the segments for open boundary data, but it must occur
     ! after any calls to call_tracer_register_obc_segments.
-    call initialize_segment_data(GV, US, CS%OBC, param_file, turns)
+    call initialize_segment_data(GV, US, CS%OBC, param_file, turns, use_temperature)
 
     if (CS%debug_OBCs) call write_OBC_info(CS%OBC, G, GV, US)
   endif
@@ -3704,7 +3709,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   call stochastics_init(CS%dt_therm, CS%G, CS%GV, CS%stoch_CS, param_file, diag, Time)
 
   call callTree_leave("initialize_MOM()")
-  call cpu_clock_end(id_clock_init)
+  call cpu_clock_end(id_clock_init) ; call cpu_clock_end(id_clock_ocean)
 
 end subroutine initialize_MOM
 
@@ -3786,11 +3791,11 @@ end subroutine register_diags
 subroutine MOM_timing_init(CS)
   type(MOM_control_struct), intent(in) :: CS  !< control structure set up by initialize_MOM.
 
-  id_clock_ocean    = cpu_clock_id('Ocean', grain=CLOCK_COMPONENT)
   id_clock_dynamics = cpu_clock_id('Ocean dynamics', grain=CLOCK_SUBCOMPONENT)
   id_clock_thermo   = cpu_clock_id('Ocean thermodynamics and tracers', grain=CLOCK_SUBCOMPONENT)
   id_clock_remap    = cpu_clock_id('Ocean grid generation and remapping', grain=CLOCK_SUBCOMPONENT)
   id_clock_other    = cpu_clock_id('Ocean Other', grain=CLOCK_SUBCOMPONENT)
+  id_clock_MOM_end  = cpu_clock_id('Ocean MOM_end', grain=CLOCK_SUBCOMPONENT)
   id_clock_tracer   = cpu_clock_id('(Ocean tracer advection)', grain=CLOCK_MODULE_DRIVER)
   if (.not.CS%adiabatic) then
     id_clock_diabatic = cpu_clock_id('(Ocean diabatic driver)', grain=CLOCK_MODULE_DRIVER)
@@ -3817,6 +3822,8 @@ subroutine MOM_timing_init(CS)
   endif
   id_clock_stoch = cpu_clock_id('(Stochastic EOS)', grain=CLOCK_MODULE)
   id_clock_varT = cpu_clock_id('(SGS Temperature Variance)', grain=CLOCK_MODULE)
+
+  id_clock_save_restart   = cpu_clock_id('(Ocean MOM save_restart)', grain=CLOCK_MODULE)
 
 end subroutine MOM_timing_init
 
@@ -4113,7 +4120,7 @@ subroutine extract_surface_state(CS, sfc_state_in)
       depth_ml = CS%Hmix_UV
       if (CS%answer_date < 20190101) depth_ml = GV%H_to_Z*CS%Hmix_UV
       !$OMP parallel do default(shared) private(depth,dh,hv)
-      do J=js-1,ie
+      do J=js-1,je
         do i=is,ie
           depth(i) = 0.0
           sfc_state%v(i,J) = 0.0
@@ -4449,6 +4456,7 @@ subroutine save_MOM_restart(CS, directory, time, G, time_stamped, filename, &
   logical :: showCallTree
   showCallTree = callTree_showQuery()
 
+  call cpu_clock_begin(id_clock_ocean) ; call cpu_clock_begin(id_clock_save_restart)
   if (showCallTree) call callTree_waypoint("About to call save_restart (step_MOM)")
   call save_restart(directory, time, G, CS%restart_CS, &
       time_stamped=time_stamped, filename=filename, GV=GV, &
@@ -4456,12 +4464,15 @@ subroutine save_MOM_restart(CS, directory, time, G, time_stamped, filename, &
   if (showCallTree) call callTree_waypoint("Done with call to save_restart (step_MOM)")
 
   if (CS%use_particles) call particles_save_restart(CS%particles, CS%h, directory, time, time_stamped)
+  call cpu_clock_end(id_clock_save_restart) ; call cpu_clock_end(id_clock_ocean)
 end subroutine save_MOM_restart
 
 
 !> End of ocean model, including memory deallocation
 subroutine MOM_end(CS)
   type(MOM_control_struct), intent(inout) :: CS   !< MOM control structure
+
+  call cpu_clock_begin(id_clock_ocean) ; call cpu_clock_begin(id_clock_MOM_end)
 
   call MOM_sum_output_end(CS%sum_output_CSp)
 
@@ -4547,6 +4558,9 @@ subroutine MOM_end(CS)
   call deallocate_MOM_domain(CS%G_in%domain, cursory=.true.)
 
   call unit_scaling_end(CS%US)
+
+  call cpu_clock_end(id_clock_MOM_end) ; call cpu_clock_end(id_clock_ocean)
+
 end subroutine MOM_end
 
 !> \namespace mom

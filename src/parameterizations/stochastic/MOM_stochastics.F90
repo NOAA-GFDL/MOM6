@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Top-level module for the MOM6 ocean model in coupled mode.
 module MOM_stochastics
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 ! This is the top level module for the MOM6 ocean model.  It contains routines
 ! for initialization, update, and writing restart of stochastic physics. This
@@ -117,7 +119,7 @@ subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
   ! get number of processors and PE list for stochastic physics initialization
   call get_param(param_file, mdl, "DO_SPPT", CS%do_sppt, &
                  "If true, then stochastically perturb the thermodynamic "//&
-                 "tendencies of T,S, amd h.  Amplitude and correlations are "//&
+                 "tendencies of T,S, and h.  Amplitude and correlations are "//&
                  "controlled by the nam_stoch namelist in the UFS model only.", &
                  default=.false.)
   call get_param(param_file, mdl, "DO_SKEB", CS%do_skeb, &

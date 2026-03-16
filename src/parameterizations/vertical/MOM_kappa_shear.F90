@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Shear-dependent mixing following Jackson et al. 2008.
 module MOM_kappa_shear
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_cpu_clock,         only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock,         only : CLOCK_MODULE_DRIVER, CLOCK_MODULE, CLOCK_ROUTINE
@@ -2212,7 +2214,7 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "LZ_RESCALE", CS%lz_rescale, &
                  "A coefficient to rescale the distance to the nearest solid boundary. "//&
                  "This adjustment is to account for regions where 3 dimensional turbulence "//&
-                 "prevents the growth of shear instabilies [nondim].", &
+                 "prevents the growth of shear instabilities [nondim].", &
                  units="nondim", default=1.0)
   call get_param(param_file, mdl, "KAPPA_SHEAR_TOL_ERR", CS%kappa_tol_err, &
                  "The fractional error in kappa that is tolerated. "//&

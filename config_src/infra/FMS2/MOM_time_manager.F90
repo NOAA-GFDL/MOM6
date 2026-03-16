@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Wraps the FMS time manager functions
 module MOM_time_manager
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use time_manager_mod, only : time_type, get_time, set_time
 use time_manager_mod, only : time_type_to_real, real_to_time_type
@@ -17,8 +19,9 @@ use time_manager_mod, only : NO_CALENDAR
 
 implicit none ; private
 
+! FMS re-exports
 public :: time_type, get_time, set_time
-public :: time_type_to_real, real_to_time_type, real_to_time
+public :: time_type_to_real, real_to_time_type
 public :: set_ticks_per_second, get_ticks_per_second
 public :: operator(+), operator(-), operator(*), operator(/)
 public :: operator(>), operator(<), operator(>=), operator(<=)
@@ -26,6 +29,8 @@ public :: operator(==), operator(/=), operator(//)
 public :: get_date, set_date, increment_date, month_name, days_in_month
 public :: JULIAN, NOLEAP, THIRTY_DAY_MONTHS, GREGORIAN, NO_CALENDAR
 public :: set_calendar_type, get_calendar_type
+! Module functions
+public :: real_to_time, time_minus_signed
 
 contains
 
@@ -50,5 +55,24 @@ type(time_type) function real_to_time(x, err_msg)
 
   real_to_time = set_time(seconds=seconds, days=days, ticks=ticks, err_msg=err_msg)
 end function real_to_time
+
+!> Returns a real number representing time_a - time_b.
+!! The FMS - operator for time types returns a new time type representing
+!! a difference that is always >= 0.
+!! In contrast, this function returns a negative real number if time_b > time_a,
+!! and a positive real otherwise, as would be expected for subtraction.
+real function time_minus_signed(time_a, time_b)
+  type(time_type), intent(in) :: time_a, time_b !< Two times for calculating time_a - time_b
+
+  ! Local variables
+  real :: abs_diff
+
+  ! Do FMS time subtraction, which will always be >= 0,
+  ! and convert to a real number.
+  abs_diff = time_type_to_real(time_a - time_b)
+
+  ! Add the sign back by comparing time_a and time_b
+  time_minus_signed = merge(abs_diff, -abs_diff, time_a >= time_b)
+end function time_minus_signed
 
 end module MOM_time_manager

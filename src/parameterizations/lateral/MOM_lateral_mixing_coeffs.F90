@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Variable mixing coefficients
 module MOM_lateral_mixing_coeffs
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_debugging,         only : hchksum, uvchksum
 use MOM_error_handler,     only : MOM_error, FATAL, WARNING, MOM_mesg
@@ -47,8 +49,8 @@ type, public :: VarMix_CS
                                   !! speed and calculate the resolution function
                                   !! independently at each point.
   logical :: use_stored_slopes    !< If true, stores isopycnal slopes in this structure.
-  logical :: Resoln_use_ebt       !< If true, uses the equivalent barotropic wave speed instead
-                                  !! of first baroclinic wave for calculating the resolution fn.
+  logical :: Resoln_use_ebt       !< If true, use the equivalent barotropic wave speed instead of the
+                                  !! first baroclinic wave speed for calculating the resolution function.
   logical :: khth_use_ebt_struct  !< If true, uses the equivalent barotropic structure
                                   !! as the vertical structure of thickness diffusivity.
   logical :: kdgl90_use_ebt_struct  !< If true, uses the equivalent barotropic structure
@@ -855,9 +857,9 @@ subroutine calc_Visbeck_coeffs_old(h, slope_x, slope_y, N2_u, N2_v, G, GV, US, C
          "Module must be initialized before it is used.")
 
   if (.not. CS%calculate_Eady_growth_rate) return
-  if (.not. allocated(CS%SN_u)) call MOM_error(FATAL, "calc_slope_function:"// &
+  if (.not. allocated(CS%SN_u)) call MOM_error(FATAL, "calc_slope_function: "// &
          "%SN_u is not associated with use_variable_mixing.")
-  if (.not. allocated(CS%SN_v)) call MOM_error(FATAL, "calc_slope_function:R"// &
+  if (.not. allocated(CS%SN_v)) call MOM_error(FATAL, "calc_slope_function: "// &
          "%SN_v is not associated with use_variable_mixing.")
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
@@ -1217,9 +1219,9 @@ subroutine calc_slope_functions_using_just_e(h, G, GV, US, CS, e)
          "Module must be initialized before it is used.")
 
   if (.not. CS%calculate_Eady_growth_rate) return
-  if (.not. allocated(CS%SN_u)) call MOM_error(FATAL, "calc_slope_function:"// &
+  if (.not. allocated(CS%SN_u)) call MOM_error(FATAL, "calc_slope_function: "// &
          "%SN_u is not associated with use_variable_mixing.")
-  if (.not. allocated(CS%SN_v)) call MOM_error(FATAL, "calc_slope_function:"// &
+  if (.not. allocated(CS%SN_v)) call MOM_error(FATAL, "calc_slope_function: "// &
          "%SN_v is not associated with use_variable_mixing.")
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
@@ -1597,7 +1599,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                  "when the first baroclinic deformation radius is well "//&
                  "resolved.", default=.false.)
   call get_param(param_file, mdl, "DEPTH_SCALED_KHTH", CS%Depth_scaled_KhTh, &
-                 "If true, KHTH is scaled away when the depth is shallower"//&
+                 "If true, KHTH is scaled away when the depth is shallower "//&
                  "than a reference depth: KHTH = MIN(1,H/H0)**N * KHTH, "//&
                  "where H0 is a reference depth, controlled via DEPTH_SCALED_KHTH_H0, "//&
                  "and the exponent (N) is controlled via DEPTH_SCALED_KHTH_EXP.",&
@@ -1618,7 +1620,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   if (.not.use_MEKE) Resoln_scaled_MEKE_visc = .false.
   call get_param(param_file, mdl, "RESOLN_USE_EBT", CS%Resoln_use_ebt, &
                  "If true, uses the equivalent barotropic wave speed instead "//&
-                 "of first baroclinic wave for calculating the resolution fn.",&
+                 "of first baroclinic wave for calculating the resolution function.",&
                  default=.false.)
   call get_param(param_file, mdl, "BACKSCAT_EBT_POWER", CS%BS_EBT_power, &
                  "Power to raise EBT vertical structure to when backscatter "// &
@@ -1795,7 +1797,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                    "that avoids division by layer thickness. Recommended.", default=.false.)
     if (CS%use_simpler_Eady_growth_rate) then
       if (.not. CS%use_stored_slopes) call MOM_error(FATAL, &
-           "MOM_lateral_mixing_coeffs.F90, VarMix_init:"//&
+           "MOM_lateral_mixing_coeffs.F90, VarMix_init: "//&
            "When USE_SIMPLER_EADY_GROWTH_RATE=True, USE_STORED_SLOPES must also be True.")
       call get_param(param_file, mdl, "EADY_GROWTH_RATE_D_SCALE", CS%Eady_GR_D_scale, &
                      "The depth from surface over which to average SN when calculating "//&
@@ -1960,10 +1962,10 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                  "function independently at each point.", default=.false.)
     if (CS%interpolate_Res_fn) then
       if (CS%Res_coef_visc /= CS%Res_coef_khth) call MOM_error(FATAL, &
-           "MOM_lateral_mixing_coeffs.F90, VarMix_init:"//&
+           "MOM_lateral_mixing_coeffs.F90, VarMix_init: "//&
            "When INTERPOLATE_RES_FN=True, VISC_RES_FN_POWER must equal KH_RES_SCALE_COEF.")
       if (CS%Res_fn_power_visc /= CS%Res_fn_power_khth) call MOM_error(FATAL, &
-           "MOM_lateral_mixing_coeffs.F90, VarMix_init:"//&
+           "MOM_lateral_mixing_coeffs.F90, VarMix_init: "//&
            "When INTERPOLATE_RES_FN=True, VISC_RES_FN_POWER must equal KH_RES_FN_POWER.")
     endif
     call get_param(param_file, mdl, "GILL_EQUATORIAL_LD", Gill_equatorial_Ld, &
@@ -2120,7 +2122,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
     enddo ; enddo
 
     if (.not. CS%use_stored_slopes) call MOM_error(FATAL, &
-           "MOM_lateral_mixing_coeffs.F90, VarMix_init:"//&
+           "MOM_lateral_mixing_coeffs.F90, VarMix_init: "//&
            "USE_STORED_SLOPES must be True when using QG Leith.")
   endif
 

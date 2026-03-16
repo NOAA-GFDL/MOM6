@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Forcing for the idealized hurricane and SCM_idealized_hurricane examples.
 module Idealized_hurricane
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 ! History
 !--------
@@ -226,7 +228,7 @@ subroutine idealized_hurricane_wind_init(Time, G, US, param_file, CS)
                  default=6.88, units="degrees")
   call get_param(param_file, mdl, "IDL_HURR_INFLOW_DANGLE_TR_SPEED", CS%P1_speed, &
                  "The translation speed dependence of the angle difference between the "//&
-                 "translation direction and the inflow direction"//&
+                 "translation direction and the inflow direction "//&
                  "for the parametric idealized hurricane.", &
                  default=-9.60, units="degrees s m-1", scale=US%L_T_to_m_s)
 
@@ -308,7 +310,7 @@ subroutine idealized_hurricane_wind_init(Time, G, US, param_file, CS)
   call get_param(param_file, mdl, "RHO_0", CS%Rho0, &
                  "The mean ocean density used with BOUSSINESQ true to "//&
                  "calculate accelerations and the mass for conservation "//&
-                 "properties, or with BOUSSINSEQ false to convert some "//&
+                 "properties, or with BOUSSINESQ false to convert some "//&
                  "parameters from vertical units of m to kg m-2.", &
                  units="kg m-3", default=1035.0, scale=US%kg_m3_to_R, do_not_log=.true.)
   call get_param(param_file, mdl, "GUST_CONST", CS%gustiness, &

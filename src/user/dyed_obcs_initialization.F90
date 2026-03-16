@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Dyed open boundary conditions; OBC_USER_CONFIG="dyed_obcs"
 module dyed_obcs_initialization
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_dyn_horgrid,     only : dyn_horgrid_type
 use MOM_error_handler,   only : MOM_mesg, MOM_error, FATAL, WARNING, is_root_pe
@@ -55,7 +57,7 @@ subroutine dyed_obcs_set_OBC_data(OBC, G, GV, param_file, tr_Reg)
 
   call get_param(param_file, mdl, "NUM_DYED_TRACERS", ntr, &
                  "The number of dyed_obc tracers in this run. Each tracer "//&
-                 "should have a separate boundary segment."//&
+                 "should have a separate boundary segment.  "//&
                  "If not present, use NUM_DYE_TRACERS.", default=-1, do_not_log=.true.)
   if (ntr == -1) then
     !for backward compatibility

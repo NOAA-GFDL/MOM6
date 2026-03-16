@@ -1,7 +1,10 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Calculates horizontal viscosity and viscous stresses
 module MOM_hor_visc
 
-! This file is part of MOM6. See LICENSE.md for the license.
 use MOM_checksums,             only : hchksum, Bchksum, uvchksum
 use MOM_coms,                  only : min_across_PEs
 use MOM_diag_mediator,         only : post_data, register_diag_field, safe_alloc_ptr
@@ -2481,7 +2484,7 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
                  "If true, the Laplacian coefficient is locally limited "//&
                  "to be stable.", default=.true., do_not_log=.not.CS%Laplacian)
   call get_param(param_file, mdl, "EY24_EBT_BS", CS%EY24_EBT_BS, &
-                 "If true, use the the backscatter scheme (EBT mode with kill switch)"//&
+                 "If true, use the backscatter scheme (EBT mode with kill switch) "//&
                  "developed by Yankovsky et al. (2024). ", &
                  default=.false., do_not_log=.not.CS%Laplacian)
   if (.not.CS%Laplacian) CS%bound_Kh = .false.
@@ -2594,7 +2597,7 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
 !          "set or allocated.  See github.com/mom-ocean/MOM6/issues/1590 for a discussion.")
 !  endif
   if (CS%use_QG_Leith_visc .and. .not. (CS%Leith_Kh .or. CS%Leith_Ah) ) then
-    call MOM_error(FATAL, "MOM_hor_visc.F90, hor_visc_init:"//&
+    call MOM_error(FATAL, "MOM_hor_visc.F90, hor_visc_init: "//&
                  "LEITH_KH or LEITH_AH must be True when USE_QG_LEITH_VISC=True.")
   endif
 
@@ -2654,7 +2657,7 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
                  default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
   call get_param(param_file, mdl, "FRICTWORK_BUG", CS%FrictWork_bug, &
                  "If true, retain an answer-changing bug in calculating the FrictWork, "//&
-                 "which cancels the h in thickness flux and the h at velocity point. This is"//&
+                 "which cancels the h in thickness flux and the h at velocity point. This is "//&
                  "not recommended.", default=.false.)
   call get_param(param_file, mdl, "OBC_SPECIFIED_STRAIN_BUG", CS%OBC_strain_bug, &
                  "If true, recover a bug that specified shear strain option at open boundaries "//&

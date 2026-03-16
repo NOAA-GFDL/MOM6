@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Finite volume pressure gradient (integrated by quadrature or analytically)
 module MOM_PressureForce_FV
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_debugging, only : hchksum, uvchksum
 use MOM_diag_mediator, only : post_data, register_diag_field
@@ -275,7 +277,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, AD
        "MOM_PressureForce_FV_nonBouss: Module must be initialized before it is used.")
 
   if (CS%use_stanley_pgf) call MOM_error(FATAL, &
-       "MOM_PressureForce_FV_nonBouss: The Stanley parameterization is not yet"//&
+       "MOM_PressureForce_FV_nonBouss: The Stanley parameterization is not yet "//&
        "implemented in non-Boussinesq mode.")
 
   use_p_atm = associated(p_atm)

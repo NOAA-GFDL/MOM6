@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Calculate vertical diffusivity from all mixing processes
 module MOM_set_diffusivity
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_bkgnd_mixing,        only : calculate_bkgnd_mixing, bkgnd_mixing_init, bkgnd_mixing_cs
 use MOM_bkgnd_mixing,        only : bkgnd_mixing_end
@@ -2620,7 +2622,7 @@ subroutine set_diffusivity_init(Time, G, GV, US, param_file, diag, CS, int_tide_
          'User-specified Extra Diffusivity', 'm2 s-1', conversion=GV%HZ_T_to_m2_s)
 
   call get_param(param_file, mdl, "DOUBLE_DIFFUSION", CS%double_diffusion, &
-                 "If true, increase diffusivites for temperature or salinity based on the "//&
+                 "If true, increase diffusivities for temperature or salinity based on the "//&
                  "double-diffusive parameterization described in Large et al. (1994).", &
                  default=.false.)
 
@@ -2665,7 +2667,7 @@ subroutine set_diffusivity_init(Time, G, GV, US, param_file, diag, CS, int_tide_
 
   if (CS%double_diffusion .and. CS%use_CVMix_ddiff) then
     call MOM_error(FATAL, 'set_diffusivity_init: '// &
-           'Multiple double-diffusion options selected (DOUBLE_DIFFUSION and'//&
+           'Multiple double-diffusion options selected (DOUBLE_DIFFUSION and '//&
            'USE_CVMIX_DDIFF), please disable all but one option to proceed.')
   endif
 

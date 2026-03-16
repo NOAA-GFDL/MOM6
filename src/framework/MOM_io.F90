@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> This module contains I/O framework code
 module MOM_io
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_array_transform,  only : allocate_rotated_array, rotate_array
 use MOM_array_transform,  only : rotate_array_pair, rotate_vector
@@ -3037,8 +3039,8 @@ subroutine safe_string_copy(str1, str2, fieldnm, caller)
 
   if (len(trim(str1)) > len(str2)) then
     if (present(fieldnm) .and. present(caller)) then
-      call MOM_error(FATAL, trim(caller)//" attempted to copy the overly long"//&
-        " string "//trim(str1)//" into "//trim(fieldnm))
+      call MOM_error(FATAL, trim(caller)//" attempted to copy the overly long string "//&
+                     trim(str1)//" into "//trim(fieldnm))
     else
       call MOM_error(FATAL, "safe_string_copy: The string "//trim(str1)//&
                      " is longer than its intended target.")

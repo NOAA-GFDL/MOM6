@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Top-level module for the MOM6 ocean model in coupled mode.
 module MOM_ocean_model_mct
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 ! This is the top level module for the MOM6 ocean model.  It contains routines
 ! for initialization, termination and update of ocean model state.  This
@@ -332,7 +334,7 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
   call get_param(param_file, mdl, "RHO_0", Rho0, &
                  "The mean ocean density used with BOUSSINESQ true to "//&
                  "calculate accelerations and the mass for conservation "//&
-                 "properties, or with BOUSSINSEQ false to convert some "//&
+                 "properties, or with BOUSSINESQ false to convert some "//&
                  "parameters from vertical units of m to kg m-2.", &
                  units="kg m-3", default=1035.0)
   call get_param(param_file, mdl, "G_EARTH", G_Earth, &
@@ -732,9 +734,11 @@ subroutine ocean_model_end(Ocean_sfc, Ocean_state, Time)
   call ocean_model_save_restart(Ocean_state, Time)
   call diag_mediator_end(Time, Ocean_state%diag, end_diag_manager=.true.)
   ! print time stats
-  call MOM_infra_end
   call MOM_end(Ocean_state%MOM_CSp)
   if (Ocean_state%use_ice_shelf) call ice_shelf_end(Ocean_state%Ice_shelf_CSp)
+
+  ! This closes out the infrastructure, including clocks, I/O and message passing communicators.
+  call MOM_infra_end()
 end subroutine ocean_model_end
 
 !> ocean_model_save_restart causes restart files associated with the ocean to be

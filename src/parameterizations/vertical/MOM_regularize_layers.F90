@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Provides regularization of layers in isopycnal mode
 module MOM_regularize_layers
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_cpu_clock, only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_ROUTINE
 use MOM_diag_mediator, only : post_data, register_diag_field, safe_alloc_ptr
@@ -572,21 +574,21 @@ subroutine regularize_surface(h, tv, dt, ea, eb, G, GV, US, CS)
         if (abs(h_tot1(i) - h_tot2(i)) > 1e-12*h_tot1(i)) then
           write(mesg,'(ES11.4," became ",ES11.4," diff ",ES11.4)') &
                 h_tot1(i), h_tot2(i), (h_tot1(i) - h_tot2(i))
-          call MOM_error(WARNING, "regularize_surface: Mass non-conservation."//&
+          call MOM_error(WARNING, "regularize_surface: Mass non-conservation.  "//&
                           trim(mesg), .true.)
           fatal_error = .true.
         endif
         if (abs(Th_tot1(i) - Th_tot2(i)) > 1e-12*abs(Th_tot1(i) + 10.0*US%degC_to_C*h_tot1(i))) then
           write(mesg,'(ES11.4," became ",ES11.4," diff ",ES11.4," int diff ",ES11.4)') &
                 Th_tot1(i), Th_tot2(i), (Th_tot1(i) - Th_tot2(i)), (Th_tot1(i) - Th_tot3(i))
-          call MOM_error(WARNING, "regularize_surface: Heat non-conservation."//&
+          call MOM_error(WARNING, "regularize_surface: Heat non-conservation.  "//&
                           trim(mesg), .true.)
           fatal_error = .true.
         endif
         if (abs(Sh_tot1(i) - Sh_tot2(i)) > 1e-12*abs(Sh_tot1(i) + 10.0*US%ppt_to_S*h_tot1(i))) then
           write(mesg,'(ES11.4," became ",ES11.4," diff ",ES11.4," int diff ",ES11.4)') &
                 Sh_tot1(i), Sh_tot2(i), (Sh_tot1(i) - Sh_tot2(i)), (Sh_tot1(i) - Sh_tot3(i))
-          call MOM_error(WARNING, "regularize_surface: Salinity non-conservation."//&
+          call MOM_error(WARNING, "regularize_surface: Salinity non-conservation.  "//&
                           trim(mesg), .true.)
           fatal_error = .true.
         endif

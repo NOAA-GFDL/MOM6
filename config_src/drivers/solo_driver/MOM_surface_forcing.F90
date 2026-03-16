@@ -1,3 +1,7 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Functions that calculate the surface wind stresses and fluxes of buoyancy
 !! or temperature/salinity and fresh water, in ocean-only (solo) mode.
 !!
@@ -6,8 +10,6 @@
 !! return quickly without doing anything.  In addition, any I/O of forcing
 !! fields is controlled by surface_forcing_init, located in this file.
 module MOM_surface_forcing
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_constants,           only : hlv, hlf
 use MOM_cpu_clock,           only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
@@ -2044,7 +2046,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, tracer_flow_C
   call get_param(param_file, mdl, "RHO_0", CS%Rho0, &
                  "The mean ocean density used with BOUSSINESQ true to "//&
                  "calculate accelerations and the mass for conservation "//&
-                 "properties, or with BOUSSINSEQ false to convert some "//&
+                 "properties, or with BOUSSINESQ false to convert some "//&
                  "parameters from vertical units of m to kg m-2.", &
                  units="kg m-3", default=1035.0, scale=US%kg_m3_to_R) ! (, do_not_log=CS%nonBous)
   call get_param(param_file, mdl, "RESTOREBUOY", CS%restorebuoy, &

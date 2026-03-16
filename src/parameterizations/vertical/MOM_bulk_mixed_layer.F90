@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Build mixed layer parameterization
 module MOM_bulk_mixed_layer
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_cpu_clock,     only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_ROUTINE
 use MOM_diag_mediator, only : post_data, register_diag_field, safe_alloc_alloc
@@ -2654,7 +2656,7 @@ subroutine mixedlayer_detrain_2(h, T, S, R0, Spv0, Rcv, RcvTgt, dt, dt_diag, d_e
   dT_dS_gauge = CS%dT_dS_wt ; dS_dT_gauge = 1.0 / dT_dS_gauge
   num_events = 10.0
 
-  if (CS%nkbl /= 2) call MOM_error(FATAL, "MOM_mixed_layer"// &
+  if (CS%nkbl /= 2) call MOM_error(FATAL, "MOM_mixed_layer: "// &
                         "CS%nkbl must be 2 in mixedlayer_detrain_2.")
 
   if (dt < CS%BL_detrain_time) then ; dPE_time_ratio = CS%BL_detrain_time / (dt)

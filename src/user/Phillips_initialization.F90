@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Initialization for the "Phillips" channel configuration
 module Phillips_initialization
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_error_handler, only : MOM_mesg, MOM_error, FATAL, is_root_pe
 use MOM_dyn_horgrid, only : dyn_horgrid_type
@@ -281,7 +283,7 @@ subroutine Phillips_initialize_velocity(u, v, G, GV, US, param_file, just_read)
 
 end subroutine Phillips_initialize_velocity
 
-!> Sets up the the inverse restoration time (Idamp), and the values towards which the interface
+!> Sets up the inverse restoration time (Idamp), and the values towards which the interface
 !! heights and an arbitrary number of tracers should be restored within each sponge for the Phillips
 !! model test case
 subroutine Phillips_initialize_sponges(G, GV, US, tv, param_file, CSp, h)

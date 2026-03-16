@@ -1,3 +1,7 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Provides checksumming functions for debugging
 !!
 !! This module contains subroutines that perform various error checking and
@@ -5,8 +9,6 @@
 !! the SIS2 code, except for the use of the ocean_grid_type and by keeping them
 !! separate we retain the ability to set up MOM6 and SIS2 debugging separately.
 module MOM_debugging
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_checksums,     only : hchksum, Bchksum, qchksum, uvchksum, hchksum_pair
 use MOM_checksums,     only : is_NaN, chksum, MOM_checksums_init
@@ -192,8 +194,8 @@ subroutine check_redundant_vC2d(mesg, u_comp, v_comp, G, is, ie, js, je, &
     u_nonsym(i,j) = u_comp(i,j) ; v_nonsym(i,j) = v_comp(i,j)
   enddo ; enddo
 
-  if (.not.associated(G%Domain_aux)) call MOM_error(FATAL," check_redundant"//&
-    " called with a non-associated auxiliary domain the grid type.")
+  if (.not.associated(G%Domain_aux)) call MOM_error(FATAL, &
+    " check_redundant called with a non-associated auxiliary domain the grid type.")
   call pass_vector(u_nonsym, v_nonsym, G%Domain_aux, direction)
 
   do I=IsdB,IedB ; do j=jsd,jed ; u_resym(I,j) = u_comp(I,j) ; enddo ; enddo
@@ -292,8 +294,8 @@ subroutine check_redundant_sB2d(mesg, array, G, is, ie, js, je, unscale)
     a_nonsym(i,j) = array(i,j)
   enddo ; enddo
 
-  if (.not.associated(G%Domain_aux)) call MOM_error(FATAL," check_redundant"//&
-    " called with a non-associated auxiliary domain the grid type.")
+  if (.not.associated(G%Domain_aux)) call MOM_error(FATAL, &
+    " check_redundant called with a non-associated auxiliary domain the grid type.")
   call pass_vector(a_nonsym, a_nonsym, G%Domain_aux, &
                    direction=To_All+Scalar_Pair, stagger=BGRID_NE)
 
@@ -397,8 +399,8 @@ subroutine check_redundant_vB2d(mesg, u_comp, v_comp, G, is, ie, js, je, &
     u_nonsym(i,j) = u_comp(i,j) ; v_nonsym(i,j) = v_comp(i,j)
   enddo ; enddo
 
-  if (.not.associated(G%Domain_aux)) call MOM_error(FATAL," check_redundant"//&
-    " called with a non-associated auxiliary domain the grid type.")
+  if (.not.associated(G%Domain_aux)) call MOM_error(FATAL, &
+    " check_redundant called with a non-associated auxiliary domain the grid type.")
   call pass_vector(u_nonsym, v_nonsym, G%Domain_aux, direction, stagger=BGRID_NE)
 
   do I=IsdB,IedB ; do J=JsdB,JedB

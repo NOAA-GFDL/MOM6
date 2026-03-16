@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> A column-wise toolbox for implementing neutral diffusion
 module MOM_neutral_diffusion
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_cpu_clock,             only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock,             only : CLOCK_MODULE, CLOCK_ROUTINE
@@ -189,13 +191,13 @@ logical function neutral_diffusion_init(Time, G, GV, US, param_file, diag, EOS, 
                  "the equation of state. If negative (default), local pressure is used.", &
                  units="Pa", default=-1., scale=US%Pa_to_RL2_T2)
   call get_param(param_file, mdl, "NDIFF_INTERIOR_ONLY", CS%interior_only, &
-                 "If true, only applies neutral diffusion in the ocean interior."//&
-                 "That is, the algorithm will exclude the surface and bottom"//&
+                 "If true, only applies neutral diffusion in the ocean interior.  "//&
+                 "That is, the algorithm will exclude the surface and bottom "//&
                  "boundary layers.", default=.false.)
   if (CS%interior_only) then
     call get_param(param_file, mdl, "NDIFF_TAPERING", CS%tapering, &
                    "If true, neutral diffusion linearly decays to zero within "//&
-                   "a transition zone defined using boundary layer depths.    "//&
+                   "a transition zone defined using boundary layer depths.  "//&
                    "Only applicable when NDIFF_INTERIOR_ONLY=True", default=.false.)
   endif
   call get_param(param_file, mdl, "KHTR_USE_EBT_STRUCT", KhTh_use_ebt_struct, &

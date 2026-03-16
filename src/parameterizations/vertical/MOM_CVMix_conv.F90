@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Interface to CVMix convection scheme.
 module MOM_CVMix_conv
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_debugging,      only : hchksum
 use MOM_diag_mediator,  only : diag_ctrl, time_type, register_diag_field
@@ -85,7 +87,7 @@ logical function CVMix_conv_init(Time, G, GV, US, param_file, diag, CS)
   ! be aplied in the boundary layer
   if (useEPBL) then
     call MOM_error(WARNING, 'MOM_CVMix_conv_init: '// &
-           'CVMix convection may not be properly applied when ENERGETICS_SFC_PBL = True'//&
+           'CVMix convection may not be properly applied when ENERGETICS_SFC_PBL = True '//&
            'as convective mixing might occur in the boundary layer.')
   endif
 

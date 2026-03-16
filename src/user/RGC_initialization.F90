@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Configures the models sponges for the Rotating Gravity Current (RGC) experiment.
 module RGC_initialization
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 !***********************************************************************
 !* By Elizabeth Yankovsky, May 2018                                    *
@@ -35,7 +37,7 @@ public RGC_initialize_sponges
 
 contains
 
-!> Sets up the the inverse restoration time, and the values towards which the interface heights,
+!> Sets up the inverse restoration time, and the values towards which the interface heights,
 !! velocities and tracers should be restored within the sponges for the RGC test case.
 subroutine RGC_initialize_sponges(G, GV, US, tv, u, v, depth_tot, PF, use_ALE, CSp, ACSp)
   type(ocean_grid_type),   intent(in) :: G  !< The ocean's grid structure.

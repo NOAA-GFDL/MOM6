@@ -1,8 +1,10 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> This module contains the hybgen remapping routines from HYCOM, with minor
 !! modifications to follow the MOM6 coding conventions
 module MOM_hybgen_remap
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 implicit none ; private
 
@@ -273,7 +275,7 @@ subroutine hybgen_weno_coefs(s, h_src, edges, nk, ns, thin, PCM_lay)
   real :: qdpkm(nk)   ! Inverse of the sum of two adjacent thicknesses [H-1 ~> m-1 or m2 kg-1]
   real :: qdpkmkp(nk) ! Inverse of the sum of three adjacent thicknesses [H-1 ~> m-1 or m2 kg-1]
   real :: dpkm2kp(nk) ! Twice the distance between the centers of the layers two apart [H ~> m or kg m-2]
-  real :: zw(nk,2)    ! Squared combinations of the differences between the the cell average tracer
+  real :: zw(nk,2)    ! Squared combinations of the differences between the cell average tracer
                       ! concentrations and the left and right edges [A2]
   real :: min_ratio   ! The minimum ratio of the values of zw used to interpolate the edge values [nondim]
   real :: wt1         ! The weight of the upper layer in the interpolated shared edge value [nondim]

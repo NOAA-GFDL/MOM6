@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Tidal contributions to geopotential
 module MOM_tidal_forcing
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_cpu_clock,     only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, &
                               CLOCK_MODULE, CLOCK_ROUTINE
@@ -10,7 +12,7 @@ use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING
 use MOM_file_parser,   only : get_param, log_version, param_file_type
 use MOM_grid,          only : ocean_grid_type
 use MOM_io,            only : field_exists, file_exists, MOM_read_data
-use MOM_time_manager,  only : set_date, time_type, time_type_to_real, operator(-)
+use MOM_time_manager,  only : set_date, time_type, time_minus_signed
 use MOM_unit_scaling,  only : unit_scale_type
 
 implicit none ; private
@@ -96,7 +98,7 @@ subroutine astro_longitudes_init(time_ref, longitudes)
   real, parameter :: PI = 4.0 * atan(1.0)            !> 3.14159... [nondim]
 
   ! Find date at time_ref in days since midnight at the start of 1900-01-01
-  D = time_type_to_real(time_ref - set_date(1900, 1, 1, 0, 0, 0)) / (24.0 * 3600.0)
+  D = time_minus_signed(time_ref, set_date(1900, 1, 1, 0, 0, 0)) / (24.0 * 3600.0)
   ! Time since 1900-01-01 in Julian centuries
   ! Kowalik and Luick use 36526, but Schureman uses 36525 which I think is correct.
   T = D / 36525.0
@@ -631,7 +633,7 @@ subroutine calc_tidal_forcing(Time, e_tide_eq, e_tide_sal, G, US, CS)
     return
   endif
 
-  now = US%s_to_T * time_type_to_real(Time - cs%time_ref)
+  now = US%s_to_T * time_minus_signed(Time, cs%time_ref)
 
   do c=1,CS%nc
     m = CS%struct(c)
@@ -705,7 +707,7 @@ subroutine calc_tidal_forcing_legacy(Time, e_sal, e_sal_tide, e_tide_eq, e_tide_
     return
   endif
 
-  now = US%s_to_T * time_type_to_real(Time - cs%time_ref)
+  now = US%s_to_T * time_minus_signed(Time, cs%time_ref)
 
   do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
     e_sal_tide(i,j) = e_sal(i,j)

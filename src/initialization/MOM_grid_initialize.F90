@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Initializes horizontal grid
 module MOM_grid_initialize
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_checksums,     only : hchksum, Bchksum, uvchksum, hchksum_pair, Bchksum_pair
 use MOM_domains,       only : pass_var, pass_vector, pe_here, root_PE, broadcast
@@ -746,7 +748,7 @@ subroutine set_grid_metrics_mercator(G, param_file, US)
     fnRef = Int_dj_dy((GP%south_lat*PI/180.0), GP)
   endif
 
-  ! These calculations no longer depend on the the order in which they
+  ! These calculations no longer depend on the order in which they
   ! are performed because they all use the same (poor) starting guess and
   ! iterate to convergence.
   ! Note that the dynamic grid always uses symmetric memory for the global
@@ -786,7 +788,7 @@ subroutine set_grid_metrics_mercator(G, param_file, US)
   iRef = (G%isg-1) + GP%niglobal
   fnRef = Int_di_dx(((GP%west_lon+GP%len_lon)*PI/180.0), GP)
 
-  ! These calculations no longer depend on the the order in which they
+  ! These calculations no longer depend on the order in which they
   ! are performed because they all use the same (poor) starting guess and
   ! iterate to convergence.
   do I=G%isg-1,G%ieg

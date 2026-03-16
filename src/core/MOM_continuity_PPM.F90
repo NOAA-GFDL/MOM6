@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Solve the layer continuity equation using the PPM method for layer fluxes.
 module MOM_continuity_PPM
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_cpu_clock, only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_ROUTINE
 use MOM_diag_mediator, only : time_type, diag_ctrl
@@ -160,8 +162,8 @@ subroutine continuity_PPM(u, v, hin, h, uh, vh, dt, G, GV, US, CS, OBC, pbv, uhb
   x_first = (MOD(G%first_direction,2) == 0)
 
   if (present(visc_rem_u) .neqv. present(visc_rem_v)) call MOM_error(FATAL, &
-      "MOM_continuity_PPM: Either both visc_rem_u and visc_rem_v or neither"// &
-      " one must be present in call to continuity_PPM.")
+      "MOM_continuity_PPM: Either both visc_rem_u and visc_rem_v or neither "// &
+      "one must be present in call to continuity_PPM.")
 
   if (x_first) then
     !  First advect zonally, with loop bounds that accomodate the subsequent meridional advection.

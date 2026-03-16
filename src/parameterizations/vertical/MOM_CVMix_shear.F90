@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Interface to CVMix interior shear schemes
 module MOM_CVMix_shear
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 !> \author Brandon Reichl
 
@@ -264,8 +266,8 @@ logical function CVMix_shear_init(Time, G, GV, US, param_file, diag, CS)
   ! Otherwise, warn user and kill job.
   if ((NumberTrue) > 1) then
     call MOM_error(FATAL, 'MOM_CVMix_shear_init: '// &
-           'Multiple shear driven internal mixing schemes selected,'//&
-           ' please disable all but one scheme to proceed.')
+           'Multiple shear driven internal mixing schemes selected, '//&
+           'please disable all but one scheme to proceed.')
   endif
 
   CVMix_shear_init = use_PP81 .or. use_LMD94
