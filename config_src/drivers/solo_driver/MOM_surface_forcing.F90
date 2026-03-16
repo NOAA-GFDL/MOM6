@@ -36,7 +36,7 @@ use MOM_io,                  only : read_netCDF_data, EAST_FACE, NORTH_FACE, num
 use MOM_restart,             only : register_restart_field, restart_init, MOM_restart_CS
 use MOM_restart,             only : restart_init_end, save_restart, restore_state
 use MOM_time_manager,        only : time_type, operator(+), operator(/), operator(*)
-use MOM_time_manager,        only : set_time, get_time, get_date, time_type_to_real
+use MOM_time_manager,        only : set_time, get_time, get_date, time_to_real
 use MOM_tracer_flow_control, only : call_tracer_set_forcing, tracer_flow_control_CS
 use MOM_unit_scaling,        only : unit_scale_type
 use MOM_variables,           only : surface
@@ -283,7 +283,7 @@ subroutine set_forcing(sfc_state, forces, fluxes, day_start, day_interval, G, US
   call callTree_enter("set_forcing, MOM_surface_forcing.F90")
 
   day_center = day_start + day_interval/2
-  dt = US%s_to_T * time_type_to_real(day_interval)
+  dt = time_to_real(day_interval, scale=US%s_to_T)
 
   if (CS%first_call_set_forcing) then
     ! Allocate memory for the mechanical and thermodynamic forcing fields.

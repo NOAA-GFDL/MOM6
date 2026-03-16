@@ -372,7 +372,7 @@ subroutine diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
   ! the end of the diabatic processes.
   if (associated(tv%T) .AND. associated(tv%frazil)) then
     ! For frazil diagnostic, the first call covers the first half of the time step
-    call enable_averages(0.5*dt, Time_end - real_to_time(0.5*US%T_to_s*dt), CS%diag)
+    call enable_averages(0.5*dt, Time_end - real_to_time(0.5*dt, unscale=US%T_to_s), CS%diag)
     if (CS%frazil_tendency_diag) then
       do k=1,nz ; do j=js,je ; do i=is,ie
         temp_diag(i,j,k) = tv%T(i,j,k)

@@ -669,7 +669,7 @@ subroutine set_analysis_time(Time,CS)
 
   if (Time >= CS%Time) then
     ! increment the analysis time to the next step
-    CS%Time = CS%Time + real_to_time(CS%US%T_to_s*(CS%assim_interval))
+    CS%Time = CS%Time + real_to_time(CS%assim_interval, unscale=CS%US%T_to_s)
 
     call get_date(Time, yr, mon, day, hr, min, sec)
     write(mesg,*) 'Model Time: ', yr, mon, day, hr, min, sec

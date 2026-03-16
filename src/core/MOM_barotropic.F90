@@ -2546,7 +2546,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
       (CS%id_uhbt_hifreq > 0) .or. (CS%id_vhbt_hifreq > 0)) &
     do_hifreq_output = query_averaging_enabled(CS%diag, time_int_in, time_end_in)
   if (do_hifreq_output) then
-    time_bt_start = time_end_in - real_to_time(US%T_to_s*dt)
+    time_bt_start = time_end_in - real_to_time(dt, unscale=US%T_to_s)
     dtbt_diag = dt/(nstep+nfilter) ! Note that this is not dtbt.
   endif
 
@@ -2975,7 +2975,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
     if (do_hifreq_output) then
       ! Note that this compresses the time so that all of the timesteps, including those in the
       ! extra timesteps for filtering, fit within dt.
-      time_step_end = time_bt_start + real_to_time(n*US%T_to_s*dtbt_diag)
+      time_step_end = time_bt_start + real_to_time(n*dtbt_diag, unscale=US%T_to_s)
       call enable_averages(dtbt, time_step_end, CS%diag)
       if (CS%id_ubt_hifreq > 0) call post_data(CS%id_ubt_hifreq, ubt(IsdB:IedB,jsd:jed), CS%diag)
       if (CS%id_vbt_hifreq > 0) call post_data(CS%id_vbt_hifreq, vbt(isd:ied,JsdB:JedB), CS%diag)

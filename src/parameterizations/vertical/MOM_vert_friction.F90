@@ -3227,7 +3227,7 @@ subroutine updateCFLtruncationValue(Time, CS, US, activate)
     endif
   endif
   if (.not.CS%CFLrampingIsActivated) return
-  deltaTime = max(0., US%s_to_T * time_minus_signed(Time, CS%rampStartTime))
+  deltaTime = max(0., time_minus_signed(Time, CS%rampStartTime, scale=US%s_to_T))
   if (deltaTime >= CS%truncRampTime) then
     CS%CFL_trunc = CS%CFL_truncE
     CS%truncRampTime = 0. ! This turns off ramping after this call

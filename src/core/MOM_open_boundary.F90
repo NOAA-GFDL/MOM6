@@ -4371,7 +4371,7 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
   turns = modulo(G%HI%turns, 4)
 
-  if (OBC%add_tide_constituents) time_delta = US%s_to_T * time_minus_signed(Time, OBC%time_ref)
+  if (OBC%add_tide_constituents) time_delta = time_minus_signed(Time, OBC%time_ref, scale=US%s_to_T)
 
   dz(:,:,:) = 0.0
   call thickness_to_dz(h, tv, dz, G, GV, US)
@@ -4903,7 +4903,7 @@ subroutine update_OBC_ramp(Time, OBC, US, activate)
     endif
   endif
   if (.not.OBC%ramping_is_activated) return
-  deltaTime = max(0., US%s_to_T * time_minus_signed(Time, OBC%ramp_start_time))
+  deltaTime = max(0., time_minus_signed(Time, OBC%ramp_start_time, scale=US%s_to_T))
   if (deltaTime >= OBC%trunc_ramp_time) then
     OBC%ramp_value = 1.0
     OBC%ramp = .false. ! This turns off ramping after this call

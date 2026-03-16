@@ -60,7 +60,7 @@ program MOM6
   use MOM_string_functions,only : uppercase
   use MOM_surface_forcing, only : set_forcing, forcing_save_restart
   use MOM_surface_forcing, only : surface_forcing_init, surface_forcing_CS
-  use MOM_time_manager,    only : time_type, set_date, get_date, real_to_time, time_type_to_real
+  use MOM_time_manager,    only : time_type, set_date, get_date, real_to_time, time_to_real
   use MOM_time_manager,    only : operator(+), operator(-), operator(*), operator(/)
   use MOM_time_manager,    only : operator(>), operator(<), operator(>=)
   use MOM_time_manager,    only : increment_date, set_calendar_type, month_name
@@ -350,8 +350,8 @@ program MOM6
   endif
   ntstep = MAX(1,ceiling(dt_forcing/dt - 0.001))
 
-  Time_step_ocean = real_to_time(US%T_to_s*dt_forcing)
-  elapsed_time_master = (abs(dt_forcing - US%s_to_T*time_type_to_real(Time_step_ocean)) > 1.0e-12*dt_forcing)
+  Time_step_ocean = real_to_time(dt_forcing, unscale=US%T_to_s)
+  elapsed_time_master = (abs(dt_forcing - time_to_real(Time_step_ocean, scale=US%s_to_T)) > 1.0e-12*dt_forcing)
   if (elapsed_time_master) &
     call MOM_mesg("Using real elapsed time for the master clock.", 2)
 
@@ -520,7 +520,7 @@ program MOM6
             dtdia = dt_dyn*(n - n_last_thermo)
             ! Back up Time2 to the start of the thermodynamic segment.
             if (n > n_last_thermo+1) &
-              Time2 = Time2 - real_to_time(US%T_to_s*(dtdia - dt_dyn))
+              Time2 = Time2 - real_to_time((dtdia - dt_dyn), unscale=US%T_to_s)
             call step_MOM(forces, fluxes, sfc_state, Time2, dtdia, MOM_CSp, &
                           do_dynamics=.false., do_thermodynamics=.true., &
                           start_cycle=.false., end_cycle=(n==n_max), cycle_length=dt_forcing)
@@ -529,7 +529,7 @@ program MOM6
         endif
 
         t_elapsed_seg = t_elapsed_seg + dt_dyn
-        Time2 = Time1 + real_to_time(US%T_to_s*t_elapsed_seg)
+        Time2 = Time1 + real_to_time(t_elapsed_seg, unscale=US%T_to_s)
       enddo
     endif
 
@@ -542,12 +542,12 @@ program MOM6
       ! does not lose resolution of order the timetype's resolution, provided that the timestep and
       ! tick are larger than 10-5 seconds.  If a clock with a finer resolution is used, a smaller
       ! value would be required.
-      time_chg = real_to_time(US%T_to_s*elapsed_time)
+      time_chg = real_to_time(elapsed_time, unscale=US%T_to_s)
       segment_start_time = segment_start_time + time_chg
-      elapsed_time = elapsed_time - US%s_to_T*time_type_to_real(time_chg)
+      elapsed_time = elapsed_time - time_to_real(time_chg, scale=US%s_to_T)
     endif
     if (elapsed_time_master) then
-      Master_Time = segment_start_time + real_to_time(US%T_to_s*elapsed_time)
+      Master_Time = segment_start_time + real_to_time(elapsed_time, unscale=US%T_to_s)
     else
       Master_Time = Master_Time + Time_step_ocean
     endif

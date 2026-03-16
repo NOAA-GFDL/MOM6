@@ -47,7 +47,7 @@ use MOM_surface_forcing_gfdl, only : forcing_save_restart
 use MOM_time_manager, only : time_type, operator(>), operator(+), operator(-)
 use MOM_time_manager, only : operator(*), operator(/), operator(/=)
 use MOM_time_manager, only : operator(<=), operator(>=), operator(<)
-use MOM_time_manager, only : real_to_time, time_type_to_real
+use MOM_time_manager, only : real_to_time, time_to_real
 use MOM_tracer_flow_control, only : call_tracer_register, tracer_flow_control_init
 use MOM_tracer_flow_control, only : call_tracer_flux_init
 use MOM_unit_scaling, only : unit_scale_type
@@ -497,7 +497,7 @@ subroutine update_ocean_model(Ice_ocean_boundary, OS, Ocean_sfc, time_start_upda
   integer :: is, ie, js, je
 
   call callTree_enter("update_ocean_model(), ocean_model_MOM.F90")
-  dt_coupling = OS%US%s_to_T*time_type_to_real(Ocean_coupling_time_step)
+  dt_coupling = time_to_real(Ocean_coupling_time_step, scale=OS%US%s_to_T)
 
   if (.not.associated(OS)) then
     call MOM_error(FATAL, "update_ocean_model called with an unassociated "// &
@@ -659,7 +659,7 @@ subroutine update_ocean_model(Ice_ocean_boundary, OS, Ocean_sfc, time_start_upda
 
         if (step_thermo) then
           ! Back up Time1 to the start of the thermodynamic segment.
-          Time1 = Time1 - real_to_time(OS%US%T_to_s*(dtdia - dt_dyn))
+          Time1 = Time1 - real_to_time(dtdia - dt_dyn, unscale=OS%US%T_to_s)
           call step_MOM(OS%forces, OS%fluxes, OS%sfc_state, Time1, dtdia, OS%MOM_CSp, &
                         Waves=OS%Waves, do_dynamics=.false., do_thermodynamics=.true., &
                         start_cycle=.false., end_cycle=(n==n_max), cycle_length=dt_coupling)
@@ -667,7 +667,7 @@ subroutine update_ocean_model(Ice_ocean_boundary, OS, Ocean_sfc, time_start_upda
       endif
 
       t_elapsed_seg = t_elapsed_seg + dt_dyn
-      Time1 = Time_seg_start + real_to_time(OS%US%T_to_s*t_elapsed_seg)
+      Time1 = Time_seg_start + real_to_time(t_elapsed_seg, unscale=OS%US%T_to_s)
     enddo
   endif
 

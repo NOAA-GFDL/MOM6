@@ -42,7 +42,7 @@ use MOM_io, only : slasher, fieldtype, vardesc, var_desc
 use MOM_io, only : close_file, SINGLE_FILE, MULTIPLE
 use MOM_restart, only : register_restart_field, save_restart
 use MOM_restart, only : restart_init, restore_state, MOM_restart_CS, register_restart_pair
-use MOM_time_manager, only : time_type, time_type_to_real, real_to_time, operator(>), operator(-)
+use MOM_time_manager, only : time_type, time_to_real, real_to_time, operator(>), operator(-)
 use MOM_transcribe_grid, only : copy_dyngrid_to_MOM_grid, copy_MOM_grid_to_dyngrid
 use MOM_transcribe_grid, only : rotate_dyngrid
 use MOM_unit_scaling, only : unit_scale_type, unit_scaling_init, fix_restart_unit_scaling
@@ -948,7 +948,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
 
   if (CS%shelf_mass_is_dynamic) &
     call write_ice_shelf_energy(CS%dCS, G, US, ISS%mass_shelf, ISS%area_shelf_h, Time, &
-                                time_step=real_to_time(US%T_to_s*time_step) )
+                                time_step=real_to_time(time_step, unscale=US%T_to_s) )
 
   if (CS%debug) call MOM_forcing_chksum("Before add shelf flux", fluxes, G, CS%US, haloshift=0)
 
@@ -1423,7 +1423,7 @@ subroutine add_shelf_flux(G, US, CS, sfc_state, fluxes, time_step)
 
     ! take into account changes in mass (or thickness) when imposing ice shelf mass
     if (CS%override_shelf_movement .and. CS%mass_from_file) then
-      dTime = real_to_time(US%T_to_s*CS%time_step)
+      dTime = real_to_time(CS%time_step, unscale=US%T_to_s)
 
       ! Compute changes in mass after at least one full time step
       if (CS%Time > dTime) then
@@ -2760,7 +2760,7 @@ subroutine solo_step_ice_shelf(CS, time_interval, nsteps, Time, min_time_step_in
   ISS => CS%ISS
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
 
-  remaining_time = US%s_to_T*time_type_to_real(time_interval)
+  remaining_time = time_to_real(time_interval, scale=US%s_to_T)
   full_time_step = remaining_time
   Ifull_time_step = 1./full_time_step
 
@@ -2770,7 +2770,7 @@ subroutine solo_step_ice_shelf(CS, time_interval, nsteps, Time, min_time_step_in
     min_time_step = 1000.0*US%s_to_T ! At 1 km resolution this would imply ice is moving at ~1 meter per second
   endif
 
-  write (mesg,*) "TIME in ice shelf call, yrs: ", time_type_to_real(Time)/(365. * 86400.)
+  write (mesg,*) "TIME in ice shelf call, yrs: ", time_to_real(Time)/(365. * 86400.)
   call MOM_mesg("solo_step_ice_shelf: "//mesg, 5)
 
   ISS%dhdt_shelf(:,:) = ISS%h_shelf(:,:)

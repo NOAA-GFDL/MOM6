@@ -24,7 +24,7 @@ use MOM_forcing_type, only : forcing, mech_forcing
 use MOM_forcing_type, only : allocate_mech_forcing
 use MOM_grid, only : ocean_grid_type
 use MOM_safe_alloc, only : safe_alloc_ptr
-use MOM_time_manager, only : time_type, operator(+), operator(/), time_type_to_real
+use MOM_time_manager, only : time_type, operator(+), operator(/), time_to_real
 use MOM_unit_scaling,  only : unit_scale_type
 use MOM_variables, only : thermo_var_ptrs, surface
 use MOM_verticalGrid, only : verticalGrid_type
@@ -373,9 +373,9 @@ subroutine idealized_hurricane_wind_forcing(sfc_state, forces, day, G, US, CS)
   endif
 
   !> Compute storm center location
-  XC = CS%Hurr_cen_X0 + (time_type_to_real(day)*US%s_to_T * CS%hurr_translation_spd * &
+  XC = CS%Hurr_cen_X0 + (time_to_real(day, scale=US%s_to_T) * CS%hurr_translation_spd * &
        cos(CS%hurr_translation_dir))
-  YC = CS%Hurr_cen_Y0 + (time_type_to_real(day)*US%s_to_T * CS%hurr_translation_spd * &
+  YC = CS%Hurr_cen_Y0 + (time_to_real(day, scale=US%s_to_T) * CS%hurr_translation_spd * &
        sin(CS%hurr_translation_dir))
 
   if (CS%BR_Bench) then
