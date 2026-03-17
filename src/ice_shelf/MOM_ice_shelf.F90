@@ -211,7 +211,7 @@ type, public :: ice_shelf_CS ; private
              id_tfreeze = -1, id_tfl_shelf = -1, &
              id_thermal_driving = -1, id_haline_driving = -1, &
              id_u_ml = -1, id_v_ml = -1, id_sbdry = -1, &
-             id_h_shelf = -1, id_dhdt_shelf, id_h_mask = -1, id_frazil = -1, &
+             id_h_shelf = -1, id_dhdt_shelf = -1, id_h_mask = -1, id_frazil = -1, &
              id_surf_elev = -1, id_bathym = -1, &
              id_area_shelf_h = -1, &
              id_ustar_shelf = -1, id_shelf_mass = -1, id_mass_flux = -1, &

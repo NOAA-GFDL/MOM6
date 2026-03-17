@@ -133,8 +133,7 @@ type, public :: diag_ctrl
   real, dimension(:,:),   pointer :: mask2dBu  => null() !< 2D mask array for cell-corner points [nondim]
   real, dimension(:,:),   pointer :: mask2dCu  => null() !< 2D mask array for east-face points [nondim]
   real, dimension(:,:),   pointer :: mask2dCv  => null() !< 2D mask array for north-face points [nondim]
-  !> Computational domain mask arrays for 2D diagnostics [nondim]
-  real, dimension(:,:),   pointer :: mask2dT_comp => null()
+  real, dimension(:,:),   pointer :: mask2dT_comp => null() !< 2D cell-center mask on the computational domain [nondim]
 
 ! Space for diagnostics is dynamically allocated as it is needed.
 ! The chunk size is how much the array should grow on each new allocation.

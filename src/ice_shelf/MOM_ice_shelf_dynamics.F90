@@ -255,9 +255,10 @@ end type ice_shelf_dyn_CS
 
 !> A container for loop bounds
 type :: loop_bounds_type ; private
-  !>@{ Loop bounds
-  integer :: ish, ieh, jsh, jeh
-  !>@}
+  integer :: ish !< Starting i-index of the computational domain [nondim]
+  integer :: ieh !< Ending i-index of the computational domain [nondim]
+  integer :: jsh !< Starting j-index of the computational domain [nondim]
+  integer :: jeh !< Ending j-index of the computational domain [nondim]
 end type loop_bounds_type
 
 contains
