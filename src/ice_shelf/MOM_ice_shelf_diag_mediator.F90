@@ -89,8 +89,7 @@ type, public :: diag_ctrl
   real, dimension(:,:),   pointer :: mask2dBu  => null() !< 2D mask array for cell-corners
   real, dimension(:,:),   pointer :: mask2dCu  => null() !< 2D mask array for east-faces
   real, dimension(:,:),   pointer :: mask2dCv  => null() !< 2D mask array for north-faces
-  !> Computational domain mask arrays for diagnostics.
-  real, dimension(:,:),   pointer :: mask2dT_comp => null()
+  real, dimension(:,:),   pointer :: mask2dT_comp => null() !< 2D mask array for cell-center points on the computational domain [nondim]
 
 #define DIAG_ALLOC_CHUNK_SIZE 15
   type(diag_type), dimension(:), allocatable :: diags !< The array of diagnostics
