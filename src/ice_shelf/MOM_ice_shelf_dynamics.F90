@@ -94,6 +94,22 @@ type, public :: ice_shelf_dyn_CS ; private
   real, pointer, dimension(:,:,:) :: ice_visc => NULL() !< Area and depth-integrated Glen's law ice viscosity
                                                         !!  (Pa m3 s) in [R L4 Z T-1 ~> kg m2 s-1].
                                                         !!  at either 1 (cell-centered) or 4 quadrature points per cell
+  real, pointer, dimension(:,:,:) :: newton_visc_factor => NULL() !< Newton tangent stiffness coefficient:
+                                                      !!  (1/n_glen - 1)/2 * ice_visc / eps_e2 at each
+                                                      !!  viscosity quadrature point [R L4 Z T ~> kg m2 s]
+  real, pointer, dimension(:,:,:) :: newton_str_ux => NULL() !< Longitudinal x-strain-rate ux at each viscosity
+                                                      !!  quadrature point for Newton iterations [T-1 ~> s-1]
+  real, pointer, dimension(:,:,:) :: newton_str_vy => NULL() !< Longitudinal y-strain-rate vy at each viscosity
+                                                      !!  quadrature point for Newton iterations [T-1 ~> s-1]
+  real, pointer, dimension(:,:,:) :: newton_str_sh => NULL() !< Engineering shear strain-rate uy+vx at each
+                                                      !!  viscosity quadrature point for Newton iterations [T-1 ~> s-1]
+  real, pointer, dimension(:,:) :: newton_umid => NULL() !< Cell-averaged zonal velocity u at the current outer
+                                                  !! iterate, for Newton basal drag correction [L T-1 ~> m s-1]
+  real, pointer, dimension(:,:) :: newton_vmid => NULL() !< Cell-averaged meridional velocity v at the current
+                                                  !! outer iterate, for Newton basal drag correction [L T-1 ~> m s-1]
+  real, pointer, dimension(:,:) :: newton_drag_coef => NULL() !< Newton basal drag correction coefficient:
+                                         !! 2 * d(basal_trac)/d(|u|^2) * area = d(tau_b_i)/d(u_j) - basal_trac*delta_ij
+                                         !! expressed as the u_i*u_j tensor coefficient [R Z T ~> kg m-2 s]
   real, pointer, dimension(:,:) :: AGlen_visc => NULL() !< Ice-stiffness parameter in Glen's law ice viscosity,
                                                       !! often in [Pa-3 s-1] if n_Glen is 3.
   real, pointer, dimension(:,:) :: u_bdry_val => NULL() !< The zonal ice velocity at inflowing boundaries
@@ -196,8 +212,12 @@ type, public :: ice_shelf_dyn_CS ; private
   real :: T_shelf_missing   !< An ice shelf temperature to use where there is no ice shelf [C ~> degC]
   real :: cg_tolerance !< The tolerance in the CG solver, relative to initial residual, that
                        !! determines when to stop the conjugate gradient iterations [nondim].
+  real :: cg_tol_newton !< Working CG tolerance for the current inner solve [nondim].
   real :: nonlinear_tolerance !< The fractional nonlinear tolerance, relative to the initial error,
                               !! that sets when to stop the iterative velocity solver [nondim]
+  real :: newton_after_tolerance !< The fractional nonlinear tolerance, relative to the initial error, at
+                                 !! which to switch from Picard to Newton iterations in the velocity solver [nondim]
+  logical :: newton_adapt_cg_tol !< Use an adaptive CG tolerance during Newton iterations
   integer :: cg_max_iterations !< The maximum number of iterations that can be used in the CG solver
   integer :: nonlin_solve_err_mode  !< 1: exit vel solve based on nonlin residual
                     !! 2: exit based on "fixed point" metric (|u - u_last| / |u| < tol) where | | is infty-norm
@@ -229,6 +249,8 @@ type, public :: ice_shelf_dyn_CS ; private
 
   logical :: debug                !< If true, write verbose checksums for debugging purposes
                                   !! and use reproducible sums
+  logical :: doing_newton = .false. !< If true, the outer iteration is using Newton (tangent) linearization
+                                    !! instead of Picard (secant) linearization for the ice viscosity
   logical :: module_is_initialized = .false. !< True if this module has been initialized.
 
   !>@{ Diagnostic handles
@@ -363,6 +385,13 @@ subroutine register_ice_shelf_dyn_restarts(G, US, param_file, CS, restart_CS)
     allocate(CS%v_shelf(IsdB:IedB,JsdB:JedB), source=0.0)
     allocate(CS%t_shelf(isd:ied,jsd:jed), source=T_shelf_missing) ! [C ~> degC]
     allocate(CS%ice_visc(isd:ied,jsd:jed,CS%visc_qps), source=0.0)
+    allocate(CS%newton_visc_factor(isd:ied,jsd:jed,CS%visc_qps), source=0.0)
+    allocate(CS%newton_str_ux(isd:ied,jsd:jed,CS%visc_qps), source=0.0)
+    allocate(CS%newton_str_vy(isd:ied,jsd:jed,CS%visc_qps), source=0.0)
+    allocate(CS%newton_str_sh(isd:ied,jsd:jed,CS%visc_qps), source=0.0)
+    allocate(CS%newton_umid(isd:ied,jsd:jed), source=0.0)
+    allocate(CS%newton_vmid(isd:ied,jsd:jed), source=0.0)
+    allocate(CS%newton_drag_coef(isd:ied,jsd:jed), source=0.0)
     allocate(CS%AGlen_visc(isd:ied,jsd:jed), source=2.261e-25) ! [Pa-3 s-1]
     allocate(CS%basal_traction(isd:ied,jsd:jed), source=0.0)   ! [R Z L2 T-1 ~> kg s-1]
     allocate(CS%C_basal_friction(isd:ied,jsd:jed), source=5.0e10*US%Pa_to_RLZ_T2)
@@ -557,8 +586,15 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
                  "A typical density of ice.", units="kg m-3", default=917.0, scale=US%kg_m3_to_R)
     call get_param(param_file, mdl, "CONJUGATE_GRADIENT_TOLERANCE", CS%cg_tolerance, &
                 "tolerance in CG solver, relative to initial residual", units="nondim", default=1.e-6)
+    CS%cg_tol_newton = CS%cg_tolerance  ! Will be tightened adaptively during Newton iterations
     call get_param(param_file, mdl, "ICE_NONLINEAR_TOLERANCE", CS%nonlinear_tolerance, &
                 "nonlin tolerance in iterative velocity solve", units="nondim", default=1.e-6)
+    call get_param(param_file, mdl, "NEWTON_AFTER_TOLERANCE", CS%newton_after_tolerance, &
+                "Switch from Picard to Newton iterations in the nonlinear ice velocity solve when "//&
+                "the fractional nonlinear residual falls below this tolerance.",&
+                units="none", default=CS%nonlinear_tolerance)
+    call get_param(param_file, mdl, "NEWTON_ADAPT_CG_TOL", CS%newton_adapt_cg_tol, &
+                "Use an adaptive CG tolerance during Newton iterations.",default=.true.)
     call get_param(param_file, mdl, "CONJUGATE_GRADIENT_MAXIT", CS%cg_max_iterations, &
                 "max iteratiions in CG solver", default=2000)
     call get_param(param_file, mdl, "THRESH_FLOAT_COL_DEPTH", CS%thresh_float_col_depth, &
@@ -1468,6 +1504,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   integer :: Isdq, Iedq, Jsdq, Jedq, isd, ied, jsd, jed
   integer :: Iscq, Iecq, Jscq, Jecq, isc, iec, jsc, jec
   real    :: err_max, err_tempu, err_tempv, err_init ! Errors in [R L3 Z T-2 ~> kg m s-2] or [L T-1 ~> m s-1]
+  real    :: ew_prev_err  ! Previous outer residual for Eisenstat-Walker CG tolerance (same units as err_max)
   real    :: max_vel  ! The maximum velocity magnitude [L T-1 ~> m s-1]
   real    :: tempu, tempv   ! Temporary variables with velocity magnitudes [L T-1 ~> m s-1]
   real    :: Norm, PrevNorm ! Velocities used to assess convergence [L T-1 ~> m s-1]
@@ -1534,6 +1571,13 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   call pass_var(CS%basal_traction, G%domain, complete=.true.)
   call calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
   call pass_var(CS%ice_visc, G%domain)
+  call pass_var(CS%newton_visc_factor, G%domain)
+  call pass_var(CS%newton_str_ux, G%domain)
+  call pass_var(CS%newton_str_vy, G%domain)
+  call pass_var(CS%newton_str_sh, G%domain)
+  call pass_var(CS%newton_umid, G%domain)
+  call pass_var(CS%newton_vmid, G%domain)
+  call pass_var(CS%newton_drag_coef, G%domain)
 
   ! This makes sure basal stress is only applied when it is supposed to be
   if (CS%GL_regularize) then
@@ -1552,7 +1596,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
 
     call CG_action(CS, Au, Av, u_shlf, v_shlf, CS%Phi, CS%Phisub, CS%umask, CS%vmask, ISS%hmask, H_node, &
                    CS%ice_visc, CS%float_cond, CS%bed_elev, CS%basal_traction, &
-                   G, US, G%isc-1, G%iec+1, G%jsc-1, G%jec+1, rhoi_rhow)
+                   G, US, G%isc-1, G%iec+1, G%jsc-1, G%jec+1, rhoi_rhow, use_newton_in=.false.)
     call pass_vector(Au, Av, G%domain, TO_ALL, BGRID_NE)
 
     err_init = 0 ; err_tempu = 0 ; err_tempv = 0
@@ -1593,6 +1637,9 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   endif
 
   u_last(:,:) = u_shlf(:,:) ; v_last(:,:) = v_shlf(:,:)
+  CS%doing_newton = .false.
+  CS%cg_tol_newton = CS%cg_tolerance
+  ew_prev_err = err_init
 
   !! begin loop
 
@@ -1613,6 +1660,13 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
     call pass_var(CS%basal_traction, G%domain, complete=.true.)
     call calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
     call pass_var(CS%ice_visc, G%domain)
+    call pass_var(CS%newton_visc_factor, G%domain)
+    call pass_var(CS%newton_str_ux, G%domain)
+    call pass_var(CS%newton_str_vy, G%domain)
+    call pass_var(CS%newton_str_sh, G%domain)
+    call pass_var(CS%newton_umid, G%domain)
+    call pass_var(CS%newton_vmid, G%domain)
+    call pass_var(CS%newton_drag_coef, G%domain)
 
     ! makes sure basal stress is only applied when it is supposed to be
     if (CS%GL_regularize) then
@@ -1631,7 +1685,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
 
       call CG_action(CS, Au, Av, u_shlf, v_shlf, CS%Phi, CS%Phisub, CS%umask, CS%vmask, ISS%hmask, H_node, &
                      CS%ice_visc, CS%float_cond, CS%bed_elev, CS%basal_traction, &
-                     G, US, G%isc-1, G%iec+1, G%jsc-1, G%jec+1, rhoi_rhow)
+                     G, US, G%isc-1, G%iec+1, G%jsc-1, G%jec+1, rhoi_rhow, use_newton_in=.false.)
 
       call pass_vector(Au, Av, G%domain, TO_ALL, BGRID_NE)
 
@@ -1689,11 +1743,30 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
     write(mesg,*) "ice_shelf_solve_outer: nonlinear fractional residual = ", err_max/err_init
     call MOM_mesg(mesg, 5)
 
+    if (err_max <= CS%newton_after_tolerance * err_init .and. .not. CS%doing_newton) then
+      CS%doing_newton = .true.
+      ew_prev_err = err_max  ! seed Eisenstat-Walker with residual at the Newton switch point
+      write(mesg,*) "ice_shelf_solve_outer: switching to Newton iterations at iter = ", iter
+      call MOM_mesg(mesg, 5)
+    endif
+
+    ! Eisenstat-Walker Choice II (Eisenstat & Walker 1994): η_k = γ*(||F_k||/||F_{k-1}||)^α
+    ! with γ=0.9, α=2.  Uses the ratio of consecutive outer residuals so that the CG
+    ! tolerance scales linearly with the current error (enabling quadratic outer convergence)
+    ! without over-tightening at later Newton steps.  The first Newton step uses the standard
+    ! cg_tolerance (ratio = 1 on entry).
+    if (CS%doing_newton .and. CS%newton_adapt_cg_tol) then
+      CS%cg_tol_newton = min(CS%cg_tolerance, 0.9 * (err_max / ew_prev_err)**2)
+      ew_prev_err = err_max
+    endif
+
     if (err_max <= CS%nonlinear_tolerance * err_init) then
       exit
     endif
 
   enddo
+  CS%doing_newton = .false.
+  CS%cg_tol_newton = CS%cg_tolerance
 
   write(mesg,*) "ice_shelf_solve_outer: nonlinear fractional residual = ", err_max/err_init
   call MOM_mesg(mesg)
@@ -1814,7 +1887,7 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
 
   call CG_action(CS, Au, Av, u_shlf, v_shlf, Phi, Phisub, CS%umask, CS%vmask, hmask, &
                  H_node, CS%ice_visc, float_cond, CS%bed_elev, CS%basal_traction, &
-                 G, US, isc-1, iec+1, jsc-1, jec+1, rhoi_rhow)
+                 G, US, isc-1, iec+1, jsc-1, jec+1, rhoi_rhow, use_newton_in=.false.)
 
   call pass_vector(Au, Av, G%domain, TO_ALL, BGRID_NE, complete=.true.)
 
@@ -1829,7 +1902,7 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
   enddo ; enddo
 
   !resid0 = sqrt(reproducing_sum( sum_vec, Is_sum, Ie_sum, Js_sum, Je_sum ))
-  resid0tol2 = CS%cg_tolerance**2 * reproducing_sum( sum_vec, Is_sum, Ie_sum, Js_sum, Je_sum )
+  resid0tol2 = CS%cg_tol_newton**2 * reproducing_sum( sum_vec, Is_sum, Ie_sum, Js_sum, Je_sum )
 
   do J=Jsdq,Jedq ; do I=Isdq,Iedq
     if (CS%umask(I,J) == 1 .AND.(DIAGu(I,J)/=0)) Zu(I,J) = Ru(I,J) / DIAGu(I,J)
@@ -2607,7 +2680,7 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
 end subroutine calc_shelf_driving_stress
 
 subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, hmask, H_node, &
-                     ice_visc, float_cond, bathyT, basal_trac, G, US, is, ie, js, je, dens_ratio)
+                     ice_visc, float_cond, bathyT, basal_trac, G, US, is, ie, js, je, dens_ratio, use_newton_in)
 
   type(ice_shelf_dyn_CS), intent(in)    :: CS !< A pointer to the ice shelf control structure
   type(ocean_grid_type), intent(in) :: G  !< The grid structure used by the ice shelf.
@@ -2657,6 +2730,7 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
   integer,               intent(in)    :: ie  !< The ending i-index to work on
   integer,               intent(in)    :: js  !< The starting j-index to work on
   integer,               intent(in)    :: je  !< The ending j-index to work on
+  logical, optional,     intent(in)    :: use_newton_in !< If present, overrides CS%doing_newton for Newton correction
 
 ! the linear action of the matrix on (u,v) with bilinear finite elements
 ! as of now everything is passed in so no grid pointers or anything of the sort have to be dereferenced,
@@ -2679,8 +2753,10 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
 
   real :: ux, uy, vx, vy ! Components of velocity shears or divergence [T-1 ~> s-1]
   real :: uq, vq  ! Interpolated velocities [L T-1 ~> m s-1]
+  real :: strx_n, stry_n, strsh_n, dstrain_n, inner_dot_n  ! Newton correction variables [T-1 ~> s-1], [T-2 ~> s-2]
   integer :: iq, jq, iphi, jphi, i, j, ilq, jlq, Itgt, Jtgt, qp, qpv
   logical :: visc_qp4
+  logical :: use_newton  ! Whether to apply Newton tangent stiffness corrections
   real, dimension(2) :: xquad  ! Nondimensional quadrature ratios [nondim]
   real, dimension(2,2) :: Ucell, Vcell, Usub, Vsub  ! Velocities at the nodal points around the cell [L T-1 ~> m s-1]
   real, dimension(2,2) :: Hcell   ! Ice shelf thickness at notal (corner) points [Z ~> m]
@@ -2695,6 +2771,9 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
     visc_qp4=.false.
     qpv = 1
   endif
+
+  use_newton = CS%doing_newton
+  if (present(use_newton_in)) use_newton = use_newton_in
 
   uret(:,:) = 0.0; vret(:,:)=0.0
   uret_b(:,:,:)=0.0 ; vret_b(:,:,:)=0.0
@@ -2739,6 +2818,20 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
 
         if (visc_qp4) qpv = qp !current quad point for viscosity
 
+        ! Newton correction: compute dstrain scalar once per quadrature point
+        if (use_newton .and. trim(CS%ice_viscosity_compute) == "MODEL") then
+          strx_n = CS%newton_str_ux(i,j,qpv)
+          stry_n = CS%newton_str_vy(i,j,qpv)
+          strsh_n = CS%newton_str_sh(i,j,qpv)
+          dstrain_n = (2.*strx_n + stry_n)*ux + (2.*stry_n + strx_n)*vy + &
+                      strsh_n * (uy + vx) * 0.5
+        endif
+
+        ! Newton correction for basal drag: compute inner_dot_n once per quadrature point
+        if (use_newton) then
+          inner_dot_n = CS%newton_umid(i,j)*uq + CS%newton_vmid(i,j)*vq
+        endif
+
         do jphi=1,2 ; Jtgt = J-2+jphi ; do iphi=1,2 ; Itgt = I-2+iphi
           if (umask(Itgt,Jtgt) == 1) uret_qp(iphi,jphi,qp) = ice_visc(i,j,qpv) * &
             (((4*ux+2*vy) * Phi(2*(2*(jphi-1)+iphi)-1,qp,i,j)) + &
@@ -2747,6 +2840,18 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
             (((uy+vx) * Phi(2*(2*(jphi-1)+iphi)-1,qp,i,j)) + &
             ((4*vy+2*ux) * Phi(2*(2*(jphi-1)+iphi),qp,i,j)))
 
+          ! Newton tangent stiffness correction: add (dη/dε_e^2) * (g·δε) * (g·φ_m) term
+          if (use_newton .and. trim(CS%ice_viscosity_compute) == "MODEL") then
+            if (umask(Itgt,Jtgt) == 1) uret_qp(iphi,jphi,qp) = uret_qp(iphi,jphi,qp) + &
+              CS%newton_visc_factor(i,j,qpv) * dstrain_n * &
+              ((2.*strx_n + stry_n) * Phi(2*(2*(jphi-1)+iphi)-1,qp,i,j) + &
+               strsh_n * 0.5 * Phi(2*(2*(jphi-1)+iphi),qp,i,j))
+            if (vmask(Itgt,Jtgt) == 1) vret_qp(iphi,jphi,qp) = vret_qp(iphi,jphi,qp) + &
+              CS%newton_visc_factor(i,j,qpv) * dstrain_n * &
+              (strsh_n * 0.5 * Phi(2*(2*(jphi-1)+iphi)-1,qp,i,j) + &
+               (2.*stry_n + strx_n) * Phi(2*(2*(jphi-1)+iphi),qp,i,j))
+          endif
+
           if (float_cond(i,j) == 0) then
             ilq = 1 ; if (iq == iphi) ilq = 2
             jlq = 1 ; if (jq == jphi) jlq = 2
@@ -2754,6 +2859,13 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
               ((basal_trac(i,j) * uq) * (xquad(ilq) * xquad(jlq)))
             if (vmask(Itgt,Jtgt) == 1) vret_qp(iphi,jphi,qp) = vret_qp(iphi,jphi,qp) +  &
               ((basal_trac(i,j) * vq) * (xquad(ilq) * xquad(jlq)))
+            ! Newton basal drag tangent stiffness: (m-1)*basal_trac/|u|^2 * u_i * (u . delta_u) contribution
+            if (use_newton) then
+              if (umask(Itgt,Jtgt) == 1) uret_qp(iphi,jphi,qp) = uret_qp(iphi,jphi,qp) + &
+                CS%newton_drag_coef(i,j) * CS%newton_umid(i,j) * inner_dot_n * (xquad(ilq) * xquad(jlq))
+              if (vmask(Itgt,Jtgt) == 1) vret_qp(iphi,jphi,qp) = vret_qp(iphi,jphi,qp) + &
+                CS%newton_drag_coef(i,j) * CS%newton_vmid(i,j) * inner_dot_n * (xquad(ilq) * xquad(jlq))
+            endif
           endif
         enddo ; enddo
       enddo ; enddo
@@ -2790,6 +2902,30 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
         if (vmask(I-1,J  ) == 1) vret_b(I-1,J  ,2) = vret_b(I-1,J  ,2) + (Vsub(1,2) * basal_trac(i,j))
         if (vmask(I  ,J-1) == 1) vret_b(I  ,J-1,3) = vret_b(I  ,J-1,3) + (Vsub(2,1) * basal_trac(i,j))
         if (vmask(I  ,J  ) == 1) vret_b(I  ,J  ,1) = vret_b(I  ,J  ,1) + (Vsub(2,2) * basal_trac(i,j))
+
+        ! Newton basal drag correction for subgrid grounding line cells.
+        ! inner_dot_sub(m,n) = sum over grounded sub-QPs of (u^k . delta_u) * phi_{m,n} * weight
+        !                    = newton_umid * Usub(m,n) + newton_vmid * Vsub(m,n)
+        ! Correction to u-node (m,n): newton_drag_coef * newton_umid * inner_dot_sub(m,n)
+        ! Correction to v-node (m,n): newton_drag_coef * newton_vmid * inner_dot_sub(m,n)
+        if (use_newton) then
+          if (umask(I-1,J-1)==1) uret_b(I-1,J-1,4) = uret_b(I-1,J-1,4) + CS%newton_drag_coef(i,j) * &
+            CS%newton_umid(i,j) * (CS%newton_umid(i,j)*Usub(1,1) + CS%newton_vmid(i,j)*Vsub(1,1))
+          if (umask(I-1,J  )==1) uret_b(I-1,J  ,2) = uret_b(I-1,J  ,2) + CS%newton_drag_coef(i,j) * &
+            CS%newton_umid(i,j) * (CS%newton_umid(i,j)*Usub(1,2) + CS%newton_vmid(i,j)*Vsub(1,2))
+          if (umask(I  ,J-1)==1) uret_b(I  ,J-1,3) = uret_b(I  ,J-1,3) + CS%newton_drag_coef(i,j) * &
+            CS%newton_umid(i,j) * (CS%newton_umid(i,j)*Usub(2,1) + CS%newton_vmid(i,j)*Vsub(2,1))
+          if (umask(I  ,J  )==1) uret_b(I  ,J  ,1) = uret_b(I  ,J  ,1) + CS%newton_drag_coef(i,j) * &
+            CS%newton_umid(i,j) * (CS%newton_umid(i,j)*Usub(2,2) + CS%newton_vmid(i,j)*Vsub(2,2))
+          if (vmask(I-1,J-1)==1) vret_b(I-1,J-1,4) = vret_b(I-1,J-1,4) + CS%newton_drag_coef(i,j) * &
+            CS%newton_vmid(i,j) * (CS%newton_umid(i,j)*Usub(1,1) + CS%newton_vmid(i,j)*Vsub(1,1))
+          if (vmask(I-1,J  )==1) vret_b(I-1,J  ,2) = vret_b(I-1,J  ,2) + CS%newton_drag_coef(i,j) * &
+            CS%newton_vmid(i,j) * (CS%newton_umid(i,j)*Usub(1,2) + CS%newton_vmid(i,j)*Vsub(1,2))
+          if (vmask(I  ,J-1)==1) vret_b(I  ,J-1,3) = vret_b(I  ,J-1,3) + CS%newton_drag_coef(i,j) * &
+            CS%newton_vmid(i,j) * (CS%newton_umid(i,j)*Usub(2,1) + CS%newton_vmid(i,j)*Vsub(2,1))
+          if (vmask(I  ,J  )==1) vret_b(I  ,J  ,1) = vret_b(I  ,J  ,1) + CS%newton_drag_coef(i,j) * &
+            CS%newton_vmid(i,j) * (CS%newton_umid(i,j)*Usub(2,2) + CS%newton_vmid(i,j)*Vsub(2,2))
+        endif
       endif
   endif ; enddo ; enddo
 
@@ -2942,6 +3078,9 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
 
   real :: ux, uy, vx, vy ! Interpolated weight gradients [L-1 ~> m-1]
   real :: uq, vq
+  real :: strx_n, stry_n, strsh_n  ! Newton viscosity strain rates [T-1 ~> s-1]
+  real :: dstrain_diag_u, dstrain_diag_v  ! Newton viscosity diagonal correction factors [T-1 L-1 ~> s-1 m-1]
+  real :: phi_m_sq  ! Squared basis function value at quadrature point [nondim]
   real, dimension(2)   :: xquad
   real, dimension(2,2) :: Hcell, sub_ground
   real, dimension(2,2,4) :: u_diag_qp, v_diag_qp
@@ -2975,10 +3114,18 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
       qp = 2*(jq-1)+iq !current quad point
       if (visc_qp4) qpv = qp !current quad point for viscosity
 
+      ! Pre-compute Newton strain data for this QP (for viscosity diagonal correction)
+      if (CS%doing_newton .and. trim(CS%ice_viscosity_compute) == "MODEL") then
+        strx_n = CS%newton_str_ux(i,j,qpv)
+        stry_n = CS%newton_str_vy(i,j,qpv)
+        strsh_n = CS%newton_str_sh(i,j,qpv)
+      endif
+
       do jphi=1,2 ; Jtgt = J-2+jphi ; do iphi=1,2 ; Itgt = I-2+iphi
 
         ilq = 1 ; if (iq == iphi) ilq = 2
         jlq = 1 ; if (jq == jphi) jlq = 2
+        phi_m_sq = (xquad(ilq) * xquad(jlq))**2
 
         if (CS%umask(Itgt,Jtgt) == 1) then
 
@@ -2991,10 +3138,24 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
             ice_visc(i,j,qpv) * (((4*ux+2*vy) * Phi(2*(2*(jphi-1)+iphi)-1,qp,i,j)) + &
             ((uy+vx) * Phi(2*(2*(jphi-1)+iphi),qp,i,j)))
 
+          ! Newton viscosity diagonal correction: newton_visc_factor * (g . grad_phi_m_u)^2
+          ! where grad_phi_m_u = [(2*strx+stry)*Phi_xm + strsh/2*Phi_ym] for u-DOF at node m
+          if (CS%doing_newton .and. trim(CS%ice_viscosity_compute) == "MODEL") then
+            dstrain_diag_u = (2.*strx_n + stry_n) * Phi(2*(2*(jphi-1)+iphi)-1,qp,i,j) + &
+                             strsh_n * 0.5 * Phi(2*(2*(jphi-1)+iphi),qp,i,j)
+            u_diag_qp(iphi,jphi,qp) = u_diag_qp(iphi,jphi,qp) + &
+              CS%newton_visc_factor(i,j,qpv) * dstrain_diag_u**2
+          endif
+
           if (float_cond(i,j) == 0) then
             uq = xquad(ilq) * xquad(jlq)
             u_diag_qp(iphi,jphi,qp) = u_diag_qp(iphi,jphi,qp) + &
               (basal_trac(i,j) * uq) * (xquad(ilq) * xquad(jlq))
+            ! Newton basal drag diagonal correction: newton_drag_coef * (umid_i)^2 * phi_m^2
+            if (CS%doing_newton) then
+              u_diag_qp(iphi,jphi,qp) = u_diag_qp(iphi,jphi,qp) + &
+                CS%newton_drag_coef(i,j) * CS%newton_umid(i,j)**2 * phi_m_sq
+            endif
           endif
         endif
 
@@ -3009,10 +3170,23 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
             ice_visc(i,j,qpv) * (((uy+vx) * Phi(2*(2*(jphi-1)+iphi)-1,qp,i,j)) + &
             ((4*vy+2*ux) * Phi(2*(2*(jphi-1)+iphi),qp,i,j)))
 
+          ! Newton viscosity diagonal correction for v-DOF: uses [strsh/2*Phi_xm + (2*stry+strx)*Phi_ym]
+          if (CS%doing_newton .and. trim(CS%ice_viscosity_compute) == "MODEL") then
+            dstrain_diag_v = strsh_n * 0.5 * Phi(2*(2*(jphi-1)+iphi)-1,qp,i,j) + &
+                             (2.*stry_n + strx_n) * Phi(2*(2*(jphi-1)+iphi),qp,i,j)
+            v_diag_qp(iphi,jphi,qp) = v_diag_qp(iphi,jphi,qp) + &
+              CS%newton_visc_factor(i,j,qpv) * dstrain_diag_v**2
+          endif
+
           if (float_cond(i,j) == 0) then
             vq = xquad(ilq) * xquad(jlq)
             v_diag_qp(iphi,jphi,qp) = v_diag_qp(iphi,jphi,qp) + &
               (basal_trac(i,j) * vq) * (xquad(ilq) * xquad(jlq))
+            ! Newton basal drag diagonal correction: newton_drag_coef * (vmid_i)^2 * phi_m^2
+            if (CS%doing_newton) then
+              v_diag_qp(iphi,jphi,qp) = v_diag_qp(iphi,jphi,qp) + &
+                CS%newton_drag_coef(i,j) * CS%newton_vmid(i,j)**2 * phi_m_sq
+            endif
           endif
         endif
       enddo ; enddo
@@ -3047,6 +3221,28 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
         if (CS%vmask(I-1,J  ) == 1) v_diag_b(I-1,J  ,2) = v_diag_b(I-1,J  ,2) + (sub_ground(1,2) * basal_trac(i,j))
         if (CS%vmask(I  ,J-1) == 1) v_diag_b(I  ,J-1,3) = v_diag_b(I  ,J-1,3) + (sub_ground(2,1) * basal_trac(i,j))
         if (CS%vmask(I  ,J  ) == 1) v_diag_b(I  ,J  ,1) = v_diag_b(I  ,J  ,1) + (sub_ground(2,2) * basal_trac(i,j))
+
+        ! Newton basal drag diagonal correction for subgrid grounding line cells.
+        ! sub_ground(m,n) = sum over grounded sub-QPs of phi_{m,n}^2 * weight, computed by
+        ! CG_diagonal_subgrid_basal. Newton diagonal = newton_drag_coef * umid^2 * sub_ground (for u-block).
+        if (CS%doing_newton) then
+          if (CS%umask(I-1,J-1)==1) u_diag_b(I-1,J-1,4) = u_diag_b(I-1,J-1,4) + &
+            CS%newton_drag_coef(i,j) * CS%newton_umid(i,j)**2 * sub_ground(1,1)
+          if (CS%umask(I-1,J  )==1) u_diag_b(I-1,J  ,2) = u_diag_b(I-1,J  ,2) + &
+            CS%newton_drag_coef(i,j) * CS%newton_umid(i,j)**2 * sub_ground(1,2)
+          if (CS%umask(I  ,J-1)==1) u_diag_b(I  ,J-1,3) = u_diag_b(I  ,J-1,3) + &
+            CS%newton_drag_coef(i,j) * CS%newton_umid(i,j)**2 * sub_ground(2,1)
+          if (CS%umask(I  ,J  )==1) u_diag_b(I  ,J  ,1) = u_diag_b(I  ,J  ,1) + &
+            CS%newton_drag_coef(i,j) * CS%newton_umid(i,j)**2 * sub_ground(2,2)
+          if (CS%vmask(I-1,J-1)==1) v_diag_b(I-1,J-1,4) = v_diag_b(I-1,J-1,4) + &
+            CS%newton_drag_coef(i,j) * CS%newton_vmid(i,j)**2 * sub_ground(1,1)
+          if (CS%vmask(I-1,J  )==1) v_diag_b(I-1,J  ,2) = v_diag_b(I-1,J  ,2) + &
+            CS%newton_drag_coef(i,j) * CS%newton_vmid(i,j)**2 * sub_ground(1,2)
+          if (CS%vmask(I  ,J-1)==1) v_diag_b(I  ,J-1,3) = v_diag_b(I  ,J-1,3) + &
+            CS%newton_drag_coef(i,j) * CS%newton_vmid(i,j)**2 * sub_ground(2,1)
+          if (CS%vmask(I  ,J  )==1) v_diag_b(I  ,J  ,1) = v_diag_b(I  ,J  ,1) + &
+            CS%newton_drag_coef(i,j) * CS%newton_vmid(i,j)**2 * sub_ground(2,2)
+        endif
     endif
   endif ; enddo ; enddo
 
@@ -3326,6 +3522,18 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
             max(0.5 * Visc_coef * &
             (US%s_to_T**2 * (((ux**2) + (vy**2)) + ((ux*vy) + 0.25*((uy+vx)**2)) + eps_min**2))**((1.-n_g)/(2.*n_g)) * &
             (US%Pa_to_RL2_T2*US%s_to_T),CS%min_ice_visc)  ! Rescale after the fractional power law.
+        ! Store Newton tangent stiffness data: strain rates and coefficient for Newton iterations.
+        ! The Newton correction coefficient is (1/n-1)/2 * ice_visc / eps_e2,
+        ! where eps_e2 = ux^2 + vy^2 + ux*vy + (uy+vx)^2/4 + eps_min^2 [T-2].
+        ! It is zero where ice_visc is limited by min_ice_visc (viscosity is not smooth there).
+        CS%newton_str_ux(i,j,1) = ux ; CS%newton_str_vy(i,j,1) = vy
+        CS%newton_str_sh(i,j,1) = uy + vx
+        CS%newton_visc_factor(i,j,1) = 0.0
+        if (CS%ice_visc(i,j,1) > CS%min_ice_visc * (G%areaT(i,j) * max(ISS%h_shelf(i,j),CS%min_h_shelf))) then
+          CS%newton_visc_factor(i,j,1) = (0.5*(1./n_g - 1.) / &
+              (((ux**2) + (vy**2)) + ((ux*vy) + 0.25*((uy+vx)**2)) + eps_min**2)) * &
+              CS%ice_visc(i,j,1)
+        endif
       elseif (model_qp4) then
         !calculate viscosity at 4 quadrature points per cell
 
@@ -3357,6 +3565,16 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
               max(0.5 * Visc_coef * &
               (US%s_to_T**2*(((ux**2) + (vy**2)) + ((ux*vy) + 0.25*((uy+vx)**2)) + eps_min**2))**((1.-n_g)/(2.*n_g)) * &
               (US%Pa_to_RL2_T2*US%s_to_T),CS%min_ice_visc)  ! Rescale after the fractional power law.
+          ! Store Newton tangent stiffness data at each quadrature point.
+          CS%newton_str_ux(i,j,2*(jq-1)+iq) = ux ; CS%newton_str_vy(i,j,2*(jq-1)+iq) = vy
+          CS%newton_str_sh(i,j,2*(jq-1)+iq) = uy + vx
+          CS%newton_visc_factor(i,j,2*(jq-1)+iq) = 0.0
+          if (CS%ice_visc(i,j,2*(jq-1)+iq) > &
+              CS%min_ice_visc * (G%areaT(i,j) * max(ISS%h_shelf(i,j),CS%min_h_shelf))) then
+            CS%newton_visc_factor(i,j,2*(jq-1)+iq) = (0.5*(1./n_g - 1.) / &
+                (((ux**2) + (vy**2)) + ((ux*vy) + 0.25*((uy+vx)**2)) + eps_min**2)) * &
+                CS%ice_visc(i,j,2*(jq-1)+iq)
+          endif
         enddo; enddo
       endif
     endif
@@ -3390,6 +3608,8 @@ subroutine calc_shelf_taub(CS, ISS, G, US, u_shlf, v_shlf)
   real :: Hf !"floatation thickness" for Coulomb friction [Z ~> m]
   real :: fN ! Effective pressure (ice pressure - ocean pressure) for Coulomb friction [R Z L T-2 ~> Pa]
   real :: fB !for Coulomb Friction [(T L-1)^CS%CF_PostPeak ~> (s m-1)^CS%CF_PostPeak]
+  real :: fBuq ! fB * unorm^CF_PostPeak, for Coulomb Newton correction [nondim]
+  real :: unorm_code2 ! Squared velocity magnitude in code units [L2 T-2 ~> m2 s-2]
 
   isc = G%isc ; jsc = G%jsc ; iec = G%iec ; jec = G%jec
   iscq = G%iscB ; iecq = G%iecB ; jscq = G%jscB ; jecq = G%jecB
@@ -3411,10 +3631,12 @@ subroutine calc_shelf_taub(CS, ISS, G, US, u_shlf, v_shlf)
 
   do j=jsd+1,jed
     do i=isd+1,ied
+      CS%newton_drag_coef(i,j) = 0.0
       if ((ISS%hmask(i,j) == 1) .OR. (ISS%hmask(i,j) == 3)) then
         umid = ((u_shlf(I,J) + u_shlf(I-1,J-1)) + (u_shlf(I,J-1) + u_shlf(I-1,J))) * 0.25
         vmid = ((v_shlf(I,J) + v_shlf(I-1,J-1)) + (v_shlf(I,J-1) + v_shlf(I-1,J))) * 0.25
-        unorm = US%L_T_to_m_s * sqrt( ((umid**2) + (vmid**2)) + (eps_min**2 * (G%dxT(i,j)**2 + G%dyT(i,j)**2)) )
+        unorm_code2 = ((umid**2) + (vmid**2)) + (eps_min**2 * (G%dxT(i,j)**2 + G%dyT(i,j)**2))
+        unorm = US%L_T_to_m_s * sqrt( unorm_code2 )
 
         !Coulomb friction (Schoof 2005, Gagliardini et al 2007)
         if (CS%CoulombFriction) then
@@ -3422,17 +3644,38 @@ subroutine calc_shelf_taub(CS, ISS, G, US, u_shlf, v_shlf)
           Hf = max((CS%density_ocean_avg/CS%density_ice) * CS%bed_elev(i,j), 0.0)
           fN = max((US%L_to_Z*(CS%density_ice * CS%g_Earth) * (max(ISS%h_shelf(i,j),CS%min_h_shelf) - Hf)), CS%CF_MinN)
           fB = alpha * (CS%C_basal_friction(i,j) / (CS%CF_Max * fN))**(CS%CF_PostPeak/CS%n_basal_fric)
+          fBuq = fB * unorm**CS%CF_PostPeak
 
           CS%basal_traction(i,j) = ((G%areaT(i,j) * CS%C_basal_friction(i,j)) * &
-              (unorm**(CS%n_basal_fric-1.0) / (1.0 + fB * unorm**CS%CF_PostPeak)**(CS%n_basal_fric))) * &
+              (unorm**(CS%n_basal_fric-1.0) / (1.0 + fBuq)**(CS%n_basal_fric))) * &
               US%L_T_to_m_s   ! Restore the scaling after the fractional power law.
         else
           !linear (CS%n_basal_fric=1) or "Weertman"/power-law (CS%n_basal_fric /= 1)
+          fBuq = 0.0
           CS%basal_traction(i,j) = ((G%areaT(i,j) * CS%C_basal_friction(i,j)) * (unorm**(CS%n_basal_fric-1))) * &
                                    US%L_T_to_m_s ! Rescale after the fractional power law.
         endif
 
         CS%basal_traction(i,j)=max(CS%basal_traction(i,j), CS%min_basal_traction * G%areaT(i,j))
+
+        ! Store Newton basal drag data for Newton tangent stiffness correction.
+        ! newton_drag_coef = 2 * d(basal_trac)/d(|u|^2),
+        ! where d(tau_b_i)/d(u_j) = basal_trac*delta_ij + newton_drag_coef*u_i*u_j
+        ! This is the coefficient of the rank-1 correction u_i*(u.delta_u) to the Picard basal stiffness.
+        ! For Weertman: newton_drag_coef = (m-1) * basal_trac/|u|^2
+        ! For Coulomb:  newton_drag_coef = basal_trac/|u|^2 * [(m-1) - m*q*fB*|u|^q/(1+fB*|u|^q)]
+        CS%newton_umid(i,j) = umid
+        CS%newton_vmid(i,j) = vmid
+        ! unorm_code2: squared velocity magnitude in code units [L2 T-2], including regularization
+        ! (same expression as inside the sqrt in unorm, without US%L_T_to_m_s factor)
+        if (CS%CoulombFriction) then
+          CS%newton_drag_coef(i,j) = (1.0 / max(unorm_code2, epsilon(unorm_code2))) * &
+              CS%basal_traction(i,j) * ((CS%n_basal_fric - 1.) - &
+              CS%n_basal_fric * CS%CF_PostPeak * fBuq / (1. + fBuq))
+        else
+          CS%newton_drag_coef(i,j) = real(CS%n_basal_fric - 1.) * CS%basal_traction(i,j) / &
+              max(unorm_code2, epsilon(unorm_code2))
+        endif
       endif
     enddo
   enddo
@@ -3999,6 +4242,8 @@ subroutine ice_shelf_dyn_end(CS)
   deallocate(CS%float_cond)
 
   deallocate(CS%ice_visc, CS%AGlen_visc)
+  deallocate(CS%newton_visc_factor, CS%newton_str_ux, CS%newton_str_vy, CS%newton_str_sh)
+  deallocate(CS%newton_umid, CS%newton_vmid, CS%newton_drag_coef)
   deallocate(CS%basal_traction,CS%C_basal_friction)
   deallocate(CS%OD_rt, CS%OD_av)
   deallocate(CS%t_bdry_val, CS%bed_elev)
