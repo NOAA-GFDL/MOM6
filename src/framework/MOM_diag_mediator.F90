@@ -347,6 +347,8 @@ type, public :: diag_ctrl
 
   real, dimension(:,:,:), allocatable :: h_begin !< Layer thicknesses at the beginning of the timestep used
                                                  !! for remapping of extensive variables [H ~> m or kg m-2]
+  real, dimension(:,:,:), allocatable :: dz_begin !< Layer vertical extents at the beginning of the timestep used
+                                                 !! for remapping of extensive variables [Z ~> m]
 
 end type diag_ctrl
 
@@ -1594,8 +1596,7 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
                                                 !! remapping this diagnostic [H ~> m or kg m-2].
 
   real, dimension(diag_cs%G%isd:diag_cS%G%ied, diag_cs%G%jsd:diag_cS%G%jed, diag_cs%GV%ke) :: &
-    dz_diag, &  ! Layer vertical extents for remapping [Z ~> m]
-    dz_begin    ! Layer vertical extents for remapping extensive quantities [Z ~> m]
+    dz_diag     ! Layer vertical extents for remapping [Z ~> m]
 
   if (id_clock_diag_mediator>0) call cpu_clock_begin(id_clock_diag_mediator)
 
@@ -1616,12 +1617,9 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
 
   ! Find out whether there are any z-based diagnostics
   diag => diag_cs%diags(diag_field_id)
-  dz_diag_needed = .false. ; dz_begin_needed = .false.
+  dz_diag_needed = .false.
   do while (associated(diag))
-    if (diag%v_extensive .and. .not.diag%axes%is_native) then
-      if (diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%Z_based_coord) &
-        dz_begin_needed = .true.
-    elseif (diag%axes%needs_remapping .or. diag%axes%needs_interpolating) then
+    if (diag%axes%needs_remapping .or. diag%axes%needs_interpolating) then
       if (diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%Z_based_coord) &
         dz_diag_needed = .true.
     endif
@@ -1631,9 +1629,6 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
   ! Determine the diagnostic grid spacing in height units, if it is needed.
   if (dz_diag_needed) then
     call thickness_to_dz(h_diag, diag_cs%tv, dz_diag, diag_cs%G, diag_cs%GV, diag_cs%US, halo_size=1)
-  endif
-  if (dz_begin_needed) then
-    call thickness_to_dz(diag_cs%h_begin, diag_cs%tv, dz_begin, diag_cs%G, diag_cs%GV, diag_cs%US, halo_size=1)
   endif
 
   diag => diag_cs%diags(diag_field_id)
@@ -1654,7 +1649,7 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
       if (diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%Z_based_coord) then
         call vertically_reintegrate_diag_field(                                    &
                 diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), diag_cs%G, &
-                dz_begin, diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%h_extensive, &
+                diag_cs%dz_begin, diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%h_extensive, &
                 staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
       else
         call vertically_reintegrate_diag_field(                                    &
@@ -3377,6 +3372,7 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
                                   ! forms of the same remapping expressions.
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   logical :: om4_remap_via_sub_cells ! Use the OM4-era ramap_via_sub_cells for diagnostics
+  logical :: Z_diag_needed        ! Logical set True if we need to store dz_begin for reintegrating
   character(len=8)   :: this_pe
   character(len=240) :: doc_file, doc_file_dflt, doc_path
   character(len=240), allocatable :: diag_coords(:)
@@ -3425,6 +3421,7 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
                  'If true, use a grid index coordinate convention for diagnostic axes. ',&
                  default=.false.)
 
+  dz_diag_needed = .false.
   if (diag_cs%num_diag_coords>0) then
     allocate(diag_coords(diag_cs%num_diag_coords))
     if (diag_cs%num_diag_coords==1) then ! The default is to provide just one instance of Z*
@@ -3444,6 +3441,7 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
     ! Initialize each diagnostic vertical coordinate
     do i=1, diag_cs%num_diag_coords
       call diag_remap_init(diag_cs%diag_remap_cs(i), diag_coords(i), om4_remap_via_sub_cells, remap_answer_date, GV)
+      if (diag_cs%diag_remap_cs(i)%Z_based_coord) dz_diag_needed = .true.
     enddo
     deallocate(diag_coords)
   endif
@@ -3470,6 +3468,7 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
   diag_cs%tv => null()
 
   allocate(diag_cs%h_begin(G%isd:G%ied,G%jsd:G%jed,nz))
+  if (dz_diag_needed) allocate(diag_cs%dz_begin(G%isd:G%ied,G%jsd:G%jed,nz))
 #if defined(DEBUG) || defined(__DO_SAFETY_CHECKS__)
   allocate(diag_cs%h_old(G%isd:G%ied,G%jsd:G%jed,nz))
   diag_cs%h_old(:,:,:) = 0.0
@@ -3680,6 +3679,7 @@ subroutine diag_update_remap_grids(diag_cs, alt_h, alt_T, alt_S, update_intensiv
   endif
   if (update_extensive_local) then
     diag_cs%h_begin(:,:,:) = diag_cs%h(:,:,:)
+    if (dz_diag_needed) diag_cs%dz_begin(:,:,:) = dz_diag(:,:,:)
     do m=1, diag_cs%num_diag_coords
       if (diag_cs%diag_remap_cs(m)%Z_based_coord) then
         call diag_remap_update(diag_cs%diag_remap_cs(m), diag_cs%G, diag_cs%GV, diag_cs%US, dz_diag, T_diag, S_diag, &
