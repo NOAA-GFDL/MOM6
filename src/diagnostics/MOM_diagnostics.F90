@@ -28,7 +28,7 @@ use MOM_EOS,               only : prac_saln_to_abs_saln, abs_saln_to_prac_saln
 use MOM_error_handler,     only : MOM_error, FATAL, WARNING
 use MOM_file_parser,       only : get_param, log_version, param_file_type
 use MOM_grid,              only : ocean_grid_type
-use MOM_interface_heights, only : find_eta, find_col_mass
+use MOM_interface_heights, only : find_eta, find_dz_for_eta, find_col_mass
 use MOM_spatial_means,     only : global_area_mean, global_layer_mean
 use MOM_spatial_means,     only : global_volume_mean, global_area_integral
 use MOM_tracer_registry,   only : tracer_registry_type, post_tracer_transport_diagnostics
@@ -60,6 +60,10 @@ type, public :: diagnostics_CS ; private
                                        !! barotropic wave speed [nondim].
   real :: mono_N2_depth = -1.          !< The depth below which N2 is limited as monotonic for the purposes of
                                        !! calculating the equivalent barotropic wave speed [H ~> m or kg m-2].
+  logical :: accurate_thick_cello      !< If true, use the same careful integrals to find the diagnosed
+                                       !! non-Boussinesq layer thicknesses as are used to find the free
+                                       !! surface height, instead of using an approximate thickness
+                                       !! based on division by the mid-layer density.
 
   type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
                                        !! regulate the timing of diagnostic output.
@@ -215,6 +219,7 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
   real :: Rcv(SZI_(G),SZJ_(G),SZK_(GV)) ! Coordinate variable potential density [R ~> kg m-3].
   real :: work_3d(SZI_(G),SZJ_(G),SZK_(GV)) ! A 3-d temporary work array in various units
                                             ! including [nondim] and [H ~> m or kg m-2].
+  real :: dz_lay(SZI_(G),SZJ_(G),SZK_(GV)) ! Height change across layers [Z ~> m]
   real :: uh_tmp(SZIB_(G),SZJ_(G),SZK_(GV)) ! A temporary zonal transport [H L2 T-1 ~> m3 s-1 or kg s-1]
   real :: vh_tmp(SZI_(G),SZJB_(G),SZK_(GV)) ! A temporary meridional transport [H L2 T-1 ~> m3 s-1 or kg s-1]
   real :: mass_cell(SZI_(G),SZJ_(G))       ! The vertically integrated mass in a grid cell [R Z L2 ~> kg]
@@ -223,7 +228,6 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
   real :: Rd1(SZI_(G),SZJ_(G))             ! First baroclinic deformation radius [L ~> m]
   real :: CFL_cg1(SZI_(G),SZJ_(G))         ! CFL for first baroclinic gravity wave speed, either based on the
                                            ! overall grid spacing or just one direction [nondim]
-
 
   ! tmp array for surface properties
   real :: pressure_1d(SZI_(G)) ! Temporary array for pressure when calling EOS [R L2 T-2 ~> Pa]
@@ -318,22 +322,31 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
     call post_data(CS%id_uv, uv, CS%diag)
   endif
 
-  ! Find the interface heights, relative either to a reference height or to the bottom [Z ~> m].
-  if (CS%id_e > 0) then
-    call find_eta(h, tv, G, GV, US, eta, dZref=G%Z_ref)
+  ! Find the layer thicknesses in [Z ~> m] that can be used to determine interface heights
+  if ((CS%id_e > 0) .or. (CS%id_e_D > 0) .or. &
+      ((CS%id_thkcello>0 .or. CS%id_volcello>0) .and. (CS%accurate_thick_cello))) &
+    call find_dz_for_eta(h, tv, G, GV, US, dz_lay)
+
+  if ((CS%id_e > 0) .or. (CS%id_e_D > 0)) then
+    ! Find the interface heights, relative a reference height or to the bottom [Z ~> m]
+    do j=js,je ; do i=is,ie ; eta(i,j,nz+1) = -(G%bathyT(i,j) + G%Z_ref) ; enddo ; enddo
+    do k=nz,1,-1 ; do j=js,je ; do i=is,ie
+      eta(i,j,K) = eta(i,j,K+1) + dz_lay(i,j,K)
+    enddo ; enddo ; enddo
     if (CS%id_e > 0) call post_data(CS%id_e, eta, CS%diag)
+
     if (CS%id_e_D > 0) then
+      ! Find the interface heights, relative to the bottom [Z ~> m]
       do k=1,nz+1 ; do j=js,je ; do i=is,ie
         eta(i,j,k) = eta(i,j,k) + (G%bathyT(i,j) + G%Z_ref)
       enddo ; enddo ; enddo
+      ! This is more accurate but changes answers in the e_D diagnostic:
+      ! do j=js,je ; do i=is,ie ; eta(i,j,nz+1) = 0.0 ; enddo ; enddo
+      ! do k=nz,1,-1 ; do j=js,je ; do i=is,ie
+      !   eta(i,j,K) = eta(i,j,K+1) + dz_lay(i,j,K)
+      ! enddo ; enddo ; enddo
       call post_data(CS%id_e_D, eta, CS%diag)
     endif
-  elseif (CS%id_e_D > 0) then
-    call find_eta(h, tv, G, GV, US, eta)
-    do k=1,nz+1 ; do j=js,je ; do i=is,ie
-      eta(i,j,k) = eta(i,j,k) + G%bathyT(i,j)
-    enddo ; enddo ; enddo
-    call post_data(CS%id_e_D, eta, CS%diag)
   endif
 
   ! mass per area of grid cell (for Boussinesq, use Rho0)
@@ -341,7 +354,7 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
     call post_data(CS%id_masscello, h, CS%diag)
   endif
 
-  ! mass of liquid ocean (for Bouss, use Rho0). The reproducing sum requires the use of MKS units.
+  ! mass of liquid ocean (for Bouss, use Rho0) [R Z L2 ~> kg]
   if (CS%id_masso > 0) then
     mass_cell(:,:) = 0.0
     do k=1,nz ; do j=js,je ; do i=is,ie
@@ -358,9 +371,9 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
         call post_data(CS%id_thkcello, h, CS%diag)
       else
         do k=1,nz ; do j=js,je ; do i=is,ie
-          work_3d(i,j,k) = GV%H_to_Z*h(i,j,k)
+          dz_lay(i,j,k) = GV%H_to_Z*h(i,j,k)
         enddo ; enddo ; enddo
-        call post_data(CS%id_thkcello, work_3d, CS%diag)
+        call post_data(CS%id_thkcello, dz_lay, CS%diag)
       endif ; endif
       if (CS%id_volcello > 0) then ! volcello = h*area for Boussinesq
         do k=1,nz ; do j=js,je ; do i=is,ie
@@ -368,37 +381,41 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
         enddo ; enddo ; enddo
         call post_data(CS%id_volcello, work_3d, CS%diag)
       endif
-    else ! thkcello = dp/(rho*g) for non-Boussinesq
-      EOSdom(:) = EOS_domain(G%HI)
-      do j=js,je
-        if (associated(p_surf)) then ! Pressure loading at top of surface layer [R L2 T-2 ~> Pa]
-          do i=is,ie
-            pressure_1d(i) = p_surf(i,j)
-          enddo
-        else
-          do i=is,ie
-            pressure_1d(i) = 0.0
-          enddo
-        endif
-        do k=1,nz ! Integrate vertically downward for pressure
-          do i=is,ie ! Pressure for EOS at the layer center [R L2 T-2 ~> Pa]
-            pressure_1d(i) = pressure_1d(i) + 0.5*(GV%H_to_RZ*GV%g_Earth)*h(i,j,k)
-          enddo
-          ! Store in-situ density [R ~> kg m-3] in work_3d
-          call calculate_density(tv%T(:,j,k), tv%S(:,j,k),  pressure_1d, rho_in_situ, &
-                                 tv%eqn_of_state, EOSdom)
-          do i=is,ie ! Cell thickness = dz = dp/(g*rho) (meter); store in work_3d
-            work_3d(i,j,k) = (GV%H_to_RZ*h(i,j,k)) / rho_in_situ(i)
-          enddo
-          do i=is,ie ! Pressure for EOS at the bottom interface [R L2 T-2 ~> Pa]
-            pressure_1d(i) = pressure_1d(i) + 0.5*(GV%H_to_RZ*GV%g_Earth)*h(i,j,k)
-          enddo
-        enddo ! k
-      enddo ! j
-      if (CS%id_thkcello > 0) call post_data(CS%id_thkcello, work_3d, CS%diag)
+    else ! thkcello is approximately dp/(rho*g) in non-Boussinesq mode.
+      if (.not.CS%accurate_thick_cello) then
+        ! This is only an approximate calculation of dz_lay that does not use the careful integrals
+        ! found in find_dz_for_eta that mirror what is done for the pressure gradient calculations.
+        EOSdom(:) = EOS_domain(G%HI)
+        do j=js,je
+          if (associated(p_surf)) then ! Pressure loading at top of surface layer [R L2 T-2 ~> Pa]
+            do i=is,ie
+              pressure_1d(i) = p_surf(i,j)
+            enddo
+          else
+            do i=is,ie
+              pressure_1d(i) = 0.0
+            enddo
+          endif
+          do k=1,nz ! Integrate vertically downward for pressure
+            do i=is,ie ! Pressure for EOS at the layer center [R L2 T-2 ~> Pa]
+              pressure_1d(i) = pressure_1d(i) + 0.5*(GV%H_to_RZ*GV%g_Earth)*h(i,j,k)
+            enddo
+            ! Store in-situ density [R ~> kg m-3] in work_3d
+            call calculate_density(tv%T(:,j,k), tv%S(:,j,k),  pressure_1d, rho_in_situ, &
+                                   tv%eqn_of_state, EOSdom)
+            do i=is,ie ! Cell thickness = dz = dp/(g*rho) (meter); store in work_3d
+              dz_lay(i,j,k) = (GV%H_to_RZ*h(i,j,k)) / rho_in_situ(i)
+            enddo
+            do i=is,ie ! Pressure for EOS at the bottom interface [R L2 T-2 ~> Pa]
+              pressure_1d(i) = pressure_1d(i) + 0.5*(GV%H_to_RZ*GV%g_Earth)*h(i,j,k)
+            enddo
+          enddo ! k
+        enddo ! j
+      endif ! Otherwise dz_lay is set in the call to find_dz_for_eta above.
+      if (CS%id_thkcello > 0) call post_data(CS%id_thkcello, dz_lay, CS%diag)
       if (CS%id_volcello > 0) then
         do k=1,nz ; do j=js,je ; do i=is,ie ! volcello = dp/(rho*g)*area for non-Boussinesq
-          work_3d(i,j,k) = US%Z_to_m*US%L_to_m**2*G%areaT(i,j) * work_3d(i,j,k)
+          work_3d(i,j,k) = US%Z_to_m*US%L_to_m**2*G%areaT(i,j) * dz_lay(i,j,k)
         enddo ; enddo ; enddo
         call post_data(CS%id_volcello, work_3d, CS%diag)
       endif
@@ -1872,6 +1889,12 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
                  "If true, use the OM4 remapping-via-subcells algorithm for calculating EBT structure. "//&
                  "See REMAPPING_USE_OM4_SUBCELLS for details. "//&
                  "We recommend setting this option to false.", default=om4_remap_via_sub_cells)
+  call get_param(param_file, mdl, "ACCURATE_NONBOUS_THICK_CELLO", CS%accurate_thick_cello, &
+                 "If true, use the same careful integrals to find the diagnosed non-Boussinesq "//&
+                 "layer thicknesses as are used to find the free surface height, instead of "//&
+                 "using an approximate thickness based on division by the mid-layer density.", &
+                 default=.false., do_not_log=GV%Boussinesq)
+  if (GV%Boussinesq) CS%accurate_thick_cello = .false.
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
