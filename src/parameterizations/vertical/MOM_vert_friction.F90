@@ -2655,7 +2655,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
 
     do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
       if (abs(v(i,J,k)) < CS%vel_underflow) v(i,J,k) = 0.0
-      if (v(i,j,k) < 0.0) then
+      if (v(i,J,k) < 0.0) then
         CFL = (-v(i,J,k) * dt) * (G%dx_Cv(i,J) * G%IareaT(i,j+1))
       else
         CFL = (v(i,J,k) * dt) * (G%dx_Cv(i,J) * G%IareaT(i,j))
