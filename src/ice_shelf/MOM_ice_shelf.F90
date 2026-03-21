@@ -1677,7 +1677,7 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
   call MOM_IS_diag_mediator_init(G, CS%US, param_file, CS%diag, component='MOM_IceShelf')
   ! This call sets up the diagnostic axes. These are needed,
   ! e.g. to generate the target grids below.
-  call set_IS_axes_info(G, param_file, CS%diag)
+  call set_IS_axes_info(G, CS%diag)
 
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
