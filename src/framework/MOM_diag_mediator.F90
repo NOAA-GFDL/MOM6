@@ -16,6 +16,7 @@ use MOM_diag_manager_infra, only : diag_axis_init=>MOM_diag_axis_init, get_MOM_d
 use MOM_diag_manager_infra, only : send_data_infra, MOM_diag_field_add_attribute, EAST, NORTH
 use MOM_diag_manager_infra, only : register_diag_field_infra, register_static_field_infra
 use MOM_diag_manager_infra, only : get_MOM_diag_field_id, DIAG_FIELD_NOT_FOUND
+use MOM_diag_manager_infra, only : diag_send_complete_infra
 use MOM_diag_remap,       only : diag_remap_ctrl, diag_remap_update, diag_remap_calc_hmask
 use MOM_diag_remap,       only : diag_remap_init, diag_remap_end, diag_remap_do_remap
 use MOM_diag_remap,       only : vertically_reintegrate_diag_field, vertically_interpolate_diag_field
@@ -46,7 +47,7 @@ implicit none ; private
 public set_axes_info, post_data, register_diag_field, time_type
 public post_data_3d_by_column, post_data_3d_final
 public post_product_u, post_product_sum_u, post_product_v, post_product_sum_v
-public set_masks_for_axes
+public set_masks_for_axes, MOM_diag_send_complete
 ! post_data_1d_k is a deprecated interface that can be replaced by a call to post_data, but
 ! it is being retained for backward compatibility to older versions of the ocean_BGC code.
 public post_data_1d_k
@@ -72,6 +73,11 @@ public found_in_diagtable
 interface post_data
   module procedure post_data_3d, post_data_2d, post_data_1d_k, post_data_0d
 end interface post_data
+
+!> Registers a non-array scalar diagnostic, returning an integer handle
+interface register_scalar_field
+  module procedure register_scalar_field_CS, register_scalar_field_axes
+end interface register_scalar_field
 
 !> Down sample a field
 interface downsample_field
@@ -260,7 +266,7 @@ type, public :: diag_ctrl
   integer :: ie  !< The end i-index of cell centers within the computational domain
   integer :: js  !< The start j-index of cell centers within the computational domain
   integer :: je  !< The end j-index of cell centers within the computational domain
-  ! These give the memory-domain sizes, and can be start at any value on each PE.
+  ! These give the memory-domain sizes, and can start at any value on each PE.
   integer :: isd !< The start i-index of cell centers within the data domain
   integer :: ied !< The end i-index of cell centers within the data domain
   integer :: jsd !< The start j-index of cell centers within the data domain
@@ -329,7 +335,7 @@ type, public :: diag_ctrl
   real, dimension(:,:,:), pointer :: S => null() !< The salinities needed for remapping [S ~> ppt]
   type(EOS_type),         pointer :: eqn_of_state => null() !< The equation of state type
   type(thermo_var_ptrs),  pointer :: tv => null()   !< A structure with thermodynamic variables that are
-                                                    !! are used to convert thicknesses to vertical extents
+                                                    !! used to convert thicknesses to vertical extents
   type(ocean_grid_type), pointer :: G => null()  !< The ocean grid type
   type(verticalGrid_type), pointer :: GV => null()  !< The model's vertical ocean grid
   type(unit_scale_type), pointer :: US => null() !< A dimensional unit scaling type
@@ -1439,7 +1445,7 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
   real, dimension(:,:), pointer :: locfield ! The field being offered in arbitrary unscaled units [a]
   real, dimension(:,:), pointer :: locmask  ! A pointer to the data mask to use [nondim]
   logical :: used  ! The return value of send_data is not used for anything.
-  logical :: is_stat
+  logical :: is_stat, not_static
   integer :: cszi, cszj, dszi, dszj
   integer :: isv, iev, jsv, jev, i, j, isv_o, jsv_o
   real, dimension(:,:), allocatable, target :: locfield_dsamp ! A downsampled version of locfield [a]
@@ -1453,6 +1459,7 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
   locfield => NULL()
   locmask => NULL()
   is_stat = .false. ; if (present(is_static)) is_stat = is_static
+  not_static = .not. is_stat
 
   ! Determine the proper array indices, noting that because of the (:,:)
   ! declaration of field, symmetric arrays are using a SW-grid indexing,
@@ -1502,12 +1509,14 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
 
   if (present(mask)) then
     locmask => mask
-  elseif (.NOT. is_stat .and. associated(diag%axes)) then
+  elseif (not_static .and. associated(diag%axes)) then
+  ! If we were to decide to allow masking of static diagnostics, we could do so by changing the line above to
+  ! elseif (associated(diag%axes) .and. (diag_CS%mask_static_diags .or. not_static)) then
     if (associated(diag%axes%mask2d)) locmask => diag%axes%mask2d
   endif
 
   dl = 1
-  if (.NOT. is_stat .and. associated(diag%axes)) &
+  if (not_static .and. associated(diag%axes)) &
     dl = diag%axes%downsample_level ! Static field downsampling is not supported yet.
   ! Downsample the diag field and mask as appropriate.
   if (dl > 1) then
@@ -1523,6 +1532,8 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
       locmask => diag%axes%dsamp(dl)%mask2d
     endif
   endif
+  if (associated(locmask)) call assert(size(locfield) == size(locmask), &
+        'post_data_2d_low: mask size mismatch: '//trim(diag%debug_str))
 
   if (diag_cs%diag_as_chksum) then
     ! Append timestep to mesg
@@ -1547,22 +1558,15 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
     endif
   else
     if (is_stat) then
-      if (present(mask)) then
-        call assert(size(locfield) == size(locmask), &
-            'post_data_2d_low is_stat: mask size mismatch: '//trim(diag%debug_str))
+      if (associated(locmask)) then
         used = send_data_infra(diag%fms_diag_id, locfield, &
                          is_in=isv, ie_in=iev, js_in=jsv, je_in=jev, rmask=locmask)
-     !elseif (associated(diag%axes%mask2d)) then
-     !  used = send_data(diag%fms_diag_id, locfield, &
-     !                   is_in=isv, ie_in=iev, js_in=jsv, je_in=jev, rmask=diag%axes%mask2d)
       else
         used = send_data_infra(diag%fms_diag_id, locfield, &
                          is_in=isv, ie_in=iev, js_in=jsv, je_in=jev)
       endif
     elseif (diag_cs%ave_enabled) then
       if (associated(locmask)) then
-        call assert(size(locfield) == size(locmask), &
-            'post_data_2d_low: mask size mismatch: '//trim(diag%debug_str))
         used = send_data_infra(diag%fms_diag_id, locfield, &
                          is_in=isv, ie_in=iev, js_in=jsv, je_in=jev, &
                          time=diag_cs%time_end, weight=diag_cs%time_int, rmask=locmask)
@@ -1757,7 +1761,7 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
   character(len=300) :: mesg
   logical :: used  ! The return value of send_data is not used for anything.
   logical :: staggered_in_x, staggered_in_y
-  logical :: is_stat
+  logical :: is_stat, not_static
   integer :: cszi, cszj, dszi, dszj
   integer :: isv, iev, jsv, jev, ks, ke, i, j, k, isv_c, jsv_c, isv_o, jsv_o
   real, dimension(:,:,:), allocatable, target :: locfield_dsamp ! A downsampled version of locfield [a]
@@ -1771,6 +1775,7 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
   locfield => NULL()
   locmask => NULL()
   is_stat = .false. ; if (present(is_static)) is_stat = is_static
+  not_static = .not. is_stat
 
   ! Determine the proper array indices, noting that because of the (:,:)
   ! declaration of field, symmetric arrays are using a SW-grid indexing,
@@ -1838,12 +1843,14 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
 
   if (present(mask)) then
     locmask => mask
-  elseif (associated(diag%axes%mask3d)) then
-    locmask => diag%axes%mask3d
+  elseif (associated(diag%axes) .and. (not_static)) then
+  ! If we were to decide to allow masking of static diagnostics, we could do so by changing the line above to
+  ! elseif (associated(diag%axes) .and. (diag_CS%mask_static_diags .or. not_static)) then
+    if (associated(diag%axes%mask3d)) locmask => diag%axes%mask3d
   endif
 
   dl = 1
-  if (.NOT. is_stat) &
+  if (not_static .and. associated(diag%axes)) &
     dl = diag%axes%downsample_level ! Static field downsampling is not supported yet.
   ! Downsample the diag field and mask as appropriate.
   if (dl > 1) then
@@ -1859,6 +1866,8 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
       locmask => diag%axes%dsamp(dl)%mask3d
     endif
   endif
+  if (associated(locmask)) call assert(size(locfield) == size(locmask), &
+        'post_data_3d_low: mask size mismatch: '//trim(diag%debug_str))
 
   if (diag%fms_diag_id>0) then
     if (diag_cs%diag_as_chksum) then
@@ -1884,22 +1893,15 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
       endif
     else
       if (is_stat) then
-        if (present(mask)) then
-          call assert(size(locfield) == size(locmask), &
-              'post_data_3d_low is_stat: mask size mismatch: '//diag%debug_str)
+        if (associated(locmask)) then
           used = send_data_infra(diag%fms_diag_id, locfield, &
                          is_in=isv, ie_in=iev, js_in=jsv, je_in=jev, rmask=locmask)
-       !elseif (associated(diag%axes%mask2d)) then
-       !  used = send_data(diag%fms_diag_id, locfield, &
-       !                   is_in=isv, ie_in=iev, js_in=jsv, je_in=jev, rmask=diag%axes%mask2d)
         else
           used = send_data_infra(diag%fms_diag_id, locfield, &
                            is_in=isv, ie_in=iev, js_in=jsv, je_in=jev)
         endif
       elseif (diag_cs%ave_enabled) then
         if (associated(locmask)) then
-          call assert(size(locfield) == size(locmask), &
-              'post_data_3d_low: mask size mismatch: '//diag%debug_str)
           used = send_data_infra(diag%fms_diag_id, locfield, &
                            is_in=isv, ie_in=iev, js_in=jsv, je_in=jev, &
                            time=diag_cs%time_end, weight=diag_cs%time_int, rmask=locmask)
@@ -2263,7 +2265,7 @@ integer function register_diag_field(module_name, field_name, axes_in, init_time
   character(len=256) :: msg, cm_string
   character(len=256) :: new_module_name
   character(len=480) :: module_list, var_list
-  character(len=16)  :: dimensions
+  character(len=24)  :: dimensions
   integer :: num_modnm, num_varnm
   logical :: active
 
@@ -2287,6 +2289,14 @@ integer function register_diag_field(module_name, field_name, axes_in, init_time
     axes => diag_cs%axesCui
   elseif (axes_in%id == diag_cs%axesCvi%id) then
     axes => diag_cs%axesCvi
+  elseif (axes_in%id == diag_cs%axesT1%id) then
+    axes => diag_cs%axesT1
+  elseif (axes_in%id == diag_cs%axesB1%id) then
+    axes => diag_cs%axesB1
+  elseif (axes_in%id == diag_cs%axesCu1%id) then
+    axes => diag_cs%axesCu1
+  elseif (axes_in%id == diag_cs%axesCv1%id) then
+    axes => diag_cs%axesCv1
   else
     allocate(axes)
     axes = axes_in
@@ -2614,7 +2624,7 @@ logical function register_diag_field_expand_cmor(dm_id, module_name, field_name,
     posted_cmor_long_name = "not provided"     !
 
     ! If attributes are present for MOM variable names, use them first for the register_diag_field
-    ! call for CMOR verison of the variable
+    ! call for CMOR version of the variable
     if (present(units)) posted_cmor_units = units
     if (present(standard_name)) posted_cmor_standard_name = standard_name
     if (present(long_name)) posted_cmor_long_name = long_name
@@ -2971,11 +2981,51 @@ subroutine attach_cell_methods(id, axes, ostring, cell_methods, &
 end subroutine attach_cell_methods
 
 
-!> Registers a scalar diagnostic, returning an integer handle
-function register_scalar_field(module_name, field_name, init_time, diag_cs, &
+!> Registers a non-array scalar diagnostic, returning an integer handle
+function register_scalar_field_axes(module_name, field_name, axes, init_time, &
+            long_name, units, missing_value, range, standard_name, &
+            do_not_log, err_msg, interp_method, cmor_field_name, &
+            cmor_long_name, cmor_units, cmor_standard_name, conversion) result (register_scalar_field)
+  integer :: register_scalar_field !< An integer handle for a diagnostic array.
+  character(len=*), intent(in) :: module_name !< Name of this module, usually "ocean_model"
+                                              !! or "ice_shelf_model"
+  character(len=*), intent(in) :: field_name !< Name of the diagnostic field
+  type(axes_grp), target, intent(in) :: axes !< Container with up to 3 integer handles that
+                                             !! indicates axes for this field
+  type(time_type),  intent(in) :: init_time !< Time at which a field is first available?
+  character(len=*), optional, intent(in) :: long_name !< Long name of a field.
+  character(len=*), optional, intent(in) :: units !< Units of a field.
+  character(len=*), optional, intent(in) :: standard_name !< Standardized name associated with a field
+  real,             optional, intent(in) :: missing_value !< A value that indicates missing values in
+                                                          !! output files, in unscaled arbitrary units [a]
+  real,             optional, intent(in) :: range(2) !< Valid range of a variable (not used in MOM?)
+                                                     !! in arbitrary units [a]
+  logical,          optional, intent(in) :: do_not_log !< If true, do not log something (not used in MOM?)
+  character(len=*), optional, intent(out):: err_msg !< String into which an error message might be
+                                                         !! placed (not used in MOM?)
+  character(len=*), optional, intent(in) :: interp_method !< If 'none' indicates the field should not
+                                                         !! be interpolated as a scalar
+  character(len=*), optional, intent(in) :: cmor_field_name !< CMOR name of a field
+  character(len=*), optional, intent(in) :: cmor_long_name !< CMOR long name of a field
+  character(len=*), optional, intent(in) :: cmor_units !< CMOR units of a field
+  character(len=*), optional, intent(in) :: cmor_standard_name !< CMOR standardized name associated with a field
+  real,             optional, intent(in) :: conversion !< A value to multiply data by before writing to files,
+                                                       !! often including factors to undo internal scaling and
+                                                       !! in units of [a A-1 ~> 1]
+
+  register_scalar_field = register_scalar_field_CS(module_name, field_name, init_time, axes%diag_cs, &
             long_name, units, missing_value, range, standard_name, &
             do_not_log, err_msg, interp_method, cmor_field_name, &
             cmor_long_name, cmor_units, cmor_standard_name, conversion)
+
+end function register_scalar_field_axes
+
+
+!> Registers a scalar diagnostic, returning an integer handle
+function register_scalar_field_CS(module_name, field_name, init_time, diag_cs, &
+            long_name, units, missing_value, range, standard_name, &
+            do_not_log, err_msg, interp_method, cmor_field_name, &
+            cmor_long_name, cmor_units, cmor_standard_name, conversion) result (register_scalar_field)
   integer :: register_scalar_field !< An integer handle for a diagnostic array.
   character(len=*), intent(in) :: module_name !< Name of this module, usually "ocean_model"
                                               !! or "ice_shelf_model"
@@ -3042,7 +3092,7 @@ function register_scalar_field(module_name, field_name, init_time, diag_cs, &
     posted_cmor_long_name = "not provided"
 
     ! If attributes are present for MOM variable names, use them as defaults for the
-    ! register_diag_field_infra call for CMOR verison of the variable
+    ! register_diag_field_infra call for CMOR version of the variable
     if (present(units)) posted_cmor_units = units
     if (present(standard_name)) posted_cmor_standard_name = standard_name
     if (present(long_name)) posted_cmor_long_name = long_name
@@ -3084,7 +3134,7 @@ function register_scalar_field(module_name, field_name, init_time, diag_cs, &
 
   register_scalar_field = dm_id
 
-end function register_scalar_field
+end function register_scalar_field_CS
 
 !> Registers a static diagnostic, returning an integer handle
 function register_static_field(module_name, field_name, axes, &
@@ -3130,7 +3180,7 @@ function register_static_field(module_name, field_name, axes, &
   integer :: dm_id, fms_id
   character(len=256) :: posted_cmor_units, posted_cmor_standard_name, posted_cmor_long_name
   character(len=9) :: axis_name
-  character(len=16) :: dimensions
+  character(len=24) :: dimensions
 
   MOM_missing_value = axes%diag_cs%missing_value
   if (present(missing_value)) MOM_missing_value = missing_value
@@ -3186,7 +3236,7 @@ function register_static_field(module_name, field_name, axes, &
     posted_cmor_long_name = "not provided"
 
     ! If attributes are present for MOM variable names, use them first for the register_static_field
-    ! call for CMOR verison of the variable
+    ! call for CMOR version of the variable
     if (present(units)) posted_cmor_units = units
     if (present(standard_name)) posted_cmor_standard_name = standard_name
     if (present(long_name)) posted_cmor_long_name = long_name
@@ -3587,7 +3637,7 @@ end subroutine diag_mediator_init
 subroutine diag_set_state_ptrs(h, tv, diag_cs)
   real, dimension(:,:,:), target, intent(in   ) :: h !< the model thickness array [H ~> m or kg m-2]
   type(thermo_var_ptrs),  target, intent(in   ) :: tv !< A structure with thermodynamic variables that are
-                                                      !! are used to convert thicknesses to vertical extents
+                                                      !! used to convert thicknesses to vertical extents
   type(diag_ctrl),                intent(inout) :: diag_cs !< diag mediator control structure
 
   ! Keep pointers to h, T, S needed for the diagnostic remapping
@@ -4803,5 +4853,10 @@ logical function found_in_diagtable(diag, varName)
   found_in_diagtable = (handle>0)
 
 end function found_in_diagtable
+
+!> Finishes the diag manager reduction methods as needed for the time_step
+subroutine MOM_diag_send_complete()
+  call diag_send_complete_infra()
+end subroutine MOM_diag_send_complete
 
 end module MOM_diag_mediator
