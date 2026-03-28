@@ -31,8 +31,8 @@ integer, parameter :: &
     LMASK     = 2147483647      !< least significant r bits (0x7fffffffUL)
 
 ! Private tempering parameters for the Mersenne Twister
-integer, parameter :: TMASKB= -1658038656, & !< (0x9d2c5680UL)
-                      TMASKC= -272236544     !< (0xefc60000UL)
+integer, parameter :: TMASKB = -1658038656, & !< (0x9d2c5680UL)
+                      TMASKC = -272236544     !< (0xefc60000UL)
 
 !> A private type used by the Mersenne Twistor
 type randomNumberSequence
@@ -486,7 +486,7 @@ logical function random_unit_tests(verbose)
   call random_2d_constructor(test_rng, HI, Time, 123)
   r2d(:,:) = -999. ! Use -9. to detect unset values
   call random_2d_01(test_rng, HI, r2d)
-  if (any(abs(r2d(:,:)+999.)<=0.)) random_unit_tests=.true.
+  if (any(abs(r2d(:,:)+999.) <= 0.)) random_unit_tests = .true.
   r1 = minval(r2d)
   r2 = maxval(r2d)
   random_unit_tests = random_unit_tests .or. test_fn(verbose, r1>=0., '2d all set', r1)

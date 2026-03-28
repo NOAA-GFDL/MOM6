@@ -160,7 +160,7 @@ type, public :: bulkmixedlayer_CS ; private
 end type bulkmixedlayer_CS
 
 !>@{ CPU clock IDs
-integer :: id_clock_pass=0
+integer :: id_clock_pass = 0
 !>@}
 
 contains

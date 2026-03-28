@@ -176,7 +176,7 @@ type, public :: vertvisc_CS ; private
   integer :: id_uE_h  = -1, id_vE_h  = -1
   integer :: id_uStk  = -1, id_vStk  = -1
   integer :: id_uStk0 = -1, id_vStk0 = -1
-  integer :: id_uInc_h= -1, id_vInc_h= -1
+  integer :: id_uInc_h = -1, id_vInc_h = -1
   integer :: id_taux_bot = -1, id_tauy_bot = -1
   integer :: id_Kv_slow = -1, id_Kv_u = -1, id_Kv_v = -1
   integer :: id_Kv_gl90_u = -1, id_Kv_gl90_v = -1
@@ -640,8 +640,8 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
 
   accel_underflow = CS%vel_underflow * Idt
 
-  !Check if Stokes mixing allowed if requested (present and associated)
-  DoStokesMixing=.false.
+  ! Check if Stokes mixing allowed if requested (present and associated)
+  DoStokesMixing = .false.
   if (CS%StokesMixing) then
     if (present(Waves)) DoStokesMixing = associated(Waves)
     if (.not. DoStokesMixing) &
@@ -2648,7 +2648,7 @@ subroutine vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS
   endif
 
   if (len_trim(CS%v_trunc_file) > 0) then
-    do_any_write =.false.
+    do_any_write = .false.
     trunc_any = .false.
 
 

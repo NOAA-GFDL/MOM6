@@ -298,7 +298,7 @@ type, public :: ice_shelf_dyn_CS ; private
   integer :: id_u_shelf = -1, id_v_shelf = -1, id_shelf_speed, id_t_shelf = -1, &
              id_taudx_shelf = -1, id_taudy_shelf = -1, id_taud_shelf = -1, id_bed_elev = -1, &
              id_ground_frac = -1, id_col_thick = -1, id_OD_av = -1, id_float_cond = -1, &
-             id_u_mask = -1, id_v_mask = -1, id_ufb_mask =-1, id_vfb_mask = -1, id_t_mask = -1, &
+             id_u_mask = -1, id_v_mask = -1, id_ufb_mask = -1, id_vfb_mask = -1, id_t_mask = -1, &
              id_sx_shelf = -1, id_sy_shelf = -1, id_surf_slope_mag_shelf, &
              id_duHdx = -1, id_dvHdy = -1, id_fluxdiv = -1, &
              id_strainrate_xx = -1, id_strainrate_yy = -1, id_strainrate_xy = -1, &
@@ -645,8 +645,8 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
                  "A typical density of ice.", units="kg m-3", default=917.0, scale=US%kg_m3_to_R)
 
     ! Precompute commonly-used density ratios
-    CS%rhoi_rhow=CS%density_ice / CS%density_ocean_avg
-    CS%rhow_rhoi=CS%density_ocean_avg / CS%density_ice
+    CS%rhoi_rhow = CS%density_ice / CS%density_ocean_avg
+    CS%rhow_rhoi = CS%density_ocean_avg / CS%density_ice
 
     call get_param(param_file, mdl, "CONJUGATE_GRADIENT_TOLERANCE", CS%cg_tolerance, &
                  "For Picard iterations, the tolerance in CG solver, relative to initial residual", &
@@ -1083,7 +1083,7 @@ subroutine initialize_diagnostic_fields(CS, ISS, G, US, Time)
   type(time_type) :: dummy_time
 !
   dummy_time = set_time(0,0)
-  isd=G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
+  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
 
   do j=jsd,jed
     do i=isd,ied
@@ -1175,7 +1175,7 @@ subroutine update_ice_shelf(CS, ISS, G, US, time_step, Time, calve_ice_shelf_ber
     call update_OD_ffrac(CS, G, US, ocean_mass, update_ice_vel)
   elseif (update_ice_vel) then
     call update_OD_ffrac_uncoupled(CS, G, ISS%h_shelf(:,:))
-    CS%GL_couple=.false.
+    CS%GL_couple = .false.
   endif
 
   if (update_ice_vel) then
@@ -1205,25 +1205,25 @@ subroutine volume_above_floatation(CS, G, ISS, vaf, hemisphere)
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
 
   if (present(hemisphere)) then
-    IS_ID=hemisphere
+    IS_ID = hemisphere
   else
-    IS_ID=-1
+    IS_ID = -1
   endif
 
-  mask(:,:)=0
-  if (IS_ID==0) then     !Antarctica (S. Hemisphere) only
+  mask(:,:) = 0
+  if (IS_ID == 0) then     ! Antarctica (S. Hemisphere) only
     do j = js,je ; do i = is,ie
-      if (ISS%hmask(i,j)>0 .and. G%geoLatT(i,j)<=0.0) mask(i,j)=1
+      if (ISS%hmask(i,j) > 0 .and. G%geoLatT(i,j) <= 0.0) mask(i,j) = 1
     enddo ; enddo
-  elseif (IS_ID==1) then !Greenland (N. Hemisphere) only
+  elseif (IS_ID == 1) then ! Greenland (N. Hemisphere) only
     do j = js,je ; do i = is,ie
-      if (ISS%hmask(i,j)>0 .and. G%geoLatT(i,j)>0.0)  mask(i,j)=1
+      if (ISS%hmask(i,j) > 0 .and. G%geoLatT(i,j) > 0.0)  mask(i,j) = 1
     enddo ; enddo
-  else                   !All ice sheets
-    mask(is:ie,js:je)=ISS%hmask(is:ie,js:je)
+  else                   ! All ice sheets
+    mask(is:ie,js:je) = ISS%hmask(is:ie,js:je)
   endif
 
-  vaf_cell(:,:)=0.0
+  vaf_cell(:,:) = 0.0
   do j = js,je ; do i = is,ie
     if (mask(i,j)>0) then
       if (CS%bed_elev(i,j) <= 0) then
@@ -1342,7 +1342,7 @@ subroutine ice_visc_diag(CS,G,ice_visc)
                                                                !! [R L2 Z T-1 ~> Pa s m]
   integer :: i, j
 
-  ice_visc(:,:)=0.0
+  ice_visc(:,:) = 0.0
   if (CS%visc_qps==4) then
     do j=G%jsc,G%jec ; do i=G%isc,G%iec
       ice_visc(i,j) = (0.25 * G%IareaT(i,j)) * &
@@ -1693,13 +1693,13 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
     do j=G%jsc,G%jec ; do i=G%isc,G%iec
       if (CS%rhoi_rhow * max(ISS%h_shelf(i,j),CS%min_h_shelf) - CS%bed_elev(i,j) > 0) then
         CS%ground_frac(i,j) = 1.0
-        CS%OD_av(i,j) =0.0
+        CS%OD_av(i,j) = 0.0
       endif
     enddo ; enddo
   endif
 
   ! Warning: This turns off Picard entirely and may not converge.
-  if (CS%newton_after_tolerance<0.0) CS%doing_newton=.true.
+  if (CS%newton_after_tolerance < 0.0) CS%doing_newton = .true.
 
   ! Calculate RHS
   call calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, CS%OD_av)
@@ -1891,7 +1891,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
 
     if (CS%nonlin_solve_err_mode == 2) then
 
-      err_max=0. ;  max_vel = 0 ; tempu = 0 ; tempv = 0 ; err_tempu = 0
+      err_max = 0. ;  max_vel = 0 ; tempu = 0 ; tempv = 0 ; err_tempu = 0
       do J=G%jscB,G%jecB ; do I=G%iscB,G%iecB
         if (CS%umask(I,J) == 1) then
           err_tempu = ABS(u_last(I,J)-u_shlf(I,J))
@@ -1916,7 +1916,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
       err_init = max_vel
 
     elseif (CS%nonlin_solve_err_mode == 3) then
-      PrevNorm = Norm ; Norm = 0.0 ; Normvec=0.0
+      PrevNorm = Norm ; Norm = 0.0 ; Normvec = 0.0
       do J=Jscq_sv,Jecq ; do I=Iscq_sv,Iecq
         if (CS%umask(I,J) == 1) Normvec(I,J) = (u_shlf(I,J)**2)
         if (CS%vmask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + (v_shlf(I,J)**2)
@@ -2004,9 +2004,9 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
       if (CS%doing_newton .and. CS%newton_adapt_cg_tol) then
         !calculate residual needed for EW; some convergence criteria already did this
         if (CS%nonlin_solve_err_mode >= 4) then
-          ew_resid=err_max
+          ew_resid = err_max
         elseif (CS%ssa_add_rel_resid) then
-          ew_resid=err_rr
+          ew_resid = err_rr
         else
           if (.not. calc_Au_for_convergence) then
             Au(:,:) = 0 ; Av(:,:) = 0
@@ -2328,9 +2328,9 @@ subroutine ice_shelf_solve_inner_CG(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, A
   resid0tol2 = CS%cg_tol_current**2 * sv3dsums(2)
 
   if (G%symmetric) then
-    max_cg_halo=min(nx_halo,ny_halo)
+    max_cg_halo = min(nx_halo, ny_halo)
   else
-    max_cg_halo=min(nx_halo,ny_halo)-1
+    max_cg_halo = min(nx_halo, ny_halo) - 1
   endif
   cg_halo = max_cg_halo
   conv_flag = 0
@@ -2392,7 +2392,7 @@ subroutine ice_shelf_solve_inner_CG(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, A
     enddo ; enddo
 
     ! beta_k = (Z \dot R) / (Z_prev \dot R_prev)
-    sum_vec_3d(:,:,:) = 0.0 ; sv3dsums(:)=0.0
+    sum_vec_3d(:,:,:) = 0.0 ; sv3dsums(:) = 0.0
 
     do J=jscq_sv,jecq ; do i=iscq_sv,iecq
       if (CS%umask(I,J) == 1) then
@@ -3645,9 +3645,9 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
   xquad(1) = .5 * (1-sqrt(1./3)) ; xquad(2) = .5 * (1+sqrt(1./3))
 
   if (CS%visc_qps == 4) then
-    visc_qp4=.true.
+    visc_qp4 = .true.
   else
-    visc_qp4=.false.
+    visc_qp4 = .false.
     qpv = 1
   endif
 
@@ -4116,16 +4116,16 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, u_curr, v_cu
   xquad(1) = .5 * (1-sqrt(1./3)) ; xquad(2) = .5 * (1+sqrt(1./3))
 
   if (CS%visc_qps == 4) then
-    visc_qp4=.true.
+    visc_qp4 = .true.
   else
-    visc_qp4=.false.
+    visc_qp4 = .false.
     qpv = 1
   endif
 
   do_newton_visc = CS%doing_newton .and. trim(CS%ice_viscosity_compute) == "MODEL"
 
-  u_diag_b(:,:,:)=0.0
-  v_diag_b(:,:,:)=0.0
+  u_diag_b(:,:,:) = 0.0
+  v_diag_b(:,:,:) = 0.0
 
   do j=jsc-1,jec+1 ; do i=isc-1,iec+1 ; if (hmask(i,j) == 1 .or. hmask(i,j)==3) then
 
@@ -4498,7 +4498,7 @@ subroutine IS_dynamics_post_data_2(CS, ISS, G)
       call ice_visc_diag(CS,G,ice_visc)
 
       if (CS%id_devstress_xx > 0 .or. CS%id_devstress_yy > 0 .or. CS%id_devstress_xy > 0) then
-        dev_stress(:,:,:)=0.0
+        dev_stress(:,:,:) = 0.0
         do j=G%jsc,G%jec ; do i=G%isc,G%iec
           if (ISS%h_shelf(i,j)>0) then
             dev_stress(i,j,1) = 2*ice_visc(i,j)*strain_rate(i,j,1)/ISS%h_shelf(i,j) !deviatoric stress xx
@@ -4512,7 +4512,7 @@ subroutine IS_dynamics_post_data_2(CS, ISS, G)
       endif
 
       if (CS%id_pdevstress_1 > 0 .or. CS%id_pdevstress_2 > 0) then
-        p_dev_stress(:,:,:)=0.0
+        p_dev_stress(:,:,:) = 0.0
         do j=G%jsc,G%jec ; do i=G%isc,G%iec
           if (ISS%h_shelf(i,j)>0) then
             p_dev_stress(i,j,1) = 2*ice_visc(i,j)*p_strain_rate(i,j,1)/ISS%h_shelf(i,j) !max horiz principal dev stress
@@ -4562,17 +4562,17 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
 
   if (trim(CS%ice_viscosity_compute) == "MODEL") then
     if (CS%visc_qps==1) then
-      model_qp1=.true.
-      model_qp4=.false.
+      model_qp1 = .true.
+      model_qp4 = .false.
     else
-      model_qp1=.false.
-      model_qp4=.true.
+      model_qp1 = .false.
+      model_qp4 = .true.
     endif
   endif
 
   n_g = CS%n_glen ; eps_min = CS%eps_glen_min
-  In_g=1./n_g
-  eps_e2_exp=(1.-n_g)/(2.*n_g)
+  In_g = 1./n_g
+  eps_e2_exp = (1.-n_g)/(2.*n_g)
 
   do j=jsc,jec ; do i=isc,iec
 
@@ -5041,7 +5041,7 @@ subroutine bilinear_shape_fn_grid_1qp(G, i, j, Phi)
 ! Phi_i is equal to 1 at vertex i, and 0 at vertex k /= i, and bilinear
 
   real :: a, d       ! Interpolated grid spacings [L ~> m]
-  real :: xexp=0.5, yexp=0.5 ! [nondim]
+  real :: xexp = 0.5, yexp = 0.5 ! [nondim]
   integer :: node, qpoint, xnode, ynode
 
     ! d(x)/d(x*)
@@ -5165,8 +5165,8 @@ subroutine update_velocity_masks(CS, G, hmask, umask, vmask, u_face_mask, v_face
 
   do j=js,G%jed ; do i=is,G%ied
     if (hmask(i,j) == 1 .or. hmask(i,j)==3) then
-      umask(I-1:I,J-1:J)=1
-      vmask(I-1:I,J-1:J)=1
+      umask(I-1:I,J-1:J) = 1
+      vmask(I-1:I,J-1:J) = 1
     endif
   enddo ; enddo
 
@@ -5303,12 +5303,12 @@ subroutine interpolate_H_to_B(G, h_shelf, hmask, H_node, min_h_shelf)
   do j=jsc-1,jec
     do i=isc-1,iec
       num_h = 0
-      do l=1,2 ; jc=j-1+l ; do k=1,2 ; ic=i-1+k
+      do l=1,2 ; jc=j-1+l ; do k=1,2 ; ic = i-1+k
         if (hmask(ic,jc) == 1.0 .or. hmask(ic,jc) == 3.0) then
-          h_arr(k,l)=max(h_shelf(ic,jc),min_h_shelf)
+          h_arr(k,l) = max(h_shelf(ic,jc), min_h_shelf)
           num_h = num_h + 1
         else
-          h_arr(k,l)=0.0
+          h_arr(k,l) = 0.0
         endif
         if (num_h > 0) then
           H_node(i,j) = ((h_arr(1,1)+h_arr(2,2))+(h_arr(1,2)+h_arr(2,1))) / num_h
@@ -5492,15 +5492,15 @@ subroutine ice_shelf_advect_temp_x(CS, G, time_step, hmask, h0, h_after_uflux)
              ((i+i_off) >= G%domain%nihalo+1)) then
 
           if (i+i_off == G%domain%nihalo+1) then
-            at_west_bdry=.true.
+            at_west_bdry = .true.
           else
-            at_west_bdry=.false.
+            at_west_bdry = .false.
           endif
 
           if (i+i_off == G%domain%niglobal+G%domain%nihalo) then
-            at_east_bdry=.true.
+            at_east_bdry = .true.
           else
-            at_east_bdry=.false.
+            at_east_bdry = .false.
           endif
 
           if (hmask(i,j) == 1) then
@@ -5660,14 +5660,14 @@ subroutine ice_shelf_advect_temp_y(CS, G, time_step, hmask, h_after_uflux, h_aft
              ((j+j_off) >= G%domain%njhalo+1)) then
 
           if (j+j_off == G%domain%njhalo+1) then
-            at_south_bdry=.true.
+            at_south_bdry = .true.
           else
-            at_south_bdry=.false.
+            at_south_bdry = .false.
           endif
           if (j+j_off == G%domain%njglobal+G%domain%njhalo) then
-            at_north_bdry=.true.
+            at_north_bdry = .true.
           else
-            at_north_bdry=.false.
+            at_north_bdry = .false.
           endif
 
           if (hmask(i,j) == 1) then

@@ -167,23 +167,23 @@ end type diag_grid_storage
 
 ! Integers to encode the total cell methods
 ! Note that vorticity points (the PPP and PPM methods) are not fully dealt with for downsampling.
-integer :: PPP=111  !< x:point,y:point,z:point
-!integer :: PPS=112 ! x:point,y:point,z:sum  , this kind of diagnostic is not currently present in diag_table.MOM6
-integer :: PPM=113  !< x:point,y:point,z:mean
-integer :: PSP=121  !< x:point,y:sum,z:point
-integer :: PSS=122  !< x:point,y:sum,z:point
-integer :: PSM=123  !< x:point,y:sum,z:mean
-integer :: PMP=131  !< x:point,y:mean,z:point
-integer :: PMM=133  !< x:point,y:mean,z:mean
-integer :: SPP=211  !< x:sum,y:point,z:point
-integer :: SPS=212  !< x:sum,y:point,z:sum
-integer :: SSP=221  !< x:sum,y:sum,z:point
-integer :: MPP=311  !< x:mean,y:point,z:point
-integer :: MPM=313  !< x:mean,y:point,z:mean
-integer :: MMP=331  !< x:mean,y:mean,z:point
-integer :: MMS=332  !< x:mean,y:mean,z:sum
-integer :: SSS=222  !< x:sum,y:sum,z:sum
-integer :: MMM=333  !< x:mean,y:mean,z:mean
+integer :: PPP = 111  !< x:point,y:point,z:point
+!integer :: PPS = 112 ! x:point,y:point,z:sum  , this kind of diagnostic is not currently present in diag_table.MOM6
+integer :: PPM = 113  !< x:point,y:point,z:mean
+integer :: PSP = 121  !< x:point,y:sum,z:point
+integer :: PSS = 122  !< x:point,y:sum,z:point
+integer :: PSM = 123  !< x:point,y:sum,z:mean
+integer :: PMP = 131  !< x:point,y:mean,z:point
+integer :: PMM = 133  !< x:point,y:mean,z:mean
+integer :: SPP = 211  !< x:sum,y:point,z:point
+integer :: SPS = 212  !< x:sum,y:point,z:sum
+integer :: SSP = 221  !< x:sum,y:sum,z:point
+integer :: MPP = 311  !< x:mean,y:point,z:point
+integer :: MPM = 313  !< x:mean,y:point,z:mean
+integer :: MMP = 331  !< x:mean,y:mean,z:point
+integer :: MMS = 332  !< x:mean,y:mean,z:sum
+integer :: SSS = 222  !< x:sum,y:sum,z:sum
+integer :: MMM = 333  !< x:mean,y:mean,z:mean
 
 !> This type is used to represent a diagnostic at the diag_mediator level.
 !!
@@ -631,16 +631,16 @@ subroutine set_axes_info_dsamp(G, GV, param_file, diag_cs, id_zl_native, id_zi_n
   ! Local variables
   integer :: id_xq, id_yq, id_zl, id_zi, id_xh, id_yh
   integer :: i, j, nz, dl, dlfac
-  real, dimension(:), pointer :: gridLonT_dsamp =>NULL() ! The longitude of downsampled T points for labeling
+  real, dimension(:), pointer :: gridLonT_dsamp => NULL() ! The longitude of downsampled T points for labeling
                                                          ! the output axes, often in units of [degrees_N] or
                                                          ! [km] or [m] or [gridpoints].
-  real, dimension(:), pointer :: gridLatT_dsamp =>NULL() ! The latitude of downsampled T points for labeling
+  real, dimension(:), pointer :: gridLatT_dsamp => NULL() ! The latitude of downsampled T points for labeling
                                                          ! the output axes, often in units of [degrees_N] or
                                                          ! [km] or [m] or [gridpoints].
-  real, dimension(:), pointer :: gridLonB_dsamp =>NULL() ! The longitude of downsampled B points for labeling
+  real, dimension(:), pointer :: gridLonB_dsamp => NULL() ! The longitude of downsampled B points for labeling
                                                          ! the output axes, often in units of [degrees_N] or
                                                          ! [km] or [m] or [gridpoints].
-  real, dimension(:), pointer :: gridLatB_dsamp =>NULL() ! The latitude of downsampled B points for labeling
+  real, dimension(:), pointer :: gridLatB_dsamp => NULL() ! The latitude of downsampled B points for labeling
                                                          ! the output axes, often in units of [degrees_N] or
                                                          ! [km] or [m] or [gridpoints].
 
@@ -2869,9 +2869,9 @@ integer function xyz_method(axes, x_cell_method, y_cell_method, v_cell_method, v
     if (present(v_cell_method)) call MOM_error(FATAL, "xyz_method: " // &
        'Vertical cell method was specified along with the vertically extensive flag.')
     if (v_extensive) then
-      mstr='sum'
+      mstr = 'sum'
     else
-      mstr='mean'
+      mstr = 'mean'
     endif
   elseif (present(v_cell_method)) then
     mstr = v_cell_method
@@ -2945,16 +2945,16 @@ subroutine attach_cell_methods(id, axes, ostring, cell_methods, &
         call get_MOM_diag_axis_name(axes%handles(1), axis_name)
         call MOM_diag_field_add_attribute(id, 'cell_methods', trim(axis_name)//':'//trim(x_cell_method))
         ostring = trim(adjustl(ostring))//' '//trim(axis_name)//':'//trim(x_cell_method)
-        if (trim(x_cell_method)=='mean') x_mean=.true.
-        if (trim(x_cell_method)=='sum') x_sum=.true.
+        if (trim(x_cell_method) == 'mean') x_mean = .true.
+        if (trim(x_cell_method) == 'sum') x_sum = .true.
       endif
     else
       if (len(trim(axes%x_cell_method))>0) then
         call get_MOM_diag_axis_name(axes%handles(1), axis_name)
         call MOM_diag_field_add_attribute(id, 'cell_methods', trim(axis_name)//':'//trim(axes%x_cell_method))
         ostring = trim(adjustl(ostring))//' '//trim(axis_name)//':'//trim(axes%x_cell_method)
-        if (trim(axes%x_cell_method)=='mean') x_mean=.true.
-        if (trim(axes%x_cell_method)=='sum') x_sum=.true.
+        if (trim(axes%x_cell_method) == 'mean') x_mean = .true.
+        if (trim(axes%x_cell_method) == 'sum') x_sum = .true.
       endif
     endif
     if (present(y_cell_method)) then
@@ -2962,16 +2962,16 @@ subroutine attach_cell_methods(id, axes, ostring, cell_methods, &
         call get_MOM_diag_axis_name(axes%handles(2), axis_name)
         call MOM_diag_field_add_attribute(id, 'cell_methods', trim(axis_name)//':'//trim(y_cell_method))
         ostring = trim(adjustl(ostring))//' '//trim(axis_name)//':'//trim(y_cell_method)
-        if (trim(y_cell_method)=='mean') y_mean=.true.
-        if (trim(y_cell_method)=='sum') y_sum=.true.
+        if (trim(y_cell_method) == 'mean') y_mean = .true.
+        if (trim(y_cell_method) == 'sum') y_sum = .true.
       endif
     else
       if (len(trim(axes%y_cell_method))>0) then
         call get_MOM_diag_axis_name(axes%handles(2), axis_name)
         call MOM_diag_field_add_attribute(id, 'cell_methods', trim(axis_name)//':'//trim(axes%y_cell_method))
         ostring = trim(adjustl(ostring))//' '//trim(axis_name)//':'//trim(axes%y_cell_method)
-        if (trim(axes%y_cell_method)=='mean') y_mean=.true.
-        if (trim(axes%y_cell_method)=='sum') y_sum=.true.
+        if (trim(axes%y_cell_method) == 'mean') y_mean = .true.
+        if (trim(axes%y_cell_method) == 'sum') y_sum = .true.
       endif
     endif
     if (present(v_cell_method)) then
