@@ -631,16 +631,16 @@ subroutine set_axes_info_dsamp(G, GV, param_file, diag_cs, id_zl_native, id_zi_n
   ! Local variables
   integer :: id_xq, id_yq, id_zl, id_zi, id_xh, id_yh
   integer :: i, j, nz, dl, dlfac
-  real, dimension(:), pointer :: gridLonT_dsamp =>NULL() ! The longitude of downsampled T points for labeling
+  real, dimension(:), pointer :: gridLonT_dsamp => NULL() ! The longitude of downsampled T points for labeling
                                                          ! the output axes, often in units of [degrees_N] or
                                                          ! [km] or [m] or [gridpoints].
-  real, dimension(:), pointer :: gridLatT_dsamp =>NULL() ! The latitude of downsampled T points for labeling
+  real, dimension(:), pointer :: gridLatT_dsamp => NULL() ! The latitude of downsampled T points for labeling
                                                          ! the output axes, often in units of [degrees_N] or
                                                          ! [km] or [m] or [gridpoints].
-  real, dimension(:), pointer :: gridLonB_dsamp =>NULL() ! The longitude of downsampled B points for labeling
+  real, dimension(:), pointer :: gridLonB_dsamp => NULL() ! The longitude of downsampled B points for labeling
                                                          ! the output axes, often in units of [degrees_N] or
                                                          ! [km] or [m] or [gridpoints].
-  real, dimension(:), pointer :: gridLatB_dsamp =>NULL() ! The latitude of downsampled B points for labeling
+  real, dimension(:), pointer :: gridLatB_dsamp => NULL() ! The latitude of downsampled B points for labeling
                                                          ! the output axes, often in units of [degrees_N] or
                                                          ! [km] or [m] or [gridpoints].
 
@@ -2869,9 +2869,9 @@ integer function xyz_method(axes, x_cell_method, y_cell_method, v_cell_method, v
     if (present(v_cell_method)) call MOM_error(FATAL, "xyz_method: " // &
        'Vertical cell method was specified along with the vertically extensive flag.')
     if (v_extensive) then
-      mstr='sum'
+      mstr = 'sum'
     else
-      mstr='mean'
+      mstr = 'mean'
     endif
   elseif (present(v_cell_method)) then
     mstr = v_cell_method

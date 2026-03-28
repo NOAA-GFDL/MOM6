@@ -36,7 +36,7 @@ type, public :: write_cputime_CS ; private
   real :: cputime2 = 0.0        !< The accumulated CPU time [clock_cycles].
   integer :: previous_calls = 0 !< The number of times write_CPUtime has been called.
   integer :: prev_n = 0         !< The value of n from the last call.
-  integer :: fileCPU_ascii= -1  !< The unit number of the CPU time file.
+  integer :: fileCPU_ascii = -1 !< The unit number of the CPU time file.
   character(len=200) :: CPUfile !< The name of the CPU time file.
 end type write_cputime_CS
 

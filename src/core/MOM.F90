@@ -2881,7 +2881,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "If true, use a bug in which the particles are advected inconsistently"//&
                  "with the dynamics timestep instead of the tracer timestep.", &
                  default=enable_bugs, do_not_log=.not.CS%use_uh_particles)
-  CS%ensemble_ocean=.false.
+  CS%ensemble_ocean = .false.
   call get_param(param_file, "MOM", "ENSEMBLE_OCEAN", CS%ensemble_ocean, &
                  "If False, The model is being run in serial mode as a single realization. "//&
                  "If True, The current model realization is part of a larger ensemble "//&
@@ -4180,7 +4180,7 @@ subroutine extract_surface_state(CS, sfc_state_in)
 
   use_temperature = associated(CS%tv%T)
 
-  use_iceshelves=.false.
+  use_iceshelves = .false.
   if (associated(CS%frac_shelf_h)) use_iceshelves = .true.
 
   turns = 0
@@ -4474,7 +4474,7 @@ subroutine extract_surface_state(CS, sfc_state_in)
   endif
 
   if (CS%check_bad_sfc_vals) then
-    numberOfErrors=0 ! count number of errors
+    numberOfErrors = 0 ! count number of errors
     do j=js,je ; do i=is,ie
       if (G%mask2dT(i,j)>0.) then
         localError = sfc_state%sea_lev(i,j) < -G%bathyT(i,j) - G%Z_ref &
@@ -4487,7 +4487,7 @@ subroutine extract_surface_state(CS, sfc_state_in)
                 .or. sfc_state%SST(i,j)< CS%bad_val_sst_min       &
                 .or. sfc_state%SST(i,j)>=CS%bad_val_sst_max
         if (localError) then
-          numberOfErrors=numberOfErrors+1
+          numberOfErrors = numberOfErrors + 1
           if (numberOfErrors<9) then ! Only report details for the first few errors
             ig = i + G%HI%idg_offset ! Global i-index
             jg = j + G%HI%jdg_offset ! Global j-index
