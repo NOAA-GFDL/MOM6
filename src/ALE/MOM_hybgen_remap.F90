@@ -262,7 +262,7 @@ subroutine hybgen_weno_coefs(s, h_src, edges, nk, ns, thin, PCM_lay)
 !     Alan J. Wallcraft,  Naval Research Laboratory,  July 2008.
 !-----------------------------------------------------------------------
 !
-!  real, parameter :: dsmll=1.0e-8  ! This has units of [A2], and hence can not be a parameter.
+!  real, parameter :: dsmll = 1.0e-8  ! This has units of [A2], and hence can not be a parameter.
 !
   real :: curv_cell   ! An estimate of the tracer curvature centered on a cell times the grid
                       ! spacing [A H-1 ~> A m-1 or A m2 kg-1]

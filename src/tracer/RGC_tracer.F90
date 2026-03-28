@@ -194,7 +194,7 @@ subroutine initialize_RGC_tracer(restart, day, G, GV, h, diag, OBC, CS, &
           CS%tr(i,j,k,m) = 0.0
         enddo ; enddo ; enddo
       enddo
-      m=1
+      m = 1
       do j=js,je ; do i=is,ie
          !set tracer to 1.0 in the surface of the continental shelf
          if (G%geoLonT(i,j) <= (CS%CSL)) then
@@ -287,7 +287,7 @@ subroutine RGC_tracer_column_physics(h_old, h_new,  ea,  eb, fluxes, dt, G, GV, 
 
   if (.not.associated(CS)) return
 
-  m=1
+  m = 1
   do j=js,je ; do i=is,ie
     ! set tracer to 1.0 in the surface of the continental shelf
     if (G%geoLonT(i,j) <= (CS%CSL)) then

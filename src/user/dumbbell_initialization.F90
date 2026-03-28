@@ -469,7 +469,7 @@ subroutine dumbbell_initialize_sponges(G, GV, US, tv, h_in, depth_tot, param_fil
       enddo
       eta(i,j,nz+1) = -depth_tot(i,j)
       do k=1,nz
-        S(i,j,k)= tv%S(i,j,k)
+        S(i,j,k) = tv%S(i,j,k)
       enddo
     enddo ; enddo
 

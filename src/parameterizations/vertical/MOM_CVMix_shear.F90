@@ -113,7 +113,7 @@ subroutine calculate_CVMix_shear(u_H, v_H, h, tv, kd, kv, G, GV, US, CS )
 
       ! Richardson number computed for each cell in a column.
       pRef = 0. ; if (associated(tv%p_surf)) pRef = tv%p_surf(i,j)
-      Ri_Grad(:)=1.e8 !Initialize w/ large Richardson value
+      Ri_Grad(:) = 1.e8 ! Initialize w/ large Richardson value
       do k=1,GV%ke
         ! pressure, temp, and saln for EOS
         ! kk+1 = k fields
@@ -232,7 +232,7 @@ logical function CVMix_shear_init(Time, G, GV, US, param_file, diag, CS)
   type(diag_ctrl), target, intent(inout) :: diag !< Diagnostics control structure.
   type(CVMix_shear_cs),    pointer       :: CS !< This module's control structure.
   ! Local variables
-  integer :: NumberTrue=0
+  integer :: NumberTrue = 0
   logical :: use_JHL
   logical :: use_LMD94
   logical :: use_PP81
@@ -256,13 +256,13 @@ logical function CVMix_shear_init(Time, G, GV, US, param_file, diag, CS)
                  "If true, use the Large-McWilliams-Doney (JGR 1994) "//&
                  "shear mixing parameterization.", default=.false.)
   if (use_LMD94) &
-    NumberTrue=NumberTrue + 1
+    NumberTrue = NumberTrue + 1
   call get_param(param_file, mdl, "USE_PP81", use_PP81, &
                  "If true, use the Pacanowski and Philander (JPO 1981) "//&
                  "shear mixing parameterization.", default=.false.)
   if (use_PP81) &
     NumberTrue = NumberTrue + 1
-  use_JHL=kappa_shear_is_used(param_file)
+  use_JHL = kappa_shear_is_used(param_file)
   if (use_JHL) NumberTrue = NumberTrue + 1
   ! After testing for interior schemes, make sure only 0 or 1 are enabled.
   ! Otherwise, warn user and kill job.

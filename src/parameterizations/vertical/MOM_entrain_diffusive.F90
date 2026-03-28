@@ -775,7 +775,7 @@ subroutine entrainment_diffusive(h, tv, fluxes, dt, G, GV, US, CS, ea, eb, &
         enddo ; enddo
 
         ! Repetitive, unless ea(kb) has been corrected.
-        k=kmb
+        k = kmb
         do i=is,ie
           ! Do not adjust eb through the base of the buffer layers, but it
           ! may be necessary to change entrainment from above.

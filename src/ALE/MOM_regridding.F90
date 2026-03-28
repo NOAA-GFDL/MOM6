@@ -304,8 +304,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   call get_param(param_file, mdl, "INPUTDIR", inputdir, default=".")
   inputdir = slasher(inputdir)
 
-  main_parameters=.false.
-  if (len_trim(param_prefix)==0) main_parameters=.true.
+  main_parameters = .false.
+  if (len_trim(param_prefix) == 0) main_parameters = .true.
   if (main_parameters .and. len_trim(param_suffix)>0) call MOM_error(FATAL,trim(mdl)//&
               ' initialize_regridding: Suffix provided without prefix for parameter names!')
 
@@ -381,7 +381,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     param_name = create_coord_param(param_prefix, "DEF", param_suffix)
     coord_res_param = create_coord_param(param_prefix, "RES", param_suffix)
     string2 = 'UNIFORM'
-    if ((maximum_depth>3000.) .and. (maximum_depth<9250.)) string2='WOA09' ! For convenience
+    if ((maximum_depth > 3000.) .and. (maximum_depth < 9250.)) string2 = 'WOA09' ! For convenience
   endif
   call get_param(param_file, mdl, param_name, string, &
                  "Determines how to specify the coordinate "//&
@@ -910,7 +910,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     deallocate(dz_shallow)
   endif !REGRIDDING_HYCOM1
 
-  CS%nk=ke
+  CS%nk = ke
 
   ! Target resolution (for fixed coordinates)
   if (allocated(dz_3d)) then
@@ -1412,7 +1412,7 @@ subroutine check_grid_column( nk, h, dzInterface, msg )
   real :: total_h_new  ! The total thickness in the updated column, in [Z ~> m] or arbitrary units
   real :: h_new        ! A thickness in the updated column, in [Z ~> m] or arbitrary units
 
-  eps =1. ; eps = epsilon(eps)
+  eps = 1. ; eps = epsilon(eps)
 
   ! Total thickness of grid h
   total_h_old = 0.

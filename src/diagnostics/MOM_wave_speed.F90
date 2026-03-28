@@ -675,7 +675,7 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, halo_size, use_ebt_mode, mono_N
             if (mode_struct(1)/=0.) then ! Normalize
               mode_struct(1:kc) = mode_struct(1:kc) / mode_struct(1)
             else
-              mode_struct(1:kc)=0.
+              mode_struct(1:kc) = 0.
             endif
 
             if (CS%remap_answer_date < 20190101) then

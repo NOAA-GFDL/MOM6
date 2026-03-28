@@ -1155,7 +1155,7 @@ subroutine ALE_remap_velocities(CS, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u
 
   ! Setup related to KE conservation
   variance_option = .false.
-  if (present(allow_preserve_variance)) variance_option=allow_preserve_variance
+  if (present(allow_preserve_variance)) variance_option = allow_preserve_variance
   if (present(dt)) I_dt = 1.0 / dt
 
   if (CS%id_remap_delta_integ_u2>0) du2h_tot(:,:) = 0.
