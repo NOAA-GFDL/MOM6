@@ -137,7 +137,7 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
   do m = 1,ntr
 
      local_advect_scheme(m) = Reg%Tr(m)%advect_scheme
-     if(local_advect_scheme(m) < 0) local_advect_scheme(m) = CS%default_advect_scheme
+     if (local_advect_scheme(m) < 0) local_advect_scheme(m) = CS%default_advect_scheme
 
      if (local_advect_scheme(m) == ADVECT_PLM) then
        stencil_local = 2

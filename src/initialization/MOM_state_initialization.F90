@@ -1440,7 +1440,7 @@ subroutine calc_sfc_displacement(PF, G, GV, US, mass_shelf, tv, h)
         enddo
         residual = mass_shelf(i,j) - mass_disp
         iter = iter+1
-      end do
+      enddo
       if (iter >= max_iter) call MOM_mesg("Warning: calc_sfc_displacement too many iterations.")
       z_top_shelf(i,j) = z_top
     endif

@@ -1691,7 +1691,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
         do J=js-1,Jeq ; do I=is-1,Ieq
           Kh(I,J) = 0.25 * ((Kh_h(i,j,k) + Kh_h(i+1,j+1,k)) + (Kh_h(i,j+1,k) + Kh_h(i+1,j,k)))
         enddo ; enddo
-      end if
+      endif
 
       if (CS%id_Kh_q > 0 .or. CS%debug) then
         do J=js-1,Jeq ; do I=is-1,Ieq
@@ -1810,7 +1810,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
         do J=js-1,Jeq ; do I=is-1,Ieq
           Ah(I,J) = 0.25 * ((Ah_h(i,j,k) + Ah_h(i+1,j+1,k)) + (Ah_h(i,j+1,k) + Ah_h(i+1,j,k)))
         enddo ; enddo
-      end if
+      endif
 
       if (CS%id_Ah_q>0 .or. CS%debug) then
         do J=js-1,Jeq ; do I=is-1,Ieq

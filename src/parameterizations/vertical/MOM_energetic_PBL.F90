@@ -2797,7 +2797,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
   hz(1) = 0.0
   do K=2,nz
     hz(K) = hz(K-1) + dz(K-1)
-  end do
+  enddo
   hbl = MLD_Guess ! hbl is boundary layer depth.
 
   u_star_I = 1.0/u_star
@@ -2866,7 +2866,7 @@ subroutine kappa_eqdisc(shape_func, CS, GV, dz, absf, B_flux, u_star, MLD_guess)
     elseif (hz(n) > hbl) then
       shape_func(n) = CS%shape_function_epsilon ! set an arbitrary low constant value below hbl, default 0.01
     endif
-  end do
+  enddo
 end subroutine kappa_eqdisc
 
 !> Gives velocity scale (v_0) using equations that approximate neural network of Sane et al. 2023

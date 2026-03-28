@@ -433,7 +433,7 @@ subroutine configure_MARBL_tracers(GV, US, param_file, CS)
       CS%sfo_cnt = CS%sfo_cnt + 1
     else if (trim(field_source) == "interior_tendency") then
       CS%ito_cnt = CS%ito_cnt + 1
-    end if
+    endif
 
     ! Total 3D Chlorophyll
     call MARBL_instances%add_output_for_GCM(num_elements=1, num_levels=nz, field_name="total_Chl", &
@@ -442,8 +442,8 @@ subroutine configure_MARBL_tracers(GV, US, param_file, CS)
       CS%sfo_cnt = CS%sfo_cnt + 1
     else if (trim(field_source) == "interior_tendency") then
       CS%ito_cnt = CS%ito_cnt + 1
-    end if
-  end if
+    endif
+  endif
 
   ! (5) Initialize forcing fields
   !     i. store all surface forcing indices

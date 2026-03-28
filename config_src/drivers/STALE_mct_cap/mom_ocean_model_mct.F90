@@ -585,7 +585,7 @@ subroutine update_ocean_model(Ice_ocean_boundary, OS, Ocean_sfc, &
   call disable_averaging(OS%diag)
   Master_time = OS%Time ; Time1 = OS%Time
 
-  if(OS%offline_tracer_mode) then
+  if (OS%offline_tracer_mode) then
     call step_offline(OS%forces, OS%fluxes, OS%sfc_state, Time1, dt_coupling, OS%MOM_CSp)
 
   elseif ((.not.do_thermo) .or. (.not.do_dyn)) then
@@ -808,7 +808,7 @@ subroutine initialize_ocean_public_type(input_domain, Ocean_sfc, diag, maskmap, 
 
   call mpp_get_layout(input_domain,layout)
   call mpp_get_global_domain(input_domain, xsize=xsz, ysize=ysz)
-  if(PRESENT(maskmap)) then
+  if (PRESENT(maskmap)) then
     call mpp_define_domains((/1,xsz,1,ysz/),layout,Ocean_sfc%Domain, maskmap=maskmap)
   else
     call mpp_define_domains((/1,xsz,1,ysz/),layout,Ocean_sfc%Domain)

@@ -357,7 +357,7 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
     if (.not.use_waves) return
   else
     CS%WaveMethod = NULL_WaveMethod
-  end if
+  endif
 
   ! Wave modified physics
   !  Presently these are all in research mode

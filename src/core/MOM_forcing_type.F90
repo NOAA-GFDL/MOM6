@@ -3746,7 +3746,7 @@ subroutine get_forcing_groups(fluxes, water, heat, ustar, tau_mag, press, shelf,
   iceberg = associated(fluxes%ustar_berg)
   heat_added = associated(fluxes%heat_added)
   buoy = associated(fluxes%buoy)
-  if(present(carbon)) carbon = associated(fluxes%carbon_content_lrunoff)
+  if (present(carbon)) carbon = associated(fluxes%carbon_content_lrunoff)
 end subroutine get_forcing_groups
 
 

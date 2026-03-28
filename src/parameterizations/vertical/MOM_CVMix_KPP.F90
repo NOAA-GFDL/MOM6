@@ -567,11 +567,11 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
         cmor_field_name='oml', cmor_long_name='ocean_mixed_layer_thickness_defined_by_mixing_scheme', &
         cmor_units='m', cmor_standard_name='Ocean Mixed Layer Thickness Defined by Mixing Scheme')
   endif
-  if( CS%StokesMOST ) then
-  CS%id_StokesXI = register_diag_field('ocean_model', 'StokesXI', diag%axesT1, Time, &
-      'Stokes Similarity Parameter', 'nondim')
-  CS%id_Lam2     = register_diag_field('ocean_model', 'Lam2',  diag%axesT1, Time, &
-      'Ustk0_ustar', 'nondim')
+  if ( CS%StokesMOST ) then
+    CS%id_StokesXI = register_diag_field('ocean_model', 'StokesXI', diag%axesT1, Time, &
+        'Stokes Similarity Parameter', 'nondim')
+    CS%id_Lam2     = register_diag_field('ocean_model', 'Lam2',  diag%axesT1, Time, &
+        'Ustk0_ustar', 'nondim')
   endif
   CS%id_BulkDrho = register_diag_field('ocean_model', 'KPP_BulkDrho', diag%axesTL, Time, &
       'Bulk difference in density used in Bulk Richardson number, as used by [CVMix] KPP', &

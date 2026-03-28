@@ -237,7 +237,7 @@ subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, unit
   if (present(diag_form)) Tr%diag_form = diag_form
 
   Tr%advect_scheme = -1
-  if(present(advect_scheme)) Tr%advect_scheme = advect_scheme
+  if (present(advect_scheme)) Tr%advect_scheme = advect_scheme
 
   Tr%t => tr_ptr
 

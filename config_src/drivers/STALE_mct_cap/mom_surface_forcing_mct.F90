@@ -439,14 +439,14 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
       fluxes%lrunoff(i,j) = kg_m2_s_conversion * IOB%rofl_flux(i-i0,j-j0) * G%mask2dT(i,j)
     else if (associated(IOB%runoff)) then
       fluxes%lrunoff(i,j) = kg_m2_s_conversion * IOB%runoff(i-i0,j-j0) * G%mask2dT(i,j)
-    end if
+    endif
 
     ! ice runoff flux
     if (associated(IOB%rofi_flux)) then
       fluxes%frunoff(i,j) = kg_m2_s_conversion * IOB%rofi_flux(i-i0,j-j0) * G%mask2dT(i,j)
     else if (associated(IOB%calving)) then
       fluxes%frunoff(i,j) = kg_m2_s_conversion * IOB%calving(i-i0,j-j0) * G%mask2dT(i,j)
-    end if
+    endif
 
     if (associated(IOB%ustar_berg)) &
       fluxes%ustar_berg(i,j) = US%m_to_Z*US%T_to_s * IOB%ustar_berg(i-i0,j-j0) * G%mask2dT(i,j)
