@@ -482,8 +482,8 @@ subroutine calculate_bkgnd_mixing(h, tv, N2_lay, Kd_lay, Kd_int, Kv_bkgnd, j, G,
 
     ! Update Kd_int and Kv_bkgnd, based on Kd_lay.  These might be just used for diagnostic purposes.
     do i=is,ie
-      Kd_int(i,1) = 0.0; Kv_bkgnd(i,1) = 0.0
-      Kd_int(i,nz+1) = 0.0; Kv_bkgnd(i,nz+1) = 0.0
+      Kd_int(i,1) = 0.0 ; Kv_bkgnd(i,1) = 0.0
+      Kd_int(i,nz+1) = 0.0 ; Kv_bkgnd(i,nz+1) = 0.0
     enddo
     do K=2,nz ; do i=is,ie
       Kd_int(i,K) = 0.5*(Kd_lay(i,k-1) + Kd_lay(i,k))

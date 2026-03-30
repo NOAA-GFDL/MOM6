@@ -248,9 +248,9 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, forces, &
   dt_pred = dt / 3.0
   cor_stencil = CoriolisAdv_stencil(CS%CoriolisAdv)
 
-  h_av(:,:,:) = 0; hp(:,:,:) = 0
-  up(:,:,:) = 0; upp(:,:,:) = 0
-  vp(:,:,:) = 0; vpp(:,:,:) = 0
+  h_av(:,:,:) = 0 ; hp(:,:,:) = 0
+  up(:,:,:) = 0 ; upp(:,:,:) = 0
+  vp(:,:,:) = 0 ; vpp(:,:,:) = 0
 
   dyn_p_surf = associated(p_surf_begin) .and. associated(p_surf_end)
   if (dyn_p_surf) then

@@ -46,7 +46,7 @@ type, abstract :: diag_buffer_base ; private
 end type diag_buffer_base
 
 !> Dynamically growing buffer for 2D arrays.
-type, extends(diag_buffer_base), public :: diag_buffer_2d; private
+type, extends(diag_buffer_base), public :: diag_buffer_2d ; private
   type(buffer_2d), public, dimension(:), allocatable :: buffer !< The actual 2D buffer which will dynamically grow
 
   contains
@@ -165,7 +165,7 @@ subroutine set_vertical_extent(this, ks, ke)
   integer,               intent(in)    :: ks !< The start slot of the array i-direction
   integer,               intent(in)    :: ke !< The end slot of the array i-direction
 
-  this%ks = ks; this%ke = ke
+  this%ks = ks ; this%ke = ke
 end subroutine set_vertical_extent
 
 !> Set the extents of a 2D buffer from the bounds of a 2D array
@@ -202,7 +202,7 @@ subroutine grow_2d(this)
   ! Grow the ID array
   call this%grow_ids()
 
-  is = this%is; ie=this%ie; js=this%js; je=this%je
+  is = this%is ; ie = this%ie ; js = this%js ; je = this%je
   n = this%length
 
   allocate(new_buffer(n+1))
@@ -239,7 +239,7 @@ subroutine grow_3d(this)
   ! Grow the ID array
   call this%grow_ids()
 
-  is = this%is; ie=this%ie; js=this%js; je=this%je; ks=this%ks; ke=this%ke
+  is = this%is ; ie = this%ie ; js = this%js ; je = this%je ; ks = this%ks ; ke = this%ke
   n = this%length
 
   allocate(new_buffer(n+1))

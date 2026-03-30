@@ -1490,7 +1490,7 @@ subroutine setup_tidal_diagnostics(G, GV, CS)
   ! local
   integer :: isd, ied, jsd, jed, nz
 
-  isd = G%isd; ied = G%ied; jsd = G%jsd; jed = G%jed; nz = GV%ke
+  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed ; nz = GV%ke
 
   if ((CS%id_Kd_itidal > 0) .or. (CS%id_Kd_Itidal_work > 0)) &
     allocate(CS%dd%Kd_itidal(isd:ied,jsd:jed,nz+1), source=0.0)

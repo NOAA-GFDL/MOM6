@@ -717,7 +717,7 @@ subroutine post_tracer_diagnostics_at_sync(Reg, h, diag_prev, diag, G, GV, dt)
   integer :: i, j, k, is, ie, js, je, nz, m
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
-  Idt = 0.; if (dt/=0.) Idt = 1.0 / dt ! The "if" is in case the diagnostic is called for a zero length interval
+  Idt = 0. ; if (dt/=0.) Idt = 1.0 / dt ! The "if" is in case the diagnostic is called for a zero length interval
 
   ! Tendency diagnostics need to be posted on the grid from the last call to this routine
   call diag_save_grids(diag)
@@ -799,7 +799,7 @@ subroutine post_tracer_transport_diagnostics(G, GV, Reg, h_diag, diag)
       enddo
       exit
     endif
-  endif; enddo
+  endif ; enddo
 
   do m=1,Reg%ntr ; if (Reg%Tr(m)%registry_diags) then
     Tr => Reg%Tr(m)

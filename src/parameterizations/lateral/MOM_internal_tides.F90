@@ -103,7 +103,7 @@ type, public :: int_tide_CS ; private
   real, allocatable, dimension(:,:,:,:,:) :: TKE_Froude_loss
                         !< energy lost due to wave breaking [H Z2 T-3 ~> m3 s-3 or W m-2]
   real, allocatable, dimension(:,:) :: TKE_itidal_loss_fixed
-                        !< Fixed part of the energy lost due to small-scale drag [H Z2 L-2 ~> kg m-2] here;
+                        !< Fixed part of the energy lost due to small-scale drag [H Z2 L-2 ~> kg m-2] here.
                         !! This will be multiplied by N and the squared near-bottom velocity (and by
                         !! the near-bottom density in non-Boussinesq mode) to get the energy losses
                         !! in [R Z4 H-1 L-2 ~> kg m-2 or m]
@@ -2306,7 +2306,7 @@ subroutine propagate_x(En, speed_x, Cgx_av, dCgx, dt, G, US, Nangle, CS, LB, res
       enddo
       call zonal_flux_En(cg_p, En(:,j,a), EnL(:,j), EnR(:,j), flux1, &
                          dt, G, US, j, ish, ieh, CS%vol_CFL)
-      do I=ish-1,ieh ; flux_x(I,j) = flux1(I); enddo
+      do I=ish-1,ieh ; flux_x(I,j) = flux1(I) ; enddo
     enddo
 
     do j=jsh,jeh ; do i=ish,ieh
@@ -2396,7 +2396,7 @@ subroutine propagate_y(En, speed_y, Cgy_av, dCgy, dt, G, US, Nangle, CS, LB, res
       enddo
       call merid_flux_En(cg_p, En(:,:,a), EnL(:,:), EnR(:,:), flux1, &
                          dt, G, US, J, ish, ieh, CS%vol_CFL)
-      do i=ish,ieh ; flux_y(i,J) = flux1(i); enddo
+      do i=ish,ieh ; flux_y(i,J) = flux1(i) ; enddo
     enddo
 
     do j=jsh,jeh ; do i=ish,ieh

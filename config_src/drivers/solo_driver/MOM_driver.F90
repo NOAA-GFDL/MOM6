@@ -254,11 +254,11 @@ program MOM6
     endif
   else
     calendar = uppercase(calendar)
-    if (calendar(1:6) == 'JULIAN') then ;        calendar_type = JULIAN
-    elseif (calendar(1:9) == 'GREGORIAN') then ; calendar_type = GREGORIAN
-    elseif (calendar(1:6) == 'NOLEAP') then ;    calendar_type = NOLEAP
-    elseif (calendar(1:10)=='THIRTY_DAY') then ; calendar_type = THIRTY_DAY_MONTHS
-    elseif (calendar(1:11)=='NO_CALENDAR') then; calendar_type = NO_CALENDAR
+    if (calendar(1:6) == 'JULIAN') then ;         calendar_type = JULIAN
+    elseif (calendar(1:9) == 'GREGORIAN') then ;  calendar_type = GREGORIAN
+    elseif (calendar(1:6) == 'NOLEAP') then ;     calendar_type = NOLEAP
+    elseif (calendar(1:10)=='THIRTY_DAY') then ;  calendar_type = THIRTY_DAY_MONTHS
+    elseif (calendar(1:11)=='NO_CALENDAR') then ; calendar_type = NO_CALENDAR
     elseif (calendar(1:1) /= ' ') then
       call MOM_error(FATAL,'MOM_driver: Invalid namelist value '//trim(calendar)//' for calendar')
     else

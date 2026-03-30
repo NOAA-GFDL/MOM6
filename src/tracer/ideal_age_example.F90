@@ -179,7 +179,7 @@ function register_ideal_age_tracer(HI, GV, param_file, CS, tr_Reg, restart_CS)
 
   CS%BL_residence_num = 0
   if (do_BL_residence) then
-    CS%ntr = CS%ntr + 1 ; m = CS%ntr; CS%BL_residence_num = CS%ntr
+    CS%ntr = CS%ntr + 1 ; m = CS%ntr ; CS%BL_residence_num = CS%ntr
     CS%tr_desc(m) = var_desc("BL_age", "yr", "BL Residence Time Tracer", caller=mdl)
     CS%tracer_ages(m) = .true. ; CS%growth_rate(m) = 0.0
     CS%IC_val(m) = 0.0 ; CS%young_val(m) = 0.0 ; CS%tracer_start_year(m) = 0.0

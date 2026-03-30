@@ -178,7 +178,7 @@ subroutine Filt_accum(u, u1, Time, US, CS)
       do j=CS%js,CS%je ; do i=CS%is,CS%ie
         CS%s1(i,j,k) =  c1 *  CS%u1(i,j,k) + CS%s1(i,j,k)
         CS%u1(i,j,k) = -c1 * (CS%s1(i,j,k) - CS%filter_alpha(k) * u(i,j)) + c2 * CS%u1(i,j,k)
-      enddo; enddo
+      enddo ; enddo
     enddo ! k=1,CS%nf
   endif ! (CS%old_time<now)
 

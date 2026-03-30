@@ -3479,8 +3479,8 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
   isd  = G%isd   ; ied  = G%ied    ; jsd  = G%jsd   ; jed  = G%jed
   IsdB = G%IsdB  ; IedB = G%IedB   ; JsdB = G%JsdB  ; JedB = G%JedB
 
-  shelf_sfc_acc=.false.
-  if (present(shelf_sfc_accumulation)) shelf_sfc_acc=shelf_sfc_accumulation
+  shelf_sfc_acc = .false.
+  if (present(shelf_sfc_accumulation)) shelf_sfc_acc = shelf_sfc_accumulation
 
   call myAlloc(fluxes%ustar,isd,ied,jsd,jed, ustar)
   call myAlloc(fluxes%ustar_gustless,isd,ied,jsd,jed, ustar)
@@ -3531,12 +3531,12 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
   call myAlloc(fluxes%p_surf,isd,ied,jsd,jed, press)
 
   ! These fields should only be allocated if ice shelf is enabled.
-  if (present(shelf)) then; if (shelf) then
+  if (present(shelf)) then ; if (shelf) then
     call myAlloc(fluxes%frac_shelf_h,isd,ied,jsd,jed, shelf)
     call myAlloc(fluxes%ustar_shelf,isd,ied,jsd,jed, shelf)
     call myAlloc(fluxes%iceshelf_melt,isd,ied,jsd,jed, shelf)
     if (shelf_sfc_acc) call myAlloc(fluxes%shelf_sfc_mass_flux,isd,ied,jsd,jed, shelf_sfc_acc)
-  endif; endif
+  endif ; endif
 
   !These fields should only be allocated when iceberg area is being passed through the coupler.
   call myAlloc(fluxes%ustar_berg,isd,ied,jsd,jed, iceberg)
@@ -3680,7 +3680,7 @@ subroutine allocate_mech_forcing_by_group(G, forces, stress, ustar, shelf, &
   call myAlloc(forces%mass_berg,isd,ied,jsd,jed, iceberg)
 
   !These fields should only be allocated when waves
-  if (present(waves)) then; if (waves) then;
+  if (present(waves)) then ; if (waves) then
     if (.not. present(num_stk_bands)) then
       call MOM_error(FATAL,"Requested to &
       &initialize with waves, but no waves are present.")

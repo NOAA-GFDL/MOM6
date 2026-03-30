@@ -775,7 +775,7 @@ subroutine bulkmixedlayer(h_3d, u_3d, v_3d, tv, fluxes, dt, ea, eb, G, GV, US, C
 
     ! Copy the interior thicknesses and other fields back to the 3-d arrays.
     do k=CS%nkml+1,nz ; do i=is,ie
-      h_3d(i,j,k) = h(i,k); tv%T(i,j,k) = T(i,k) ; tv%S(i,j,k) = S(i,k)
+      h_3d(i,j,k) = h(i,k) ; tv%T(i,j,k) = T(i,k) ; tv%S(i,j,k) = S(i,k)
     enddo ; enddo
 
     do k=1,nz ; do i=is,ie
@@ -2642,7 +2642,7 @@ subroutine mixedlayer_detrain_2(h, T, S, R0, Spv0, Rcv, RcvTgt, dt, dt_diag, d_e
   integer :: i, k, k0, k1, is, ie, nz, kb1, kb2, nkmb
 
   is = G%isc ; ie = G%iec ; nz = GV%ke
-  kb1 = CS%nkml+1; kb2 = CS%nkml+2
+  kb1 = CS%nkml+1 ; kb2 = CS%nkml+2
   nkmb = CS%nkml+CS%nkbl
   h_neglect = GV%H_subroundoff
   g_2 = 0.5 * GV%g_Earth_Z_T2
@@ -3328,7 +3328,7 @@ subroutine mixedlayer_detrain_2(h, T, S, R0, Spv0, Rcv, RcvTgt, dt, dt_diag, d_e
         h1_to_h2 = stays_merge - stays
 
         Ihk0 = 1.0 / ((h1_to_k0 + h2) + h(i,k0))
-        Ih1f = 1.0 / (h_to_bl + stays); Ih2f = 1.0 / h1_to_h2
+        Ih1f = 1.0 / (h_to_bl + stays) ; Ih2f = 1.0 / h1_to_h2
         Ih12 = 1.0 / (h1 + h2)
 
         dRcv_2dz = (Rcv(i,kb1) - Rcv(i,kb2)) * Ih12

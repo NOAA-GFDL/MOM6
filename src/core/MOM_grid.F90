@@ -365,16 +365,16 @@ subroutine MOM_grid_init(G, param_file, US, HI, global_indexing, bathymetry_at_v
     G%Block(n)%jec = G%Block(n)%jsc + jend(j) - jbegin(j)
     G%Block(n)%ied = G%Block(n)%iec + nihalo
     G%Block(n)%jed = G%Block(n)%jec + njhalo
-    G%Block(n)%IscB = G%Block(n)%isc; G%Block(n)%IecB = G%Block(n)%iec
-    G%Block(n)%JscB = G%Block(n)%jsc; G%Block(n)%JecB = G%Block(n)%jec
+    G%Block(n)%IscB = G%Block(n)%isc ; G%Block(n)%IecB = G%Block(n)%iec
+    G%Block(n)%JscB = G%Block(n)%jsc ; G%Block(n)%JecB = G%Block(n)%jec
     !   For symmetric memory domains, the first block will have the extra point
     ! at the lower boundary of its computational domain.
     if (G%symmetric) then
       if (i==1) G%Block(n)%IscB = G%Block(n)%IscB-1
       if (j==1) G%Block(n)%JscB = G%Block(n)%JscB-1
     endif
-    G%Block(n)%IsdB = G%Block(n)%isd; G%Block(n)%IedB = G%Block(n)%ied
-    G%Block(n)%JsdB = G%Block(n)%jsd; G%Block(n)%JedB = G%Block(n)%jed
+    G%Block(n)%IsdB = G%Block(n)%isd ; G%Block(n)%IedB = G%Block(n)%ied
+    G%Block(n)%JsdB = G%Block(n)%jsd ; G%Block(n)%JedB = G%Block(n)%jed
     !--- For symmetric memory domain, every block will have an extra point
     !--- at the lower boundary of its data domain.
     if (G%symmetric) then
@@ -587,13 +587,13 @@ subroutine allocate_metrics(G)
   ALLOC_(G%dx_Cv(isd:ied,JsdB:JedB))     ; G%dx_Cv(:,:) = 0.0
   ALLOC_(G%dy_Cu(IsdB:IedB,jsd:jed))     ; G%dy_Cu(:,:) = 0.0
 
-  ALLOC_(G%porous_DminU(IsdB:IedB,jsd:jed)); G%porous_DminU(:,:) = 0.0
-  ALLOC_(G%porous_DmaxU(IsdB:IedB,jsd:jed)); G%porous_DmaxU(:,:) = 0.0
-  ALLOC_(G%porous_DavgU(IsdB:IedB,jsd:jed)); G%porous_DavgU(:,:) = 0.0
+  ALLOC_(G%porous_DminU(IsdB:IedB,jsd:jed)) ; G%porous_DminU(:,:) = 0.0
+  ALLOC_(G%porous_DmaxU(IsdB:IedB,jsd:jed)) ; G%porous_DmaxU(:,:) = 0.0
+  ALLOC_(G%porous_DavgU(IsdB:IedB,jsd:jed)) ; G%porous_DavgU(:,:) = 0.0
 
-  ALLOC_(G%porous_DminV(isd:ied,JsdB:JedB)); G%porous_DminV(:,:) = 0.0
-  ALLOC_(G%porous_DmaxV(isd:ied,JsdB:JedB)); G%porous_DmaxV(:,:) = 0.0
-  ALLOC_(G%porous_DavgV(isd:ied,JsdB:JedB)); G%porous_DavgV(:,:) = 0.0
+  ALLOC_(G%porous_DminV(isd:ied,JsdB:JedB)) ; G%porous_DminV(:,:) = 0.0
+  ALLOC_(G%porous_DmaxV(isd:ied,JsdB:JedB)) ; G%porous_DmaxV(:,:) = 0.0
+  ALLOC_(G%porous_DavgV(isd:ied,JsdB:JedB)) ; G%porous_DavgV(:,:) = 0.0
 
   ALLOC_(G%areaCu(IsdB:IedB,jsd:jed))  ; G%areaCu(:,:) = 0.0
   ALLOC_(G%areaCv(isd:ied,JsdB:JedB))  ; G%areaCv(:,:) = 0.0

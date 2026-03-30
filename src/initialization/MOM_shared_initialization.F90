@@ -970,12 +970,12 @@ subroutine reset_face_lengths_list(G, param_file, US)
     do ln=1,num_lines
       line = lines(ln)
       ! Detect keywords
-      found_u = .false.; found_v = .false.
-      found_u_por = .false.; found_v_por = .false.
-      isu = index(uppercase(line), "U_WIDTH" ); if (isu > 0) found_u = .true.
-      isv = index(uppercase(line), "V_WIDTH" ); if (isv > 0) found_v = .true.
-      isu_por = index(uppercase(line), "U_WIDTH_POR" ); if (isu_por > 0) found_u_por = .true.
-      isv_por = index(uppercase(line), "V_WIDTH_POR" ); if (isv_por > 0) found_v_por = .true.
+      found_u = .false. ; found_v = .false.
+      found_u_por = .false. ; found_v_por = .false.
+      isu = index(uppercase(line), "U_WIDTH") ; if (isu > 0) found_u = .true.
+      isv = index(uppercase(line), "V_WIDTH") ; if (isv > 0) found_v = .true.
+      isu_por = index(uppercase(line), "U_WIDTH_POR") ; if (isu_por > 0) found_u_por = .true.
+      isv_por = index(uppercase(line), "V_WIDTH_POR") ; if (isv_por > 0) found_v_por = .true.
 
       ! Store and check the relevant values.
       if (found_u) then
@@ -1202,9 +1202,9 @@ subroutine read_face_length_list(iounit, filename, num_lines, lines)
 
     ! Detect keywords
     line_up = uppercase(line)
-    found_u = .false.; found_v = .false.
-    isu = index(line_up(:last), "U_WIDTH" ); if (isu > 0) found_u = .true.
-    isv = index(line_up(:last), "V_WIDTH" ); if (isv > 0) found_v = .true.
+    found_u = .false. ; found_v = .false.
+    isu = index(line_up(:last), "U_WIDTH") ; if (isu > 0) found_u = .true.
+    isv = index(line_up(:last), "V_WIDTH") ; if (isv > 0) found_v = .true.
 
     if (found_u .and. found_v) call MOM_error(FATAL, &
       "read_face_length_list : both U_WIDTH and V_WIDTH found when "//&
@@ -1291,8 +1291,8 @@ subroutine set_subgrid_topo_at_vel_from_file(G, param_file, US)
 
   ! The signs of the depth parameters need to be inverted to be backward compatible with input files
   ! used by subroutine reset_face_lengths_list, which assumes depth is negative below the sea surface.
-  G%porous_DmaxU = -G%porous_DmaxU; G%porous_DminU = -G%porous_DminU; G%porous_DavgU = -G%porous_DavgU
-  G%porous_DmaxV = -G%porous_DmaxV; G%porous_DminV = -G%porous_DminV; G%porous_DavgV = -G%porous_DavgV
+  G%porous_DmaxU = -G%porous_DmaxU ; G%porous_DminU = -G%porous_DminU ; G%porous_DavgU = -G%porous_DavgU
+  G%porous_DmaxV = -G%porous_DmaxV ; G%porous_DminV = -G%porous_DminV ; G%porous_DavgV = -G%porous_DavgV
 
   call pass_vector(G%porous_DmaxU, G%porous_DmaxV, G%Domain, To_All+SCALAR_PAIR, CGRID_NE)
   call pass_vector(G%porous_DminU, G%porous_DminV, G%Domain, To_All+SCALAR_PAIR, CGRID_NE)

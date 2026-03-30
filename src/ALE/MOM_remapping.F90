@@ -440,7 +440,7 @@ subroutine build_reconstructions_1d( CS, n0, h0, u0, ppoly_r_coefs, &
   integer :: k, n
   logical :: deb ! Do debugging
 
-  deb=.false.; if (present(debug)) deb=debug
+  deb = .false. ; if (present(debug)) deb = debug
 
   h_neg_edge = h_neglect ; if (present(h_neglect_edge)) h_neg_edge = h_neglect_edge
 

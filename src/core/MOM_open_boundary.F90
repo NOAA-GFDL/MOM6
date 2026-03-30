@@ -6079,8 +6079,8 @@ subroutine update_segment_thickness_reservoirs(G, GV, uhr, vhr, h, OBC)
   if (associated(OBC)) then ; if (OBC%OBC_pe) then ; do n=1,OBC%number_of_segments
     segment=>OBC%segment(n)
     if (.not. associated(segment%h_Reg)) cycle
-    b_in  = 0.0; if (segment%Tr_InvLscale_in  == 0.0) b_in  = 1.0
-    b_out = 0.0; if (segment%Tr_InvLscale_out == 0.0) b_out = 1.0
+    b_in  = 0.0 ; if (segment%Tr_InvLscale_in  == 0.0) b_in  = 1.0
+    b_out = 0.0 ; if (segment%Tr_InvLscale_out == 0.0) b_out = 1.0
     if (segment%is_E_or_W) then
       I = segment%HI%IsdB
       do j=segment%HI%jsd,segment%HI%jed

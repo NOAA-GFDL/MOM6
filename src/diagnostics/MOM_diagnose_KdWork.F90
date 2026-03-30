@@ -125,7 +125,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
 
   integer :: i, j, k, nz, isc, iec, jsc, jec
 
-  isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec ;
+  isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
   nz = GV%ke
 
@@ -755,13 +755,13 @@ subroutine diagnoseKdWork(G, GV, N2, Kd, Bdif_flx, dz, Bdif_flx_dz)
   !$OMP parallel do default(shared)
   do K=2,GV%ke ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
     Bdif_flx(i,j,K) = - N2(i,j,K) * Kd(i,j,K)
-  enddo ; enddo; enddo
+  enddo ; enddo ; enddo
 
   if (present(Bdif_flx_dz) .and. present(dz)) then
     !$OMP parallel do default(shared)
     do K=1,GV%ke ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
       Bdif_flx_dz(i,j,k) = 0.5*(Bdif_flx(i,j,K)+Bdif_flx(i,j,K+1))*dz(i,j,k)
-    enddo ; enddo; enddo
+    enddo ; enddo ; enddo
   endif
 
 end subroutine diagnoseKdWork

@@ -251,7 +251,7 @@ subroutine vertFPmix(ui, vi, uold, vold, hbl_h, h, forces, dt, lpost, Cemp_NL, G
   integer :: b, kp1, k, nz !< band and vertical indices
   integer :: i, j, is, ie, js, je, Isq, Ieq, Jsq, Jeq !< horizontal indices
 
-  is = G%isc ; ie = G%iec; js = G%jsc; je = G%jec
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB ; nz = GV%ke
 
   pi = 4. * atan2(1.,1.)
@@ -606,7 +606,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   logical :: lfpmix
 
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz, n
-  is = G%isc ; ie = G%iec; js = G%jsc; je = G%jec
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB ; nz = GV%ke
 
   if (.not.associated(CS)) call MOM_error(FATAL,"MOM_vert_friction(visc): "// &
@@ -664,7 +664,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   if (associated(ADp%du_dt_visc)) then
     do k=1,nz ; do j=G%jsc,G%jec ; do I=Isq,Ieq
       ADp%du_dt_visc(I,j,k) = u(I,j,k)
-    enddo ; enddo; enddo
+    enddo ; enddo ; enddo
   endif
 
   if (associated(ADp%du_dt_visc_gl90)) then
@@ -1036,7 +1036,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   if (present(tauy_bot)) then
     do J=Jsq,Jeq ; do i=is,ie
       tauy_bot(i,J) = GV%H_to_RZ * (v(i,J,nz) * CS%a_v(i,J,nz+1))
-    enddo; enddo
+    enddo ; enddo
 
     if (allocated(visc%Ray_v)) then
       do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
@@ -2750,8 +2750,8 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
 
   CS%initialized = .true.
 
-  if (GV%Boussinesq) then; thickness_units = "m"
-  else; thickness_units = "kg m-2"; endif
+  if (GV%Boussinesq) then ; thickness_units = "m"
+  else ; thickness_units = "kg m-2" ; endif
 
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed ; nz = GV%ke
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB

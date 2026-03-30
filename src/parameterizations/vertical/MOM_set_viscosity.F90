@@ -1019,7 +1019,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
         do K=nz,1,-1
           !modify L(K) for porous barrier parameterization
           if (m==1) then ; L(K) = L(K)*pbv%por_layer_widthU(I,j,K)
-          else ; L(K) = L(K)*pbv%por_layer_widthV(i,J,K); endif
+          else ; L(K) = L(K)*pbv%por_layer_widthV(i,J,K) ; endif
 
           ! Determine the drag contributing to the bottom boundary layer
           ! and the Rayleigh drag that acts on each layer.

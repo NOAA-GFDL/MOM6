@@ -244,9 +244,9 @@ subroutine initialize_oda_incupd( G, GV, US, param_file, CS, data_h, nz_data, re
   ! get the vertical grid (h_obs) of the increments
   CS%nz_data = nz_data
   allocate(CS%Ref_h%p(G%isd:G%ied,G%jsd:G%jed,CS%nz_data), source=0.0)
-  do j=G%jsc,G%jec; do i=G%isc,G%iec ; do k=1,CS%nz_data
+  do j=G%jsc,G%jec ; do i=G%isc,G%iec ; do k=1,CS%nz_data
     CS%Ref_h%p(i,j,k) = data_h(i,j,k)
-  enddo;  enddo ; enddo
+  enddo ; enddo ; enddo
   !### Doing a halo update here on CS%Ref_h%p would avoid needing halo updates each timestep.
 
   ! Call the constructor for remapping control structure
@@ -474,7 +474,7 @@ subroutine calc_oda_increments(h, tv, u, v, G, GV, US, CS)
     enddo ; enddo
 
     ! remap v to h_obs to get increment
-    hv(:) = 0.0;
+    hv(:) = 0.0
     do j=jsB,jeB ; do i=is,ie
       if (G%mask2dCv(i,j) == 1) then
         ! get v-velocity

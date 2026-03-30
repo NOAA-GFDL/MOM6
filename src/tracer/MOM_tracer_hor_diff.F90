@@ -1539,7 +1539,7 @@ subroutine tracer_epipycnal_ML_diff(h, dt, Tr, ntr, khdt_epi_x, khdt_epi_y, G, &
         ! this loop with those that precede it and thereby eliminate the need for three 3-d arrays.
         if (CS%answer_date <= 20240330) then
           do k=1,nPv(i,J)
-            kLb = k0b_Lv(J)%p(i,k); kRb = k0b_Rv(J)%p(i,k)
+            kLb = k0b_Lv(J)%p(i,k) ; kRb = k0b_Rv(J)%p(i,k)
             if (deep_wt_Lv(J)%p(i,k) >= 1.0) then
               tr_flux_conv(i,j,kLb) = tr_flux_conv(i,j,kLb) - Tr_flux_3d(i,J,k)
             else
@@ -1561,7 +1561,7 @@ subroutine tracer_epipycnal_ML_diff(h, dt, Tr, ntr, khdt_epi_x, khdt_epi_y, G, &
           enddo
         else
           do k=1,nPv(i,J)
-            kLb = k0b_Lv(J)%p(i,k); kRb = k0b_Rv(J)%p(i,k)
+            kLb = k0b_Lv(J)%p(i,k) ; kRb = k0b_Rv(J)%p(i,k)
             if (deep_wt_Lv(J)%p(i,k) >= 1.0) then
               tr_flux_N(i,j,kLb) = tr_flux_N(i,j,kLb) + Tr_flux_3d(i,J,k)
             else

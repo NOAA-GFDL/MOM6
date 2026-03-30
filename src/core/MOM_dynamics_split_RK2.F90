@@ -668,7 +668,7 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   endif
 
   if (CS%BT_use_layer_fluxes) then
-    uh_ptr => uh_in ; vh_ptr => vh_in; u_ptr => u_inst ; v_ptr => v_inst
+    uh_ptr => uh_in ; vh_ptr => vh_in ; u_ptr => u_inst ; v_ptr => v_inst
   endif
 
   call cpu_clock_begin(id_clock_btstep)

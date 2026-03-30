@@ -61,7 +61,7 @@ use MOM_coupler_types,   only : coupler_type_spawn
 use MOM_coupler_types,   only : coupler_type_initialized, coupler_type_copy_data
 
 ! By default make data private
-implicit none; private
+implicit none ; private
 
 #include <MOM_memory.h>
 
@@ -280,7 +280,7 @@ subroutine ocn_init_mct( EClock, cdata_o, x2o_o, o2x_o, NLFilename )
                   "Coeff. used to convert net shortwave rad. into "//&
                   "near-IR, diffuse shortwave.", units="nondim", default=0.215)
   else
-    glb%c1 = 0.0; glb%c2 = 0.0; glb%c3 = 0.0; glb%c4 = 0.0
+    glb%c1 = 0.0 ; glb%c2 = 0.0 ; glb%c3 = 0.0 ; glb%c4 = 0.0
   endif
 
   ! Close param file before it gets opened by ocean_model_init again.

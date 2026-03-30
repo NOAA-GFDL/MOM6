@@ -692,7 +692,7 @@ logical function CFC_cap_unit_tests(verbose)
   if (.not. CFC_cap_unit_tests) write(stdout,'(2x,a)') "Passed "//test_name
 
   test_name = 'Solubility function, SST = 1.0 C, and SSS = 10 psu'
-  ta = max(0.01, (1.0 + 273.15) * 0.01); sal = 10.
+  ta = max(0.01, (1.0 + 273.15) * 0.01) ; sal = 10.
   ! cfc1 = 3.238 10-2 mol kg-1 atm-1
   ! cfc2 = 7.943 10-3 mol kg-1 atm-1
   call get_solubility(dummy1, dummy2, ta, sal , 1.0)
@@ -704,7 +704,7 @@ logical function CFC_cap_unit_tests(verbose)
   if (.not. CFC_cap_unit_tests) write(stdout,'(2x,a)')"Passed "//test_name
 
   test_name = 'Solubility function, SST = 20.0 C, and SSS = 35 psu'
-  ta = max(0.01, (20.0 + 273.15) * 0.01); sal = 35.
+  ta = max(0.01, (20.0 + 273.15) * 0.01) ; sal = 35.
   ! cfc1 = 0.881 10-2 mol kg-1 atm-1
   ! cfc2 = 2.446 10-3 mol kg-1 atm-1
   call get_solubility(dummy1, dummy2, ta, sal , 1.0)

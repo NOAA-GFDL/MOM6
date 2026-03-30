@@ -1207,7 +1207,7 @@ subroutine apply_flux_adjustments(G, US, CS, Time, fluxes)
   integer :: isc, iec, jsc, jec, i, j
   logical :: overrode_h
 
-  isc = G%isc; iec = G%iec ; jsc = G%jsc; jec = G%jec
+  isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
   call data_override(G%Domain, 'hflx_adj', temp_at_h, Time, override=overrode_h, &
                      scale=US%W_m2_to_QRZ_T)
@@ -1257,7 +1257,7 @@ subroutine apply_force_adjustments(G, US, CS, Time, forces)
   real :: zonal_tau, merid_tau ! True zonal and meridional wind stresses [R Z L T-2 ~> Pa]
   logical :: overrode_x, overrode_y
 
-  isc = G%isc; iec = G%iec ; jsc = G%jsc; jec = G%jec
+  isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
   tempx_at_h(:,:) = 0.0 ; tempy_at_h(:,:) = 0.0
   ! Either reads data or leaves contents unchanged
@@ -1460,11 +1460,11 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "due to internal corrections.", default=.false.)
 
   if (present(wind_stagger)) then
-        if (wind_stagger == AGRID)    then ; stagger = 'AGRID'
+    if     (wind_stagger == AGRID)    then ; stagger = 'AGRID'
     elseif (wind_stagger == BGRID_NE) then ; stagger = 'BGRID_NE'
     elseif (wind_stagger == CGRID_NE) then ; stagger = 'CGRID_NE'
     else ; stagger = 'UNKNOWN' ; call MOM_error(FATAL,"surface_forcing_init: WIND_STAGGER = "// &
-                      trim(stagger)// "is invalid."); endif
+                      trim(stagger)// "is invalid.") ; endif
     call log_param(param_file, mdl, "WIND_STAGGER", stagger, &
                    "The staggering of the input wind stress field "//&
                    "from the coupler that is actually used.")
@@ -1474,7 +1474,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                    "A case-insensitive character string to indicate the "//&
                    "staggering of the input wind stress field.  Valid "//&
                    "values are 'A', 'B', or 'C'.", default="C")
-        if (uppercase(stagger(1:1)) == 'A') then ; CS%wind_stagger = AGRID
+    if     (uppercase(stagger(1:1)) == 'A') then ; CS%wind_stagger = AGRID
     elseif (uppercase(stagger(1:1)) == 'B') then ; CS%wind_stagger = BGRID_NE
     elseif (uppercase(stagger(1:1)) == 'C') then ; CS%wind_stagger = CGRID_NE
     else ; call MOM_error(FATAL,"surface_forcing_init: WIND_STAGGER = "// &
@@ -1621,13 +1621,13 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
     utide_2d(:,:) = 0.0
     call read_netCDF_data(TideAmp_file, 'tideamp', utide_2d, G%Domain, &
         rescale=US%m_to_Z*US%T_to_s)
-    do j=jsd, jed; do i=isd, ied
+    do j=jsd,jed ; do i=isd,ied
       utide = utide_2d(i,j)
       CS%BBL_tidal_dis(i,j) = G%mask2dT(i,j)*rho_TKE_tidal*CS%cd_tides*(utide*utide*utide)
       CS%ustar_tidal(i,j) = sqrt(CS%cd_tides)*utide
     enddo ; enddo
   else
-    do j=jsd,jed; do i=isd,ied
+    do j=jsd,jed ; do i=isd,ied
       utide = CS%utide
       CS%BBL_tidal_dis(i,j) = rho_TKE_tidal*CS%cd_tides*(utide*utide*utide)
       CS%ustar_tidal(i,j) = sqrt(CS%cd_tides)*utide
@@ -1738,7 +1738,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
   if (CS%restore_salt) then
     salt_file = trim(CS%inputdir) // trim(CS%salt_restore_file)
     CS%srestore_handle = init_external_field(salt_file, CS%salt_restore_var_name, MOM_domain=G%Domain)
-    call safe_alloc_ptr(CS%srestore_mask,isd,ied,jsd,jed); CS%srestore_mask(:,:) = 1.0
+    call safe_alloc_ptr(CS%srestore_mask,isd,ied,jsd,jed) ; CS%srestore_mask(:,:) = 1.0
     if (CS%mask_srestore) then ! read a 2-d file containing a mask for restoring fluxes
       flnam = trim(CS%inputdir) // 'salt_restore_mask.nc'
       call MOM_read_data(flnam,'mask', CS%srestore_mask, G%domain, timelevel=1)
@@ -1748,7 +1748,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
   if (CS%restore_temp) then
     temp_file = trim(CS%inputdir) // trim(CS%temp_restore_file)
     CS%trestore_handle = init_external_field(temp_file, CS%temp_restore_var_name, MOM_domain=G%Domain)
-    call safe_alloc_ptr(CS%trestore_mask,isd,ied,jsd,jed); CS%trestore_mask(:,:) = 1.0
+    call safe_alloc_ptr(CS%trestore_mask,isd,ied,jsd,jed) ; CS%trestore_mask(:,:) = 1.0
     if (CS%mask_trestore) then  ! read a 2-d file containing a mask for restoring fluxes
       flnam = trim(CS%inputdir) // 'temp_restore_mask.nc'
       call MOM_read_data(flnam, 'mask', CS%trestore_mask, G%domain, timelevel=1)

@@ -468,9 +468,9 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
 
     varName = trim( extractWord(trim(string(6:)), 2) )
     if (len_trim(varName)==0) then
-      if (field_exists(fileName,'dz')) then; varName = 'dz'
-      elseif (field_exists(fileName,'dsigma')) then; varName = 'dsigma'
-      elseif (field_exists(fileName,'ztest')) then; varName = 'ztest'
+      if (field_exists(fileName,'dz')) then ; varName = 'dz'
+      elseif (field_exists(fileName,'dsigma')) then ; varName = 'dsigma'
+      elseif (field_exists(fileName,'ztest')) then ; varName = 'ztest'
       else ;  call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
                     "Coordinate variable not specified and none could be guessed.")
       endif
@@ -520,7 +520,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     if (main_parameters) call log_param(param_file, mdl, "!"//coord_res_param, dz, &
                trim(message), units=coordinateUnits(coord_mode))
   elseif (index(trim(string),'FNC1:')==1) then
-    ke = GV%ke; allocate(dz(ke))
+    ke = GV%ke ; allocate(dz(ke))
     call dz_function1( trim(string(6:)), dz )
     if (main_parameters) call log_param(param_file, mdl, "!"//coord_res_param, dz, &
                trim(message), units=coordinateUnits(coord_mode))
@@ -590,13 +590,13 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       if (tmpReal < maximum_depth) then
         dz(ke) = dz(ke) + ( maximum_depth - tmpReal )
       endif
-      do i=G%isc-1,G%iec+1; do j=G%jsc-1,G%jec+1
+      do i=G%isc-1,G%iec+1 ; do j=G%jsc-1,G%jec+1
         if (G%mask2dT(i,j)>0.) then
           do k=1,ke
             dz_3d(i,j,k) = dz(k)
           enddo
         endif !mask2dT
-      enddo; enddo
+      enddo ; enddo
       if (main_parameters) then
         call log_param(param_file, mdl, "!"//coord_res_param, dz, &
                 trim(message), units=coordinateUnits(coord_mode))
@@ -657,7 +657,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       call log_param(param_file, mdl, "!TARGET_DENSITIES", rho_target_2d(:,1), &
                'HYBRID target densities for interfaces', units="kg m-3")
     endif
-    do i=G%isc-1,G%iec+1; do j=G%jsc-1,G%jec+1
+    do i=G%isc-1,G%iec+1 ; do j=G%jsc-1,G%jec+1
       if (G%mask2dT(i,j)>0.) then
         nfloor = floor(index_map(i,j))
         nceiling = ceiling(index_map(i,j))
@@ -678,7 +678,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
           enddo
         endif !integer:else
       endif !mask2dT
-    enddo; enddo
+    enddo ; enddo
     varName = trim( extractWord(trim(string(12:)), 4) )
     if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz_3d
       allocate(dz(ke))
@@ -688,13 +688,13 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       if (tmpReal < maximum_depth) then
         dz(ke) = dz(ke) + ( maximum_depth - tmpReal )
       endif
-      do i=G%isc-1,G%iec+1; do j=G%jsc-1,G%jec+1
+      do i=G%isc-1,G%iec+1 ; do j=G%jsc-1,G%jec+1
         if (G%mask2dT(i,j)>0.) then
           do k=1,ke
             dz_3d(i,j,k) = dz(k)
           enddo
         endif !mask2dT
-      enddo; enddo
+      enddo ; enddo
       if (main_parameters) then
         call log_param(param_file, mdl, "!"//coord_res_param, dz, &
                 trim(message), units=coordinateUnits(coord_mode))
@@ -721,7 +721,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
         call log_param(param_file, mdl, "!"//coord_res_param, dz, &
                 trim(message), units=coordinateUnits(coord_mode))
       endif
-      do i=G%isc-1,G%iec+1; do j=G%jsc-1,G%jec+1
+      do i=G%isc-1,G%iec+1 ; do j=G%jsc-1,G%jec+1
         if (G%mask2dT(i,j)>0.) then
           nfloor = floor(index_map(i,j))
           nceiling = ceiling(index_map(i,j))
@@ -737,7 +737,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
             enddo
           endif !integer:else
         endif !mask2dT
-      enddo; enddo
+      enddo ; enddo
     endif !dz
     deallocate(index_map)
     deallocate(rho_target_2d)
@@ -867,7 +867,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       if (.not.allocated(dz_3d)) then
         allocate(dz_3d(SZI_(G),SZJ_(G),ke), source=0.0)
         allocate(rho_target_3d(SZI_(G),SZJ_(G),ke+1), source=0.0)
-        do i=G%isc-1,G%iec+1; do j=G%jsc-1,G%jec+1
+        do i=G%isc-1,G%iec+1 ; do j=G%jsc-1,G%jec+1
           if (G%mask2dT(i,j)>0.) then
             do k=1,ke
               dz_3d(i,j,k) = dz(k)
@@ -876,9 +876,9 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
               rho_target_3d(i,j,k) = rho_target(k)
             enddo
           endif !mask2dT
-        enddo; enddo
+        enddo ; enddo
       endif
-      do i=G%isc-1,G%iec+1; do j=G%jsc-1,G%jec+1
+      do i=G%isc-1,G%iec+1 ; do j=G%jsc-1,G%jec+1
         if (G%mask2dT(i,j)>0.) then
           nominalDepth = max(G%meanSL(i,j) + G%bathyT(i,j), 0.0) * US%Z_to_m
           if (nominalDepth <= depth_s) then
@@ -905,7 +905,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
             endif !<depth_d and >depth_s
           endif !nominalDepth
         endif !mask2dT
-      enddo; enddo
+      enddo ; enddo
     endif !n_sigma
     deallocate(dz_shallow)
   endif !REGRIDDING_HYCOM1
@@ -1084,9 +1084,9 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
           ", initialize_regridding: "// &
           "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
       if (len_trim(varName)==0) then
-        if (field_exists(fileName,'z_max')) then; varName = 'z_max'
-        elseif (field_exists(fileName,'dz')) then; varName = 'dz' ; do_sum = .true.
-        elseif (field_exists(fileName,'dz_max')) then; varName = 'dz_max' ; do_sum = .true.
+        if (field_exists(fileName,'z_max')) then ; varName = 'z_max'
+        elseif (field_exists(fileName,'dz')) then ; varName = 'dz' ; do_sum = .true.
+        elseif (field_exists(fileName,'dz_max')) then ; varName = 'dz_max' ; do_sum = .true.
         else ; call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
             "MAXIMUM_INT_DEPTHS variable not specified and none could be guessed.")
         endif
@@ -1150,8 +1150,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
           ", initialize_regridding: "// &
           "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(longString)//")")
       if (len_trim(varName)==0) then
-        if (field_exists(fileName,'h_max')) then; varName = 'h_max'
-        elseif (field_exists(fileName,'dz_max')) then; varName = 'dz_max'
+        if (field_exists(fileName,'h_max')) then ; varName = 'h_max'
+        elseif (field_exists(fileName,'dz_max')) then ; varName = 'dz_max'
         else ; call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
             "MAXIMUM_INT_DEPTHS variable not specified and none could be guessed.")
         endif

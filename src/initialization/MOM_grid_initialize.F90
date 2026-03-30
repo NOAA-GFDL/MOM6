@@ -855,7 +855,7 @@ subroutine set_grid_metrics_mercator(G, param_file, US)
           (dL(xq(I-1,J),xq(I,J),yq(I-1,J),yq(I,J)) +          &
           (dL(xq(I,J),xq(I,J-1),yq(I,J),yq(I,J-1)) +          &
            dL(xq(I,J-1),xq(I-1,J-1),yq(I,J-1),yq(I-1,J-1)))))
-    enddo ;enddo
+    enddo ; enddo
     if ((IsdB == isd) .or. (JsdB == jsq)) then
       ! Fill in row and column 1 to calculate the area in the southernmost
       ! and westernmost land cells when we are not using symmetric memory.

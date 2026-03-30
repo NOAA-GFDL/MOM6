@@ -710,7 +710,7 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
     allocate(CS%Phi(1:8,1:4,isd:ied,jsd:jed), source=0.0)
     do j=G%jsd,G%jed ; do i=G%isd,G%ied
       call bilinear_shape_fn_grid(G, i, j, CS%Phi(:,:,i,j))
-    enddo; enddo
+    enddo ; enddo
 
     if (CS%GL_regularize) then
       allocate(CS%Phisub(2,2,CS%n_sub_regularize,CS%n_sub_regularize,2,2), source=0.0)
@@ -722,7 +722,7 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
       allocate(CS%PhiC(1:8,G%isc:G%iec,G%jsc:G%jec), source=0.0)
       do j=G%jsc,G%jec ; do i=G%isc,G%iec
         call bilinear_shape_fn_grid_1qp(G, i, j, CS%PhiC(:,i,j))
-      enddo; enddo
+      enddo ; enddo
     endif
 
     CS%elapsed_velocity_time = 0.0
@@ -1085,19 +1085,19 @@ subroutine volume_above_floatation(CS, G, ISS, vaf, hemisphere)
 
   mask(:,:)=0
   if (IS_ID==0) then     !Antarctica (S. Hemisphere) only
-    do j = js,je; do i = is,ie
+    do j = js,je ; do i = is,ie
       if (ISS%hmask(i,j)>0 .and. G%geoLatT(i,j)<=0.0) mask(i,j)=1
-    enddo; enddo
+    enddo ; enddo
   elseif (IS_ID==1) then !Greenland (N. Hemisphere) only
-    do j = js,je; do i = is,ie
+    do j = js,je ; do i = is,ie
       if (ISS%hmask(i,j)>0 .and. G%geoLatT(i,j)>0.0)  mask(i,j)=1
-    enddo; enddo
+    enddo ; enddo
   else                   !All ice sheets
     mask(is:ie,js:je)=ISS%hmask(is:ie,js:je)
   endif
 
   vaf_cell(:,:)=0.0
-  do j = js,je; do i = is,ie
+  do j = js,je ; do i = is,ie
     if (mask(i,j)>0) then
       if (CS%bed_elev(i,j) <= 0) then
         !grounded above sea level
@@ -1107,7 +1107,7 @@ subroutine volume_above_floatation(CS, G, ISS, vaf, hemisphere)
         vaf_cell(i,j) = max(ISS%h_shelf(i,j) - rhow_rhoi * CS%bed_elev(i,j), 0.0) * ISS%area_shelf_h(i,j)
       endif
     endif
-  enddo; enddo
+  enddo ; enddo
 
   vaf = reproducing_sum(vaf_cell, unscale=G%US%Z_to_m*G%US%L_to_m**2)
 end subroutine volume_above_floatation
@@ -1118,10 +1118,10 @@ subroutine masked_var_grounded(G,CS,var,varout)
   type(ice_shelf_dyn_CS), intent(in) :: CS !< The ice shelf dynamics control structure
   real, dimension(SZI_(G),SZJ_(G)), intent(in)  :: var !< variable in
   real, dimension(SZI_(G),SZJ_(G)), intent(out)  :: varout !<variable out
-  integer :: i,j
-  do j = G%jsc,G%jec; do i = G%isc,G%iec
+  integer :: i, j
+  do j = G%jsc,G%jec ; do i = G%isc,G%iec
       varout(i,j) = var(i,j) * CS%ground_frac(i,j)
-  enddo; enddo
+  enddo ; enddo
 end subroutine masked_var_grounded
 
 !> Ice shelf dynamics post_data calls
@@ -1301,7 +1301,7 @@ subroutine write_ice_shelf_energy(CS, G, US, mass, area, day, time_step)
     tmp1(i,j) = 0.03125 * (mass(i,j) * area(i,j)) * &
       ((((CS%u_shelf(I-1,J-1)+CS%u_shelf(I,J))+(CS%u_shelf(I,J-1)+CS%u_shelf(I-1,J)))**2) + &
        (((CS%v_shelf(I-1,J-1)+CS%v_shelf(I,J))+(CS%v_shelf(I,J-1)+CS%v_shelf(I-1,J)))**2))
-  enddo; enddo
+  enddo ; enddo
 
   KE_tot = reproducing_sum(tmp1, isr, ier, jsr, jer, unscale=(US%RZL2_to_kg*US%L_T_to_m_s**2))
 
@@ -1309,7 +1309,7 @@ subroutine write_ice_shelf_energy(CS, G, US, mass, area, day, time_step)
   tmp1(:,:) = 0.0
   do j=js,je ; do i=is,ie
     tmp1(i,j) = mass(i,j) * area(i,j)
-  enddo; enddo
+  enddo ; enddo
 
   mass_tot = reproducing_sum(tmp1, isr, ier, jsr, jer, unscale=US%RZL2_to_kg)
 
@@ -1445,23 +1445,23 @@ subroutine ice_shelf_advect(CS, ISS, G, time_step, Time, calve_ice_shelf_bergs)
     call shelf_advance_front(CS, ISS, G, ISS%hmask, uh_ice, vh_ice)
     !add mass of the partially-filled cells to calving field, which is used to initialize icebergs
     !Then, remove the partially-filled cells from the ice shelf
-    ISS%calving(:,:)=0.0
-    ISS%calving_hflx(:,:)=0.0
-    do j=jsc,jec; do i=isc,iec
+    ISS%calving(:,:) = 0.0
+    ISS%calving_hflx(:,:) = 0.0
+    do j=jsc,jec ; do i=isc,iec
       if (ISS%hmask(i,j)==2) then
         ISS%calving(i,j) = (ISS%h_shelf(i,j) * CS%density_ice) * &
                            (ISS%area_shelf_h(i,j) * G%IareaT(i,j)) / time_step
         ISS%calving_hflx(i,j) = (CS%Cp_ice * CS%t_shelf(i,j)) * &
                                 ((ISS%h_shelf(i,j) * CS%density_ice) * &
                                 (ISS%area_shelf_h(i,j) * G%IareaT(i,j)))
-        ISS%h_shelf(i,j) = 0.0; ISS%area_shelf_h(i,j) = 0.0; ISS%hmask(i,j) = 0.0
+        ISS%h_shelf(i,j) = 0.0 ; ISS%area_shelf_h(i,j) = 0.0 ; ISS%hmask(i,j) = 0.0
       endif
-    enddo; enddo
+    enddo ; enddo
   endif
 
-  do j=jsc,jec; do i=isc,iec
+  do j=jsc,jec ; do i=isc,iec
     ISS%mass_shelf(i,j) = ISS%h_shelf(i,j) * CS%density_ice
-  enddo; enddo
+  enddo ; enddo
 
   call pass_var(ISS%mass_shelf, G%domain, complete=.false.)
   call pass_var(ISS%h_shelf, G%domain, complete=.false.)
@@ -1725,7 +1725,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
       do J=Jscq_sv,Jecq ; do I=Iscq_sv,Iecq
         if (CS%umask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + u_shlf(I,J)**2
         if (CS%vmask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + v_shlf(I,J)**2
-      enddo; enddo
+      enddo ; enddo
       Norm = sqrt( reproducing_sum( Normvec, Is_sum, Ie_sum, Js_sum, Je_sum, unscale=US%L_T_to_m_s**2 ) )
       err_max = 2.*abs(Norm-PrevNorm) ; err_init = Norm+PrevNorm
     endif
@@ -1965,13 +1965,13 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
         Rv(I,J) = Rv(I,J) - alpha_k * Av(I,J)
         if (DIAGv(I,J)/=0) Zv(I,J) = Rv(I,J) / DIAGv(I,J)
       endif
-    enddo; enddo
+    enddo ; enddo
 
 
     ! R,u,v,Z valid region moves in by 1
 
     ! beta_k = (Z \dot R) / (Zold \dot Rold)
-    sum_vec_3d(:,:,:) = 0.0; sv3dsums(:)=0.0
+    sum_vec_3d(:,:,:) = 0.0 ; sv3dsums(:) = 0.0
 
     do J=jscq_sv,jecq ; do i=iscq_sv,iecq
       if (CS%umask(I,J) == 1) then
@@ -2507,7 +2507,7 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
   gisc = 1 ; gjsc = 1
 !  giec = G%domain%niglobal+G%domain%nihalo ; gjec = G%domain%njglobal+G%domain%njhalo
   giec = G%domain%niglobal ; gjec = G%domain%njglobal
-!  is = iscq - 1; js = jscq - 1
+!  is = iscq - 1 ; js = jscq - 1
   i_off = G%idg_offset ; j_off = G%jdg_offset
 
 
@@ -2666,7 +2666,7 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
   do J=jsc-1,jec ; do I=isc-1,iec
     taudx(I,J) = taudx(I,J) + ((sx_e(i,j)+sx_e(i+1,j+1)) + (sx_e(i+1,j)+sx_e(i,j+1)))
     taudy(I,J) = taudy(I,J) + ((sy_e(i,j)+sy_e(i+1,j+1)) + (sy_e(i+1,j)+sy_e(i,j+1)))
-  enddo; enddo
+  enddo ; enddo
 end subroutine calc_shelf_driving_stress
 
 subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, hmask, H_node, &
@@ -2767,12 +2767,12 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
   if (present(use_newton_in)) use_newton = use_newton_in
   do_newton_visc = use_newton .and. trim(CS%ice_viscosity_compute) == "MODEL"
 
-  uret(:,:) = 0.0; vret(:,:)=0.0
-  uret_b(:,:,:)=0.0 ; vret_b(:,:,:)=0.0
+  uret(:,:) = 0.0 ; vret(:,:) = 0.0
+  uret_b(:,:,:) = 0.0 ; vret_b(:,:,:) = 0.0
 
   do j=js,je ; do i=is,ie ; if (hmask(i,j) == 1 .or. hmask(i,j)==3) then
 
-    uret_qp(:,:,:)=0.0; vret_qp(:,:,:)=0.0
+    uret_qp(:,:,:) = 0.0 ; vret_qp(:,:,:) = 0.0
 
       do iq=1,2 ; do jq=1,2
 
@@ -2924,7 +2924,7 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
   do J=js-1,je ; do I=is-1,ie
     uret(I,J) = (uret_b(I,J,1)+uret_b(I,J,4)) + (uret_b(I,J,2)+uret_b(I,J,3))
     vret(I,J) = (vret_b(I,J,1)+vret_b(I,J,4)) + (vret_b(I,J,2)+vret_b(I,J,3))
-  enddo; enddo
+  enddo ; enddo
 
 end subroutine CG_action
 
@@ -2956,9 +2956,9 @@ subroutine CG_action_subgrid_basal(Phisub, H, U, V, bathyT, dens_ratio, Ucontr, 
   nsub = size(Phisub,3)
   subarea = 1.0 / (nsub**2)
 
-  uloc_arr(:,:,:,:) = 0.0; vloc_arr(:,:,:,:)=0.0
+  uloc_arr(:,:,:,:) = 0.0 ; vloc_arr(:,:,:,:)=0.0
 
-  do j=1,nsub ; do i=1,nsub;  do qy=1,2 ; do qx=1,2
+  do j=1,nsub ; do i=1,nsub ; do qy=1,2 ; do qx=1,2
     hloc = ((Phisub(qx,qy,i,j,1,1)*H(1,1)) + (Phisub(qx,qy,i,j,2,2)*H(2,2))) + &
            ((Phisub(qx,qy,i,j,1,2)*H(1,2)) + (Phisub(qx,qy,i,j,2,1)*H(2,1)))
     if (dens_ratio * hloc - bathyT > 0) then
@@ -2967,19 +2967,19 @@ subroutine CG_action_subgrid_basal(Phisub, H, U, V, bathyT, dens_ratio, Ucontr, 
       vloc_arr(qx,qy,i,j) = (((Phisub(qx,qy,i,j,1,1) * V(1,1)) + (Phisub(qx,qy,i,j,2,2) * V(2,2))) + &
                              ((Phisub(qx,qy,i,j,1,2) * V(1,2)) + (Phisub(qx,qy,i,j,2,1) * V(2,1))))
     endif
-  enddo; enddo ; enddo ; enddo
+  enddo ; enddo ; enddo ; enddo
 
   do n=1,2 ; do m=1,2 ; do j=1,nsub ; do i=1,nsub
     do qy=1,2 ; do qx=1,2
       !calculate quadrature point contributions for the sub-cell, to each node
         Ucontr_q(qx,qy) = Phisub(qx,qy,i,j,m,n) * uloc_arr(qx,qy,i,j)
         Vcontr_q(qx,qy) = Phisub(qx,qy,i,j,m,n) * vloc_arr(qx,qy,i,j)
-    enddo; enddo
+    enddo ; enddo
 
     !calculate sub-cell contribution to each node by summing up quadrature point contributions from the sub-cell
     Ucontr_sub(i,j,m,n) = (subarea * 0.25) * ((Ucontr_q(1,1) + Ucontr_q(2,2)) + (Ucontr_q(1,2)+Ucontr_q(2,1)))
     Vcontr_sub(i,j,m,n) = (subarea * 0.25) * ((Vcontr_q(1,1) + Vcontr_q(2,2)) + (Vcontr_q(1,2)+Vcontr_q(2,1)))
-  enddo; enddo ; enddo ; enddo
+  enddo ; enddo ; enddo ; enddo
 
   !sum up the sub-cell contributions to each node
   do n=1,2 ; do m=1,2
@@ -2995,11 +2995,11 @@ subroutine sum_square_matrix(sum_out, mat_in, n)
   integer, intent(in) :: n !< The length and width of each matrix in mat_in
   real, dimension(n,n), intent(in) :: mat_in !< The n x n matrix whose elements will be summed
   real, intent(out) :: sum_out !< The sum of the elements of matrix mat_in
-  integer :: s0,e0,s1,e1
+  integer :: s0, e0, s1, e1
 
-  sum_out=0.0
+  sum_out = 0.0
 
-  s0=1; e0=n
+  s0 = 1 ; e0 = n
 
   !start by summing elements on outer edges of matrix
   do while (s0<e0)
@@ -3007,7 +3007,7 @@ subroutine sum_square_matrix(sum_out, mat_in, n)
     !corners
     sum_out = sum_out + ( (mat_in(s0,s0) + mat_in(e0,e0)) + (mat_in(e0,s0) + mat_in(s0,e0)) )
 
-    s1=s0+1; e1=e0-1
+    s1 = s0+1 ; e1 = e0-1
 
     do while (s1<e1) !non-corners
 
@@ -3015,13 +3015,13 @@ subroutine sum_square_matrix(sum_out, mat_in, n)
                 ( ( (mat_in(s0,s1) + mat_in(s1,s0)) + (mat_in(e0,e1) + mat_in(e1,e0)) ) + &
                   ( (mat_in(e1,s0) + mat_in(e0,s1)) + (mat_in(s1,e0) + mat_in(s0,e1)) ) )
 
-      s1=s1+1 ; e1=e1-1
+      s1 = s1+1 ; e1 = e1-1
     enddo
 
     !center element of an edge
     if (s1==e1) sum_out = sum_out + ( (mat_in(s1,s0) + mat_in(e1,e0)) + (mat_in(e0,e1) + mat_in(s0,s1)) )
 
-    s0=s0+1 ; e0=e0-1 !next loop iteration using new edges that are one element inward of the current edges
+    s0 = s0+1 ; e0 = e0-1 !next loop iteration using new edges that are one element inward of the current edges
   enddo
 
   !center element of entire matrix
@@ -3102,7 +3102,7 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
     ! Phi(2*i-1,j) gives d(Phi_i)/dx at quadrature point j
     ! Phi(2*i,j) gives d(Phi_i)/dy at quadrature point j
 
-    u_diag_qp(:,:,:)=0.0; v_diag_qp(:,:,:)=0.0
+    u_diag_qp(:,:,:) = 0.0 ; v_diag_qp(:,:,:) = 0.0
 
     do iq=1,2 ; do jq=1,2
 
@@ -3273,11 +3273,11 @@ subroutine CG_diagonal_subgrid_basal (Phisub, H_node, bathyT, dens_ratio, f_grnd
 
   grnd_stat(:,:,:,:)=0
 
-  do j=1,nsub ; do i=1,nsub;  do qy=1,2 ; do qx=1,2
+  do j=1,nsub ; do i=1,nsub ; do qy=1,2 ; do qx=1,2
     hloc = ((Phisub(qx,qy,i,j,1,1)*H_node(1,1)) + (Phisub(qx,qy,i,j,2,2)*H_node(2,2))) + &
            ((Phisub(qx,qy,i,j,1,2)*H_node(1,2)) + (Phisub(qx,qy,i,j,2,1)*H_node(2,1)))
     if (dens_ratio * hloc - bathyT > 0) grnd_stat(qx,qy,i,j) = 1
-  enddo; enddo ; enddo ; enddo
+  enddo ; enddo ; enddo ; enddo
 
   do n=1,2 ; do m=1,2 ; do j=1,nsub ; do i=1,nsub
     do qy=1,2 ; do qx = 1,2
@@ -3319,14 +3319,14 @@ subroutine IS_dynamics_post_data_2(CS, ISS, G)
     allocate(CS%PhiC(1:8,G%isc:G%iec,G%jsc:G%jec), source=0.0)
     do j=G%jsc,G%jec ; do i=G%isc,G%iec
       call bilinear_shape_fn_grid_1qp(G, i, j, CS%PhiC(:,i,j))
-    enddo; enddo
+    enddo ; enddo
   endif
 
   !Calculate flux divergence and its components
   if (CS%id_duHdx > 0 .or. CS%id_dvHdy > 0 .or. CS%id_fluxdiv > 0) then
     call interpolate_H_to_B(G, ISS%h_shelf, ISS%hmask, H_node, CS%min_h_shelf)
 
-    Hu(:,:) = 0.0; Hv(:,:) = 0.0; Hux(:,:) = 0.0 ; Hvy(:,:) = 0.0 ; flux_div(:,:) = 0.0
+    Hu(:,:) = 0.0 ; Hv(:,:) = 0.0 ; Hux(:,:) = 0.0 ; Hvy(:,:) = 0.0 ; flux_div(:,:) = 0.0
     do J=G%jscB,G%jecB ; do I=G%iscB,G%iecB
       if (CS%umask(I,J) > 0) then
         Hu(I,J) = (H_node(I,J) * CS%u_shelf(I,J))
@@ -3334,7 +3334,7 @@ subroutine IS_dynamics_post_data_2(CS, ISS, G)
       if (CS%vmask(I,J) > 0) then
         Hv(I,J) = (H_node(I,J) * CS%v_shelf(I,J))
       endif
-    enddo; enddo
+    enddo ; enddo
 
     do j=G%jsc,G%jec ; do i=G%isc,G%iec
       if ((ISS%hmask(i,j) == 1) .or. (ISS%hmask(i,j) == 3)) then
@@ -3408,7 +3408,7 @@ subroutine IS_dynamics_post_data_2(CS, ISS, G)
             dev_stress(i,j,2) = 2*ice_visc(i,j)*strain_rate(i,j,2)/ISS%h_shelf(i,j) !deviatoric stress yy
             dev_stress(i,j,3) = 2*ice_visc(i,j)*strain_rate(i,j,3)/ISS%h_shelf(i,j) !deviatoric stress xy
           endif
-        enddo; enddo
+        enddo ; enddo
         if (CS%id_devstress_xx > 0) call post_data(CS%id_devstress_xx, dev_stress(:,:,1), CS%diag)
         if (CS%id_devstress_yy > 0) call post_data(CS%id_devstress_yy, dev_stress(:,:,2), CS%diag)
         if (CS%id_devstress_xy > 0) call post_data(CS%id_devstress_xy, dev_stress(:,:,3), CS%diag)
@@ -3421,7 +3421,7 @@ subroutine IS_dynamics_post_data_2(CS, ISS, G)
             p_dev_stress(i,j,1) = 2*ice_visc(i,j)*p_strain_rate(i,j,1)/ISS%h_shelf(i,j) !max horiz principal dev stress
             p_dev_stress(i,j,2) = 2*ice_visc(i,j)*p_strain_rate(i,j,2)/ISS%h_shelf(i,j) !min horiz principal dev stress
           endif
-        enddo; enddo
+        enddo ; enddo
         if (CS%id_pdevstress_1 > 0) call post_data(CS%id_pdevstress_1, p_dev_stress(:,:,1), CS%diag)
         if (CS%id_pdevstress_2 > 0) call post_data(CS%id_pdevstress_2, p_dev_stress(:,:,2), CS%diag)
       endif
@@ -3459,7 +3459,7 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
   iegq = G%iegB ; jegq = G%jegB
   gisc = G%domain%nihalo+1 ; gjsc = G%domain%njhalo+1
   giec = G%domain%niglobal+gisc ; gjec = G%domain%njglobal+gjsc
-  is = iscq - 1; js = jscq - 1
+  is = iscq - 1 ; js = jscq - 1
 
   if (trim(CS%ice_viscosity_compute) == "MODEL") then
     if (CS%visc_qps==1) then
@@ -3471,7 +3471,7 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
     endif
   endif
 
-  n_g = CS%n_glen; eps_min = CS%eps_glen_min
+  n_g = CS%n_glen ; eps_min = CS%eps_glen_min
 
   do j=jsc,jec ; do i=isc,iec
 
@@ -3570,7 +3570,7 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
                 (((ux**2) + (vy**2)) + ((ux*vy) + 0.25*((uy+vx)**2)) + eps_min**2)) * &
                 CS%ice_visc(i,j,2*(jq-1)+iq)
           endif
-        enddo; enddo
+        enddo ; enddo
       endif
     endif
   enddo ; enddo
@@ -3612,7 +3612,7 @@ subroutine calc_shelf_taub(CS, ISS, G, US, u_shlf, v_shlf)
   iegq = G%iegB ; jegq = G%jegB
   gisc = G%domain%nihalo+1 ; gjsc = G%domain%njhalo+1
   giec = G%domain%niglobal+gisc ; gjec = G%domain%njglobal+gjsc
-  is = iscq - 1; js = jscq - 1
+  is = iscq - 1 ; js = jscq - 1
 
   eps_min = CS%eps_glen_min
 
@@ -3708,7 +3708,7 @@ subroutine update_OD_ffrac(CS, G, US, ocean_mass, find_avg)
       CS%ground_frac(i,j) = 1.0 - (CS%ground_frac_rt(i,j) * I_counter)
       CS%OD_av(i,j) = CS%OD_rt(i,j) * I_counter
 
-      CS%OD_rt(i,j) = 0.0 ; CS%ground_frac_rt(i,j) = 0.0; CS%OD_rt_counter = 0
+      CS%OD_rt(i,j) = 0.0 ; CS%ground_frac_rt(i,j) = 0.0 ; CS%OD_rt_counter = 0
     enddo ; enddo
 
     call pass_var(CS%ground_frac, G%domain, complete=.false.)
@@ -3765,7 +3765,7 @@ subroutine change_in_draft(CS, G, h_shelf0, h_shelf1, ddraft)
   do j=jsc,jec
     do i=isc,iec
 
-      b0=0.0; b1=0.0
+      b0 = 0.0 ; b1 = 0.0
 
       if (h_shelf0(i,j)>0.0) then
         OD = CS%bed_elev(i,j) - rhoi_rhow * h_shelf0(i,j)
@@ -4062,12 +4062,12 @@ subroutine update_velocity_masks(CS, G, hmask, umask, vmask, u_face_mask, v_face
     is = isd+1 ; js = jsd+1
   endif
 
-  do j=js,G%jed; do i=is,G%ied
+  do j=js,G%jed ; do i=is,G%ied
     if (hmask(i,j) == 1 .or. hmask(i,j)==3) then
       umask(I-1:I,J-1:J)=1
       vmask(I-1:I,J-1:J)=1
     endif
-  enddo; enddo
+  enddo ; enddo
 
   do j=js,G%jed
     do i=is,G%ied
@@ -4202,7 +4202,7 @@ subroutine interpolate_H_to_B(G, h_shelf, hmask, H_node, min_h_shelf)
   do j=jsc-1,jec
     do i=isc-1,iec
       num_h = 0
-      do l=1,2; jc=j-1+l; do k=1,2; ic=i-1+k
+      do l=1,2 ; jc=j-1+l ; do k=1,2 ; ic=i-1+k
         if (hmask(ic,jc) == 1.0 .or. hmask(ic,jc) == 3.0) then
           h_arr(k,l)=max(h_shelf(ic,jc),min_h_shelf)
           num_h = num_h + 1
@@ -4212,7 +4212,7 @@ subroutine interpolate_H_to_B(G, h_shelf, hmask, H_node, min_h_shelf)
         if (num_h > 0) then
           H_node(i,j) = ((h_arr(1,1)+h_arr(2,2))+(h_arr(1,2)+h_arr(2,1))) / num_h
         endif
-      enddo; enddo
+      enddo ; enddo
     enddo
   enddo
 

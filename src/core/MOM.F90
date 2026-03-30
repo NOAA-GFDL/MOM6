@@ -1351,10 +1351,10 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
   if (Waves%Stokes_DDT .and. (.not.Waves%Passive_Stokes_DDT)) then
     do J=jsq,jeq ; do i=is,ie
       v(i,J,:) = v(i,J,:) + Waves%ddt_us_y(i,J,:)*dt
-    enddo; enddo
+    enddo ; enddo
     do j=js,je ; do I=isq,ieq
       u(I,j,:) = u(I,j,:) + Waves%ddt_us_x(I,j,:)*dt
-    enddo; enddo
+    enddo ; enddo
     call pass_vector(u, v, G%Domain)
   endif
   ! Added an additional output to track Stokes drift time tendency.
@@ -1363,12 +1363,12 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
   if (Waves%Stokes_DDT .and. (Waves%id_3dstokes_y_from_ddt>0)) then
     do J=jsq,jeq ; do i=is,ie
       Waves%us_y_from_ddt(i,J,:) = Waves%us_y_from_ddt(i,J,:) + Waves%ddt_us_y(i,J,:)*dt
-    enddo; enddo
+    enddo ; enddo
   endif
   if (Waves%Stokes_DDT .and. (Waves%id_3dstokes_x_from_ddt>0)) then
     do j=js,je ; do I=isq,ieq
       Waves%us_x_from_ddt(I,j,:) = Waves%us_x_from_ddt(I,j,:) + Waves%ddt_us_x(I,j,:)*dt
-    enddo; enddo
+    enddo ; enddo
   endif
 
 
@@ -3167,7 +3167,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   G%ke = GV%ke
 
   if (use_ice_shelf) then
-    point_calving=.false.; if (present(calve_ice_shelf_bergs)) point_calving=calve_ice_shelf_bergs
+    point_calving = .false. ; if (present(calve_ice_shelf_bergs)) point_calving = calve_ice_shelf_bergs
   endif
 
   if (CS%rotate_index) then
@@ -3988,8 +3988,8 @@ subroutine extract_surface_state(CS, sfc_state_in)
   G => CS%G ; G_in => CS%G_in ; GV => CS%GV ; US => CS%US
   is  = G%isc ; ie  = G%iec ; js  = G%jsc ; je  = G%jec ; nz = GV%ke
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
-  iscB = G%iscB ; iecB = G%iecB; jscB = G%jscB ; jecB = G%jecB
-  isdB = G%isdB ; iedB = G%iedB; jsdB = G%jsdB ; jedB = G%jedB
+  iscB = G%iscB ; iecB = G%iecB ; jscB = G%jscB ; jecB = G%jecB
+  isdB = G%isdB ; iedB = G%iedB ; jsdB = G%jsdB ; jedB = G%jedB
   h => CS%h
 
   use_temperature = associated(CS%tv%T)

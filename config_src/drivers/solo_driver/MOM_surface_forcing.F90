@@ -1791,9 +1791,9 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, tracer_flow_C
 
       ! These variable names are hard-coded, per the archaic OMIP conventions.
       CS%latentheat_file = CS%evaporation_file ; CS%latent_var = "evap"
-      CS%LW_var = "lwdn_sfc"; CS%SW_var = "swdn_sfc"; CS%sens_var = "shflx"
-      CS%evap_var = "evap"; CS%rain_var = "precip"; CS%snow_var = "snow"
-      CS%lrunoff_var = "disch_w"; CS%frunoff_var = "disch_s"
+      CS%LW_var = "lwdn_sfc" ; CS%SW_var = "swdn_sfc" ; CS%sens_var = "shflx"
+      CS%evap_var = "evap" ; CS%rain_var = "precip" ; CS%snow_var = "snow"
+      CS%lrunoff_var = "disch_w" ; CS%frunoff_var = "disch_s"
 
     else
       call get_param(param_file, mdl, "LONGWAVE_FILE", CS%longwave_file, &
