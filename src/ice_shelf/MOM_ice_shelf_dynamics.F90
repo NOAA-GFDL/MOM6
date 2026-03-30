@@ -594,7 +594,7 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
                 "the fractional nonlinear residual falls below this tolerance.",&
                 units="none", default=CS%nonlinear_tolerance)
     call get_param(param_file, mdl, "NEWTON_ADAPT_CG_TOL", CS%newton_adapt_cg_tol, &
-                "Use an adaptive CG tolerance during Newton iterations.",default=.true.)
+                "Use an adaptive CG tolerance during Newton iterations.", default=.true.)
     call get_param(param_file, mdl, "CONJUGATE_GRADIENT_MAXIT", CS%cg_max_iterations, &
                 "max iteratiions in CG solver", default=2000)
     call get_param(param_file, mdl, "THRESH_FLOAT_COL_DEPTH", CS%thresh_float_col_depth, &
@@ -2757,6 +2757,7 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
   integer :: iq, jq, iphi, jphi, i, j, ilq, jlq, Itgt, Jtgt, qp, qpv
   logical :: visc_qp4
   logical :: use_newton  ! Whether to apply Newton tangent stiffness corrections
+  logical :: do_newton_visc  ! Whether to apply viscosity-related Newton tangent stiffness corrections
   real, dimension(2) :: xquad  ! Nondimensional quadrature ratios [nondim]
   real, dimension(2,2) :: Ucell, Vcell, Usub, Vsub  ! Velocities at the nodal points around the cell [L T-1 ~> m s-1]
   real, dimension(2,2) :: Hcell   ! Ice shelf thickness at notal (corner) points [Z ~> m]
@@ -2774,6 +2775,7 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
 
   use_newton = CS%doing_newton
   if (present(use_newton_in)) use_newton = use_newton_in
+  do_newton_visc = use_newton .and. trim(CS%ice_viscosity_compute) == "MODEL"
 
   uret(:,:) = 0.0; vret(:,:)=0.0
   uret_b(:,:,:)=0.0 ; vret_b(:,:,:)=0.0
@@ -2819,11 +2821,11 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
         if (visc_qp4) qpv = qp !current quad point for viscosity
 
         ! Newton correction: compute dstrain scalar once per quadrature point
-        if (use_newton .and. trim(CS%ice_viscosity_compute) == "MODEL") then
+        if (do_newton_visc) then
           strx_n = CS%newton_str_ux(i,j,qpv)
           stry_n = CS%newton_str_vy(i,j,qpv)
           strsh_n = CS%newton_str_sh(i,j,qpv)
-          dstrain_n = (2.*strx_n + stry_n)*ux + (2.*stry_n + strx_n)*vy + &
+          dstrain_n = ((2.*strx_n + stry_n)*ux + (2.*stry_n + strx_n)*vy) + &
                       strsh_n * (uy + vx) * 0.5
         endif
 
@@ -2841,7 +2843,7 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
             ((4*vy+2*ux) * Phi(2*(2*(jphi-1)+iphi),qp,i,j)))
 
           ! Newton tangent stiffness correction: add (dη/dε_e^2) * (g·δε) * (g·φ_m) term
-          if (use_newton .and. trim(CS%ice_viscosity_compute) == "MODEL") then
+          if (do_newton_visc) then
             if (umask(Itgt,Jtgt) == 1) uret_qp(iphi,jphi,qp) = uret_qp(iphi,jphi,qp) + &
               CS%newton_visc_factor(i,j,qpv) * dstrain_n * &
               ((2.*strx_n + stry_n) * Phi(2*(2*(jphi-1)+iphi)-1,qp,i,j) + &
@@ -3085,6 +3087,7 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
   real, dimension(2,2) :: Hcell, sub_ground
   real, dimension(2,2,4) :: u_diag_qp, v_diag_qp
   real, dimension(SZDIB_(G),SZDJB_(G),4) :: u_diag_b, v_diag_b
+  logical :: do_newton_visc  ! Whether to apply viscosity-related Newton tangent stiffness corrections
   logical :: visc_qp4
   integer :: i, j, isc, jsc, iec, jec, iphi, jphi, iq, jq, ilq, jlq, Itgt, Jtgt, qp, qpv
 
@@ -3098,6 +3101,8 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
     visc_qp4=.false.
     qpv = 1
   endif
+
+  do_newton_visc = CS%doing_newton .and. trim(CS%ice_viscosity_compute) == "MODEL"
 
   u_diag_b(:,:,:)=0.0
   v_diag_b(:,:,:)=0.0
@@ -3115,7 +3120,7 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
       if (visc_qp4) qpv = qp !current quad point for viscosity
 
       ! Pre-compute Newton strain data for this QP (for viscosity diagonal correction)
-      if (CS%doing_newton .and. trim(CS%ice_viscosity_compute) == "MODEL") then
+      if (do_newton_visc) then
         strx_n = CS%newton_str_ux(i,j,qpv)
         stry_n = CS%newton_str_vy(i,j,qpv)
         strsh_n = CS%newton_str_sh(i,j,qpv)
@@ -3140,7 +3145,7 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
 
           ! Newton viscosity diagonal correction: newton_visc_factor * (g . grad_phi_m_u)^2
           ! where grad_phi_m_u = [(2*strx+stry)*Phi_xm + strsh/2*Phi_ym] for u-DOF at node m
-          if (CS%doing_newton .and. trim(CS%ice_viscosity_compute) == "MODEL") then
+          if (do_newton_visc) then
             dstrain_diag_u = (2.*strx_n + stry_n) * Phi(2*(2*(jphi-1)+iphi)-1,qp,i,j) + &
                              strsh_n * 0.5 * Phi(2*(2*(jphi-1)+iphi),qp,i,j)
             u_diag_qp(iphi,jphi,qp) = u_diag_qp(iphi,jphi,qp) + &
@@ -3171,7 +3176,7 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
             ((4*vy+2*ux) * Phi(2*(2*(jphi-1)+iphi),qp,i,j)))
 
           ! Newton viscosity diagonal correction for v-DOF: uses [strsh/2*Phi_xm + (2*stry+strx)*Phi_ym]
-          if (CS%doing_newton .and. trim(CS%ice_viscosity_compute) == "MODEL") then
+          if (do_newton_visc) then
             dstrain_diag_v = strsh_n * 0.5 * Phi(2*(2*(jphi-1)+iphi)-1,qp,i,j) + &
                              (2.*stry_n + strx_n) * Phi(2*(2*(jphi-1)+iphi),qp,i,j)
             v_diag_qp(iphi,jphi,qp) = v_diag_qp(iphi,jphi,qp) + &
