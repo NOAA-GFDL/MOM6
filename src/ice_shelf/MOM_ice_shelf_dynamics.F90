@@ -13,7 +13,7 @@ use MOM_IS_diag_mediator, only : register_diag_field=>register_MOM_IS_diag_field
 !use MOM_IS_diag_mediator, only : MOM_IS_diag_mediator_init, set_IS_diag_mediator_grid
 use MOM_IS_diag_mediator, only : diag_ctrl, time_type, enable_averages, disable_averaging
 use MOM_domains, only : MOM_domains_init, clone_MOM_domain
-use MOM_domains, only : pass_var, pass_vector, TO_ALL, CGRID_NE, BGRID_NE, CORNER, CENTER
+use MOM_domains, only : pass_var, pass_vector, TO_ALL, CGRID_NE, BGRID_NE, AGRID, CORNER, CENTER
 use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : read_param, get_param, log_param, log_version, param_file_type
 use MOM_grid, only : MOM_grid_init, ocean_grid_type
@@ -1571,13 +1571,6 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   call pass_var(CS%basal_traction, G%domain, complete=.true.)
   call calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
   call pass_var(CS%ice_visc, G%domain)
-  call pass_var(CS%newton_visc_factor, G%domain)
-  call pass_var(CS%newton_str_ux, G%domain)
-  call pass_var(CS%newton_str_vy, G%domain)
-  call pass_var(CS%newton_str_sh, G%domain)
-  call pass_var(CS%newton_umid, G%domain)
-  call pass_var(CS%newton_vmid, G%domain)
-  call pass_var(CS%newton_drag_coef, G%domain)
 
   ! This makes sure basal stress is only applied when it is supposed to be
   if (CS%GL_regularize) then
@@ -1637,7 +1630,6 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   endif
 
   u_last(:,:) = u_shlf(:,:) ; v_last(:,:) = v_shlf(:,:)
-  CS%doing_newton = .false.
   CS%cg_tol_newton = CS%cg_tolerance
   ew_prev_err = err_init
 
@@ -1659,14 +1651,12 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
     call calc_shelf_taub(CS, ISS, G, US, u_shlf, v_shlf)
     call pass_var(CS%basal_traction, G%domain, complete=.true.)
     call calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
-    call pass_var(CS%ice_visc, G%domain)
-    call pass_var(CS%newton_visc_factor, G%domain)
-    call pass_var(CS%newton_str_ux, G%domain)
-    call pass_var(CS%newton_str_vy, G%domain)
-    call pass_var(CS%newton_str_sh, G%domain)
-    call pass_var(CS%newton_umid, G%domain)
-    call pass_var(CS%newton_vmid, G%domain)
+    call pass_var(CS%ice_visc, G%domain, complete=.false.)
+    call pass_var(CS%newton_str_sh, G%domain, complete=.false.)
+    call pass_var(CS%newton_visc_factor, G%domain, complete=.true.)
     call pass_var(CS%newton_drag_coef, G%domain)
+    call pass_vector(CS%newton_str_ux, CS%newton_str_vy, G%domain, TO_ALL, AGRID)
+    call pass_vector(CS%newton_umid, CS%newton_vmid, G%domain, TO_ALL, AGRID)
 
     ! makes sure basal stress is only applied when it is supposed to be
     if (CS%GL_regularize) then
@@ -2825,7 +2815,7 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
           strx_n = CS%newton_str_ux(i,j,qpv)
           stry_n = CS%newton_str_vy(i,j,qpv)
           strsh_n = CS%newton_str_sh(i,j,qpv)
-          dstrain_n = ((2.*strx_n + stry_n)*ux + (2.*stry_n + strx_n)*vy) + &
+          dstrain_n = (((2.*strx_n + stry_n)*ux) + ((2.*stry_n + strx_n)*vy)) + &
                       strsh_n * (uy + vx) * 0.5
         endif
 
@@ -2912,21 +2902,21 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
         ! Correction to v-node (m,n): newton_drag_coef * newton_vmid * inner_dot_sub(m,n)
         if (use_newton) then
           if (umask(I-1,J-1)==1) uret_b(I-1,J-1,4) = uret_b(I-1,J-1,4) + CS%newton_drag_coef(i,j) * &
-            CS%newton_umid(i,j) * (CS%newton_umid(i,j)*Usub(1,1) + CS%newton_vmid(i,j)*Vsub(1,1))
+            CS%newton_umid(i,j) * ((CS%newton_umid(i,j)*Usub(1,1)) + (CS%newton_vmid(i,j)*Vsub(1,1)))
           if (umask(I-1,J  )==1) uret_b(I-1,J  ,2) = uret_b(I-1,J  ,2) + CS%newton_drag_coef(i,j) * &
-            CS%newton_umid(i,j) * (CS%newton_umid(i,j)*Usub(1,2) + CS%newton_vmid(i,j)*Vsub(1,2))
+            CS%newton_umid(i,j) * ((CS%newton_umid(i,j)*Usub(1,2)) + (CS%newton_vmid(i,j)*Vsub(1,2)))
           if (umask(I  ,J-1)==1) uret_b(I  ,J-1,3) = uret_b(I  ,J-1,3) + CS%newton_drag_coef(i,j) * &
-            CS%newton_umid(i,j) * (CS%newton_umid(i,j)*Usub(2,1) + CS%newton_vmid(i,j)*Vsub(2,1))
+            CS%newton_umid(i,j) * ((CS%newton_umid(i,j)*Usub(2,1)) + (CS%newton_vmid(i,j)*Vsub(2,1)))
           if (umask(I  ,J  )==1) uret_b(I  ,J  ,1) = uret_b(I  ,J  ,1) + CS%newton_drag_coef(i,j) * &
-            CS%newton_umid(i,j) * (CS%newton_umid(i,j)*Usub(2,2) + CS%newton_vmid(i,j)*Vsub(2,2))
+            CS%newton_umid(i,j) * ((CS%newton_umid(i,j)*Usub(2,2)) + (CS%newton_vmid(i,j)*Vsub(2,2)))
           if (vmask(I-1,J-1)==1) vret_b(I-1,J-1,4) = vret_b(I-1,J-1,4) + CS%newton_drag_coef(i,j) * &
-            CS%newton_vmid(i,j) * (CS%newton_umid(i,j)*Usub(1,1) + CS%newton_vmid(i,j)*Vsub(1,1))
+            CS%newton_vmid(i,j) * ((CS%newton_umid(i,j)*Usub(1,1)) + (CS%newton_vmid(i,j)*Vsub(1,1)))
           if (vmask(I-1,J  )==1) vret_b(I-1,J  ,2) = vret_b(I-1,J  ,2) + CS%newton_drag_coef(i,j) * &
-            CS%newton_vmid(i,j) * (CS%newton_umid(i,j)*Usub(1,2) + CS%newton_vmid(i,j)*Vsub(1,2))
+            CS%newton_vmid(i,j) * ((CS%newton_umid(i,j)*Usub(1,2)) + (CS%newton_vmid(i,j)*Vsub(1,2)))
           if (vmask(I  ,J-1)==1) vret_b(I  ,J-1,3) = vret_b(I  ,J-1,3) + CS%newton_drag_coef(i,j) * &
-            CS%newton_vmid(i,j) * (CS%newton_umid(i,j)*Usub(2,1) + CS%newton_vmid(i,j)*Vsub(2,1))
+            CS%newton_vmid(i,j) * ((CS%newton_umid(i,j)*Usub(2,1)) + (CS%newton_vmid(i,j)*Vsub(2,1)))
           if (vmask(I  ,J  )==1) vret_b(I  ,J  ,1) = vret_b(I  ,J  ,1) + CS%newton_drag_coef(i,j) * &
-            CS%newton_vmid(i,j) * (CS%newton_umid(i,j)*Usub(2,2) + CS%newton_vmid(i,j)*Vsub(2,2))
+            CS%newton_vmid(i,j) * ((CS%newton_umid(i,j)*Usub(2,2)) + (CS%newton_vmid(i,j)*Vsub(2,2)))
         endif
       endif
   endif ; enddo ; enddo
@@ -3640,7 +3630,7 @@ subroutine calc_shelf_taub(CS, ISS, G, US, u_shlf, v_shlf)
       if ((ISS%hmask(i,j) == 1) .OR. (ISS%hmask(i,j) == 3)) then
         umid = ((u_shlf(I,J) + u_shlf(I-1,J-1)) + (u_shlf(I,J-1) + u_shlf(I-1,J))) * 0.25
         vmid = ((v_shlf(I,J) + v_shlf(I-1,J-1)) + (v_shlf(I,J-1) + v_shlf(I-1,J))) * 0.25
-        unorm_code2 = ((umid**2) + (vmid**2)) + (eps_min**2 * (G%dxT(i,j)**2 + G%dyT(i,j)**2))
+        unorm_code2 = ((umid**2) + (vmid**2)) + (eps_min**2 * ((G%dxT(i,j)**2) + (G%dyT(i,j)**2)))
         unorm = US%L_T_to_m_s * sqrt( unorm_code2 )
 
         !Coulomb friction (Schoof 2005, Gagliardini et al 2007)
