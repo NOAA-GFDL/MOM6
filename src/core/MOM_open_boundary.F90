@@ -1271,7 +1271,8 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
         write(mesg,'("OBC segment ",I0," has an unknown input field: ",a)') n, trim(phys_inputs(m))
         call MOM_error(FATAL, trim(routine_name) // ", " // trim(mesg))
       endif
-      if (.not. segment%field(idx)%required) then
+      if ((.not. segment%field(idx)%required) .and. &
+          ((.not. (idx == F_T .or. idx == F_S)) .or. check_ts_needed)) then
         write(mesg,'("OBC segment ",I0," has an unnecessary field: ",a)') &
               n, trim(phys_inputs(m))
         call MOM_error(WARNING, trim(mesg))
