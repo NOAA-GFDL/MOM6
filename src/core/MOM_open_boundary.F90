@@ -71,8 +71,8 @@ public set_obgc_segments_props
 public setup_OBC_tracer_reservoirs
 public setup_OBC_thickness_reservoirs
 public open_boundary_register_restarts
-public copy_thickness_reservoirs
 public copy_OBC_tracer_reservoirs
+public copy_OBC_thickness_reservoirs
 public update_segment_tracer_reservoirs
 public update_segment_thickness_reservoirs
 public set_initialized_OBC_tracer_reservoirs
@@ -2764,7 +2764,7 @@ subroutine copy_OBC_tracer_reservoirs(OBC)
 end subroutine copy_OBC_tracer_reservoirs
 
 !> Fill segment%h_Reg from restart fields.
-subroutine copy_thickness_reservoirs(OBC, G, GV)
+subroutine copy_OBC_thickness_reservoirs(OBC, G, GV)
   type(ocean_grid_type),          intent(inout) :: G     !< Ocean grid structure
   type(verticalGrid_type),        intent(in)    :: GV    !< The ocean's vertical grid structure
   type(ocean_OBC_type),           pointer       :: OBC   !< Open boundary control structure
@@ -2812,7 +2812,7 @@ subroutine copy_thickness_reservoirs(OBC, G, GV)
     endif
   endif
 
-end subroutine copy_thickness_reservoirs
+end subroutine copy_OBC_thickness_reservoirs
 
 !> Apply radiation conditions to 3D u,v at open boundaries
 subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US, dt)

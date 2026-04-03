@@ -62,7 +62,6 @@ use MOM_MEKE_types,            only : MEKE_type
 use MOM_open_boundary,         only : ocean_OBC_type, radiation_open_bdry_conds
 use MOM_open_boundary,         only : open_boundary_zero_normal_flow, open_boundary_query
 use MOM_open_boundary,         only : open_boundary_test_extern_h, update_OBC_ramp
-use MOM_open_boundary,         only : copy_thickness_reservoirs
 use MOM_open_boundary,         only : update_segment_thickness_reservoirs
 use MOM_PressureForce,         only : PressureForce, PressureForce_CS
 use MOM_PressureForce,         only : PressureForce_init
@@ -650,9 +649,6 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
 
   if (G%nonblocking_updates) &
     call complete_group_pass(CS%pass_visc_rem, G%Domain, clock=id_clock_pass)
-
-  if (associated(CS%OBC)) &
-    call copy_thickness_reservoirs(CS%OBC, G, GV)
 
 ! u_accel_bt = layer accelerations due to barotropic solver
   if (associated(CS%BT_cont) .or. CS%BT_use_layer_fluxes) then
