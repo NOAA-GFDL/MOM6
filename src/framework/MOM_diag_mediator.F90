@@ -386,62 +386,56 @@ subroutine set_axes_info(G, GV, US, param_file, diag_cs, set_vertical)
   real, allocatable, dimension(:) :: IaxB, iax ! Index-based integer and half-integer i-axis labels [nondim]
   real, allocatable, dimension(:) :: JaxB, jax ! Index-based integer and half-integer j-axis labels [nondim]
 
-
   set_vert = .true. ; if (present(set_vertical)) set_vert = set_vertical
-
 
   if (diag_cs%index_space_axes) then
     allocate(IaxB(G%IsgB:G%IegB))
-    do i=G%IsgB, G%IegB
-      Iaxb(i)=real(i)
+    do I=G%IsgB,G%IegB
+      Iaxb(I) = real(I)
     enddo
     allocate(iax(G%isg:G%ieg))
-    do i=G%isg, G%ieg
-      iax(i)=real(i)-0.5
+    do i=G%isg,G%ieg
+      iax(i) = real(i)-0.5
     enddo
     allocate(JaxB(G%JsgB:G%JegB))
-    do j=G%JsgB, G%JegB
-      JaxB(j)=real(j)
+    do J=G%JsgB,G%JegB
+      JaxB(J) = real(J)
     enddo
     allocate(jax(G%jsg:G%jeg))
-    do j=G%jsg, G%jeg
-      jax(j)=real(j)-0.5
+    do j=G%jsg,G%jeg
+      jax(j) = real(j)-0.5
     enddo
   endif
 
   ! Horizontal axes for the native grids
-  if (G%symmetric) then
-    if (diag_cs%index_space_axes) then
-      id_xq = diag_axis_init('iq', IaxB(G%isgB:G%iegB), 'none', 'x', &
-          'q point grid-space longitude', G%Domain, position=EAST)
-      id_yq = diag_axis_init('jq', JaxB(G%jsgB:G%jegB), 'none', 'y', &
-          'q point grid space latitude', G%Domain, position=NORTH)
+  if (diag_cs%index_space_axes) then
+    if (G%symmetric) then
+      id_xq = diag_axis_init('Iq', IaxB(G%IsgB:G%IegB), 'none', 'x', &
+          'Boundary (q) point grid-space longitude', G%Domain, position=EAST)
+      id_yq = diag_axis_init('Jq', JaxB(G%JsgB:G%JegB), 'none', 'y', &
+          'Boundary (q) point grid-space latitude', G%Domain, position=NORTH)
     else
-      id_xq = diag_axis_init('xq', G%gridLonB(G%isgB:G%iegB), G%x_axis_units, 'x', &
-          'q point nominal longitude', G%Domain, position=EAST)
-      id_yq = diag_axis_init('yq', G%gridLatB(G%jsgB:G%jegB), G%y_axis_units, 'y', &
-          'q point nominal latitude', G%Domain, position=NORTH)
-    endif
-  else
-    if (diag_cs%index_space_axes) then
       id_xq = diag_axis_init('Iq', IaxB(G%isg:G%ieg), 'none', 'x', &
-          'q point grid-space longitude', G%Domain, position=EAST)
+          'Boundary (q) point grid-space longitude', G%Domain, position=EAST)
       id_yq = diag_axis_init('Jq', JaxB(G%jsg:G%jeg), 'none', 'y', &
-          'q point grid space latitude', G%Domain, position=NORTH)
+          'Boundary (q) point grid-space latitude', G%Domain, position=NORTH)
+    endif
+    id_xh = diag_axis_init('ih', iax(G%isg:G%ieg), 'none', 'x', &
+        'Tracer (h) point grid-space longitude', G%Domain)
+    id_yh = diag_axis_init('jh', jax(G%jsg:G%jeg), 'none', 'y', &
+        'Tracer (h) point grid-space latitude', G%Domain)
+  else
+    if (G%symmetric) then
+      id_xq = diag_axis_init('xq', G%gridLonB(G%IsgB:G%IegB), G%x_axis_units, 'x', &
+          'q point nominal longitude', G%Domain, position=EAST)
+      id_yq = diag_axis_init('yq', G%gridLatB(G%JsgB:G%JegB), G%y_axis_units, 'y', &
+          'q point nominal latitude', G%Domain, position=NORTH)
     else
       id_xq = diag_axis_init('xq', G%gridLonB(G%isg:G%ieg), G%x_axis_units, 'x', &
           'q point nominal longitude', G%Domain, position=EAST)
       id_yq = diag_axis_init('yq', G%gridLatB(G%jsg:G%jeg), G%y_axis_units, 'y', &
           'q point nominal latitude', G%Domain, position=NORTH)
     endif
-  endif
-
-  if (diag_cs%index_space_axes) then
-    id_xh = diag_axis_init('ih', iax(G%isg:G%ieg), 'none', 'x', &
-        'h point grid-space longitude', G%Domain)
-    id_yh = diag_axis_init('jh', jax(G%jsg:G%jeg), 'none', 'y', &
-        'h point grid space latitude', G%Domain)
-  else
     id_xh = diag_axis_init('xh', G%gridLonT(G%isg:G%ieg), G%x_axis_units, 'x', &
         'h point nominal longitude', G%Domain)
     id_yh = diag_axis_init('yh', G%gridLatT(G%jsg:G%jeg), G%y_axis_units, 'y', &
