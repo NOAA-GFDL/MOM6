@@ -380,8 +380,12 @@ class _DoxygenXmlParagraphFormatter(object):
         if self.verbosity > 0:
             print("[debug] image type(%s) mode(%s)" % (image_type, self.build_mode))
 
-        # This if seems a bit arbitrary
-        if len(node.text.strip()):
+        # node.text is None for an empty <image/> element (no caption text);
+        # treat that the same as an empty caption and emit `.. image::` rather
+        # than `.. figure::`. The fork's original code crashed with
+        # AttributeError on these. Doxygen produces empty <image> elements for
+        # cases like an image referenced from a `\image` command with no caption.
+        if node.text and node.text.strip():
             type = 'figure'
         else:
             type = 'image'
