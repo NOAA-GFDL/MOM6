@@ -1662,7 +1662,6 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
 
   u_last(:,:) = u_shlf(:,:) ; v_last(:,:) = v_shlf(:,:)
   CS%cg_tol_newton = CS%cg_tolerance
-  ew_prev_err = err_init
 
   !! begin loop
 
