@@ -305,7 +305,7 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
   character(len=48)  :: flux_units ! The units for fluxes, either
                                  ! [units] m3 s-1 or [units] kg s-1.
   character(len=48)  :: conv_units ! The units for flux convergences, either
-                                 ! [units] m2 s-1 or [units] kg s-1.
+                                 ! [units] m s-1 or [units] kg m-2 s-1.
   character(len=48)  :: unit2    ! The dimensions of the tracer squared
   character(len=72)  :: cmorname ! The CMOR name of this tracer.
   character(len=120) :: cmor_longname ! The CMOR long name of that variable.
@@ -379,9 +379,9 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
           y_cell_method='sum', conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T)
       Tr%id_hbd_dfy = register_diag_field("ocean_model", trim(shortnm)//"_hbd_diffy", &
           diag%axesCvL, Time, trim(flux_longname)//" diffusive meridional " //&
-          "flux from the horizontal boundary diffusion scheme", trim(flux_units), &
-          v_extensive=.true., &
-          x_cell_method='sum', conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T)
+          "flux from the horizontal boundary diffusion scheme", &
+          trim(flux_units), v_extensive=.true., x_cell_method='sum', &
+          conversion=(US%L_to_m**2)*Tr%flux_scale*US%s_to_T)
     else
       Tr%id_adx = register_diag_field("ocean_model", trim(shortnm)//"_adx", &
           diag%axesCuL, Time, "Advective (by residual mean) Zonal Flux of "//trim(flux_longname), &
@@ -487,37 +487,32 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
     if (Tr%diag_form == 1) then
       Tr%id_dfxy_cont = register_diag_field("ocean_model", trim(shortnm)//'_dfxy_cont_tendency', &
           diag%axesTL, Time, "Neutral diffusion tracer content tendency for "//trim(shortnm), &
-          conv_units, conversion=Tr%conv_scale*US%s_to_T, &
-          x_cell_method='sum', y_cell_method='sum', v_extensive=.true.)
+          conv_units, conversion=Tr%conv_scale*US%s_to_T, v_extensive=.true.)
 
       Tr%id_dfxy_cont_2d = register_diag_field("ocean_model", &
           trim(shortnm)//'_dfxy_cont_tendency_2d', &
           diag%axesT1, Time, "Depth integrated neutral diffusion tracer content "//&
-          "tendency for "//trim(shortnm), conv_units, conversion=Tr%conv_scale*US%s_to_T, &
-          x_cell_method='sum', y_cell_method='sum')
+          "tendency for "//trim(shortnm), conv_units, conversion=Tr%conv_scale*US%s_to_T)
 
       Tr%id_hbdxy_cont = register_diag_field("ocean_model", trim(shortnm)//'_hbdxy_cont_tendency', &
           diag%axesTL, Time, "Horizontal boundary diffusion tracer content tendency for "//&
           trim(shortnm), &
-          conv_units, conversion=Tr%conv_scale*US%s_to_T, &
-          x_cell_method='sum', y_cell_method='sum', v_extensive=.true.)
+          conv_units, conversion=Tr%conv_scale*US%s_to_T, v_extensive=.true.)
 
       Tr%id_hbdxy_cont_2d = register_diag_field("ocean_model", &
           trim(shortnm)//'_hbdxy_cont_tendency_2d', &
           diag%axesT1, Time, "Depth integrated horizontal boundary diffusion tracer content "//&
-          "tendency for "//trim(shortnm), conv_units, conversion=Tr%conv_scale*US%s_to_T, &
-          x_cell_method='sum', y_cell_method='sum')
+          "tendency for "//trim(shortnm), conv_units, conversion=Tr%conv_scale*US%s_to_T)
     else
       cmor_var_lname = 'Tendency of '//trim(lowercase(cmor_longname))//' expressed as '//&
           trim(lowercase(flux_longname))//&
           ' content due to parameterized mesoscale neutral diffusion'
       Tr%id_dfxy_cont = register_diag_field("ocean_model", trim(shortnm)//'_dfxy_cont_tendency', &
           diag%axesTL, Time, "Neutral diffusion tracer content tendency for "//trim(shortnm), &
-          conv_units, conversion=Tr%conv_scale*US%s_to_T, &
+          conv_units, conversion=Tr%conv_scale*US%s_to_T, v_extensive=.true., &
           cmor_field_name=trim(Tr%cmor_tendprefix)//'pmdiff', &
           cmor_long_name=trim(cmor_var_lname), &
-          cmor_standard_name=trim(cmor_long_std(cmor_var_lname)), &
-          x_cell_method='sum', y_cell_method='sum', v_extensive=.true.)
+          cmor_standard_name=trim(cmor_long_std(cmor_var_lname)))
 
       cmor_var_lname = 'Tendency of '//trim(lowercase(cmor_longname))//' expressed as '//&
                        trim(lowercase(flux_longname))//&
@@ -528,20 +523,17 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
           "content tendency for "//trim(shortnm), conv_units, conversion=Tr%conv_scale*US%s_to_T, &
           cmor_field_name=trim(Tr%cmor_tendprefix)//'pmdiff_2d', &
           cmor_long_name=trim(cmor_var_lname), &
-          cmor_standard_name=trim(cmor_long_std(cmor_var_lname)), &
-          x_cell_method='sum', y_cell_method='sum')
+          cmor_standard_name=trim(cmor_long_std(cmor_var_lname)))
 
       Tr%id_hbdxy_cont = register_diag_field("ocean_model", trim(shortnm)//'_hbdxy_cont_tendency', &
           diag%axesTL, Time, &
           "Horizontal boundary diffusion tracer content tendency for "//trim(shortnm), &
-          conv_units, conversion=Tr%conv_scale*US%s_to_T, &
-          x_cell_method='sum', y_cell_method='sum', v_extensive=.true.)
+          conv_units, conversion=Tr%conv_scale*US%s_to_T, v_extensive=.true.)
 
       Tr%id_hbdxy_cont_2d = register_diag_field("ocean_model", &
           trim(shortnm)//'_hbdxy_cont_tendency_2d', &
           diag%axesT1, Time, "Depth integrated horizontal boundary diffusion of tracer "//&
-          "content tendency for "//trim(shortnm), conv_units, conversion=Tr%conv_scale*US%s_to_T, &
-          x_cell_method='sum', y_cell_method='sum')
+          "content tendency for "//trim(shortnm), conv_units, conversion=Tr%conv_scale*US%s_to_T)
     endif
     Tr%id_dfxy_conc = register_diag_field("ocean_model", trim(shortnm)//'_dfxy_conc_tendency', &
         diag%axesTL, Time, "Neutral diffusion tracer concentration tendency for "//trim(shortnm), &
