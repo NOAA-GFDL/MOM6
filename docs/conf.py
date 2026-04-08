@@ -20,10 +20,55 @@ from subprocess import check_output
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-#sys.path.insert(0, os.path.abspath('.'))
+sys.path.insert(0, os.path.abspath('_ext'))
 
 # -- Custom configuration values and roles -----------------------------------
 from docutils import nodes
+
+# -- Monkey-patch: fix sphinx-fortran's broken parallel-build merge ----------
+#
+# Upstream VACUMM/sphinx-fortran (as of commit reachable from master, 2025-10)
+# ships a FortranDomain.merge_domaindata() that has two bugs which together
+# cause every f-domain object to be lost when sphinx-build is run with -j > 1:
+#
+#   1. The function references a name `outNames` that does not exist
+#      (typo for `ourNames`); accessing it raises NameError, which Sphinx's
+#      parallel worker error path swallows silently.
+#
+#   2. Even with the typo fixed, the unpack `for name, docname in
+#      otherdata['modules'].items()` is wrong, because `modules` values are
+#      4-tuples `(docname, synopsis, platform, deprecated)` and `objects`
+#      values are 2-tuples `(docname, type)`, not bare docnames.
+#
+# Symptom: with `make html` (which passes -j 4), env.domaindata['f'] ends up
+# with 0 modules and 0 objects, every :f:func:/:f:type:/:f:mod: cross-
+# reference fails to resolve, and pages like f-modindex.html disappear.
+#
+# We patch this in-process so the existing -j 4 build still works. The fix
+# is small and obvious; once it lands upstream we should pin sphinx-fortran
+# to a post-fix commit and remove this patch.
+#
+# TODO(piece-2): submit upstream PR to VACUMM/sphinx-fortran with this fix,
+#                then drop this monkey-patch and pin requirements.txt to a
+#                post-fix commit.
+def _patch_sphinx_fortran_merge_domaindata():
+    try:
+        from sphinxfortran.fortran_domain import FortranDomain
+    except ImportError:
+        return
+    def merge_domaindata(self, docnames, otherdata):
+        ourNames = self.data['modules']
+        for name, data in otherdata['modules'].items():
+            # data == (docname, synopsis, platform, deprecated)
+            if data[0] in docnames and name not in ourNames:
+                ourNames[name] = data
+        ourNames = self.data['objects']
+        for name, data in otherdata['objects'].items():
+            # data == (docname, type)
+            if data[0] in docnames and name not in ourNames:
+                ourNames[name] = data
+    FortranDomain.merge_domaindata = merge_domaindata
+_patch_sphinx_fortran_merge_domaindata()
 
 def setup(app):
     app.add_config_value('sphinx_build_mode', '', 'env')
@@ -137,7 +182,7 @@ if return_code != 0: sys.exit(return_code)
 extensions = [
         'sphinxcontrib.bibtex',
         'sphinx.ext.ifconfig',
-        'sphinxcontrib.autodoc_doxygen',
+        'autodoc_doxygen',
         'sphinxfortran.fortran_domain',
 ]
 bibtex_bibfiles = ['ocean.bib', 'references.bib', 'zotero.bib']
