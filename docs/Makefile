@@ -65,7 +65,14 @@ $(BUILDDIR):
 	mkdir -p $@
 
 html: $(DOXYGENBIN) $(BUILDDIR)
-	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
+	$(SPHINXBUILD) -M html . $(BUILDDIR) $(ALLSPHINXOPTS) -j 4
+# Optional equation post-processing (was a patch in jr3cermak/sphinx@v3.2.1mom6.4
+# applied to sphinx/cmd/build.py); now invoked from the Makefile so we can run
+# against stock upstream Sphinx. The nortd target below has the same hook.
+ifeq ($(UPDATEHTMLEQS), Y)
+	@echo "Post processing equations."
+	@python3 ./postProcessEquations.py -d $(BUILDDIR) -p html -b sphinx -s index.html $(UPDATEHTMLEQSVERBOSE)
+endif
 	@echo
 	@echo "Build finished. The HTML pages are in $(BUILDDIR)/html."
 
