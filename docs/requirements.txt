@@ -14,8 +14,3 @@ numpy
 # fortran also still imports `six` at module load time on this commit.
 git+https://github.com/VACUMM/sphinx-fortran.git@b14f438c1cc74d1dbcd5acd9a330c3b509caab56#egg=sphinx-fortran
 six
-
-# Pending piece 4 of the upgrade plan: decide whether flint is actually used
-# anywhere in the build pipeline (the vendored autodoc_doxygen no longer
-# imports it) or whether we can drop this dependency entirely.
-git+https://github.com/jr3cermak/flint.git@0.0.1#egg=flint
