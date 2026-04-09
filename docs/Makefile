@@ -65,7 +65,7 @@ $(BUILDDIR):
 	mkdir -p $@
 
 html: $(DOXYGENBIN) $(BUILDDIR)
-	$(SPHINXBUILD) -M html . $(BUILDDIR) $(ALLSPHINXOPTS) -j 4
+	$(SPHINXBUILD) -M html . $(BUILDDIR) $(ALLSPHINXOPTS) -j auto
 # Optional equation post-processing (was a patch in jr3cermak/sphinx@v3.2.1mom6.4
 # applied to sphinx/cmd/build.py); now invoked from the Makefile so we can run
 # against stock upstream Sphinx. The nortd target below has the same hook.

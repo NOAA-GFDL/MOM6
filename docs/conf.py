@@ -276,7 +276,12 @@ extensions = [
 bibtex_bibfiles = ['ocean.bib', 'references.bib', 'zotero.bib']
 
 autosummary_generate = ['api/modules.rst', 'api/pages.rst']
-doxygen_xml = 'xml'
+# Absolute path so the autodoc_doxygen extension can find the doxygen XML
+# output regardless of what cwd Sphinx has at builder-inited time. This
+# previously broke on RTD, where `sphinx-build -M html docs ...` runs from
+# the repo root rather than from `docs/`, and the extension's os.path.isdir
+# check resolved "xml" against the wrong directory.
+doxygen_xml = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'xml')
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -384,7 +389,7 @@ html_theme = 'sphinx_rtd_theme'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-#html_static_path = ['_static']
+html_static_path = ['_static']
 
 # Add any extra paths that contain custom files (such as robots.txt or
 # .htaccess) here, relative to this directory. These files are copied

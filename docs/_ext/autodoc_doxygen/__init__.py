@@ -6,17 +6,24 @@ from sphinx.errors import ExtensionError
 def set_doxygen_xml(app):
     """Load all doxygen XML files from the app config variable
     `app.config.doxygen_xml` which should be a path to a directory
-    containing doxygen xml output
+    containing doxygen xml output. If the configured path is relative,
+    it is resolved against `app.confdir` rather than the current working
+    directory -- Sphinx may have any cwd by the time builder-inited fires,
+    and in particular RTD runs sphinx-build from the repo root.
     """
+    doxygen_xml = app.config.doxygen_xml
+    if not os.path.isabs(doxygen_xml):
+        doxygen_xml = os.path.join(app.confdir, doxygen_xml)
+
     err = ExtensionError(
         '[autodoc_doxygen] No doxygen '
-        'xml output found in doxygen_xml="%s"' % app.config.doxygen_xml)
+        'xml output found in doxygen_xml="%s"' % doxygen_xml)
 
-    if not os.path.isdir(app.config.doxygen_xml):
+    if not os.path.isdir(doxygen_xml):
         raise err
 
-    files = [os.path.join(app.config.doxygen_xml, f)
-             for f in os.listdir(app.config.doxygen_xml)
+    files = [os.path.join(doxygen_xml, f)
+             for f in os.listdir(doxygen_xml)
              if f.lower().endswith('.xml') and not f.startswith('._')]
     if len(files) == 0:
         raise err
