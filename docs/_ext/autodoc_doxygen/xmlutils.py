@@ -1,6 +1,6 @@
 import re
 
-from . import get_doxygen_root
+from . import get_doxygen_root, get_doxygen_id_index
 
 
 def flatten(xmlnode):
@@ -232,15 +232,27 @@ class _DoxygenXmlParagraphFormatter(object):
 
     # Scan the node and set appropriate options
     def scanNode(self, node):
-        xp = node.xpath('//latexonly')
+        # NOTE: these XPath expressions must use './/' rather than '//'.
+        # In XPath, '//foo' is an abbreviation for /descendant-or-self::node()/foo
+        # starting from the *document root*, not from `node`. Because our
+        # autodoc_doxygen extension concatenates every doxygen XML file into a
+        # single merged tree (see set_doxygen_xml), every `node` passed here is
+        # a small subtree (e.g. a single <detaileddescription>) whose owner
+        # document is the *entire* MOM6 doxygen output. Using '//' here
+        # therefore scans the whole merged tree on every call, which made
+        # scanNode the dominant cost of `make html` -- 75% of single-threaded
+        # build time at full MOM6 input scale, quadratic in the tree size.
+        # Using './/' scans only descendants of the actual node, which is what
+        # was intended and makes each call O(local subtree size).
+        xp = node.xpath('.//latexonly')
         if len(xp) > 0:
             self.options.append('latexonly')
-        xp = node.xpath('//htmlonly')
+        xp = node.xpath('.//htmlonly')
         if len(xp) > 0:
             self.options.append('htmlonly')
 
         if 'latexonly' in self.options:
-            xp = node.xpath('//image[@type="latex"]')
+            xp = node.xpath('.//image[@type="latex"]')
             if len(xp) > 0:
                 self.options.append('skipDoxyImage')
 
@@ -250,14 +262,15 @@ class _DoxygenXmlParagraphFormatter(object):
         ream_name = None
         kind = None
 
-        # debug
-        #if refid == 'General_Coordinate':
-        ref = get_doxygen_root().findall('.//*[@id="%s"]' % refid)
+        # O(1) lookup via the lazily-built id -> element index.
+        # The previous findall('.//*[@id=X]') on the merged tree was the
+        # single largest cost in `make html` under XML_PROGRAMLISTING=YES
+        # -- see docs/REMAINING_TASKS.md / profile notes.
+        hit = get_doxygen_id_index().get(refid)
         if self.verbosity > 0: print("[debug] refid(%s) kindref(%s) ref(%s)" %
-            (refid, node.get('kindref'), ref))
-        #if refid.find('wright1997') >= 0:
-        if ref:
-            ref = ref[0]
+            (refid, node.get('kindref'), hit))
+        if hit is not None:
+            ref = hit
             kind = ref.get('kind')
             if self.verbosity > 0: print("[debug] ref(%s)" % ref.items())
             if ref.tag == 'memberdef':

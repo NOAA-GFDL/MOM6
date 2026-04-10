@@ -43,6 +43,30 @@ def get_doxygen_root():
     return setup.DOXYGEN_ROOT
 
 
+def get_doxygen_id_index():
+    """Return a dict mapping every ``@id`` in the merged doxygen tree to
+    the element that owns it. Built lazily on first use and memoized
+    on the :func:`setup` function object.
+
+    Profiling a serial build at full MOM6 input (XML_PROGRAMLISTING=YES,
+    109 MB merged tree) showed ``xmlutils.visit_ref`` burning 250 s of
+    self time -- 27% of total wall clock -- in a single ``findall('.//*
+    [@id=X]')`` call that linearly scanned the entire merged tree once
+    per ``<ref>`` in prose. This index turns that scan into an O(1)
+    dict lookup. Same shape of fix as the scanNode `//` -> `.//` patch
+    in commit 8a217135e.
+    """
+    if not hasattr(setup, 'DOXYGEN_ID_INDEX'):
+        root = get_doxygen_root()
+        index = {}
+        for el in root.iter():
+            eid = el.get('id')
+            if eid is not None:
+                index[eid] = el
+        setup.DOXYGEN_ID_INDEX = index
+    return setup.DOXYGEN_ID_INDEX
+
+
 def setup(app):
     import sphinx
     from .autodoc import (
