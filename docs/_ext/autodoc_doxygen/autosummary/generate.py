@@ -255,6 +255,54 @@ def find_autosummary_in_lines(lines, module=None, filename=None):
     return documented
 
 
+def _generate_source_stubs(app):
+    """Generate one :orphan: stub per doxygen file compound under
+    api/generated/source/, each invoking ``.. autodoxysource::``."""
+    root = get_doxygen_root()
+    source_dir = os.path.join(app.srcdir, 'api', 'generated', 'source')
+    ensuredir(source_dir)
+
+    template_dirs = [os.path.join(os.path.dirname(__file__), 'templates')]
+    template_loader = FileSystemLoader(template_dirs)
+    template_env = SandboxedEnvironment(loader=template_loader,
+                                        trim_blocks=True, lstrip_blocks=True)
+    template = template_env.get_template('doxysource.rst')
+
+    files = root.findall('./compounddef[@kind="file"]')
+    count = 0
+    for cd in files:
+        file_id = cd.get('id')
+        if file_id is None:
+            continue
+        # Only generate if there is a programlisting
+        if cd.find('.//programlisting') is None:
+            continue
+
+        fn = os.path.join(source_dir, file_id + '.rst')
+        if os.path.isfile(fn):
+            continue
+
+        # Title from the location filename, or fall back to file_id
+        loc = cd.find('location')
+        if loc is not None and loc.get('file'):
+            title = os.path.basename(loc.get('file'))
+        else:
+            title = file_id
+
+        rendered = template.render(
+            title=title,
+            underline='=' * len(title),
+            file_id=file_id,
+        )
+        with open(fn, 'w') as f:
+            f.write(rendered)
+        count += 1
+
+    if count:
+        print('[autodoxysource] generated %d source stubs in %s' %
+              (count, source_dir))
+
+
 def process_generate_options(app):
     genfiles = app.config.autosummary_generate
     # add
@@ -278,3 +326,6 @@ def process_generate_options(app):
     # add toctree argument
     #                         suffix=ext, base_path=app.srcdir)
                               suffix=ext, base_path=app.srcdir, toctree=toctree, build_mode=sphinx_build_mode)
+
+    # Generate source browser stubs
+    _generate_source_stubs(app)

@@ -7,6 +7,7 @@ from sphinx.errors import ExtensionError
 from sphinx.util import logging
 
 from . import get_doxygen_root
+from .autodoxysource import get_source_link
 from .xmlutils import format_xml_paragraph, flatten
 
 logger = logging.getLogger(__name__)
@@ -296,6 +297,18 @@ class DoxygenModuleDocumenter(DoxygenDocumenter):
         self.add_line(u'.. f:module:: %s' % self.format_name(), sourcename)
         self.add_line(u'', sourcename)
 
+        # [source] link
+        src = get_source_link(self.object)
+        if src:
+            docname, line = src
+            # Module pages are at api/generated/modules/<name>.html;
+            # source pages at api/generated/source/<file_id>.html
+            file_id = docname.rsplit('/', 1)[-1]
+            self.add_line(
+                u'`[source] <../source/%s.html#L%s>`__' % (file_id, line),
+                sourcename)
+            self.add_line(u'', sourcename)
+
         # brief description
         self.brief = True
         self.add_content(more_content)
@@ -366,6 +379,16 @@ class DoxygenMethodDocumenter(DoxygenDocumenter):
 
         self.add_line(u'.. %s:%s:: %s%s' % (domain, directive, name, sig),
                       sourcename)
+
+        # [source] link
+        src = get_source_link(self.object)
+        if src:
+            docname, line = src
+            file_id = docname.rsplit('/', 1)[-1]
+            self.add_line(u'', sourcename)
+            self.add_line(
+                u'   `[source] <../source/%s.html#L%s>`__' % (file_id, line),
+                sourcename)
 
     def parse_id(self, id):
         # added
@@ -554,6 +577,16 @@ class DoxygenTypeDocumenter(DoxygenDocumenter):
 
         self.add_line(u'.. %s:%s:: %s' % (domain, directive, name),
                       sourcename)
+
+        # [source] link
+        src = get_source_link(self.object)
+        if src:
+            docname, line = src
+            file_id = docname.rsplit('/', 1)[-1]
+            self.add_line(u'', sourcename)
+            self.add_line(
+                u'   `[source] <../source/%s.html#L%s>`__' % (file_id, line),
+                sourcename)
 
     #def get_doc(self, encoding):
     # encoding is depricated
