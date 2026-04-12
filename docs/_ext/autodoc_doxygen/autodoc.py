@@ -297,18 +297,6 @@ class DoxygenModuleDocumenter(DoxygenDocumenter):
         self.add_line(u'.. f:module:: %s' % self.format_name(), sourcename)
         self.add_line(u'', sourcename)
 
-        # [source] link
-        src = get_source_link(self.object)
-        if src:
-            docname, line = src
-            # Module pages are at api/generated/modules/<name>.html;
-            # source pages at api/generated/source/<file_id>.html
-            file_id = docname.rsplit('/', 1)[-1]
-            self.add_line(
-                u'`[source] <../source/%s.html#L%s>`__' % (file_id, line),
-                sourcename)
-            self.add_line(u'', sourcename)
-
         # brief description
         self.brief = True
         self.add_content(more_content)
@@ -331,6 +319,16 @@ class DoxygenModuleDocumenter(DoxygenDocumenter):
         if 'methods' in self.options:
             self.add_title('Function/Subroutine Documentation', char='-')
             self.document_members('func', all_members)
+
+        # [source] link at the bottom of the module page
+        src = get_source_link(self.object)
+        if src:
+            docname, line = src
+            file_id = docname.rsplit('/', 1)[-1]
+            self.add_line(u'', sourcename)
+            self.add_line(
+                u'`[source] <../source/%s.html#L%s>`__' % (file_id, line),
+                sourcename)
 
         if self.env.app.verbosity > 0:
             if self.real_modname == 'mom_eos':
@@ -379,16 +377,6 @@ class DoxygenMethodDocumenter(DoxygenDocumenter):
 
         self.add_line(u'.. %s:%s:: %s%s' % (domain, directive, name, sig),
                       sourcename)
-
-        # [source] link
-        src = get_source_link(self.object)
-        if src:
-            docname, line = src
-            file_id = docname.rsplit('/', 1)[-1]
-            self.add_line(u'', sourcename)
-            self.add_line(
-                u'   `[source] <../source/%s.html#L%s>`__' % (file_id, line),
-                sourcename)
 
     def parse_id(self, id):
         # added
@@ -475,6 +463,13 @@ class DoxygenMethodDocumenter(DoxygenDocumenter):
         #end function EOS_domain
         #if self.object.find('name').text == 'eos_domain':
 
+        if not self.brief:
+            src = get_source_link(self.object)
+            if src:
+                docname, line = src
+                file_id = docname.rsplit('/', 1)[-1]
+                doc.append(['`[source] <../source/%s.html#L%s>`__' % (file_id, line)])
+
         return doc
 
     # added function
@@ -508,14 +503,14 @@ class DoxygenMethodDocumenter(DoxygenDocumenter):
         if typefield is None:
             rtype = None
         elif 'function' in typefield:
-            # get the return type
-            # watch for different patterns
-            m = re.search(r'(\S+)\s+function', typefield)
-            if m:
-                rtype = m.group(0)
-            else:
-                rtype = 'function'
-                print('ERROR searching for return type in', typefield)
+            # Don't include the return type in the directive name.
+            # sphinx-fortran's f_sig_re regex only matches
+            # "function name(args)" or bare "name(args)"; a return
+            # type prefix like "real name(args)" causes the regex
+            # to fail, leaving the function unregistered and
+            # unclickable. The f:function directive already labels
+            # the entry as "function".
+            rtype = None
         else:
             rtype = 'subroutine' if 'subroutine' in typefield else 'unknown'
 
@@ -578,48 +573,36 @@ class DoxygenTypeDocumenter(DoxygenDocumenter):
         self.add_line(u'.. %s:%s:: %s' % (domain, directive, name),
                       sourcename)
 
-        # [source] link
-        src = get_source_link(self.object)
-        if src:
-            docname, line = src
-            file_id = docname.rsplit('/', 1)[-1]
-            self.add_line(u'', sourcename)
-            self.add_line(
-                u'   `[source] <../source/%s.html#L%s>`__' % (file_id, line),
-                sourcename)
-
-    #def get_doc(self, encoding):
-    # encoding is depricated
     def get_doc(self):
         desc = [format_xml_paragraph(self.object.find('briefdescription'),
             self.env.config.sphinx_build_mode, verbosity=self.env.app.verbosity)]
 
         for member in self.object.findall('./sectiondef/memberdef'):
-            attribs = flatten(member.find('type')).strip().split(', ')
             name = member.find('name').text
-            shape = ''
-            rest = ''
+            type_el = member.find('type')
+            full_type = ''.join(type_el.itertext()).strip() if type_el is not None else ''
 
-            # very rudimentary parsing of type attributes
-            # into the Fortran domain format
-            for word in attribs:
-                if word.startswith('dimension'):
-                    shape = word[len('dimension'):].replace(':', r'\:')
-
-            extras = [w for w in attribs[1:] if not w.startswith('dimension')]
             if member.get('prot') == 'private':
-                extras.append('private')
-            if len(extras):
-                rest = ' [' + ', '.join(extras) + ']'
+                if full_type:
+                    full_type += ', private'
+                else:
+                    full_type = 'private'
 
-            field = ':typefield %s%s %s%s:' % (attribs[0], shape, name, rest)
+            field = ':typefield %s:' % name
+            if full_type:
+                field += ' ``%s``' % full_type
 
-            # look for the brief description paragraph
             brief = member.find('briefdescription/para')
             if brief is not None:
                 field += ' ' + brief.text
 
             desc.append([field])
+
+        src = get_source_link(self.object)
+        if src:
+            docname, line = src
+            file_id = docname.rsplit('/', 1)[-1]
+            desc.append(['`[source] <../source/%s.html#L%s>`__' % (file_id, line)])
 
         return desc
 

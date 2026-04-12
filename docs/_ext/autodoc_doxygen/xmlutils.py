@@ -721,10 +721,31 @@ class _DoxygenXmlParagraphFormatter(object):
         else:
             direction = ''
 
-        # replace
-        #self.lines.append('**%s** -- %s' % (
-        #    node.text, direction))
-        self.lines.append(':param %s: %s' % (node.text, direction))
+        param_name = node.text or ''
+
+        # Look up the parameter's Fortran type from the parent
+        # memberdef's <param> elements. The <parameterlist> inside
+        # <detaileddescription> only carries names and descriptions;
+        # the types live on the <param> siblings of <detaileddescription>.
+        param_type = ''
+        memberdefs = node.xpath('./ancestor::memberdef')
+        if memberdefs:
+            for p in memberdefs[0].findall('param'):
+                defname = p.find('defname')
+                if defname is not None and defname.text == param_name:
+                    type_el = p.find('type')
+                    if type_el is not None:
+                        param_type = ''.join(type_el.itertext()).strip()
+                    break
+
+        # Prepend the type as literal text in the description rather
+        # than using :param type name: (sphinx-fortran's regex can't
+        # handle commas in the type) or :type name: (sphinx-fortran's
+        # xref resolver crashes on % in dimension expressions).
+        if param_type:
+            self.lines.append(':param %s: ``%s`` %s' % (param_name, param_type, direction))
+        else:
+            self.lines.append(':param %s: %s' % (param_name, direction))
         self.continue_line = True
 
     def visit_parameterlist(self, node):

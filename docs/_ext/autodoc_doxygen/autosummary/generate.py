@@ -303,6 +303,63 @@ def _generate_source_stubs(app):
               (count, source_dir))
 
 
+def _generate_function_index(app):
+    """Generate api/functions.rst listing every function/subroutine
+    across all namespace compounds, with cross-reference links to
+    the function's entry on its module page."""
+    root = get_doxygen_root()
+    fn = os.path.join(app.srcdir, 'api', 'functions.rst')
+    if os.path.isfile(fn):
+        return
+
+    entries = []
+    for cd in root.findall('./compounddef[@kind="namespace"]'):
+        modname = cd.find('compoundname')
+        if modname is None or modname.text is None:
+            continue
+        mod = modname.text
+        for md in cd.findall('.//sectiondef[@kind="func"]/memberdef[@kind="function"]'):
+            name_el = md.find('name')
+            if name_el is None or name_el.text is None:
+                continue
+            name = name_el.text
+            brief_el = md.find('briefdescription/para')
+            brief = ''
+            if brief_el is not None and brief_el.text:
+                brief = brief_el.text.strip().replace('|', r'\|')
+            qualified = '%s/%s' % (mod, name)
+            entries.append((name, mod, qualified, brief))
+
+    entries.sort(key=lambda e: e[0].lower())
+
+    lines = [
+        '.. _Functions:',
+        '',
+        '=========',
+        'Functions',
+        '=========',
+        '',
+        '.. list-table::',
+        '   :widths: 30 30 40',
+        '   :header-rows: 1',
+        '',
+        '   * - Name',
+        '     - Module',
+        '     - Description',
+    ]
+    for name, mod, qualified, brief in entries:
+        lines.append('   * - :f:func:`%s <%s>`' % (name, qualified))
+        lines.append('     - :f:mod:`%s`' % mod)
+        lines.append('     - %s' % brief)
+
+    lines.append('')
+
+    with open(fn, 'w') as f:
+        f.write('\n'.join(lines))
+    print('[autodoxysource] generated function index with %d entries at %s' %
+          (len(entries), fn))
+
+
 def process_generate_options(app):
     genfiles = app.config.autosummary_generate
     # add
@@ -329,3 +386,6 @@ def process_generate_options(app):
 
     # Generate source browser stubs
     _generate_source_stubs(app)
+
+    # Generate function index
+    _generate_function_index(app)
