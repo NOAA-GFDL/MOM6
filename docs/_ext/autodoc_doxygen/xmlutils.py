@@ -683,9 +683,14 @@ class _DoxygenXmlParagraphFormatter(object):
             if len(self.math_labels) > 0:
                 self.emit_math_labels()
 
-            #self.lines.append('')
             self.blank_line()
-            self.lines.append('.. math:: ' + text)
+            if '\n' in text:
+                self.lines.append('.. math::')
+                self.lines.append('')
+                for mathline in text.split('\n'):
+                    self.lines.append('   ' + mathline)
+            else:
+                self.lines.append('.. math:: ' + text)
             self.blank_line()
             # Math blocks require an explicit blank line as well?
             #self.lines.append('')
