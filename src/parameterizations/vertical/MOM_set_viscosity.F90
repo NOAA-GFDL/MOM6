@@ -133,7 +133,7 @@ type, public :: set_visc_CS ; private
   ! Allocatable data arrays
   real, allocatable, dimension(:,:) :: cdrag_u !< The spatially varying quadratic drag coefficient [nondim]
   real, allocatable, dimension(:,:) :: cdrag_v !< The spatially varying quadratic drag coefficient [nondim]
-  real, allocatable, dimension(:,:) :: tideamp !< RMS tidal amplitude at h points [Z T-1 ~> m s-1]
+  real, allocatable, dimension(:,:) :: tideamp !< RMS tidal amplitude at h points [L T-1 ~> m s-1]
   ! Diagnostic arrays
   real, allocatable, dimension(:,:) :: bbl_u !< BBL mean U current [L T-1 ~> m s-1]
   real, allocatable, dimension(:,:) :: bbl_v !< BBL mean V current [L T-1 ~> m s-1]
