@@ -187,9 +187,9 @@ type, public :: diabatic_CS ; private
                                      !! MLD calculation [Z ~> m].
   logical :: Use_KdWork_diag = .false.  !< Logical flag to indicate if any Kd_work diagnostics are on.
   logical :: Use_N2_diag = .false.   !< Logical flag to indicate if any N2 diagnostics are on.
-  logical :: MLD_param_003 = .false. !< Logical flag for if MLD in parameterizations uses the 0.03 MLD value
-  logical :: MLD_param_EN1 = .false. !< Logical flag for if MLD in parameterizations uses the EN1 MLD value
-  logical :: MLD_param_ePBL = .false.!< Logical flag for if MLD in parameterizations uses the ePBL h_ML value
+  logical :: MLD_param_003 = .false. !< Logical flag if MLD in brine plume should use the 0.03 mixed layer depth
+  logical :: MLD_param_EN1 = .false. !< Logical flag if MLD in brine plume should use the EN1 mixed layer depth
+  logical :: MLD_param_ePBL = .false.!< Logical flag if MLD in brine plume should use the ePBL boundary layer depth
 
   !>@{ Diagnostic IDs
   integer :: id_ea       = -1, id_eb       = -1 ! used by layer diabatic
@@ -902,7 +902,6 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
   if (CS%use_energetic_PBL) then
 
     skinbuoyflux(:,:) = 0.0
-    ! pass the right MLD_h
     call applyBoundaryFluxesInOut(CS%diabatic_aux_CSp, G, GV, US, dt, fluxes, CS%optics, &
             optics_nbands(CS%optics), h, tv, CS%aggregate_FW_forcing, CS%evap_CFL_limit, &
             CS%minimum_forcing_depth, cTKE, dSV_dT, dSV_dS, SkinBuoyFlux=SkinBuoyFlux, MLD_h=visc%h_ML_param)
@@ -931,7 +930,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     ! If visc%MLD or visc%h_ML exist, copy ePBL's BLD into them with appropriate conversions.
     if (associated(visc%h_ML)) call convert_MLD_to_ML_thickness(BLD, h, visc%h_ML, tv, G, GV)
     if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
-    if (CS%MLD_PARAM_ePBL) visc%h_ML_param = visc%h_ML
+    if (CS%MLD_param_ePBL) visc%h_ML_param = visc%h_ML
     if (associated(visc%sfc_buoy_flx)) visc%sfc_buoy_flx(:,:) = SkinBuoyFlux(:,:)
 
     ! Find the vertical distances across layers, which may have been modified by the net surface flux
@@ -1583,7 +1582,7 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     ! If visc%MLD or visc%h_ML exist, copy ePBL's BLD into them with appropriate conversions.
     if (associated(visc%h_ML)) call convert_MLD_to_ML_thickness(BLD, h, visc%h_ML, tv, G, GV)
     if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
-    if (CS%MLD_PARAM_ePBL) visc%h_ML_param = visc%h_ML
+    if (CS%MLD_param_ePBL) visc%h_ML_param = visc%h_ML
     if (associated(visc%sfc_buoy_flx)) visc%sfc_buoy_flx(:,:) = SkinBuoyFlux(:,:)
 
     ! Augment the diffusivities and viscosity due to those diagnosed in energetic_PBL.
@@ -3409,14 +3408,15 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
   if (do_brine_plume) then
     call get_param(param_file, mdl, "BRINE_PLUME_MLD_DEF", brine_plume_mld_def, &
                    "A string that determines which mixed/mixing depth is used in setting "//&
-                   "the brine plume depth", default='MLD_EN1')
+                   "the brine plume depth, \n Valid options are MLD_003, MLD_EN1, and H_ePBL",&
+                   default='MLD_EN1')
     select case (trim(brine_plume_mld_def))
     case ('MLD_003')
-      CS%MLD_PARAM_003 = .true.
+      CS%MLD_param_003 = .true.
     case ('MLD_EN1')
-      CS%MLD_PARAM_EN1 = .true.
+      CS%MLD_param_EN1 = .true.
     case ('H_ePBL')
-      CS%MLD_PARAM_ePBL = .true.
+      CS%MLD_param_ePBL = .true.
     case default
       call MOM_error(FATAL,"Invalid choice for BRINE_PLUME_MLD_DEF.  Valid options are"//&
                      "MLD_003, MLD_EN1, or H_ePBL.")

@@ -75,13 +75,15 @@ type, public :: diabatic_aux_CS ; private
   integer :: brine_plume_n   !< The exponent in the brine plume parameterization.
   real :: plume_strength     !< Fraction of the available brine to take to the bottom of the mixed
                              !! layer [nondim].
+  real :: plume_mld_fac      !< Proportionality factor between the mixed/mixing layer depth and the
+                             !! vertical scale used for the brine plume parameterization [nondim].
 
   type(time_type), pointer :: Time => NULL() !< A pointer to the ocean model's clock.
   type(diag_ctrl), pointer :: diag !< Structure used to regulate timing of diagnostic output
 
   ! Diagnostic handles
   integer :: id_createdH       = -1 !< Diagnostic ID of mass added to avoid grounding
-  integer :: id_brine_lay      = -1 !< Diagnostic ID of which layer receives the brine
+  integer :: id_brine_input    = -1 !< Diagnostic ID of which layer receives the brine salt flux
   integer :: id_penSW_diag     = -1 !< Diagnostic ID of Penetrative shortwave heating (flux convergence)
   integer :: id_penSWflux_diag = -1 !< Diagnostic ID of Penetrative shortwave flux
   integer :: id_nonpenSW_diag  = -1 !< Diagnostic ID of Non-penetrative shortwave heating
@@ -90,6 +92,8 @@ type, public :: diabatic_aux_CS ; private
   ! Optional diagnostic arrays
   real, allocatable, dimension(:,:)   :: createdH       !< The amount of volume added in order to
                                                         !! avoid grounding [H T-1 ~> m s-1]
+  real, allocatable, dimension(:,:,:) :: brine_input    !< Brine input diagnostic indicating
+                                                        !! the resulting salt tendency [S T-1 ~> ppt s-1]
   real, allocatable, dimension(:,:,:) :: penSW_diag     !< Heating in a layer from convergence of
                                                         !! penetrative SW [Q R Z T-1 ~> W m-2]
   real, allocatable, dimension(:,:,:) :: penSWflux_diag !< Penetrative SW flux at base of grid
@@ -795,7 +799,9 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   real :: A_brine(SZI_(G))  ! Constant [H-(n+1) ~> m-(n+1) or m(2n+2) kg-(n+1)].
   real :: fraction_left_brine ! Fraction of the brine that has not been applied yet [nondim]
   real :: plume_fraction ! Fraction of the brine that is applied to a layer [nondim]
-  real :: plume_flux  ! Brine flux to move downwards  [S H ~> ppt m or ppt kg m-2]
+  real :: plume_flux  ! Brine flux to move downwards  [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
+  real :: salt_added, salt_removed, net_flux ! Helpers to keep stock of salt being moved by brine flux
+                                             ! [S H ~> ppt m or ppt kg m-2]
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   integer :: i, j, is, ie, js, je, k, nz, nb
   character(len=45) :: mesg
@@ -803,7 +809,6 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
   Idt = 1.0 / dt
-  plume_flux = 0.0
 
   calculate_energetics = (present(cTKE) .and. present(dSV_dT) .and. present(dSV_dS))
   calculate_buoyancy = present(SkinBuoyFlux)
@@ -989,16 +994,6 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
     !    ocean (and corresponding outward heat content), and ignoring penetrative SW.
     ! B/ update mass, salt, temp from mass leaving ocean.
     ! C/ update temp due to penetrative SW
-    if (CS%do_brine_plume) then
-      ! Find the plume mixing depth.
-      do i=is,ie ; total_h(i) = 0.0 ; enddo
-      do k=1,nz ; do i=is,ie ; total_h(i) = total_h(i) + h(i,j,k) ; enddo ; enddo
-      do i=is,ie
-        mixing_depth(i) = min( max(MLD_h(i,j) - minimum_forcing_depth, minimum_forcing_depth), &
-                               max(total_h(i), GV%angstrom_h) ) + GV%H_subroundoff
-        A_brine(i) = (CS%brine_plume_n + 1) / (mixing_depth(i) ** (CS%brine_plume_n + 1))
-      enddo
-    endif
 
     do i=is,ie
       if (G%mask2dT(i,j) > 0.) then
@@ -1075,7 +1070,6 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
         enddo ! k=1,1
 
         ! B/ Update mass, salt, temp from mass leaving ocean and other fluxes of heat and salt.
-        fraction_left_brine = 1.0
         do k=1,nz
           ! Place forcing into this layer if this layer has nontrivial thickness.
           ! For layers thin relative to 1/IforcingDepthScale, then distribute
@@ -1089,32 +1083,6 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
           ! be distributed downwards.
           if (-fractionOfForcing*netMassOut(i) > evap_CFL_limit*h2d(i,k)) then
             fractionOfForcing = -evap_CFL_limit*h2d(i,k)/netMassOut(i)
-          endif
-
-          if (CS%do_brine_plume .and. associated(fluxes%salt_left_behind)) then
-            if (fluxes%salt_left_behind(i,j) > 0 .and. fraction_left_brine > 0.0) then
-              ! Place forcing into this layer by depth for brine plume parameterization.
-              if (k == 1) then
-                dK(i) = 0.5 * h(i,j,k)         ! Depth of center of layer K
-                plume_flux = - (1000.0*US%ppt_to_S * (CS%plume_strength * fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
-                plume_fraction = 1.0
-              else
-                dK(i) = dK(i) + 0.5 * ( h(i,j,k) + h(i,j,k-1) ) ! Depth of center of layer K
-                plume_flux = 0.0
-              endif
-              if (dK(i) <= mixing_depth(i) .and. fraction_left_brine > 0.0) then
-                plume_fraction = min(fraction_left_brine, (A_brine(i) * dK(i)**CS%brine_plume_n) * h(i,j,k))
-              else
-                IforcingDepthScale = 1. / max(GV%H_subroundoff, minimum_forcing_depth - netMassOut(i) )
-                ! plume_fraction = fraction_left_brine, unless h2d is less than IforcingDepthScale.
-                plume_fraction = min(fraction_left_brine, h2d(i,k)*IforcingDepthScale)
-              endif
-              fraction_left_brine = fraction_left_brine - plume_fraction
-              plume_flux = plume_flux + plume_fraction * (1000.0*US%ppt_to_S * (CS%plume_strength * &
-                           fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
-            else
-              plume_flux = 0.0
-            endif
           endif
 
           ! Change in state due to forcing
@@ -1161,7 +1129,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
             endif
             Ithickness  = 1.0/h2d(i,k) ! Inverse of new thickness
             T2d(i,k)    = (hOld*T2d(i,k) + dTemp)*Ithickness
-            tv%S(i,j,k) = (hOld*tv%S(i,j,k) + dSalt + plume_flux)*Ithickness
+            tv%S(i,j,k) = (hOld*tv%S(i,j,k) + dSalt)*Ithickness
           elseif (h2d(i,k) < 0.0) then ! h2d==0 is a special limit that needs no extra handling
             call forcing_SinglePointPrint(fluxes,G,i,j,'applyBoundaryFluxesInOut (h<0)')
             write(0,*) 'applyBoundaryFluxesInOut(): lon,lat=',G%geoLonT(i,j),G%geoLatT(i,j)
@@ -1175,6 +1143,66 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
           endif
 
         enddo ! k
+
+        if (CS%do_brine_plume .and. associated(fluxes%salt_left_behind)) then
+          ! Find the plume mixing depth.
+          total_h(i) = 0.5*h2d(i,1)
+          do k=2,nz ; total_h(i) = total_h(i) + 0.5*(h2d(i,k-1)+h2d(i,k)) ; enddo
+          mixing_depth(i) = min( max(CS%plume_mld_fac * MLD_h(i,j) - minimum_forcing_depth, minimum_forcing_depth), &
+                            max(total_h(i), GV%angstrom_h) ) + GV%H_subroundoff
+          A_brine(i) = (CS%brine_plume_n + 1) / (mixing_depth(i) ** (CS%brine_plume_n + 1))
+
+          !Helpers for debugging
+          salt_added = 0.0
+          salt_removed = 0.0
+          net_flux = 0.0
+
+          !Resetting fields used for prognostic salt calculation
+          fraction_left_brine = 1.0
+          plume_flux = 0.0
+          do k=1,nz
+            if (fluxes%salt_left_behind(i,j) > 0 .and. fraction_left_brine > 0.0) then
+              ! Place forcing into this layer by depth for brine plume parameterization.
+              if (k == 1) then
+                dK(i) = 0.5 * h2d(i,k)         ! Depth of center of layer K
+                ! salt_left_behind has units of R Z T-1, plume flux thus has units of S H T-1
+                plume_flux = - (1000.0*US%ppt_to_S * (CS%plume_strength * fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
+                salt_removed = plume_flux*dt
+                plume_fraction = 1.0
+              else
+                dK(i) = dK(i) + 0.5 * ( h2d(i,k) + h2d(i,k-1) ) ! Depth of center of layer K
+                plume_flux = 0.0
+              endif
+              if (dK(i) <= mixing_depth(i) .and. fraction_left_brine > 0.0 .and. k<nz) then
+                plume_fraction = min(fraction_left_brine, (A_brine(i) * dK(i)**CS%brine_plume_n) * h2d(i,k))
+              else
+                IforcingDepthScale = 1. / GV%H_subroundoff
+                ! plume_fraction = fraction_left_brine, unless h2d is less than IforcingDepthScale.
+                plume_fraction = min(fraction_left_brine, h2d(i,k)*IforcingDepthScale)
+              endif
+              fraction_left_brine = fraction_left_brine - plume_fraction
+              plume_flux = plume_flux + plume_fraction * (1000.0*US%ppt_to_S * (CS%plume_strength * &
+                           fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
+              salt_added = salt_added + plume_fraction * (1000.0*US%ppt_to_S * (CS%plume_strength * &
+                           fluxes%salt_left_behind(i,j))) * GV%RZ_to_H*dt
+            else
+              plume_flux = 0.0
+            endif
+            net_flux = net_flux + plume_flux
+            Ithickness  = 1.0/h2d(i,k)
+            tv%S(i,j,k) = (h2d(i,k)*tv%S(i,j,k) + plume_flux*dt)*Ithickness
+            if (CS%id_brine_input > 0.) then
+               CS%brine_input(i,j,k) = plume_flux
+            endif
+          enddo
+          !if (fluxes%salt_left_behind(i,j) > 0 .and. abs(net_flux)>0.0) then
+          !  if (fraction_left_brine>0.0) then
+          !    print*,'Leftover brine?'
+          !    print*,total_h(i),mixing_depth(i),salt_removed
+          !    print*,salt_added+salt_removed,net_flux, fraction_left_brine
+          !  endif
+          !endif
+        endif
 
       ! Check if trying to apply fluxes over land points
       elseif ((abs(netHeat(i)) + abs(netSalt(i)) + abs(netMassIn(i)) + abs(netMassOut(i))) > 0.) then
@@ -1324,6 +1352,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
 
   ! Post the diagnostics
   if (CS%id_createdH       > 0) call post_data(CS%id_createdH      , CS%createdH      , CS%diag)
+  if (CS%id_brine_input    > 0) call post_data(CS%id_brine_input   , CS%brine_input   , CS%diag)
   if (CS%id_penSW_diag     > 0) call post_data(CS%id_penSW_diag    , CS%penSW_diag    , CS%diag)
   if (CS%id_penSWflux_diag > 0) call post_data(CS%id_penSWflux_diag, CS%penSWflux_diag, CS%diag)
   if (CS%id_nonpenSW_diag  > 0) call post_data(CS%id_nonpenSW_diag , CS%nonpenSW_diag , CS%diag)
@@ -1452,12 +1481,23 @@ subroutine diabatic_aux_init(Time, G, GV, US, param_file, diag, CS, useALEalgori
   call get_param(param_file, mdl, "BRINE_PLUME_FRACTION", CS%plume_strength, &
                  "Fraction of the available brine to mix down using the brine plume parameterization.", &
                  units="nondim", default=1.0, do_not_log=.not.CS%do_brine_plume)
+  call get_param(param_file, mdl, "BRINE_PLUME_MLD_FAC", CS%plume_mld_fac, &
+                 "Proportionality factor between plume scale and  MLD used in brine plume parameteterization.", &
+                 units="nondim", default=1.0, do_not_log=.not.CS%do_brine_plume)
+  if (CS%plume_mld_fac<0.0) call MOM_error(FATAL,"BRINE_PLUME_MLD_FAC shouldn't be negative!")
+
 
   if (useALEalgorithm) then
     CS%id_createdH = register_diag_field('ocean_model',"created_H",diag%axesT1, &
         Time, "The volume flux added to stop the ocean from drying out and becoming negative in depth", &
         "m s-1", conversion=GV%H_to_m*US%s_to_T)
     if (CS%id_createdH>0) allocate(CS%createdH(isd:ied,jsd:jed))
+
+    CS%id_brine_input = register_diag_field('ocean_model', 'Brine_Salt_Increment', &
+         diag%axesTL, Time, 'Salt rate of change due to brine plume','kg m-2 s-1', &
+         conversion=US%S_to_ppt*0.001*GV%H_to_RZ*US%RZ_T_to_kg_m2s, v_extensive=.true.)
+    if (CS%id_brine_input>0) allocate(CS%brine_input(isd:ied,jsd:jed,nz), source=0.0)
+
 
     ! diagnostic for heating of a grid cell from convergence of SW heat into the cell
     CS%id_penSW_diag = register_diag_field('ocean_model', 'rsdoabsorb',                     &
