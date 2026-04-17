@@ -1667,17 +1667,8 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
 
   do iter=1,50
 
-    select case (CS%inner_solver)
-      case (INNER_CG)
-        call ice_shelf_solve_inner_CG(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H_node, CS%float_cond, &
-                                      ISS%hmask, conv_flag, iters, time, CS%Phi, CS%Phisub)
-      case (INNER_MINRES)
-        call ice_shelf_solve_inner_MINRES(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H_node, CS%float_cond, &
-                                          ISS%hmask, conv_flag, iters, time, CS%Phi, CS%Phisub)
-      case (INNER_CR)
-        call ice_shelf_solve_inner_CR(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H_node, CS%float_cond, &
-                                      ISS%hmask, conv_flag, iters, time, CS%Phi, CS%Phisub)
-    end select
+    call ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H_node, CS%float_cond, &
+                               ISS%hmask, conv_flag, iters, time, CS%Phi, CS%Phisub)
 
     if (CS%debug) then
       call qchksum(u_shlf, "u shelf", G%HI, haloshift=2, unscale=US%L_T_to_m_s)
@@ -1804,9 +1795,11 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
 
 end subroutine ice_shelf_solve_outer
 
-!> Inner solve with Conjugate Gradient (CG) method
-subroutine ice_shelf_solve_inner_CG(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H_node, float_cond, &
-                                     hmask, conv_flag, iters, time, Phi, Phisub)
+!> Unified inner linear solver for ice shelf velocity.
+!! Performs shared setup (RHS, preconditioner, initial matrix-vector product),
+!! dispatches to the selected Krylov method, and applies boundary conditions.
+subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H_node, float_cond, &
+                                  hmask, conv_flag, iters, time, Phi, Phisub)
   type(ice_shelf_dyn_CS), intent(in)    :: CS !< A pointer to the ice shelf control structure
   type(ice_shelf_state),  intent(in)    :: ISS !< A structure with elements that describe
                                            !! the ice-shelf state
@@ -1839,60 +1832,29 @@ subroutine ice_shelf_solve_inner_CG(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy
   real, dimension(:,:,:,:,:,:), &
                           intent(in)    :: Phisub !< Quadrature structure weights at subgridscale
                                             !! locations for finite element calculations [nondim]
-! one linear solve (nonlinear iteration) of the solution for velocity
 
-! in this subroutine:
-!    RHS = taud
-!    diagonal of matrix is found (for Jacobi precondition)
-!    CG iteration is carried out for max. iterations or until convergence
-
-! assumed - u, v, taud, visc, basal_traction are valid on the halo
-
-  real, dimension(SZDIB_(G),SZDJB_(G)) ::  &
-                        Ru, Rv, &     ! Residuals in the stress calculations [R L3 Z T-2 ~> m kg s-2]
-                        Zu, Zv, & ! Contributions to velocity changes [L T-1 ~> m s-1]
-                        DIAGu, DIAGv, & ! Diagonals with units like Ru/Zu [R L2 Z T-1 ~> kg s-1]
-                        IDIAGu, IDIAGv, & ! Reciprocal diagonals [R-1 L-2 Z-1 T ~> kg-1 s]
-                        RHSu, RHSv, & ! Right hand side of the stress balance [R L3 Z T-2 ~> m kg s-2]
-                        Au, Av, & ! The retarding lateral stress contributions [R L3 Z T-2 ~> kg m s-2]
-                        Du, Dv    ! Velocity changes [L T-1 ~> m s-1]
-  real, dimension(SZDIB_(G),SZDJB_(G)) :: sum_vec ! Pointwise D·A products for the alpha_k global sum
-                                                  ! [R L4 Z T-3 ~> m2 kg s-3]
-  real, dimension(SZDIB_(G),SZDJB_(G),2) :: sum_vec_3d ! Array used for various residuals
-                                                       ! sum_vec_3d(:,:,1) [m s-1] [m kg s-2]
-                                                       ! sum_vec_3d(:,:,2) [m2 kg2 s-4]
-  real    :: beta_k      ! Ratio of residuals used to update search direction [nondim]
-  real    :: resid0tol2  ! Convergence tolerance times the initial residual [m2 kg2 s-4]
-  real    :: sv3dsum     ! An unused variable returned when taking global sum of residuals [various]
-  real    :: sv3dsums(2) ! The index-wise global sums of sum_vec_3d
-                         ! sv3dsums(1) [R L4 Z T-3 ~> m2 kg s-3]
-                         ! sv3dsums(2) [m2 kg2 s-4]
-  real    :: alpha_k     ! A scaling factor for iterative corrections [nondim]
-  real    :: rho_old     ! The preconditioned residual inner product Z·R from the previous CG
-                         ! iteration, scaled by resid_scale [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: resid_scale ! A scaling factor for redimensionalizing the global residuals
-                         ! [L T-1 ~> m s-1] [R L3 Z T-2 ~> m kg s-2]
-  real    :: resid2_scale ! A scaling factor for redimensionalizing the global squared residuals
-                         ! [R2 L6 Z2 T-4 ~> m2 kg2 s-4]
-  real    :: rhoi_rhow  ! The density of ice divided by a typical water density [nondim]
-  integer :: cg_halo     ! Number of halo vertices to include during a CG iteration
-  integer :: max_cg_halo ! Maximum possible number of halo vertices to include in the CG iterations
-  integer :: iter, i, j, isd, ied, jsd, jed, isc, iec, jsc, jec, is, js, ie, je, is2, ie2, js2, je2
+  real, dimension(SZDIB_(G),SZDJB_(G)) :: &
+        RHSu, RHSv, &     ! Right hand side of the stress balance [R L3 Z T-2 ~> m kg s-2]
+        Au, Av, &          ! Matrix-vector product A*x [R L3 Z T-2 ~> kg m s-2]
+        DIAGu, DIAGv, &    ! Diagonals [R L2 Z T-1 ~> kg s-1]
+        IDIAGu, IDIAGv     ! Reciprocal diagonals [R-1 L-2 Z-1 T ~> kg-1 s]
+  real    :: rhoi_rhow      ! The density of ice divided by a typical water density [nondim]
+  real    :: resid_scale    ! A scaling factor for redimensionalizing the global residuals
+                            ! [L T-1 ~> m s-1] [R L3 Z T-2 ~> m kg s-2]
   integer :: Is_sum, Js_sum, Ie_sum, Je_sum ! Loop bounds for global sums or arrays starting at 1.
-  integer :: Isdq, Iedq, Jsdq, Jedq, Iscq, Iecq, Jscq, Jecq, nx_halo, ny_halo
-  integer :: Iscq_sv, Jscq_sv ! Starting loop bound for sum_vec_3d
+  integer :: Iscq_sv, Jscq_sv ! Starting loop bound for sum_vec arrays
+  integer :: I, J
+  integer :: Isdq, Iedq, Jsdq, Jedq, Iscq, Iecq, Jscq, Jecq
+  integer :: isc, iec, jsc, jec
 
   Isdq = G%IsdB ; Iedq = G%IedB ; Jsdq = G%JsdB ; Jedq = G%JedB
   Iscq = G%IscB ; Iecq = G%IecB ; Jscq = G%JscB ; Jecq = G%JecB
-  ny_halo = G%domain%njhalo ; nx_halo = G%domain%nihalo
-  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
   rhoi_rhow = CS%density_ice / CS%density_ocean_avg
 
-  Zu(:,:) = 0 ; Zv(:,:) = 0 ; DIAGu(:,:) = 0 ; DIAGv(:,:) = 0
-  Ru(:,:) = 0 ; Rv(:,:) = 0 ; Au(:,:) = 0 ; Av(:,:) = 0 ; RHSu(:,:) = 0 ; RHSv(:,:) = 0
-  Du(:,:) = 0 ; Dv(:,:) = 0
+  ! Initialize shared arrays
+  Au(:,:) = 0 ; Av(:,:) = 0 ; DIAGu(:,:) = 0 ; DIAGv(:,:) = 0
 
   ! Determine the loop limits for sums, bearing in mind that the arrays will be starting at 1.
   ! Includes the edge of the tile is at the western/southern bdry (if symmetric)
@@ -1909,18 +1871,15 @@ subroutine ice_shelf_solve_inner_CG(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy
   Ie_sum = Iecq + (1-Isdq) ; Je_sum = Jecq + (1-Jsdq)
 
   RHSu(:,:) = taudx(:,:) ; RHSv(:,:) = taudy(:,:)
-
   call pass_vector(RHSu, RHSv, G%domain, TO_ALL, BGRID_NE, complete=.false.)
 
   call matrix_diagonal(CS, G, US, float_cond, H_node, CS%ice_visc, CS%basal_traction, &
                        hmask, rhoi_rhow, Phi, Phisub, DIAGu, DIAGv)
-
   call pass_vector(DIAGu, DIAGv, G%domain, TO_ALL, BGRID_NE, complete=.false.)
 
   call CG_action(CS, Au, Av, u_shlf, v_shlf, Phi, Phisub, CS%umask, CS%vmask, hmask, &
                  H_node, CS%ice_visc, float_cond, CS%bed_elev, CS%basal_traction, &
                  G, US, isc-1, iec+1, jsc-1, jec+1, rhoi_rhow, use_newton_in=.false.)
-
   call pass_vector(Au, Av, G%domain, TO_ALL, BGRID_NE, complete=.true.)
 
   ! Precompute reciprocal diagonal
@@ -1930,9 +1889,131 @@ subroutine ice_shelf_solve_inner_CG(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy
     if (CS%vmask(I,J)==1 .AND. DIAGv(I,J)/=0) IDIAGv(I,J) = 1.0 / DIAGv(I,J)
   enddo ; enddo
 
-  Ru(:,:) = (RHSu(:,:) - Au(:,:)) ; Rv(:,:) = (RHSv(:,:) - Av(:,:))
   resid_scale = US%s_to_T*(US%RZL2_to_kg*US%L_T_to_m_s**2)
+
+  ! Dispatch to selected solver
+  select case (CS%inner_solver)
+    case (INNER_CG)
+      call ice_shelf_solve_inner_CG(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
+                                     IDIAGu, IDIAGv, H_node, float_cond, hmask, &
+                                     rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                     Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
+    case (INNER_MINRES)
+      call ice_shelf_solve_inner_MINRES(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
+                                         IDIAGu, IDIAGv, H_node, float_cond, hmask, &
+                                         rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                         Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
+    case (INNER_CR)
+      call ice_shelf_solve_inner_CR(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
+                                     IDIAGu, IDIAGv, H_node, float_cond, hmask, &
+                                     rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                     Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
+  end select
+
+  ! Shared teardown: Apply boundary conditions
+  do J=Jsdq,Jedq ; do I=Isdq,Iedq
+      if (CS%umask(I,J) == 3) then
+        u_shlf(I,J) = CS%u_bdry_val(I,J)
+      elseif (CS%umask(I,J) == 0) then
+        u_shlf(I,J) = 0
+      endif
+
+      if (CS%vmask(I,J) == 3) then
+        v_shlf(I,J) = CS%v_bdry_val(I,J)
+      elseif (CS%vmask(I,J) == 0) then
+        v_shlf(I,J) = 0
+      endif
+  enddo ; enddo
+
+  call pass_vector(u_shlf, v_shlf, G%domain, TO_ALL, BGRID_NE)
+
+  if (conv_flag == 0) then
+    iters = CS%cg_max_iterations
+  endif
+
+end subroutine ice_shelf_solve_inner
+
+!> CG (Conjugate Gradient) inner Krylov solve for ice shelf velocity.
+subroutine ice_shelf_solve_inner_CG(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
+                                     IDIAGu, IDIAGv, H_node, float_cond, hmask, &
+                                     rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                     Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
+  type(ice_shelf_dyn_CS), intent(in)    :: CS !< A pointer to the ice shelf control structure
+  type(ocean_grid_type),  intent(inout) :: G  !< The grid structure used by the ice shelf.
+  type(unit_scale_type),  intent(in)    :: US !< A structure containing unit conversion factors
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(inout) :: u_shlf  !< The zonal ice shelf velocity [L T-1 ~> m s-1]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(inout) :: v_shlf  !< The meridional ice shelf velocity [L T-1 ~> m s-1]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(in)    :: RHSu !< Right hand side, x [R L3 Z T-2 ~> m kg s-2]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(in)    :: RHSv !< Right hand side, y [R L3 Z T-2 ~> m kg s-2]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(inout) :: Au !< Matrix-vector product workspace, x [R L3 Z T-2 ~> kg m s-2]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(inout) :: Av !< Matrix-vector product workspace, y [R L3 Z T-2 ~> kg m s-2]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(in)    :: IDIAGu !< Reciprocal Jacobi diagonal, x [R-1 L-2 Z-1 T ~> kg-1 s]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(in)    :: IDIAGv !< Reciprocal Jacobi diagonal, y [R-1 L-2 Z-1 T ~> kg-1 s]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(in)    :: H_node !< The ice shelf thickness at nodal points [Z ~> m]
+  real, dimension(SZDI_(G),SZDJ_(G)), &
+                          intent(in)    :: float_cond !< Grounding line indicator [nondim]
+  real, dimension(SZDI_(G),SZDJ_(G)), &
+                          intent(in)    :: hmask !< Ice shelf coverage mask
+  real,                   intent(in)    :: rhoi_rhow !< Ice-to-ocean density ratio [nondim]
+  real,                   intent(in)    :: resid_scale !< Scaling for inner products
+                                           !! [L T-1 ~> m s-1] [R L3 Z T-2 ~> m kg s-2]
+  real, dimension(8,4,SZDI_(G),SZDJ_(G)), &
+                          intent(in)    :: Phi !< Basis element gradients at quadrature points [L-1 ~> m-1]
+  real, dimension(:,:,:,:,:,:), &
+                          intent(in)    :: Phisub !< Subgridscale quadrature weights [nondim]
+  integer,                intent(out)   :: conv_flag !< Convergence flag: 1=converged, 0=not
+  integer,                intent(out)   :: iters !< The number of iterations used
+  integer,                intent(in)    :: Is_sum !< Starting i-index for global sums
+  integer,                intent(in)    :: Js_sum !< Starting j-index for global sums
+  integer,                intent(in)    :: Ie_sum !< Ending i-index for global sums
+  integer,                intent(in)    :: Je_sum !< Ending j-index for global sums
+  integer,                intent(in)    :: Iscq_sv !< Starting i-index for sum_vec arrays
+  integer,                intent(in)    :: Jscq_sv !< Starting j-index for sum_vec arrays
+
+  real, dimension(SZDIB_(G),SZDJB_(G)) ::  &
+                        Ru, Rv, &     ! Residuals [R L3 Z T-2 ~> m kg s-2]
+                        Zu, Zv, &     ! Preconditioned residuals [L T-1 ~> m s-1]
+                        Du, Dv        ! Search directions [L T-1 ~> m s-1]
+  real, dimension(SZDIB_(G),SZDJB_(G)) :: sum_vec ! Pointwise D·A products for the alpha_k global sum
+                                                  ! [R L4 Z T-3 ~> m2 kg s-3]
+  real, dimension(SZDIB_(G),SZDJB_(G),2) :: sum_vec_3d ! Array used for various residuals
+                                                       ! sum_vec_3d(:,:,1) [m s-1] [m kg s-2]
+                                                       ! sum_vec_3d(:,:,2) [m2 kg2 s-4]
+  real    :: beta_k      ! Ratio of residuals used to update search direction [nondim]
+  real    :: resid0tol2  ! Convergence tolerance times the initial residual [m2 kg2 s-4]
+  real    :: sv3dsum     ! An unused variable returned when taking global sum of residuals [various]
+  real    :: sv3dsums(2) ! The index-wise global sums of sum_vec_3d
+                         ! sv3dsums(1) [R L4 Z T-3 ~> m2 kg s-3]
+                         ! sv3dsums(2) [m2 kg2 s-4]
+  real    :: alpha_k     ! A scaling factor for iterative corrections [nondim]
+  real    :: rho_old     ! The preconditioned residual inner product Z·R from the previous CG
+                         ! iteration, scaled by resid_scale [R L4 Z T-3 ~> m2 kg s-3]
+  real    :: resid2_scale ! A scaling factor for redimensionalizing the global squared residuals
+                         ! [R2 L6 Z2 T-4 ~> m2 kg2 s-4]
+  integer :: cg_halo     ! Number of halo vertices to include during a CG iteration
+  integer :: max_cg_halo ! Maximum possible number of halo vertices to include in the CG iterations
+  integer :: iter, i, j, isc, iec, jsc, jec, is, js, ie, je, is2, ie2, js2, je2
+  integer :: Isdq, Iedq, Jsdq, Jedq, Iscq, Iecq, Jscq, Jecq, nx_halo, ny_halo
+
+  Isdq = G%IsdB ; Iedq = G%IedB ; Jsdq = G%JsdB ; Jedq = G%JedB
+  Iscq = G%IscB ; Iecq = G%IecB ; Jscq = G%JscB ; Jecq = G%JecB
+  ny_halo = G%domain%njhalo ; nx_halo = G%domain%nihalo
+  isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
+
   resid2_scale = ((US%RZ_to_kg_m2*US%L_to_m)*US%L_T_to_m_s**2)**2
+
+  Ru(:,:) = 0 ; Rv(:,:) = 0 ; Zu(:,:) = 0 ; Zv(:,:) = 0 ; Du(:,:) = 0 ; Dv(:,:) = 0
+
+  Ru(:,:) = (RHSu(:,:) - Au(:,:)) ; Rv(:,:) = (RHSv(:,:) - Av(:,:))
 
   do J=Jsdq,Jedq ; do I=Isdq,Iedq
     if (CS%umask(I,J) == 1) Zu(I,J) = Ru(I,J) * IDIAGu(I,J)
@@ -2003,7 +2084,12 @@ subroutine ice_shelf_solve_inner_CG(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy
 
     sv3dsum = reproducing_sum( sum_vec(:,:), Is_sum, Ie_sum, Js_sum, Je_sum )
 
-    if (sv3dsum == 0.0) exit
+    if (sv3dsum == 0.0) then
+      iters = iter
+      conv_flag = 1
+      exit
+    endif
+
     alpha_k = rho_old / sv3dsum
 
     do J=js2,je2 ; do I=is2,ie2
@@ -2017,7 +2103,7 @@ subroutine ice_shelf_solve_inner_CG(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy
         Rv(I,J) = Rv(I,J) - alpha_k * Av(I,J)
         Zv(I,J) = Rv(I,J) * IDIAGv(I,J)
       endif
-    enddo; enddo
+    enddo ; enddo
 
     ! beta_k = (Z \dot R) / (Z_prev \dot R_prev)
     sum_vec_3d(:,:,:) = 0.0 ; sv3dsums(:)=0.0
@@ -2037,16 +2123,16 @@ subroutine ice_shelf_solve_inner_CG(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy
 
     beta_k = sv3dsums(1) / rho_old
 
-    do J=js2,je2 ; do I=is2,ie2
-      if (CS%umask(I,J) == 1) Du(I,J) = Zu(I,J) + beta_k * Du(I,J)
-      if (CS%vmask(I,J) == 1) Dv(I,J) = Zv(I,J) + beta_k * Dv(I,J)
-    enddo; enddo
-
     if (sv3dsums(2) <= resid0tol2) then
       iters = iter
       conv_flag = 1
       exit
     endif
+
+    do J=js2,je2 ; do I=is2,ie2
+      if (CS%umask(I,J) == 1) Du(I,J) = Zu(I,J) + beta_k * Du(I,J)
+      if (CS%vmask(I,J) == 1) Dv(I,J) = Zv(I,J) + beta_k * Dv(I,J)
+    enddo ; enddo
 
     rho_old = sv3dsums(1)
 
@@ -2069,71 +2155,59 @@ subroutine ice_shelf_solve_inner_CG(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy
 
   enddo ! end of CG loop
 
-  do J=Jsdq,Jedq ; do I=Isdq,Iedq
-      if (CS%umask(I,J) == 3) then
-        u_shlf(I,J) = CS%u_bdry_val(I,J)
-      elseif (CS%umask(I,J) == 0) then
-        u_shlf(I,J) = 0
-      endif
-
-      if (CS%vmask(I,J) == 3) then
-        v_shlf(I,J) = CS%v_bdry_val(I,J)
-      elseif (CS%vmask(I,J) == 0) then
-        v_shlf(I,J) = 0
-      endif
-  enddo ; enddo
-
-  call pass_vector(u_shlf, v_shlf, G%domain, TO_ALL, BGRID_NE)
-  if (conv_flag == 0) then
-    iters = CS%cg_max_iterations
-  endif
-
 end subroutine ice_shelf_solve_inner_CG
 
-!> Inner solve with MINRES method
-subroutine ice_shelf_solve_inner_MINRES(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H_node, float_cond, &
-                                 hmask, conv_flag, iters, time, Phi, Phisub)
+!> MINRES inner Krylov solve for ice shelf velocity.
+subroutine ice_shelf_solve_inner_MINRES(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
+                                         IDIAGu, IDIAGv, H_node, float_cond, hmask, &
+                                         rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                         Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
   type(ice_shelf_dyn_CS), intent(in)    :: CS !< A pointer to the ice shelf control structure
-  type(ice_shelf_state),  intent(in)    :: ISS !< A structure with elements that describe
-                                           !! the ice-shelf state
   type(ocean_grid_type),  intent(inout) :: G  !< The grid structure used by the ice shelf.
   type(unit_scale_type),  intent(in)    :: US !< A structure containing unit conversion factors
   real, dimension(SZDIB_(G),SZDJB_(G)), &
-                          intent(inout) :: u_shlf  !< The zonal ice shelf velocity at vertices [L T-1 ~> m s-1]
+                          intent(inout) :: u_shlf  !< The zonal ice shelf velocity [L T-1 ~> m s-1]
   real, dimension(SZDIB_(G),SZDJB_(G)), &
-                          intent(inout) :: v_shlf  !< The meridional ice shelf velocity at vertices [L T-1 ~> m s-1]
+                          intent(inout) :: v_shlf  !< The meridional ice shelf velocity [L T-1 ~> m s-1]
   real, dimension(SZDIB_(G),SZDJB_(G)), &
-                          intent(in)    :: taudx !< The x-direction driving stress [R L3 Z T-2 ~> kg m s-2]
+                          intent(in)    :: RHSu !< Right hand side, x [R L3 Z T-2 ~> m kg s-2]
   real, dimension(SZDIB_(G),SZDJB_(G)), &
-                          intent(in)    :: taudy  !< The y-direction driving stress [R L3 Z T-2 ~> kg m s-2]
+                          intent(in)    :: RHSv !< Right hand side, y [R L3 Z T-2 ~> m kg s-2]
   real, dimension(SZDIB_(G),SZDJB_(G)), &
-                          intent(in)    :: H_node !< The ice shelf thickness at nodal (corner)
-                                             !! points [Z ~> m].
+                          intent(inout) :: Au !< Matrix-vector product workspace, x [R L3 Z T-2 ~> kg m s-2]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(inout) :: Av !< Matrix-vector product workspace, y [R L3 Z T-2 ~> kg m s-2]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(in)    :: IDIAGu !< Reciprocal Jacobi diagonal, x [R-1 L-2 Z-1 T ~> kg-1 s]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(in)    :: IDIAGv !< Reciprocal Jacobi diagonal, y [R-1 L-2 Z-1 T ~> kg-1 s]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(in)    :: H_node !< The ice shelf thickness at nodal points [Z ~> m]
   real, dimension(SZDI_(G),SZDJ_(G)), &
-                          intent(in)    :: float_cond !< If GL_regularize=true, indicates cells containing
-                                                !! the grounding line (float_cond=1) or not (float_cond=0)
+                          intent(in)    :: float_cond !< Grounding line indicator [nondim]
   real, dimension(SZDI_(G),SZDJ_(G)), &
-                          intent(in)    :: hmask !< A mask indicating which tracer points are
-                                             !! partly or fully covered by an ice-shelf
-  integer,                intent(out)   :: conv_flag !< A flag indicating whether (1) or not (0) the
-                                           !! iterations have converged to the specified tolerance
-  integer,                intent(out)   :: iters !< The number of iterations used in the solver.
-  type(time_type),        intent(in)    :: Time !< The current model time
+                          intent(in)    :: hmask !< Ice shelf coverage mask
+  real,                   intent(in)    :: rhoi_rhow !< Ice-to-ocean density ratio [nondim]
+  real,                   intent(in)    :: resid_scale !< Scaling for inner products
+                                           !! [L T-1 ~> m s-1] [R L3 Z T-2 ~> m kg s-2]
   real, dimension(8,4,SZDI_(G),SZDJ_(G)), &
-                          intent(in)    :: Phi !< The gradients of bilinear basis elements at Gaussian
-                                             !! quadrature points surrounding the cell vertices [L-1 ~> m-1].
+                          intent(in)    :: Phi !< Basis element gradients at quadrature points [L-1 ~> m-1]
   real, dimension(:,:,:,:,:,:), &
-                          intent(in)    :: Phisub !< Quadrature structure weights at subgridscale
-                                            !! locations for finite element calculations [nondim]
+                          intent(in)    :: Phisub !< Subgridscale quadrature weights [nondim]
+  integer,                intent(out)   :: conv_flag !< Convergence flag: 1=converged, 0=not
+  integer,                intent(out)   :: iters !< The number of iterations used
+  integer,                intent(in)    :: Is_sum !< Starting i-index for global sums
+  integer,                intent(in)    :: Js_sum !< Starting j-index for global sums
+  integer,                intent(in)    :: Ie_sum !< Ending i-index for global sums
+  integer,                intent(in)    :: Je_sum !< Ending j-index for global sums
+  integer,                intent(in)    :: Iscq_sv !< Starting i-index for sum_vec arrays
+  integer,                intent(in)    :: Jscq_sv !< Starting j-index for sum_vec arrays
+
   real, dimension(SZDIB_(G),SZDJB_(G)) ::  &
         V_old_u, V_old_v, V_curr_u, V_curr_v, V_new_u, V_new_v, & ! Lanczos basis vectors [R L3 Z T-2 ~> m kg s-2]
         Z_curr_u, Z_curr_v, Z_new_u, Z_new_v, &    ! Preconditioned Lanczos vectors [L T-1 ~> m s-1]
         W_old_u, W_old_v, W_curr_u, W_curr_v, W_new_u, W_new_v, & ! MINRES search directions [L T-1 ~> m s-1]
-        Qu, Qv, &         ! A * Z_curr [R L3 Z T-2 ~> m kg s-2]
-        DIAGu, DIAGv, &   ! Diagonals [R L2 Z T-1 ~> kg s-1]
-        IDIAGu, IDIAGv, & ! Reciprocal diagonals [R-1 L-2 Z-1 T ~> kg-1 s]
-        RHSu, RHSv, &     ! Right hand side [R L3 Z T-2 ~> m kg s-2]
-        Au, Av            ! Initial matrix-vector product A*u_shlf [R L3 Z T-2 ~> m kg s-2]
+        Qu, Qv            ! A * Z_curr [R L3 Z T-2 ~> m kg s-2]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: sum_vec_3d ! Pointwise products for global sums
                                                      ! [R L4 Z T-3 ~> m2 kg s-3]
   real    :: alpha       ! Lanczos diagonal element (Rayleigh quotient) [R L4 Z T-3 ~> m2 kg s-3]
@@ -2149,59 +2223,18 @@ subroutine ice_shelf_solve_inner_MINRES(CS, ISS, G, US, u_shlf, v_shlf, taudx, t
   real    :: Ibeta1      ! Reciprocal of beta1 [nondim]
   real    :: Ibeta2      ! Reciprocal of beta2  [nondim]
   real    :: Id1         ! Reciprocal of d1 [nondim]
-  real    :: resid_scale ! Scaling factor for residual inner products
-                         ! [L T-1 ~> m s-1] [R L3 Z T-2 ~> m kg s-2]
-  real    :: rhoi_rhow   ! The density of ice divided by a typical water density [nondim]
-  integer :: iter, i, j, isd, ied, jsd, jed, isc, iec, jsc, jec
-  integer :: Is_sum, Js_sum, Ie_sum, Je_sum
+  integer :: iter, i, j, isc, iec, jsc, jec
   integer :: Isdq, Iedq, Jsdq, Jedq, Iscq, Iecq, Jscq, Jecq
-  integer :: Iscq_sv, Jscq_sv
 
   Isdq = G%IsdB ; Iedq = G%IedB ; Jsdq = G%JsdB ; Jedq = G%JedB
   Iscq = G%IscB ; Iecq = G%IecB ; Jscq = G%JscB ; Jecq = G%JecB
-  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
-  rhoi_rhow = CS%density_ice / CS%density_ocean_avg
-
-  ! Initialize Arrays
+  ! Initialize MINRES-specific arrays
   V_old_u(:,:) = 0 ; V_old_v(:,:) = 0 ; V_curr_u(:,:) = 0 ; V_curr_v(:,:) = 0
   Z_curr_u(:,:) = 0 ; Z_curr_v(:,:) = 0
   W_old_u(:,:) = 0 ; W_old_v(:,:) = 0 ; W_curr_u(:,:) = 0 ; W_curr_v(:,:) = 0
-  Qu(:,:) = 0 ; Qv(:,:) = 0 ; DIAGu(:,:) = 0 ; DIAGv(:,:) = 0
-
-  if ((isc+G%idg_offset==G%isg) .and. (.not. CS%reentrant_x)) then
-    Is_sum = Iscq + (1-Isdq) ; Iscq_sv = Iscq
-  else
-    Is_sum = isc  + (1-Isdq) ; Iscq_sv = isc
-  endif
-  if ((jsc+G%jdg_offset==G%jsg) .and. (.not. CS%reentrant_y)) then
-    Js_sum = Jscq + (1-Jsdq) ; Jscq_sv = Jscq
-  else
-    Js_sum = jsc + (1-Jsdq) ; Jscq_sv = jsc
-  endif
-  Ie_sum = Iecq + (1-Isdq) ; Je_sum = Jecq + (1-Jsdq)
-
-  RHSu(:,:) = taudx(:,:) ; RHSv(:,:) = taudy(:,:)
-  call pass_vector(RHSu, RHSv, G%domain, TO_ALL, BGRID_NE, complete=.false.)
-
-  call matrix_diagonal(CS, G, US, float_cond, H_node, CS%ice_visc, CS%basal_traction, &
-                       hmask, rhoi_rhow, Phi, Phisub, DIAGu, DIAGv)
-  call pass_vector(DIAGu, DIAGv, G%domain, TO_ALL, BGRID_NE, complete=.false.)
-
-  call CG_action(CS, Au, Av, u_shlf, v_shlf, Phi, Phisub, CS%umask, CS%vmask, hmask, &
-                 H_node, CS%ice_visc, float_cond, CS%bed_elev, CS%basal_traction, &
-                 G, US, isc-1, iec+1, jsc-1, jec+1, rhoi_rhow, use_newton_in=.false.)
-  call pass_vector(Au, Av, G%domain, TO_ALL, BGRID_NE, complete=.true.)
-
-  ! Precompute reciprocal diagonal
-  IDIAGu(:,:) = 0.0 ; IDIAGv(:,:) = 0.0
-  do J=Jsdq,Jedq ; do I=Isdq,Iedq
-    if (CS%umask(I,J)==1 .AND. DIAGu(I,J)/=0) IDIAGu(I,J) = 1.0 / DIAGu(I,J)
-    if (CS%vmask(I,J)==1 .AND. DIAGv(I,J)/=0) IDIAGv(I,J) = 1.0 / DIAGv(I,J)
-  enddo ; enddo
-
-  resid_scale = US%s_to_T*(US%RZL2_to_kg*US%L_T_to_m_s**2)
+  Qu(:,:) = 0 ; Qv(:,:) = 0
 
   ! Initial Residual
   V_curr_u(:,:) = (RHSu(:,:) - Au(:,:)) ; V_curr_v(:,:) = (RHSv(:,:) - Av(:,:))
@@ -2295,7 +2328,12 @@ subroutine ice_shelf_solve_inner_MINRES(CS, ISS, G, US, u_shlf, v_shlf, taudx, t
     ! --- STEP 6: Apply Givens Rotations ---
     d0 = c1 * alpha - c0 * s1 * beta1
     d1 = sqrt(d0**2 + beta2**2)
-    if (d1 == 0.0) exit
+
+    if (d1 == 0.0) then
+      iters = iter
+      conv_flag = 1
+      exit
+    endif
 
     Id1 = 1.0 / d1
     if (beta2 > 0) Ibeta2 = 1.0 / beta2
@@ -2350,79 +2388,63 @@ subroutine ice_shelf_solve_inner_MINRES(CS, ISS, G, US, u_shlf, v_shlf, taudx, t
 
   enddo ! end of MINRES loop
 
-  ! Apply boundary conditions
-  do J=Jsdq,Jedq ; do I=Isdq,Iedq
-      if (CS%umask(I,J) == 3) then
-        u_shlf(I,J) = CS%u_bdry_val(I,J)
-      elseif (CS%umask(I,J) == 0) then
-        u_shlf(I,J) = 0
-      endif
-
-      if (CS%vmask(I,J) == 3) then
-        v_shlf(I,J) = CS%v_bdry_val(I,J)
-      elseif (CS%vmask(I,J) == 0) then
-        v_shlf(I,J) = 0
-      endif
-  enddo ; enddo
-
-  call pass_vector(u_shlf, v_shlf, G%domain, TO_ALL, BGRID_NE)
-
-  if (conv_flag == 0) then
-    iters = CS%cg_max_iterations
-  endif
-
 end subroutine ice_shelf_solve_inner_MINRES
 
-!> Inner solve with Conjugate Residual method
-subroutine ice_shelf_solve_inner_CR(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H_node, float_cond, &
-                                 hmask, conv_flag, iters, time, Phi, Phisub)
+!> CR (Conjugate Residual) inner Krylov solve for ice shelf velocity.
+subroutine ice_shelf_solve_inner_CR(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
+                                     IDIAGu, IDIAGv, H_node, float_cond, hmask, &
+                                     rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                     Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
   type(ice_shelf_dyn_CS), intent(in)    :: CS !< A pointer to the ice shelf control structure
-  type(ice_shelf_state),  intent(in)    :: ISS !< A structure with elements that describe
-                                           !! the ice-shelf state
   type(ocean_grid_type),  intent(inout) :: G  !< The grid structure used by the ice shelf.
   type(unit_scale_type),  intent(in)    :: US !< A structure containing unit conversion factors
   real, dimension(SZDIB_(G),SZDJB_(G)), &
-                          intent(inout) :: u_shlf  !< The zonal ice shelf velocity at vertices [L T-1 ~> m s-1]
+                          intent(inout) :: u_shlf  !< The zonal ice shelf velocity [L T-1 ~> m s-1]
   real, dimension(SZDIB_(G),SZDJB_(G)), &
-                          intent(inout) :: v_shlf  !< The meridional ice shelf velocity at vertices [L T-1 ~> m s-1]
+                          intent(inout) :: v_shlf  !< The meridional ice shelf velocity [L T-1 ~> m s-1]
   real, dimension(SZDIB_(G),SZDJB_(G)), &
-                          intent(in)    :: taudx !< The x-direction driving stress [R L3 Z T-2 ~> kg m s-2]
+                          intent(in)    :: RHSu !< Right hand side, x [R L3 Z T-2 ~> m kg s-2]
   real, dimension(SZDIB_(G),SZDJB_(G)), &
-                          intent(in)    :: taudy  !< The y-direction driving stress [R L3 Z T-2 ~> kg m s-2]
+                          intent(in)    :: RHSv !< Right hand side, y [R L3 Z T-2 ~> m kg s-2]
   real, dimension(SZDIB_(G),SZDJB_(G)), &
-                          intent(in)    :: H_node !< The ice shelf thickness at nodal (corner)
-                                             !! points [Z ~> m].
+                          intent(inout) :: Au !< Matrix-vector product workspace, x [R L3 Z T-2 ~> kg m s-2]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(inout) :: Av !< Matrix-vector product workspace, y [R L3 Z T-2 ~> kg m s-2]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(in)    :: IDIAGu !< Reciprocal Jacobi diagonal, x [R-1 L-2 Z-1 T ~> kg-1 s]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(in)    :: IDIAGv !< Reciprocal Jacobi diagonal, y [R-1 L-2 Z-1 T ~> kg-1 s]
+  real, dimension(SZDIB_(G),SZDJB_(G)), &
+                          intent(in)    :: H_node !< The ice shelf thickness at nodal points [Z ~> m]
   real, dimension(SZDI_(G),SZDJ_(G)), &
-                          intent(in)    :: float_cond !< If GL_regularize=true, indicates cells containing
-                                                !! the grounding line (float_cond=1) or not (float_cond=0)
+                          intent(in)    :: float_cond !< Grounding line indicator [nondim]
   real, dimension(SZDI_(G),SZDJ_(G)), &
-                          intent(in)    :: hmask !< A mask indicating which tracer points are
-                                             !! partly or fully covered by an ice-shelf
-  integer,                intent(out)   :: conv_flag !< A flag indicating whether (1) or not (0) the
-                                           !! iterations have converged to the specified tolerance
-  integer,                intent(out)   :: iters !< The number of iterations used in the solver.
-  type(time_type),        intent(in)    :: Time !< The current model time
+                          intent(in)    :: hmask !< Ice shelf coverage mask
+  real,                   intent(in)    :: rhoi_rhow !< Ice-to-ocean density ratio [nondim]
+  real,                   intent(in)    :: resid_scale !< Scaling for inner products
+                                           !! [L T-1 ~> m s-1] [R L3 Z T-2 ~> m kg s-2]
   real, dimension(8,4,SZDI_(G),SZDJ_(G)), &
-                          intent(in)    :: Phi !< The gradients of bilinear basis elements at Gaussian
-                                             !! quadrature points surrounding the cell vertices [L-1 ~> m-1].
+                          intent(in)    :: Phi !< Basis element gradients at quadrature points [L-1 ~> m-1]
   real, dimension(:,:,:,:,:,:), &
-                          intent(in)    :: Phisub !< Quadrature structure weights at subgridscale
-                                            !! locations for finite element calculations [nondim]
+                          intent(in)    :: Phisub !< Subgridscale quadrature weights [nondim]
+  integer,                intent(out)   :: conv_flag !< Convergence flag: 1=converged, 0=not
+  integer,                intent(out)   :: iters !< The number of iterations used
+  integer,                intent(in)    :: Is_sum !< Starting i-index for global sums
+  integer,                intent(in)    :: Js_sum !< Starting j-index for global sums
+  integer,                intent(in)    :: Ie_sum !< Ending i-index for global sums
+  integer,                intent(in)    :: Je_sum !< Ending j-index for global sums
+  integer,                intent(in)    :: Iscq_sv !< Starting i-index for sum_vec arrays
+  integer,                intent(in)    :: Jscq_sv !< Starting j-index for sum_vec arrays
+
   real, dimension(SZDIB_(G),SZDJB_(G)) ::  &
                         Ru, Rv, &         ! Residuals (r) [R L3 Z T-2 ~> m kg s-2]
                         Zu, Zv, &         ! Preconditioned residuals (z = M^-1 r) [L T-1 ~> m s-1]
                         Du, Dv, &         ! Search directions (p) [L T-1 ~> m s-1]
-                        Qu, Qv, &         ! A * p [R L3 Z T-2 ~> m kg s-2]
-                        Au, Av, &         ! A * z [R L3 Z T-2 ~> m kg s-2]
-                        DIAGu, DIAGv, &   ! Diagonals [R L2 Z T-1 ~> kg s-1]
-                        RHSu, RHSv        ! Right hand side [R L3 Z T-2 ~> m kg s-2]
-
+                        Qu, Qv            ! A * p [R L3 Z T-2 ~> m kg s-2]
   real, dimension(SZDIB_(G),SZDJB_(G),2) :: sum_vec_3d ! Pointwise products for global sums.
                                 ! sum_vec_3d(:,:,1): r^2 [R2 L6 Z2 T-4 ~> m2 kg2 s-4] or
                                 !                   z·q [R L4 Z T-3 ~> m2 kg s-3] (context-dependent)
                                 ! sum_vec_3d(:,:,2): z·w or q·(M^-1 q) [R L4 Z T-3 ~> m2 kg s-3]
-  real, dimension(SZDIB_(G),SZDJB_(G)) :: IDIAGu, IDIAGv ! Reciprocal Jacobi preconditioner
-                                                           ! diagonals [R-1 L-2 Z-1 T ~> kg-1 s]
   real    :: alpha        ! Step length [nondim]
   real    :: beta         ! Direction update coefficient [nondim]
   real    :: r_norm_sq    ! Squared residual norm [R2 L6 Z2 T-4 ~> m2 kg2 s-4]
@@ -2435,62 +2457,19 @@ subroutine ice_shelf_solve_inner_CR(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy
   real    :: sv3dsums(2)  ! Component sums from reproducing_sum
                           ! sv3dsums(1): r^2 or z·q [R2 L6 Z2 T-4 or R L4 Z T-3] (context-dependent)
                           ! sv3dsums(2): z·w or q·M^-1 q [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: resid_scale  ! Scaling for velocity·stress inner products [R L4 Z T-3 ~> m2 kg s-3]
   real    :: resid2_scale ! Scaling for squared-stress inner products [R2 L6 Z2 T-4 ~> m2 kg2 s-4]
-  real    :: rhoi_rhow    ! Ice-to-ocean density ratio [nondim]
-  integer :: iter, i, j, isd, ied, jsd, jed, isc, iec, jsc, jec
-  integer :: Is_sum, Js_sum, Ie_sum, Je_sum
+  integer :: iter, i, j, isc, iec, jsc, jec
   integer :: Isdq, Iedq, Jsdq, Jedq, Iscq, Iecq, Jscq, Jecq
-  integer :: Iscq_sv, Jscq_sv
 
   Isdq = G%IsdB ; Iedq = G%IedB ; Jsdq = G%JsdB ; Jedq = G%JedB
   Iscq = G%IscB ; Iecq = G%IecB ; Jscq = G%JscB ; Jecq = G%JecB
-  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
-  rhoi_rhow = CS%density_ice / CS%density_ocean_avg
+  resid2_scale = ((US%RZ_to_kg_m2*US%L_to_m)*US%L_T_to_m_s**2)**2
 
-  ! Initialize arrays
+  ! Initialize CR-specific arrays
   Ru(:,:) = 0 ; Rv(:,:) = 0 ; Zu(:,:) = 0 ; Zv(:,:) = 0
   Du(:,:) = 0 ; Dv(:,:) = 0 ; Qu(:,:) = 0 ; Qv(:,:) = 0
-  Au(:,:) = 0 ; Av(:,:) = 0
-  RHSu(:,:) = 0 ; RHSv(:,:) = 0 ; DIAGu(:,:) = 0 ; DIAGv(:,:) = 0
-
-  if ((isc+G%idg_offset==G%isg) .and. (.not. CS%reentrant_x)) then
-    Is_sum = Iscq + (1-Isdq) ; Iscq_sv = Iscq
-  else
-    Is_sum = isc  + (1-Isdq) ; Iscq_sv = isc
-  endif
-  if ((jsc+G%jdg_offset==G%jsg) .and. (.not. CS%reentrant_y)) then
-    Js_sum = Jscq + (1-Jsdq) ; Jscq_sv = Jscq
-  else
-    Js_sum = jsc + (1-Jsdq) ; Jscq_sv = jsc
-  endif
-  Ie_sum = Iecq + (1-Isdq) ; Je_sum = Jecq + (1-Jsdq)
-
-  RHSu(:,:) = taudx(:,:) ; RHSv(:,:) = taudy(:,:)
-  call pass_vector(RHSu, RHSv, G%domain, TO_ALL, BGRID_NE, complete=.false.)
-
-  ! Compute Jacobi Preconditioner
-  call matrix_diagonal(CS, G, US, float_cond, H_node, CS%ice_visc, CS%basal_traction, &
-                       hmask, rhoi_rhow, Phi, Phisub, DIAGu, DIAGv)
-  call pass_vector(DIAGu, DIAGv, G%domain, TO_ALL, BGRID_NE, complete=.false.)
-
-  ! Initial Matrix-Vector Product: A * x_0
-  call CG_action(CS, Au, Av, u_shlf, v_shlf, Phi, Phisub, CS%umask, CS%vmask, hmask, &
-                 H_node, CS%ice_visc, float_cond, CS%bed_elev, CS%basal_traction, &
-                 G, US, isc-1, iec+1, jsc-1, jec+1, rhoi_rhow, use_newton_in=.false.)
-  call pass_vector(Au, Av, G%domain, TO_ALL, BGRID_NE, complete=.true.)
-
-  ! Precompute reciprocal diagonal (DIAGu/DIAGv halos valid after complete=.true. above)
-  IDIAGu(:,:) = 0.0 ; IDIAGv(:,:) = 0.0
-  do J=Jsdq,Jedq ; do I=Isdq,Iedq
-    if (CS%umask(I,J)==1 .AND. DIAGu(I,J)/=0) IDIAGu(I,J) = 1.0 / DIAGu(I,J)
-    if (CS%vmask(I,J)==1 .AND. DIAGv(I,J)/=0) IDIAGv(I,J) = 1.0 / DIAGv(I,J)
-  enddo ; enddo
-
-  resid_scale = US%s_to_T*(US%RZL2_to_kg*US%L_T_to_m_s**2)
-  resid2_scale = ((US%RZ_to_kg_m2*US%L_to_m)*US%L_T_to_m_s**2)**2
 
   ! r_0 = b - A*x_0
   Ru(:,:) = (RHSu(:,:) - Au(:,:)) ; Rv(:,:) = (RHSv(:,:) - Av(:,:))
@@ -2560,7 +2539,11 @@ subroutine ice_shelf_solve_inner_CR(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy
     z_q_sum = sv3dsums(1)
     q_s_sum = sv3dsums(2)
 
-    if (q_s_sum == 0.0) exit
+    if (q_s_sum == 0.0) then
+      iters = iter
+      conv_flag = 1
+      exit
+    endif
     alpha = z_q_sum / q_s_sum
 
     ! --- STEP 2: Update x, r, and z (Fused over Full Domain) ---
@@ -2602,13 +2585,12 @@ subroutine ice_shelf_solve_inner_CR(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy
     r_norm_sq = sv3dsums(1)
     z_w_sum_new = sv3dsums(2)
 
-    if (r_norm_sq <= resid0tol2) then
+    if (r_norm_sq <= resid0tol2 .or. z_w_sum==0.0) then
       iters = iter
       conv_flag = 1
       exit
     endif
 
-    if (z_w_sum == 0.0) exit
     beta = z_w_sum_new / z_w_sum
     z_w_sum = z_w_sum_new
 
@@ -2625,27 +2607,6 @@ subroutine ice_shelf_solve_inner_CR(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy
     enddo ; enddo
 
   enddo ! end of CR loop
-
-  ! Apply boundary conditions
-  do J=Jsdq,Jedq ; do I=Isdq,Iedq
-      if (CS%umask(I,J) == 3) then
-        u_shlf(I,J) = CS%u_bdry_val(I,J)
-      elseif (CS%umask(I,J) == 0) then
-        u_shlf(I,J) = 0
-      endif
-
-      if (CS%vmask(I,J) == 3) then
-        v_shlf(I,J) = CS%v_bdry_val(I,J)
-      elseif (CS%vmask(I,J) == 0) then
-        v_shlf(I,J) = 0
-      endif
-  enddo ; enddo
-
-  call pass_vector(u_shlf, v_shlf, G%domain, TO_ALL, BGRID_NE)
-
-  if (conv_flag == 0) then
-    iters = CS%cg_max_iterations
-  endif
 
 end subroutine ice_shelf_solve_inner_CR
 
