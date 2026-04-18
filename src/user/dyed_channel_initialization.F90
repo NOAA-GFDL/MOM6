@@ -138,7 +138,7 @@ subroutine dyed_channel_set_OBC_tracer_data(OBC, G, GV, param_file, tr_Reg)
         dye = 0.0
       endif
       call register_segment_tracer(tr_ptr, ntr_id, param_file, GV, &
-                                   OBC%segment(n), OBC_scalar=dye)
+                                   OBC%segment(n), OBC_inflow_conc=dye)
     enddo
   enddo
 
