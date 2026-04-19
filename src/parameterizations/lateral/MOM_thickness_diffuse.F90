@@ -1123,25 +1123,25 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
 
             if (CS%use_meso_sfn_ANN) then
               Sfn_unlim_u(I,K) = Sfn_unlim_u(I,K) + Sfn_unlim_u_3D(I,j,K)
-            endif
 
-            ! Avoid moving dense water upslope from below the level of
-            ! the bottom on the receiving side.
-            if (Sfn_unlim_u(I,K) > 0.0) then ! The flow below this interface is positive.
-              if (e(i,j,K) < e(i+1,j,nz+1)) then
-                Sfn_unlim_u(I,K) = 0.0 ! This is not uhtot, because it may compensate for
-                                ! deeper flow in very unusual cases.
-              elseif (e(i+1,j,nz+1) > e(i,j,K+1)) then
-                ! Scale the transport with the fraction of the donor layer above
-                ! the bottom on the receiving side.
-                Sfn_unlim_u(I,K) = Sfn_unlim_u(I,K) * ((e(i,j,K) - e(i+1,j,nz+1)) / &
-                                         ((e(i,j,K) - e(i,j,K+1)) + dz_neglect))
-              endif
-            else
-              if (e(i+1,j,K) < e(i,j,nz+1)) then ; Sfn_unlim_u(I,K) = 0.0
-              elseif (e(i,j,nz+1) > e(i+1,j,K+1)) then
-                Sfn_unlim_u(I,K) = Sfn_unlim_u(I,K) * ((e(i+1,j,K) - e(i,j,nz+1)) / &
-                                       ((e(i+1,j,K) - e(i+1,j,K+1)) + dz_neglect))
+              ! Avoid moving dense water upslope from below the level of
+              ! the bottom on the receiving side.
+              if (Sfn_unlim_u(I,K) > 0.0) then ! The flow below this interface is positive.
+                if (e(i,j,K) < e(i+1,j,nz+1)) then
+                  Sfn_unlim_u(I,K) = 0.0 ! This is not uhtot, because it may compensate for
+                                  ! deeper flow in very unusual cases.
+                elseif (e(i+1,j,nz+1) > e(i,j,K+1)) then
+                  ! Scale the transport with the fraction of the donor layer above
+                  ! the bottom on the receiving side.
+                  Sfn_unlim_u(I,K) = Sfn_unlim_u(I,K) * ((e(i,j,K) - e(i+1,j,nz+1)) / &
+                                           ((e(i,j,K) - e(i,j,K+1)) + dz_neglect))
+                endif
+              else
+                if (e(i+1,j,K) < e(i,j,nz+1)) then ; Sfn_unlim_u(I,K) = 0.0
+                elseif (e(i,j,nz+1) > e(i+1,j,K+1)) then
+                  Sfn_unlim_u(I,K) = Sfn_unlim_u(I,K) * ((e(i+1,j,K) - e(i,j,nz+1)) / &
+                                         ((e(i+1,j,K) - e(i+1,j,K+1)) + dz_neglect))
+                endif
               endif
             endif
 
@@ -1472,25 +1472,25 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
 
             if (CS%use_meso_sfn_ANN) then
               Sfn_unlim_v(i,K) = Sfn_unlim_v(i,K) + Sfn_unlim_v_3D(i,J,k)
-            endif
 
-            ! Avoid moving dense water upslope from below the level of
-            ! the bottom on the receiving side.
-            if (Sfn_unlim_v(i,K) > 0.0) then ! The flow below this interface is positive.
-              if (e(i,j,K) < e(i,j+1,nz+1)) then
-                Sfn_unlim_v(i,K) = 0.0 ! This is not vhtot, because it may compensate for
-                                ! deeper flow in very unusual cases.
-              elseif (e(i,j+1,nz+1) > e(i,j,K+1)) then
-                ! Scale the transport with the fraction of the donor layer above
-                ! the bottom on the receiving side.
-                Sfn_unlim_v(i,K) = Sfn_unlim_v(i,K) * ((e(i,j,K) - e(i,j+1,nz+1)) / &
-                                         ((e(i,j,K) - e(i,j,K+1)) + dz_neglect))
-              endif
-            else
-              if (e(i,j+1,K) < e(i,j,nz+1)) then ; Sfn_unlim_v(i,K) = 0.0
-              elseif (e(i,j,nz+1) > e(i,j+1,K+1)) then
-                Sfn_unlim_v(i,K) = Sfn_unlim_v(i,K) * ((e(i,j+1,K) - e(i,j,nz+1)) / &
-                                       ((e(i,j+1,K) - e(i,j+1,K+1)) + dz_neglect))
+              ! Avoid moving dense water upslope from below the level of
+              ! the bottom on the receiving side.
+              if (Sfn_unlim_v(i,K) > 0.0) then ! The flow below this interface is positive.
+                if (e(i,j,K) < e(i,j+1,nz+1)) then
+                  Sfn_unlim_v(i,K) = 0.0 ! This is not vhtot, because it may compensate for
+                                  ! deeper flow in very unusual cases.
+                elseif (e(i,j+1,nz+1) > e(i,j,K+1)) then
+                  ! Scale the transport with the fraction of the donor layer above
+                  ! the bottom on the receiving side.
+                  Sfn_unlim_v(i,K) = Sfn_unlim_v(i,K) * ((e(i,j,K) - e(i,j+1,nz+1)) / &
+                                           ((e(i,j,K) - e(i,j,K+1)) + dz_neglect))
+                endif
+              else
+                if (e(i,j+1,K) < e(i,j,nz+1)) then ; Sfn_unlim_v(i,K) = 0.0
+                elseif (e(i,j,nz+1) > e(i,j+1,K+1)) then
+                  Sfn_unlim_v(i,K) = Sfn_unlim_v(i,K) * ((e(i,j+1,K) - e(i,j,nz+1)) / &
+                                         ((e(i,j+1,K) - e(i,j+1,K+1)) + dz_neglect))
+                endif
               endif
             endif
 

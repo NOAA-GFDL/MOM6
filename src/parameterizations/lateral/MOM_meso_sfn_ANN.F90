@@ -6,7 +6,7 @@
 !! with isopycnal height diffusion in MOM_thickness_diffuse.
 module MOM_meso_sfn_ANN
 
-use MOM_ANN,              only : ANN_init, ANN_apply_vector_orig, ANN_end, ANN_CS
+use MOM_ANN,              only : ANN_init, ANN_apply_vector_oi, ANN_end, ANN_CS
 use MOM_diag_mediator,    only : post_data, register_diag_field, diag_ctrl, time_type
 use MOM_error_handler,    only : MOM_error, FATAL
 use MOM_file_parser,      only : get_param, log_version, param_file_type
@@ -37,18 +37,24 @@ type, public :: MESO_SFN_ANN_CS; private
   type(ANN_CS) :: ann_rho_flux !< ANN instance for off-diagonal and diagonal stress
   character(len=200) :: ann_file_rho_flux !< Path to netcdf file with ANN
   real :: min_dist_from_boundary  !< Minimum distance from bottom for valid interface [Z]
-  real :: mag_grad_floor  !< Floor for density gradient magnitude [R L-1 ~> kg m-4]
-  real :: grad_mag_epsilon  !< Epsilon to prevent division by zero in normalization [nondim]
-  real :: flux_clamp  !< Maximum magnitude of ANN output density flux [nondim]
-  real :: sfn_clamp   !< Maximum magnitude of streamfunction [L2 T-1 ~> m2 s-1]
+  real :: mag_grad_floor  !< Floor for density gradient magnitude [R Z-1 ~> kg m-4]
+  real :: flux_clamp  !< Maximum magnitude of ANN output density flux [R L T-1 ~> kg m-2 s-1]
+  real :: Upsilon_clamp !< Maximum magnitude of the velocity-scale streamfunction
+                        !! Upsilon (Ferrari et al. 2010) [L Z T-1 ~> m2 s-1]
   type(diag_ctrl), pointer :: diag => NULL() !< structure used to regulate timing of diagnostics
-  !! Diagnostic identifiers
-  integer :: id_drdx_u, id_drdy_v !< Diagnostic ids for density gradients at u and v points.
-  integer :: id_drdz_u, id_drdz_v !< Diagnostic ids for density gradients at u and v points.
-  integer :: id_drdx_c, id_drdy_c
-  integer :: id_Fx_c, id_Fy_c
-  integer :: id_Fx_u, id_Fy_v
-  integer :: id_sfn_u, id_sfn_v !< Diagnostic ids for streamfunction at u and v points.
+  ! Diagnostic identifiers
+  integer :: id_drdx_u !< Diagnostic id for zonal density gradient at u-points.
+  integer :: id_drdy_v !< Diagnostic id for meridional density gradient at v-points.
+  integer :: id_drdz_u !< Diagnostic id for vertical density gradient at u-points.
+  integer :: id_drdz_v !< Diagnostic id for vertical density gradient at v-points.
+  integer :: id_drdx_c !< Diagnostic id for zonal density gradient at center points.
+  integer :: id_drdy_c !< Diagnostic id for meridional density gradient at center points.
+  integer :: id_Fx_c   !< Diagnostic id for zonal density flux at center points.
+  integer :: id_Fy_c   !< Diagnostic id for meridional density flux at center points.
+  integer :: id_Fx_u   !< Diagnostic id for zonal density flux at u-points.
+  integer :: id_Fy_v   !< Diagnostic id for meridional density flux at v-points.
+  integer :: id_sfn_u  !< Diagnostic id for volume streamfunction at u-points.
+  integer :: id_sfn_v  !< Diagnostic id for volume streamfunction at v-points.
 end type MESO_SFN_ANN_CS
 
 contains
@@ -66,13 +72,13 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)    :: h      !< Layer thickness [H ~> m or kg m-2]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1),  intent(in)    :: e      !< Layer thickness [H ~> m or kg m-2]
   type(MESO_SFN_ANN_CS),                intent(inout) :: CS !< Control structure for thickness_flux_ann
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: sfn_u  !< Mesoscale streamfunction
-                                                                     !! on u-points [L2 T-1 ~> m2 s-1]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(out) :: sfn_v  !< Mesoscale streamfunction
-                                                                     !! on v-points [L2 T-1 ~> m2 s-1]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: sfn_u  !< Mesoscale volume streamfunction
+                                                                     !! on u-points [Z L2 T-1 ~> m3 s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(out) :: sfn_v  !< Mesoscale volume streamfunction
+                                                                     !! on v-points [Z L2 T-1 ~> m3 s-1]
   real,                                      intent(in)    :: dt     !< Model time step [T ~> s]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in)    :: u      !< Zonal velocity [L T-1 ~> m s-1].
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in)    :: v      !< Meridional velocity [L T-1 ~>
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in)    :: v      !< Meridional velocity [L T-1 ~> m s-1].
 
   ! Local variables
   integer :: i, j, k, is, ie, js, je, nz, shift, stencil_points, ii, jj
@@ -84,15 +90,15 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1) :: slope_x !< Isopycnal slope in x at u [Z L-1 ~> nondim]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1) :: slope_y !< Isopycnal slope in y at v [Z L-1 ~> nondim]
 
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1) :: Fx_u !< Zonal density flux at u-points [R L-1 ~> kg m-4]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1) :: Fy_v !< Meridional density flux at v-points [R L-1 ~> kg m-4]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1) :: Fx_u !< Zonal density flux at u-points [R L T-1 ~> kg m-2 s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1) :: Fy_v !< Meridional density flux at v-points [R L T-1 ~> kg m-2 s-1]
 
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1)  :: drdx_c !< Zonal density gradient at center points [R L-1 ~> kg m-4]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: drdy_c !< Meridional density gradient
                                                           !! at center points [R L-1 ~> kg m-4]
 
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1)  :: Fx_c !< Zonal density flux at center points [R L-1 ~> kg m-4]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1)  :: Fy_c !< Meridional density flux at center points [R L-1 ~> kg m-4]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1)  :: Fx_c !< Zonal density flux at center points [R L T-1 ~> kg m-2 s-1]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1)  :: Fy_c !< Meridional density flux at center points [R L T-1 ~> kg m-2 s-1]
 
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dudx !< du/dx at cell center [T-1 ~> s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dvdy !< dv/dy at cell center [T-1 ~> s-1]
@@ -112,16 +118,25 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   real :: rho_grad_mag !< Magnitude of density gradient over stencil [R L-1 ~> kg m-4]
   real, allocatable :: x(:) !< Input vector to the ANN
   real, allocatable :: y(:) !< Output vector from the ANN
-  real :: mag_grad !< Magnitude of density gradient at center points [R L-1 ~> kg m-4]
+  real :: mag_grad !< Magnitude of 3-D density gradient [R Z-1 ~> kg m-4]
   real :: Kappa !< Dimensional diffusivity [L2 T-1 ~> m2 s-1]
   logical :: use_stanley
   logical :: use_EOS
   real :: dist_from_bot_a, dist_from_bot_b  ! Distance from interface to bottom [Z]
   real :: dist_from_sfc_a, dist_from_sfc_b  ! Distance from interface to surface [Z]
+  real :: Upsilon_u  ! Velocity-scale streamfunction at u-point (Ferrari et al. 2010) [L Z T-1 ~> m2 s-1]
+  real :: Upsilon_v  ! Velocity-scale streamfunction at v-point (Ferrari et al. 2010) [L Z T-1 ~> m2 s-1]
+  real :: rho_grad_neglect  ! A density gradient magnitude so small it is lost in
+                            ! roundoff; used to prevent division by zero [R L-1 ~> kg m-4]
+  real :: vel_grad_neglect  ! A velocity gradient magnitude so small it is lost in
+                            ! roundoff; used to prevent division by zero [T-1 ~> s-1]
 
   use_stanley = .false. ! Not using Stanley smoothing here.
   use_EOS = associated(tv%eqn_of_state)
   is  = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec ; nz = GV%ke
+
+  rho_grad_neglect = 1.0e-30 * US%kg_m3_to_R * US%m_to_L
+  vel_grad_neglect = 1.0e-30 * US%s_to_T
 
   ! Allocate the local stencil variables
   allocate(drdx_local(CS%ann_window, CS%ann_window), drdy_local(CS%ann_window, CS%ann_window), &
@@ -205,7 +220,7 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
         x(1) = drdx_c(i,j,k)
         x(2) = drdy_c(i,j,k)
 
-        call ANN_apply_vector_orig(x,y, CS%ann_rho_flux)
+        call ANN_apply_vector_oi(x,y, CS%ann_rho_flux)
       elseif (CS%meso_sfn_ann_model_type == "nondim_rhoF_ann") then
         drdx_local(:,:) = drdx_c(i-shift:i+shift,j-shift:j+shift,k)
         drdy_local(:,:) = drdy_c(i-shift:i+shift,j-shift:j+shift,k)
@@ -232,8 +247,8 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
                            vort_local(ii,jj)*vort_local(ii,jj)
           enddo
         enddo
-        rho_grad_mag = sqrt(rho_grad_mag) + CS%grad_mag_epsilon
-        vel_grad_mag = sqrt(vel_grad_mag) + CS%grad_mag_epsilon
+        rho_grad_mag = sqrt(rho_grad_mag) + rho_grad_neglect
+        vel_grad_mag = sqrt(vel_grad_mag) + vel_grad_neglect
 
         ! Normalize inputs
         drdx_local(:,:) = drdx_local(:,:) / rho_grad_mag
@@ -251,7 +266,7 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
         x(4*stencil_points+1:5*stencil_points) = RESHAPE(vort_local, (/stencil_points/))
 
         ! Call the ANN
-        call ANN_apply_vector_orig(x,y, CS%ann_rho_flux)
+        call ANN_apply_vector_oi(x,y, CS%ann_rho_flux)
 
         ! Dimensionalize the output
         y(:) = y(:) * rho_grad_mag * vel_grad_mag * G%areaT(i,j) * CS%ann_coeff
@@ -297,9 +312,10 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
         sfn_u(I,j,k) = 0.0
         cycle
       endif
-      sfn_u(I,j,k) = (Fx_u(I,j,k))/mag_grad * G%dy_Cu(I,j) * G%OBCmaskCu(I,j)
-
-      sfn_u(I,j,k) = max(-CS%sfn_clamp, min(CS%sfn_clamp, sfn_u(I,j,k)))
+      ! Velocity-scale (grid-independent) streamfunction, Upsilon in Ferrari et al. 2010.
+      Upsilon_u = (Fx_u(I,j,k)/mag_grad) * G%OBCmaskCu(I,j)
+      Upsilon_u = max(-CS%Upsilon_clamp, min(CS%Upsilon_clamp, Upsilon_u))
+      sfn_u(I,j,k) = Upsilon_u * G%dy_Cu(I,j)
 
     enddo ; enddo
     do j=js-1,je ; do i=is,ie
@@ -324,8 +340,10 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
         cycle
       endif
 
-      sfn_v(i,J,k) = (Fy_v(i,j,k))/mag_grad * G%dx_Cv(i,J) * G%OBCmaskCv(i,J)
-      sfn_v(i,J,k) = max(-CS%sfn_clamp, min(CS%sfn_clamp, sfn_v(i,J,k)))
+      ! Velocity-scale (grid-independent) streamfunction, Upsilon in Ferrari et al. 2010.
+      Upsilon_v = (Fy_v(i,j,k)/mag_grad) * G%OBCmaskCv(i,J)
+      Upsilon_v = max(-CS%Upsilon_clamp, min(CS%Upsilon_clamp, Upsilon_v))
+      sfn_v(i,J,k) = Upsilon_v * G%dx_Cv(i,J)
 
     enddo ; enddo
   enddo
@@ -598,18 +616,15 @@ subroutine meso_sfn_ANN_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "MESO_SFN_MAG_GRAD_FLOOR", CS%mag_grad_floor, &
              "Minimum density gradient magnitude below which the streamfunction "//&
              "is set to zero to avoid division by near-zero values.", &
-             units="kg m-4", default=1.0e-10)
-  call get_param(param_file, mdl, "MESO_SFN_GRAD_MAG_EPSILON", CS%grad_mag_epsilon, &
-             "Small constant added to gradient magnitudes during normalization "//&
-             "to prevent division by zero.", &
-             units="nondim", default=1.0e-30)
+             units="kg m-4", default=1.0e-10, scale=US%kg_m3_to_R*US%m_to_Z)
   call get_param(param_file, mdl, "MESO_SFN_FLUX_CLAMP", CS%flux_clamp, &
              "Maximum magnitude of ANN output density flux before conversion "//&
              "to streamfunction.", &
-             units="nondim", default=1.0e2)
-  call get_param(param_file, mdl, "MESO_SFN_SFN_CLAMP", CS%sfn_clamp, &
-             "Maximum magnitude of the mesoscale streamfunction.", &
-             units="m2 s-1", default=1.0e6)
+             units="kg m-2 s-1", default=1.0e2)
+  call get_param(param_file, mdl, "MESO_UPSILON_CLAMP", CS%Upsilon_clamp, &
+             "Maximum magnitude of the velocity-scale mesoscale streamfunction "//&
+             "(Upsilon in Ferrari et al. 2010).", &
+             units="m2 s-1", default=1.0e4, scale=US%m_to_L*US%m_to_Z*US%T_to_s)
   if (CS%meso_sfn_ann_model_type /= "GM_simple") then
     call get_param(param_file, mdl, "meso_sfn_ann_window", CS%ann_window, &
                         "Number of horizontal grid points to use in the thickness flux ANN window", default=1)
@@ -622,40 +637,40 @@ subroutine meso_sfn_ANN_init(Time, G, GV, US, param_file, diag, CS)
   ! Register diagnostic fields
   CS%id_drdx_u = register_diag_field('ocean_model', 'meso_sfn_drdx_u', diag%axesCui, Time, &
            'Zonal density gradient used in meso sfn', &
-           'kg m-4', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
+           'kg m-4', conversion=US%R_to_kg_m3*US%m_to_L)
   CS%id_drdy_v = register_diag_field('ocean_model', 'meso_sfn_drdy_v', diag%axesCvi, Time, &
            'Meridional density gradient used in meso sfn', &
-           'kg m-4', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
+           'kg m-4', conversion=US%R_to_kg_m3*US%m_to_L)
   CS%id_drdz_u = register_diag_field('ocean_model', 'meso_sfn_drdz_u', diag%axesCui, Time, &
            'Vertical density gradient at u points used in meso sfn', &
-           'kg m-4', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
+           'kg m-4', conversion=US%R_to_kg_m3*US%m_to_Z)
   CS%id_drdz_v = register_diag_field('ocean_model', 'meso_sfn_drdz_v', diag%axesCvi, Time, &
            'Vertical density gradient at v points used in meso sfn', &
-           'kg m-4', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
+           'kg m-4', conversion=US%R_to_kg_m3*US%m_to_Z)
   CS%id_drdx_c = register_diag_field('ocean_model', 'meso_sfn_drdx_c', diag%axesTi, Time, &
            'Zonal density gradient at center points used in meso sfn', &
-           'kg m-4', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
+           'kg m-4', conversion=US%R_to_kg_m3*US%m_to_L)
   CS%id_drdy_c = register_diag_field('ocean_model', 'meso_sfn_drdy_c', diag%axesTi, Time, &
            'Meridional density gradient at center points used in meso sfn', &
-           'kg m-4', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
+           'kg m-4', conversion=US%R_to_kg_m3*US%m_to_L)
   CS%id_Fx_c = register_diag_field('ocean_model', 'meso_sfn_flux_x_c', diag%axesTi, Time, &
            'Zonal density flux at center points used in meso sfn', &
-           'kg m-4', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
+           'kg m-2 s-1', conversion=US%R_to_kg_m3*US%L_to_m*US%s_to_T)
   CS%id_Fy_c = register_diag_field('ocean_model', 'meso_sfn_flux_y_c', diag%axesTi, Time, &
            'Meridional density flux at center points used in meso sfn', &
-           'kg m-4', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
+           'kg m-2 s-1', conversion=US%R_to_kg_m3*US%L_to_m*US%s_to_T)
   CS%id_Fx_u = register_diag_field('ocean_model', 'meso_sfn_flux_x_u', diag%axesCui, Time, &
            'Zonal density flux at u points used in meso sfn', &
-           'kg m-4', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
+           'kg m-2 s-1', conversion=US%R_to_kg_m3*US%L_to_m*US%s_to_T)
   CS%id_Fy_v = register_diag_field('ocean_model', 'meso_sfn_flux_y_v', diag%axesCvi, Time, &
            'Meridional density flux at v points used in meso sfn', &
-           'kg m-4', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
+           'kg m-2 s-1', conversion=US%R_to_kg_m3*US%L_to_m*US%s_to_T)
   CS%id_sfn_u = register_diag_field('ocean_model', 'meso_sfn_unlim_u', diag%axesCui, Time, &
-           'Meso-scale streamfunction at u points', &
-           'm2 s-1', conversion=US%L_to_m**2*US%s_to_T)
+           'Meso-scale volume streamfunction at u points', &
+           'm3 s-1', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
   CS%id_sfn_v = register_diag_field('ocean_model', 'meso_sfn_unlim_v', diag%axesCvi, Time, &
-           'Meso-scale streamfunction at v points', &
-           'm2 s-1', conversion=US%L_to_m**2*US%s_to_T)
+           'Meso-scale volume streamfunction at v points', &
+           'm3 s-1', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
 end subroutine meso_sfn_ANN_init
 !> Finalizes the meso-scale streamfunction ANN parameterization
 !!
