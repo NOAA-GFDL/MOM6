@@ -4,6 +4,21 @@
 
 !> Implements an ANN-based mesoscale streamfunction parameterization for use
 !! with isopycnal height diffusion in MOM_thickness_diffuse.
+!!
+!! The network reads a nondimensionalized stencil of density gradients,
+!! strain rate components, and relative vorticity, and returns two density
+!! flux components at the cell center. The dimensionalization in
+!! meso_sfn_ANN_compute (multiplication by rho_grad_mag * vel_grad_mag *
+!! areaT * ann_coeff) must match the nondimensionalization used when the
+!! network was trained -- changing one without the other will produce
+!! garbage fluxes. The training procedure is the implicit contract.
+!!
+!! Density fluxes are converted to a velocity-scale streamfunction
+!! Upsilon (Ferrari et al. 2010) by dividing by the local 3-D density
+!! gradient magnitude; a configurable clamp acts on Upsilon so the cap is
+!! grid-independent. The volume-transport streamfunction passed back to
+!! thickness_diffuse is Upsilon * dy_Cu (or dx_Cv), matching MOM6's
+!! Sfn_unlim convention.
 module MOM_meso_sfn_ANN
 
 use MOM_ANN,              only : ANN_init, ANN_apply_vector_oi, ANN_end, ANN_CS
@@ -30,8 +45,6 @@ type, public :: MESO_SFN_ANN_CS; private
   real :: ann_coeff  !< Coefficient to multiply the ANN output by.
   real    :: kappa_smooth        !< Vertical diffusivity used to interpolate more sensible values
                                  !! of T & S into thin layers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-  character(len=40) :: meso_sfn_ann_model_type !< Type of ANN model
-                                               !! (e.g. GM_simple, GM_ann, nondim_rhoF_ann).
   integer :: ann_window !< Size of the window used in the ANN model.
 
   type(ANN_CS) :: ann_rho_flux !< ANN instance for off-diagonal and diagonal stress
@@ -98,7 +111,8 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
                                                           !! at center points [R L-1 ~> kg m-4]
 
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1)  :: Fx_c !< Zonal density flux at center points [R L T-1 ~> kg m-2 s-1]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1)  :: Fy_c !< Meridional density flux at center points [R L T-1 ~> kg m-2 s-1]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1)  :: Fy_c !< Meridional density flux at
+                                                       !! center points [R L T-1 ~> kg m-2 s-1]
 
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dudx !< du/dx at cell center [T-1 ~> s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dvdy !< dv/dy at cell center [T-1 ~> s-1]
@@ -119,7 +133,6 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   real, allocatable :: x(:) !< Input vector to the ANN
   real, allocatable :: y(:) !< Output vector from the ANN
   real :: mag_grad !< Magnitude of 3-D density gradient [R Z-1 ~> kg m-4]
-  real :: Kappa !< Dimensional diffusivity [L2 T-1 ~> m2 s-1]
   logical :: use_stanley
   logical :: use_EOS
   real :: dist_from_bot_a, dist_from_bot_b  ! Distance from interface to bottom [Z]
@@ -130,6 +143,9 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
                             ! roundoff; used to prevent division by zero [R L-1 ~> kg m-4]
   real :: vel_grad_neglect  ! A velocity gradient magnitude so small it is lost in
                             ! roundoff; used to prevent division by zero [T-1 ~> s-1]
+
+  if (.not. CS%initialized) call MOM_error(FATAL, &
+      "meso_sfn_ANN_compute: Module MOM_meso_sfn_ANN must be initialized before use.")
 
   use_stanley = .false. ! Not using Stanley smoothing here.
   use_EOS = associated(tv%eqn_of_state)
@@ -148,11 +164,7 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   shift = (CS%ann_window-1)/2
   stencil_points = CS%ann_window * CS%ann_window
 
-  if (CS%meso_sfn_ann_model_type == "nondim_rhoF_ann") then
-    allocate(x(stencil_points*5), y(2))
-  else
-    allocate(x(2), y(2))
-  endif
+  allocate(x(stencil_points*5), y(2))
 
   slope_x(:,:,:) = 0.0
   slope_y(:,:,:) = 0.0
@@ -195,90 +207,64 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
 
   if (CS%id_drdx_c > 0) call post_data(CS%id_drdx_c, drdx_c, CS%diag)
   if (CS%id_drdy_c > 0) call post_data(CS%id_drdy_c, drdy_c, CS%diag)
-  ! Compute the streamfunction
-
-  ! Simple GM (non-ANN) implementation for testing
-  if (CS%meso_sfn_ann_model_type == "GM_simple") then
-    Kappa = 1000.0 ! Fixed test diffusivity [L2 T-1 ~> m2 s-1]
-    do k=2, nz
-      do j=js,je ; do i=is-1,ie
-        mag_grad = sqrt((US%Z_to_L*drdx_u(i,j,k))*(US%Z_to_L*drdx_u(i,j,k)) + drdz_u(i,j,k)*drdz_u(i,j,k))
-        sfn_u(I,j,k) = (-Kappa * drdx_u(i,j,k))/mag_grad * G%dy_Cu(I,j)
-      enddo ; enddo
-      do j=js-1,je ; do i=is,ie
-        mag_grad = sqrt((US%Z_to_L*drdy_v(i,j,k))*(US%Z_to_L*drdy_v(i,j,k)) + drdz_v(i,j,k)*drdz_v(i,j,k))
-        sfn_v(i,J,k) = (-Kappa * drdy_v(i,j,k))/mag_grad * G%dx_Cv(i,J)
-      enddo ; enddo
-    enddo
-    return
-  endif
 
   ! Compute the density fluxes at center points using the ANN.
   do k = 1, nz+1
     do j = js-1, je+1 ; do i = is-1, ie+1
-      if (CS%meso_sfn_ann_model_type == "GM_ann") then
-        x(1) = drdx_c(i,j,k)
-        x(2) = drdy_c(i,j,k)
+      drdx_local(:,:) = drdx_c(i-shift:i+shift,j-shift:j+shift,k)
+      drdy_local(:,:) = drdy_c(i-shift:i+shift,j-shift:j+shift,k)
+      ! Take the velocity gradients below the interface k
+      dudx_local(:,:) = dudx(i-shift:i+shift,j-shift:j+shift,k)
+      dudy_local(:,:) = dudy(i-shift:i+shift,j-shift:j+shift,k)
+      dvdx_local(:,:) = dvdx(i-shift:i+shift,j-shift:j+shift,k)
+      dvdy_local(:,:) = dvdy(i-shift:i+shift,j-shift:j+shift,k)
 
-        call ANN_apply_vector_oi(x,y, CS%ann_rho_flux)
-      elseif (CS%meso_sfn_ann_model_type == "nondim_rhoF_ann") then
-        drdx_local(:,:) = drdx_c(i-shift:i+shift,j-shift:j+shift,k)
-        drdy_local(:,:) = drdy_c(i-shift:i+shift,j-shift:j+shift,k)
-        ! Take the velocity gradients below the interface k
-        dudx_local(:,:) = dudx(i-shift:i+shift,j-shift:j+shift,k)
-        dudy_local(:,:) = dudy(i-shift:i+shift,j-shift:j+shift,k)
-        dvdx_local(:,:) = dvdx(i-shift:i+shift,j-shift:j+shift,k)
-        dvdy_local(:,:) = dvdy(i-shift:i+shift,j-shift:j+shift,k)
+      ! Compute the strain rate tensor components and vorticity
+      sh_xx_local(:,:) = dudx_local(:,:) - dvdy_local(:,:)
+      sh_xy_local(:,:) = dudy_local(:,:) + dvdx_local(:,:)
+      vort_local(:,:)  = dvdx_local(:,:) - dudy_local(:,:)
 
-        ! Compute the strain rate tensor components and vorticity
-        sh_xx_local(:,:) = dudx_local(:,:) - dvdy_local(:,:)
-        sh_xy_local(:,:) = dudy_local(:,:) + dvdx_local(:,:)
-        vort_local(:,:)  = dvdx_local(:,:) - dudy_local(:,:)
-
-        ! Compute the magnitude of the velocity gradient tensor for the local stencil
-        rho_grad_mag = 0.0
-        vel_grad_mag = 0.0
-        do jj=1, CS%ann_window
-          do ii=1, CS%ann_window
-            rho_grad_mag = (rho_grad_mag + drdx_local(ii,jj)*drdx_local(ii,jj)) + &
-                           drdy_local(ii,jj)*drdy_local(ii,jj)
-            vel_grad_mag = ((vel_grad_mag + sh_xx_local(ii,jj)*sh_xx_local(ii,jj)) + &
-                            sh_xy_local(ii,jj)*sh_xy_local(ii,jj)) + &
-                           vort_local(ii,jj)*vort_local(ii,jj)
-          enddo
+      ! Compute the magnitude of the velocity gradient tensor for the local stencil
+      rho_grad_mag = 0.0
+      vel_grad_mag = 0.0
+      do jj=1, CS%ann_window
+        do ii=1, CS%ann_window
+          rho_grad_mag = (rho_grad_mag + drdx_local(ii,jj)*drdx_local(ii,jj)) + &
+                         drdy_local(ii,jj)*drdy_local(ii,jj)
+          vel_grad_mag = ((vel_grad_mag + sh_xx_local(ii,jj)*sh_xx_local(ii,jj)) + &
+                          sh_xy_local(ii,jj)*sh_xy_local(ii,jj)) + &
+                         vort_local(ii,jj)*vort_local(ii,jj)
         enddo
-        rho_grad_mag = sqrt(rho_grad_mag) + rho_grad_neglect
-        vel_grad_mag = sqrt(vel_grad_mag) + vel_grad_neglect
+      enddo
+      rho_grad_mag = sqrt(rho_grad_mag) + rho_grad_neglect
+      vel_grad_mag = sqrt(vel_grad_mag) + vel_grad_neglect
 
-        ! Normalize inputs
-        drdx_local(:,:) = drdx_local(:,:) / rho_grad_mag
-        drdy_local(:,:) = drdy_local(:,:) / rho_grad_mag
+      ! Normalize inputs
+      drdx_local(:,:) = drdx_local(:,:) / rho_grad_mag
+      drdy_local(:,:) = drdy_local(:,:) / rho_grad_mag
 
-        sh_xx_local(:,:) = sh_xx_local(:,:)/ vel_grad_mag
-        sh_xy_local(:,:) = sh_xy_local(:,:)/ vel_grad_mag
-        vort_local(:,:) = vort_local(:,:)/ vel_grad_mag
+      sh_xx_local(:,:) = sh_xx_local(:,:)/ vel_grad_mag
+      sh_xy_local(:,:) = sh_xy_local(:,:)/ vel_grad_mag
+      vort_local(:,:) = vort_local(:,:)/ vel_grad_mag
 
-        ! Prepare input vector for ANN
-        x(1:stencil_points) = RESHAPE(drdx_local, (/stencil_points/))
-        x(stencil_points+1:2*stencil_points) = RESHAPE(drdy_local, (/stencil_points/))
-        x(2*stencil_points+1:3*stencil_points) = RESHAPE(sh_xx_local, (/stencil_points/))
-        x(3*stencil_points+1:4*stencil_points) = RESHAPE(sh_xy_local, (/stencil_points/))
-        x(4*stencil_points+1:5*stencil_points) = RESHAPE(vort_local, (/stencil_points/))
+      ! Prepare input vector for ANN
+      x(1:stencil_points) = RESHAPE(drdx_local, (/stencil_points/))
+      x(stencil_points+1:2*stencil_points) = RESHAPE(drdy_local, (/stencil_points/))
+      x(2*stencil_points+1:3*stencil_points) = RESHAPE(sh_xx_local, (/stencil_points/))
+      x(3*stencil_points+1:4*stencil_points) = RESHAPE(sh_xy_local, (/stencil_points/))
+      x(4*stencil_points+1:5*stencil_points) = RESHAPE(vort_local, (/stencil_points/))
 
-        ! Call the ANN
-        call ANN_apply_vector_oi(x,y, CS%ann_rho_flux)
+      ! Call the ANN
+      call ANN_apply_vector_oi(x,y, CS%ann_rho_flux)
 
-        ! Dimensionalize the output
-        y(:) = y(:) * rho_grad_mag * vel_grad_mag * G%areaT(i,j) * CS%ann_coeff
+      ! Dimensionalize the output. The factors applied here must match the
+      ! nondimensionalization used when the network was trained; this is
+      ! an implicit contract with the training procedure.
+      y(:) = y(:) * rho_grad_mag * vel_grad_mag * G%areaT(i,j) * CS%ann_coeff
 
-        ! Clamp ANN output to prevent extreme values
-        y(1) = max(-CS%flux_clamp, min(CS%flux_clamp, y(1)))
-        y(2) = max(-CS%flux_clamp, min(CS%flux_clamp, y(2)))
-
-      else
-        call MOM_error(FATAL, "meso_sfn_ANN_compute: Unknown meso_sfn_ann_model_type "//&
-                       trim(CS%meso_sfn_ann_model_type))
-      endif
+      ! Clamp ANN output to prevent extreme values
+      y(1) = max(-CS%flux_clamp, min(CS%flux_clamp, y(1)))
+      y(2) = max(-CS%flux_clamp, min(CS%flux_clamp, y(2)))
 
       ! The sign convention is that ANN outputs -u'rho', so we negate.
       Fx_c(i,j,k) = -y(1)
@@ -441,6 +427,8 @@ subroutine vel_gradients(u, v, G, GV, dudx, dudy, dvdx, dvdy, CS)
     enddo ; enddo
 
     ! Calculate velocity gradients at corner points.
+    ! Bounds extend one further on the lower side than the center-point loop above
+    ! because the 4-point corner-to-center interpolation below reads indices (I-1,J-1).
     do j=js-shift-2,je+shift+1 ; do i=is-shift-2,ie+shift+1
       dvdx_q(I,J,k) = G%IdxBu(I,J)*(v(i+1,J,k)  - v(i,J,k) ) * G%mask2dBu(I,J)
       dudy_q(I,J,k) = G%IdyBu(I,J)*(u(I,j+1,k)  - u(I,j,k) ) * G%mask2dBu(I,J)
@@ -599,16 +587,13 @@ subroutine meso_sfn_ANN_init(Time, G, GV, US, param_file, diag, CS)
        "ANN-based mesoscale streamfunction parameterization.")
 
   ! We don't need to check if use is true, because this is only called if it is.
-  call get_param(param_file, mdl, "meso_sfn_ann_coeff", CS%ann_coeff, &
+  call get_param(param_file, mdl, "MESO_SFN_ANN_COEFF", CS%ann_coeff, &
                       "Coefficient to multiply the mesoscale streamfunction ANN output by", default=1.0, units="nondim")
 
   call get_param(param_file, mdl, "KD_SMOOTH", CS%kappa_smooth, &
                  "A diapycnal diffusivity that is used to interpolate "//&
                  "more sensible values of T & S into thin layers.", &
                  units="m2 s-1", default=1.0e-6, scale=GV%m2_s_to_HZ_T)
-  call get_param(param_file, mdl, "meso_sfn_ann_type", CS%meso_sfn_ann_model_type, &
-                      "Type of ANN model (e.g. options GM_simple, GM_ann).", default="GM_simple")
-
   call get_param(param_file, mdl, "MESO_SFN_MIN_DIST_BOUNDARY", CS%min_dist_from_boundary, &
              "Minimum distance from surface or bottom for interface to be considered valid "//&
              "for density gradient calculations in layered mode.", &
@@ -625,14 +610,16 @@ subroutine meso_sfn_ANN_init(Time, G, GV, US, param_file, diag, CS)
              "Maximum magnitude of the velocity-scale mesoscale streamfunction "//&
              "(Upsilon in Ferrari et al. 2010).", &
              units="m2 s-1", default=1.0e4, scale=US%m_to_L*US%m_to_Z*US%T_to_s)
-  if (CS%meso_sfn_ann_model_type /= "GM_simple") then
-    call get_param(param_file, mdl, "meso_sfn_ann_window", CS%ann_window, &
-                        "Number of horizontal grid points to use in the thickness flux ANN window", default=1)
-    call get_param(param_file, mdl, "meso_sfn_ann_file", CS%ann_file_rho_flux, &
-                 "ANN parameters for prediction of density fluxes (netcdf)", &
-                 default="INPUT/rho_flux.nc")
-    call ANN_init(CS%ann_rho_flux, CS%ann_file_rho_flux)
-  endif
+  call get_param(param_file, mdl, "MESO_SFN_ANN_WINDOW", CS%ann_window, &
+                      "Number of horizontal grid points to use in the thickness flux ANN window", default=1)
+  ! The stencil reads drdx_c(i-shift:i+shift,...) with shift=(ann_window-1)/2.
+  ! halo=3 is requested in meso_sfn_ANN_compute, so shift must be <= 3.
+  if (CS%ann_window < 1 .or. CS%ann_window > 7 .or. mod(CS%ann_window, 2) == 0) &
+    call MOM_error(FATAL, "meso_sfn_ANN_init: MESO_SFN_ANN_WINDOW must be an odd integer in [1,7].")
+  call get_param(param_file, mdl, "MESO_SFN_ANN_FILE", CS%ann_file_rho_flux, &
+               "ANN parameters for prediction of density fluxes (netcdf)", &
+               default="INPUT/rho_flux.nc")
+  call ANN_init(CS%ann_rho_flux, CS%ann_file_rho_flux)
 
   ! Register diagnostic fields
   CS%id_drdx_u = register_diag_field('ocean_model', 'meso_sfn_drdx_u', diag%axesCui, Time, &
@@ -671,6 +658,8 @@ subroutine meso_sfn_ANN_init(Time, G, GV, US, param_file, diag, CS)
   CS%id_sfn_v = register_diag_field('ocean_model', 'meso_sfn_unlim_v', diag%axesCvi, Time, &
            'Meso-scale volume streamfunction at v points', &
            'm3 s-1', conversion=US%Z_to_m*US%L_to_m**2*US%s_to_T)
+
+  CS%initialized = .true.
 end subroutine meso_sfn_ANN_init
 !> Finalizes the meso-scale streamfunction ANN parameterization
 !!
@@ -678,9 +667,7 @@ subroutine meso_sfn_ANN_end(CS)
   type(MESO_SFN_ANN_CS), intent(inout) :: CS !< Control structure
 
   ! Deallocate anything that needs to be.
-  if (CS%meso_sfn_ann_model_type /= "GM_simple") then
-    call ANN_end(CS%ann_rho_flux)
-  endif
+  call ANN_end(CS%ann_rho_flux)
 
 end subroutine meso_sfn_ANN_end
 
