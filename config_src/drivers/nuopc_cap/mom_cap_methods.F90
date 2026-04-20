@@ -27,7 +27,7 @@ use MOM_domains,               only: pass_var
 use mpp_domains_mod,           only: mpp_get_compute_domain
 
 ! By default make data private
-implicit none; private
+implicit none ; private
 
 ! Public member functions
 public :: mom_set_geomtype

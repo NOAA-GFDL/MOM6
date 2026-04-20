@@ -443,7 +443,7 @@ subroutine geothermal_in_place(h, tv, dt, G, GV, US, CS, BFlx_geothermal, halo)
     bottom_pressure(:) = 0.0
     do k=1,nz ; do i=is,ie
       bottom_pressure(i) = bottom_pressure(i) + H_to_pres * h(i,j,k)
-    enddo; enddo
+    enddo ; enddo
     if (nonBous) then
       dSpVdT(:) = 0.0
       dSpVdS(:) = 0.0

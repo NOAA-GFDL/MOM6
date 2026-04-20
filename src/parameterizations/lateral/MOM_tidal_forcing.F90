@@ -268,7 +268,7 @@ subroutine tidal_forcing_init(Time, G, US, param_file, CS)
   integer :: i, j, c, is, ie, js, je, isd, ied, jsd, jed, nc
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
-  isd = G%isd ; ied = G%ied ; jsd = G%jsd; jed = G%jed
+  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
 
   ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, "")

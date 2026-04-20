@@ -1182,7 +1182,7 @@ end subroutine get_ocean_grid
 !> Returns eps_omesh read from param file
 real function get_eps_omesh(OS)
   type(ocean_state_type) :: OS
-  get_eps_omesh = OS%eps_omesh; return
+  get_eps_omesh = OS%eps_omesh ; return
 end function
 
 end module MOM_ocean_model_nuopc

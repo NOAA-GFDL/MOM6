@@ -205,11 +205,11 @@ program Shelf_main
     call close_file(unit)
   else
     calendar = uppercase(calendar)
-    if (calendar(1:6) == 'JULIAN') then ;        calendar_type = JULIAN
-    elseif (calendar(1:9) == 'GREGORIAN') then ; calendar_type = GREGORIAN
-    elseif (calendar(1:6) == 'NOLEAP') then ;    calendar_type = NOLEAP
-    elseif (calendar(1:10)=='THIRTY_DAY') then ; calendar_type = THIRTY_DAY_MONTHS
-    elseif (calendar(1:11)=='NO_CALENDAR') then; calendar_type = NO_CALENDAR
+    if (calendar(1:6) == 'JULIAN') then ;         calendar_type = JULIAN
+    elseif (calendar(1:9) == 'GREGORIAN') then ;  calendar_type = GREGORIAN
+    elseif (calendar(1:6) == 'NOLEAP') then ;     calendar_type = NOLEAP
+    elseif (calendar(1:10)=='THIRTY_DAY') then ;  calendar_type = THIRTY_DAY_MONTHS
+    elseif (calendar(1:11)=='NO_CALENDAR') then ; calendar_type = NO_CALENDAR
     elseif (calendar(1:1) /= ' ') then
       call MOM_error(FATAL,'Shelf_driver: Invalid namelist value '//trim(calendar)//' for calendar')
     else
@@ -220,8 +220,8 @@ program Shelf_main
 
 
   if (sum(date_init) > 0) then
-    Start_time = set_date(date_init(1),date_init(2), date_init(3), &
-         date_init(4),date_init(5),date_init(6))
+    Start_time = set_date(date_init(1), date_init(2), date_init(3), &
+                          date_init(4), date_init(5), date_init(6))
   else
     Start_time = real_to_time(0.0)
   endif

@@ -133,7 +133,7 @@ type, public :: set_visc_CS ; private
   ! Allocatable data arrays
   real, allocatable, dimension(:,:) :: cdrag_u !< The spatially varying quadratic drag coefficient [nondim]
   real, allocatable, dimension(:,:) :: cdrag_v !< The spatially varying quadratic drag coefficient [nondim]
-  real, allocatable, dimension(:,:) :: tideamp !< RMS tidal amplitude at h points [Z T-1 ~> m s-1]
+  real, allocatable, dimension(:,:) :: tideamp !< RMS tidal amplitude at h points [L T-1 ~> m s-1]
   ! Diagnostic arrays
   real, allocatable, dimension(:,:) :: bbl_u !< BBL mean U current [L T-1 ~> m s-1]
   real, allocatable, dimension(:,:) :: bbl_v !< BBL mean V current [L T-1 ~> m s-1]
@@ -1019,7 +1019,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
         do K=nz,1,-1
           !modify L(K) for porous barrier parameterization
           if (m==1) then ; L(K) = L(K)*pbv%por_layer_widthU(I,j,K)
-          else ; L(K) = L(K)*pbv%por_layer_widthV(i,J,K); endif
+          else ; L(K) = L(K)*pbv%por_layer_widthV(i,J,K) ; endif
 
           ! Determine the drag contributing to the bottom boundary layer
           ! and the Rayleigh drag that acts on each layer.
@@ -3298,7 +3298,7 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
       allocate(CS%tideamp(isd:ied,jsd:jed), source=0.0)
       filename = trim(CS%inputdir) // trim(tideamp_file)
       call log_param(param_file, mdl, "INPUTDIR/TIDEAMP_FILE", filename)
-      call MOM_read_data(filename, tideamp_var, CS%tideamp, G%domain, scale=US%m_to_Z*US%T_to_s)
+      call MOM_read_data(filename, tideamp_var, CS%tideamp, G%domain, scale=US%m_s_to_L_T)
       call pass_var(CS%tideamp,G%domain)
     endif
   endif

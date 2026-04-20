@@ -336,7 +336,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
                        (-Waves%us_y(i,J,k)*G%dyCv(i,J))
           duSdy(I,J) = (-Waves%us_x(I,j+1,k)*G%dxCu(I,j+1)) - &
                        (-Waves%us_x(I,j,k)*G%dxCu(I,j))
-        enddo; enddo
+        enddo ; enddo
       endif
       if (.not. Waves%Passive_Stokes_VF) then
         do J=Js_q,Je_q ; do I=Is_q,Ie_q
@@ -344,18 +344,18 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
                       ((v(i,J,k)-Waves%us_y(i,J,k))*G%dyCv(i,J))
           dudy(I,J) = ((u(I,j+1,k)-Waves%us_x(I,j+1,k))*G%dxCu(I,j+1)) - &
                       ((u(I,j,k)-Waves%us_x(I,j,k))*G%dxCu(I,j))
-        enddo; enddo
+        enddo ; enddo
       else
         do J=Js_q,Je_q ; do I=Is_q,Ie_q
           dvdx(I,J) = (v(i+1,J,k)*G%dyCv(i+1,J)) - (v(i,J,k)*G%dyCv(i,J))
           dudy(I,J) = (u(I,j+1,k)*G%dxCu(I,j+1)) - (u(I,j,k)*G%dxCu(I,j))
-        enddo; enddo
+        enddo ; enddo
       endif
     else
       do J=Js_q,Je_q ; do I=Is_q,Ie_q
         dvdx(I,J) = (v(i+1,J,k)*G%dyCv(i+1,J)) - (v(i,J,k)*G%dyCv(i,J))
         dudy(I,J) = (u(I,j+1,k)*G%dxCu(I,j+1)) - (u(I,j,k)*G%dxCu(I,j))
-      enddo; enddo
+      enddo ; enddo
     endif
     do J=Js_q,Je_q ; do i=Is_q,Ie_q+1
       hArea_v(i,J) = 0.5*((Area_h(i,j) * h(i,j,k)) + (Area_h(i,j+1) * h(i,j+1,k)))
@@ -512,23 +512,23 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
     if (CS%no_slip) then
       do J=Js_q,Je_q ; do I=Is_q,Ie_q
         rel_vort(I,J) = (2.0 - G%mask2dBu(I,J)) * (dvdx(I,J) - dudy(I,J)) * G%IareaBu(I,J)
-      enddo; enddo
+      enddo ; enddo
       if (Stokes_VF) then
         if (CS%id_CAuS>0 .or. CS%id_CAvS>0) then
           do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
             stk_vort(I,J) = (2.0 - G%mask2dBu(I,J)) * (dvSdx(I,J) - duSdy(I,J)) * G%IareaBu(I,J)
-          enddo; enddo
+          enddo ; enddo
         endif
       endif
     else
       do J=Js_q,Je_q ; do I=Is_q,Ie_q
         rel_vort(I,J) = G%mask2dBu(I,J) * (dvdx(I,J) - dudy(I,J)) * G%IareaBu(I,J)
-      enddo; enddo
+      enddo ; enddo
       if (Stokes_VF) then
         if (CS%id_CAuS>0 .or. CS%id_CAvS>0) then
           do J=Jsq-1,Jeq+1 ; do I=Isq-1,Ieq+1
             stk_vort(I,J) = (2.0 - G%mask2dBu(I,J)) * (dvSdx(I,J) - duSdy(I,J)) * G%IareaBu(I,J)
-          enddo; enddo
+          enddo ; enddo
         endif
       endif
     endif
@@ -542,13 +542,13 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
       Ih_q(I,J) = Area_q(I,J) / (hArea_q + vol_neglect)
       h_q(I,J) = hArea_q / max(Area_q(I,J), area_neglect)
       q(I,J) = abs_vort(I,J) * Ih_q(I,J)
-    enddo; enddo
+    enddo ; enddo
 
     if (Stokes_VF) then
       if (CS%id_CAuS>0 .or. CS%id_CAvS>0) then
         do J=js-1,Jeq ; do I=is-1,Ieq
           qS(I,J) = stk_vort(I,J) * Ih_q(I,J)
-        enddo; enddo
+        enddo ; enddo
       endif
     endif
 
@@ -1131,7 +1131,7 @@ subroutine CorAdCalc(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, pbv, Wav
           CAvS(i,J,k) = 0.25 * &
                 ((qS(I,J) * (uh(I,j+1,k) + uh(I,j,k))) + &
                  (qS(I-1,J) * (uh(I-1,j,k) + uh(I-1,j+1,k)))) * G%IdyCv(i,J)
-        enddo; enddo
+        enddo ; enddo
       endif
     endif
 
@@ -1451,7 +1451,7 @@ function fac_fn(tau, b) result(fac)
   real, intent(in)  :: b    !< The smoothness indicator [A ~> a]
   real :: fac               !< The factor for the weight [nondim]
 
-  fac = 1.0e40; if (abs(b) > 1.0e-20*tau) fac = (1 + tau / b)**2
+  fac = 1.0e40 ; if (abs(b) > 1.0e-20*tau) fac = (1 + tau / b)**2
 
 end function fac_fn
 

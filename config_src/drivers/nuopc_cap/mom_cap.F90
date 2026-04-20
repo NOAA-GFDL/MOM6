@@ -103,7 +103,7 @@ use shr_is_restart_fh_mod, only : init_is_restart_fh, is_restart_fh, is_restart_
 #endif
 use mom_cap_profiling, only: cap_profiling_init, cap_profiling
 
-implicit none; private
+implicit none ; private
 
 public SetServices
 public SetVM

@@ -534,7 +534,7 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
       enddo ; enddo ; endif
       if (associated(VBF%Kd_ddiff_S)) then ; do K=1,nz+1 ; do i=is,ie
         VBF%Kd_ddiff_S(i,j,K) = KS_extra(i,K)
-      enddo ; enddo ; endif ;
+      enddo ; enddo ; endif
     endif
 
     ! Apply double diffusion via CVMix
@@ -552,7 +552,7 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
       enddo ; enddo ; endif
       if (associated(VBF%Kd_ddiff_S)) then ; do K=1,nz+1 ; do i=is,ie
         VBF%Kd_ddiff_S(i,j,K) = KS_extra(i,K)
-      enddo ; enddo ; endif ;
+      enddo ; enddo ; endif
       call cpu_clock_end(id_clock_CVMix_ddiff)
     endif
 
@@ -648,19 +648,19 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
         VBF%Kd_slope(i,j,K) = min(Kd_slope_2d(i,K), CS%Kd_max)
       enddo ; enddo ; endif
 
-      if (CS%id_prof_leak > 0) then ; do k=1,nz; do i=is,ie
+      if (CS%id_prof_leak > 0) then ; do k=1,nz ; do i=is,ie
         dd%prof_leak(i,j,k) = prof_leak_2d(i,k)
       enddo ; enddo ; endif
-      if (CS%id_prof_quad > 0) then ; do k=1,nz; do i=is,ie
+      if (CS%id_prof_quad > 0) then ; do k=1,nz ; do i=is,ie
         dd%prof_quad(i,j,k) = prof_quad_2d(i,k)
       enddo ; enddo ; endif
-      if (CS%id_prof_itidal > 0) then ; do k=1,nz; do i=is,ie
+      if (CS%id_prof_itidal > 0) then ; do k=1,nz ; do i=is,ie
         dd%prof_itidal(i,j,k) = prof_itidal_2d(i,k)
       enddo ; enddo ; endif
-      if (CS%id_prof_Froude > 0) then ; do k=1,nz; do i=is,ie
+      if (CS%id_prof_Froude > 0) then ; do k=1,nz ; do i=is,ie
         dd%prof_Froude(i,j,k) = prof_Froude_2d(i,k)
       enddo ; enddo ; endif
-      if (CS%id_prof_slope > 0) then ; do k=1,nz; do i=is,ie
+      if (CS%id_prof_slope > 0) then ; do k=1,nz ; do i=is,ie
         dd%prof_slope(i,j,k) = prof_slope_2d(i,k)
       enddo ; enddo ; endif
     endif
@@ -698,7 +698,7 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
     if (CS%Kd_add > 0.0) then
       do K=1,nz+1 ; do i=is,ie
         Kd_int_2d(i,K) = Kd_int_2d(i,K) + CS%Kd_add
-      enddo; enddo
+      enddo ; enddo
       VBF%Kd_add = CS%Kd_add
     endif
 

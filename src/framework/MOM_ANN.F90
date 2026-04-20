@@ -30,7 +30,7 @@ end interface ANN_apply
 !! i.e. stores the matrix A and bias b
 !! for matrix-vector multiplication
 !! y = A*x + b.
-type, private :: layer_type; private
+type, private :: layer_type ; private
   integer :: output_width        !< Number of rows in matrix A
   integer :: input_width         !< Number of columns in matrix A
   logical :: activation = .True. !< If true, apply the default activation function

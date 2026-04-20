@@ -411,7 +411,7 @@ function reproducing_sum_3d(array, isr, ier, jsr, jer, sums, EFP_sum, EFP_lay_su
     if (jer > je) call MOM_error(FATAL, "Value of jer too large in reproducing_sum(_3d).")
     je = jer
   endif
-  jsz = je+1-js; isz = ie+1-is
+  jsz = je+1-js ; isz = ie+1-is
 
   do_sum_across_PEs = .true. ; if (present(only_on_PE)) do_sum_across_PEs = .not.only_on_PE
   do_unscale = .false. ; if (present(unscale)) do_unscale = (unscale /= 1.0)

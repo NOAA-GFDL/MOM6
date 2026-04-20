@@ -653,7 +653,7 @@ subroutine PressureForce_FV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, AD
             endif
           enddo
         seek_x_cor(I,j) = .false.
-        endif; enddo; enddo;
+        endif ; enddo ; enddo
       else
         ! There are still points where a correction is needed, so use the top interface.
         do j=js,je ; do I=Isq,Ieq ; if (seek_x_cor(I,j)) then
