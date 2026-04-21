@@ -165,12 +165,24 @@ type, public :: OBC_segment_tracer_type
                                                       !! data, like [S ppt-1 ~> 1] for salinity.
   logical                    :: is_initialized        !< reservoir values have been set when True
   integer                    :: ntr_index = -1        !< index of segment tracer in the global tracer registry
-  real              :: resrv_lfac_in = 1.   !< The reservoir inverse length scale factor for the inward
-                                            !! direction per field [nondim].  The general 1/Lscale_in is
-                                            !! multiplied by this factor for a specific tracer or thickness.
-  real              :: resrv_lfac_out= 1.   !< The reservoir inverse length scale factor for the outward
-                                            !! direction per field [nondim].  The general 1/Lscale_out is
-                                            !! multiplied by this factor for a specific tracer or thickness.
+  real                       :: resrv_lfac_in = 1.   !< The reservoir inverse length scale factor for the inward
+                                                     !! direction per tracer [nondim].  The general 1/Lscale_in is
+                                                     !! multiplied by this factor for a specific tracer or thickness.
+                                                     !! Set to -1 to force a zero effective length scale
+                                                     !! regardless of Tr_InvLscale_in.
+  real                       :: resrv_lfac_out= 1.   !< The reservoir inverse length scale factor for the outward
+                                                     !! direction per tracer [nondim].  The general 1/Lscale_out is
+                                                     !! multiplied by this factor for a specific tracer or thickness.
+                                                     !! Set to -1 to force a zero effective length scale
+                                                     !! regardless of Tr_InvLscale_out.
+  real                       :: I_Lscale_in  = 0.0   !< Per-tracer inverse length scale for flow into the reservoir
+                                                     !! direction per field.  For Lscale >=0, I_Lscale_in =
+                                                     !! resrv_lfac_in * Tr_InvLscale_in [L-1 ~> m-1].  For infinite
+                                                     !! length scale, I_Lscale_in = -1 [nondim].
+  real                       :: I_Lscale_out = 0.0   !< Per-tracer inverse length scale for flow out of the reservoir
+                                                     !! direction per field.  For Lscale >=0, I_Lscale_out =
+                                                     !! resrv_lfac_out * Tr_InvLscale_out [L-1 ~> m-1].  For infinite
+                                                     !! length scale, I_Lscale_out = -1 [nondim].
 end type OBC_segment_tracer_type
 
 !> Thickness on OBC segment data structure, with a reservoir
@@ -818,30 +830,50 @@ subroutine open_boundary_config(G, US, param_file, OBC)
                    units="nondim", default=0.3)
   endif
 
+  if (mask_outside) call mask_outside_OBCs(G, US, param_file, OBC)
+
   Lscale_in = 0.
   Lscale_out = 0.
   if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
-    call get_param(param_file, mdl, "OBC_TRACER_RESERVOIR_LENGTH_SCALE_OUT ", Lscale_out, &
-                   "An effective length scale for restoring the tracer concentration "//&
-                   "at the boundaries to externally imposed values when the flow "//&
-                   "is exiting the domain.", units="m", default=0.0, scale=US%m_to_L)
-
-    call get_param(param_file, mdl, "OBC_TRACER_RESERVOIR_LENGTH_SCALE_IN ", Lscale_in, &
-                   "An effective length scale for restoring the tracer concentration "//&
-                   "at the boundaries to values from the interior when the flow "//&
-                   "is entering the domain.", units="m", default=0.0, scale=US%m_to_L)
+    call get_param(param_file, mdl, "OBC_TRACER_RESERVOIR_LENGTH_SCALE_OUT", Lscale_out, &
+                   "An effective length scale for the tracer reservoir update when the flow "//&
+                   "is exiting the domain. If positive, the reservoir relaxes toward the "//&
+                   "interior concentration with this length scale. If zero (default), the "//&
+                   "length scale is truly zero: the reservoir is set instantly to the "//&
+                   "interior concentration on outflow. If negative, the length scale is "//&
+                   "effectively infinite: the reservoir is never updated on outflow.", &
+                   units="m", default=0.0, scale=US%m_to_L)
+    call get_param(param_file, mdl, "OBC_TRACER_RESERVOIR_LENGTH_SCALE_IN", Lscale_in, &
+                   "An effective length scale for the tracer reservoir update when the flow "//&
+                   "is entering the domain. If positive, the reservoir relaxes toward the "//&
+                   "external OBC concentration with this length scale. If zero (default), "//&
+                   "the length scale is truly zero: the reservoir is set instantly to the "//&
+                   "external OBC concentration on inflow. If negative, the length scale is "//&
+                   "effectively infinite: the reservoir is never updated on inflow.", &
+                   units="m", default=0.0, scale=US%m_to_L)
   endif
-
-  if (mask_outside) call mask_outside_OBCs(G, US, param_file, OBC)
 
   ! All tracers are using the same restoring length scale for now, but we may want to make this
   ! tracer-specific in the future for example, in cases where certain tracers are poorly constrained
   ! by data while others are well constrained - MJH.
+  ! All segments also have the same restoring length scale. Internally, each tracer has
+  ! resrv_lfac_in/out attributes to rescale the length scales. resrv_lfac_in/out is only
+  ! used by BGC tracers at the moment.
   do n=1,OBC%number_of_segments
-    OBC%segment(n)%Tr_InvLscale_in = 0.0
-    if (Lscale_in>0.) OBC%segment(n)%Tr_InvLscale_in =  1.0/Lscale_in
-    OBC%segment(n)%Tr_InvLscale_out = 0.0
-    if (Lscale_out>0.) OBC%segment(n)%Tr_InvLscale_out =  1.0/Lscale_out
+    if (Lscale_in  > 0.0) then
+      OBC%segment(n)%Tr_InvLscale_in  = 1.0 / Lscale_in
+    elseif (Lscale_in  < 0.0) then
+      OBC%segment(n)%Tr_InvLscale_in  = 0.0
+    else ! (Lscale_in  == 0.0) then
+      OBC%segment(n)%Tr_InvLscale_in  = -1.0 ! A nondim sentinel value
+    endif
+    if (Lscale_out > 0.0) then
+      OBC%segment(n)%Tr_InvLscale_out = 1.0 / Lscale_out
+    elseif (Lscale_out < 0.0) then
+      OBC%segment(n)%Tr_InvLscale_out = 0.0
+    else ! (Lscale_out == 0.0) then
+      OBC%segment(n)%Tr_InvLscale_out = -1.0 ! A nondim sentinel value
+    endif
   enddo
 
   Lscale_in = 0.
@@ -5236,6 +5268,25 @@ subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, &
     endif
   endif
 
+  ! Assign per-tracer inverse length scales from the per-tracer factor (resrv_lfac) and the
+  ! segment-level inverse length scale (Tr_InvLscale). Three regimes for each direction:
+  !   I_Lscale > 0  : finite relaxation length scale.
+  !   I_Lscale = 0  : infinite length scale; reservoir does not update.
+  !   I_Lscale = -1 : instant-update sentinel; reservoir is immediately replaced by interior or
+  !                   external values.
+  ! For the two edge cases, resrv_lfac overrides Tr_InvLscale entirely, i.e.,
+  !   resrv_lfac = 0  : I_Lscale = 0
+  !   resrv_lfac = -1 : I_Lscale = -1
+  segment%tr_Reg%Tr(ntseg)%I_Lscale_in  = &
+      segment%tr_Reg%Tr(ntseg)%resrv_lfac_in  * segment%Tr_InvLscale_in
+  if ((segment%tr_Reg%Tr(ntseg)%resrv_lfac_in  == -1.0) .or. &
+      (segment%tr_Reg%Tr(ntseg)%I_Lscale_in  < 0.0)) &
+    segment%tr_Reg%Tr(ntseg)%I_Lscale_in  = -1.0
+  segment%tr_Reg%Tr(ntseg)%I_Lscale_out = &
+      segment%tr_Reg%Tr(ntseg)%resrv_lfac_out * segment%Tr_InvLscale_out
+  if ((segment%tr_Reg%Tr(ntseg)%resrv_lfac_out == -1.0) .or. &
+      (segment%tr_Reg%Tr(ntseg)%I_Lscale_out < 0.0)) &
+    segment%tr_Reg%Tr(ntseg)%I_Lscale_out = -1.0
 end subroutine register_segment_tracer
 
 !> Clean up the segment tracer registry.
@@ -5965,23 +6016,27 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, Reg)
 
   ! Local variables
   type(OBC_segment_type), pointer :: segment => NULL()
-  integer :: dir            ! A sign factor (1/-1) to that sets velocity direction.
-  real    :: face_area      ! Interior cell face area [H L ~> m2 or kg/m].
-  real    :: flux_to_res    ! Inflow to the reservoir, flux_to_res = dir * [uv]hr, positive if the
-                            ! flow is from the interior to the reservoir [H L2 ~> m3 or kg].
-  real    :: resrv_lfac_out ! The reservoir inverse length scale scaling factor for the outward
-                            ! direction per field [nondim]
-  real    :: resrv_lfac_in  ! The reservoir inverse length scale scaling factor for the inward
-                            ! direction per field [nondim]
-  real    :: L_in, L_out    ! The distance moved in or out of a cell, normalized by the reservoir
-                            ! length scale [nondim]
-  real    :: b_in, b_out    ! The 0 and 1 switch for tracer reservoirs
-                            ! 1 if the length scale of reservoir is zero [nondim]
-  real    :: a_in, a_out    ! The 0 and 1(-1) switch for reservoir source weights
-                            ! e.g. a_in is -1 only if b_in ==1 and uhr or vhr is inward
-                            ! e.g. a_out is 1 only if b_out==1 and uhr or vhr is outward
-                            ! It's clear that a_in and a_out cannot be both non-zero [nondim]
-  real    :: fac1           ! The denominator of the expression for tracer updates [nondim]
+  integer :: dir            ! Sign convention so that positive flux_to_res means flow toward the
+                            ! reservoir: -1 for W/S segments, +1 for E/N segments.
+  real    :: face_area      ! Interior cell face area adjacent to the OBC boundary [H L ~> m2 or kg m-1].
+  real    :: flux_to_res    ! Signed volume/mass flux directed toward the reservoir (positive = interior
+                            ! to reservoir), equals dir * uhr or dir * vhr [H L2 ~> m3 or kg].
+  real    :: resrv_lfac_out ! Per-tracer multiplier on segment%Tr_InvLscale_out for the outward
+                            ! direction [nondim].
+  real    :: resrv_lfac_in  ! Per-tracer multiplier on segment%Tr_InvLscale_in for the inward
+                            ! direction [nondim].
+  real    :: L_out, L_in    ! Nondimensional exchange weight = flux * InvLscale * resrv_lfac / face_area
+                            ! for the outflow (L_out >= 0) and inflow (L_in <= 0) directions [nondim].
+                            ! Active only in finite/infinite length-scale mode (mask_L = 1).
+  real    :: a_out, a_in    ! In instant-update (zero length scale) mode: +1 on outflow (a_out) or
+                            ! -1 on inflow (a_in), selecting which boundary value is applied instantly
+                            ! to the reservoir. Both are 0 in finite/infinite length-scale mode, and
+                            ! a_out and a_in cannot be simultaneously non-zero [nondim].
+  real    :: mask_L_out, mask_L_in ! 1 in finite/infinite length-scale mode (activates L term);
+                            ! 0 in instant-update mode [nondim]. mask_L = 1 - mask_a.
+  real    :: mask_a_out, mask_a_in ! 1 in instant-update (zero length scale) mode (activates a term);
+                            ! 0 in finite/infinite length-scale mode [nondim].
+  real    :: fac1           ! Implicit-update denominator = 1 + L_out - L_in [nondim].
   real    :: I_scale        ! The inverse of the scaling factor for the tracers.
                             ! For salinity the units would be [ppt S-1 ~> 1]
   integer :: i, j, k, m, n, nz, ntr_id
@@ -5995,8 +6050,6 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, Reg)
   do n=1,OBC%number_of_segments
     segment => OBC%segment(n)
     if (.not. associated(segment%tr_Reg)) cycle
-    b_in  = 0.0 ; if (segment%Tr_InvLscale_in  == 0.0) b_in  = 1.0
-    b_out = 0.0 ; if (segment%Tr_InvLscale_out == 0.0) b_out = 1.0
     ! dir switches the sign of the flow so that positive is into the reservoir
     if ((segment%direction == OBC_DIRECTION_W) .or. (segment%direction == OBC_DIRECTION_S)) then
       dir = -1
@@ -6011,20 +6064,24 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, Reg)
         ntr_id = segment%tr_Reg%Tr(m)%ntr_index
         resrv_lfac_out = segment%tr_Reg%Tr(m)%resrv_lfac_out
         resrv_lfac_in  = segment%tr_Reg%Tr(m)%resrv_lfac_in
+        mask_a_in  = max(0.0, -segment%tr_Reg%Tr(m)%I_Lscale_in)  ; mask_L_in  = 1.0 - mask_a_in
+        mask_a_out = max(0.0, -segment%tr_Reg%Tr(m)%I_Lscale_out) ; mask_L_out = 1.0 - mask_a_out
         I_scale = 1.0 ; if (segment%tr_Reg%Tr(m)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(m)%scale
         do k=1,nz ; do j=js,je
-          ! Calculate weights. Both a and u_L are nondim. Adding them together has no meaning.
+          ! Calculate weights. Both a and L are nondim. Adding them together has no meaning.
           ! However, since they cannot be both non-zero, adding them works like a switch.
           ! When InvLscale_out is 0 and outflow, only interior data is applied to reservoirs
           ! When InvLscale_in is 0 and inflow, only nudged data is applied to reservoirs
           flux_to_res = dir * uhr(I,j,k)
           ! I_face_area would be more efficient but it changes answers.
           face_area = (h(ii,j,k) + GV%H_subroundoff) * G%dyCu(I,j)
-          a_out = b_out * max(0.0, sign(1.0, flux_to_res))
-          a_in  = b_in  * min(0.0, sign(1.0, flux_to_res))
-          L_out = G%mask2dT(ii,j) * max(0.0, &
+          a_out = mask_a_out * max(0.0, sign(1.0, flux_to_res))
+          a_in  = mask_a_in  * min(0.0, sign(1.0, flux_to_res))
+          ! Below, segment%Tr_InvLscale_out * resrv_lfac_out can be replaced by segment%I_Lscale_out,
+          ! but it changes answers.
+          L_out = mask_L_out * G%mask2dT(ii,j) * max(0.0, &
                 flux_to_res * segment%Tr_InvLscale_out * resrv_lfac_out / face_area)
-          L_in  = G%mask2dT(ii,j) * min(0.0, &
+          L_in  = mask_L_in  * G%mask2dT(ii,j) * min(0.0, &
                 flux_to_res * segment%Tr_InvLscale_in  * resrv_lfac_in  / face_area)
           fac1 = 1.0 + (L_out - L_in)
           segment%tr_Reg%Tr(m)%tres(I,j,k) = (1.0 / fac1) * &
@@ -6044,15 +6101,17 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, Reg)
         ntr_id = segment%tr_Reg%Tr(m)%ntr_index
         resrv_lfac_out = segment%tr_Reg%Tr(m)%resrv_lfac_out
         resrv_lfac_in  = segment%tr_Reg%Tr(m)%resrv_lfac_in
+        mask_a_in  = max(0.0, -segment%tr_Reg%Tr(m)%I_Lscale_in)  ; mask_L_in  = 1.0 - mask_a_in
+        mask_a_out = max(0.0, -segment%tr_Reg%Tr(m)%I_Lscale_out) ; mask_L_out = 1.0 - mask_a_out
         I_scale = 1.0 ; if (segment%tr_Reg%Tr(m)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(m)%scale
         do k=1,nz ; do i=is,ie
           flux_to_res = dir * vhr(i,J,k)
           face_area = (h(i,ji,k) + GV%H_subroundoff) * G%dxCv(i,J)
-          a_out = b_out * max(0.0, sign(1.0, flux_to_res))
-          a_in  = b_in  * min(0.0, sign(1.0, flux_to_res))
-          L_out = G%mask2dT(i,ji) * max(0.0, &
+          a_out = mask_a_out * max(0.0, sign(1.0, flux_to_res))
+          a_in  = mask_a_in  * min(0.0, sign(1.0, flux_to_res))
+          L_out = mask_L_out * G%mask2dT(i,ji) * max(0.0, &
                 flux_to_res * segment%Tr_InvLscale_out * resrv_lfac_out / face_area)
-          L_in  = G%mask2dT(i,ji) * min(0.0, &
+          L_in  = mask_L_in  * G%mask2dT(i,ji) * min(0.0, &
                 flux_to_res * segment%Tr_InvLscale_in  * resrv_lfac_in  / face_area)
           fac1 = 1.0 + (L_out - L_in)
           segment%tr_Reg%Tr(m)%tres(i,J,k) = (1.0 / fac1) * &
@@ -6106,8 +6165,8 @@ subroutine update_segment_thickness_reservoirs(G, GV, uhr, vhr, h, OBC)
   if (associated(OBC)) then ; if (OBC%OBC_pe) then ; do n=1,OBC%number_of_segments
     segment=>OBC%segment(n)
     if (.not. associated(segment%h_Reg)) cycle
-    b_in  = 0.0 ; if (segment%Tr_InvLscale_in  == 0.0) b_in  = 1.0
-    b_out = 0.0 ; if (segment%Tr_InvLscale_out == 0.0) b_out = 1.0
+    b_in  = 0.0 ; if (segment%Tr_InvLscale_in  < 0.0) b_in  = 1.0
+    b_out = 0.0 ; if (segment%Tr_InvLscale_out < 0.0) b_out = 1.0
     if (segment%is_E_or_W) then
       I = segment%HI%IsdB
       do j=segment%HI%jsd,segment%HI%jed
