@@ -55,7 +55,7 @@ public post_data_1d_k
 public safe_alloc_ptr, safe_alloc_alloc
 public enable_averaging, enable_averages, disable_averaging, query_averaging_enabled
 public diag_mediator_init, diag_mediator_end, set_diag_mediator_grid
-public diag_mediator_infrastructure_init
+public diag_mediator_infrastructure_init, diag_mediator_set_OBC_info
 public diag_mediator_close_registration, get_diag_time_end
 public diag_axis_init, ocean_register_diag, register_static_field
 public register_scalar_field
@@ -354,6 +354,14 @@ type, public :: diag_ctrl
   !> Number of checksum-only diagnostics
   integer :: num_chksum_diags
 
+  integer, dimension(:,:), allocatable :: OBC_u !< An array that indicates the presence and direction
+                                                !! of any open boundary conditions at u-points,
+                                                !! with a value of 0 for no OBC, 1 for an
+                                                !! Eastern OBC or -1 for a Western OBC
+  integer, dimension(:,:), allocatable :: OBC_v !< An array that indicates the presence and direction
+                                                !! of any open boundary conditions at v-points,
+                                                !! with a value of 0 for no OBC, 1 for a Northern OBC
+                                                !! or -1 for a Southern OBC
   real, dimension(:,:,:), allocatable :: h_begin !< Layer thicknesses at the beginning of the timestep used
                                                  !! for remapping of extensive variables [H ~> m or kg m-2]
   real, dimension(:,:,:), allocatable :: dz_begin !< Layer vertical extents at the beginning of the timestep used
@@ -1659,12 +1667,12 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
         call vertically_reintegrate_diag_field(                                    &
                 diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), diag_cs%G, &
                 diag_cs%dz_begin, diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%h_extensive, &
-                staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
+                diag_cs%OBC_u, diag_cs%OBC_v, staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
       else
         call vertically_reintegrate_diag_field(                                    &
                 diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), diag_cs%G, &
                 diag_cs%h_begin, diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%h_extensive, &
-                staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
+                diag_cs%OBC_u, diag_cs%OBC_v, staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
       endif
       if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
       if (associated(diag%axes%mask3d)) then
@@ -1688,12 +1696,12 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
       allocate(remapped_field(size(field,1), size(field,2), diag%axes%nz))
       if (diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%Z_based_coord) then
         call diag_remap_do_remap(diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), &
-                diag_cs%G, diag_cs%GV, diag_cs%US, dz_diag, staggered_in_x, staggered_in_y, &
-                diag%axes%mask3d, field, remapped_field)
+                diag_cs%G, diag_cs%GV, diag_cs%US, dz_diag, diag_cs%OBC_u, diag_cs%OBC_v, &
+                staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
       else
         call diag_remap_do_remap(diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), &
-                diag_cs%G, diag_cs%GV, diag_cs%US, h_diag, staggered_in_x, staggered_in_y, &
-                diag%axes%mask3d, field, remapped_field)
+                diag_cs%G, diag_cs%GV, diag_cs%US, h_diag, diag_cs%OBC_u, diag_cs%OBC_v, &
+                staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
       endif
       if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
       if (associated(diag%axes%mask3d)) then
@@ -1717,11 +1725,11 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
       allocate(remapped_field(size(field,1), size(field,2), diag%axes%nz+1))
       if (diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%Z_based_coord) then
         call vertically_interpolate_diag_field(diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), &
-                diag_cs%G, dz_diag, staggered_in_x, staggered_in_y, &
+                diag_cs%G, dz_diag, diag_cs%OBC_u, diag_cs%OBC_v, staggered_in_x, staggered_in_y, &
                 diag%axes%mask3d, field, remapped_field)
       else
         call vertically_interpolate_diag_field(diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), &
-                diag_cs%G, h_diag, staggered_in_x, staggered_in_y, &
+                diag_cs%G, h_diag, diag_cs%OBC_u, diag_cs%OBC_v, staggered_in_x, staggered_in_y, &
                 diag%axes%mask3d, field, remapped_field)
       endif
       if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
@@ -3408,6 +3416,7 @@ subroutine diag_mediator_infrastructure_init(err_msg)
   call MOM_diag_manager_init(err_msg=err_msg)
 end subroutine diag_mediator_infrastructure_init
 
+
 !> diag_mediator_init initializes the MOM diag_mediator and opens the available
 !! diagnostics file, if appropriate.
 subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
@@ -3536,9 +3545,10 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
   allocate(diag_cs%h_begin(G%isd:G%ied,G%jsd:G%jed,nz))
   if (dz_diag_needed) allocate(diag_cs%dz_begin(G%isd:G%ied,G%jsd:G%jed,nz))
 #if defined(DEBUG) || defined(__DO_SAFETY_CHECKS__)
-  allocate(diag_cs%h_old(G%isd:G%ied,G%jsd:G%jed,nz))
-  diag_cs%h_old(:,:,:) = 0.0
+  allocate(diag_cs%h_old(G%isd:G%ied,G%jsd:G%jed,nz), source=0.0)
 #endif
+  allocate(diag_cs%OBC_u(G%IsdB:G%IedB,G%jsd:G%jed), source=0)
+  allocate(diag_cs%OBC_v(G%isd:G%ied,G%JsdB:G%JedB), source=0)
 
   diag_cs%is = G%isc - (G%isd-1) ; diag_cs%ie = G%iec - (G%isd-1)
   diag_cs%js = G%jsc - (G%jsd-1) ; diag_cs%je = G%jec - (G%jsd-1)
@@ -3643,6 +3653,39 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
   endif
 
 end subroutine diag_mediator_init
+
+!> diag_mediator_set_OBC_info stores limited information about the locations and orientations
+!! of open boundary condition segments at velocity points..
+subroutine diag_mediator_set_OBC_info(G, OBC_seg_u, OBC_seg_v, diag_cs)
+  type(ocean_grid_type), intent(inout) :: G  !< The ocean grid type.
+  integer, dimension(G%IsdB:G%IedB,G%jsd:G%jed),  &
+                         intent(in) :: OBC_seg_u !< An array that indicates the presence and direction
+                                             !! of any open boundary conditions at u-points,
+                                             !! with a value of 0 for no OBC, a positive value for an
+                                             !! Eastern OBC or a negative value for a Western OBC
+  integer, dimension(G%isd:G%ied,G%JsdB:G%JedB), &
+                         intent(in) :: OBC_seg_v !< An array that indicates the presence and direction
+                                             !! of any open boundary conditions at v-points,
+                                             !! with a value of 0 for no OBC, a positive value for a
+                                             !! Northern OBC or a negative value for a Southern OBC
+  type(diag_ctrl),       intent(inout) :: diag_cs !< A defined type used to regulate diagnostics
+
+  integer :: i, j
+
+  do j=G%jsd,G%jed ; do i=G%IsdB,G%IedB
+    diag_cs%OBC_u(I,j) = 0
+    if (OBC_seg_u(I,j) > 0) diag_cs%OBC_u(I,j) = 1
+    if (OBC_seg_u(I,j) < 0) diag_cs%OBC_u(I,j) = -1
+  enddo ; enddo
+
+  do J=G%JsdB,G%JedB ; do i=G%isd,G%ied
+    diag_cs%OBC_v(i,J) = 0.0
+    if (OBC_seg_v(i,J) > 0) diag_cs%OBC_v(i,J) = 1
+    if (OBC_seg_v(i,J) < 0) diag_cs%OBC_v(i,J) = -1
+  enddo ; enddo
+
+end subroutine diag_mediator_set_OBC_info
+
 
 !> Set pointers to the default state fields used to remap diagnostics.
 subroutine diag_set_state_ptrs(h, tv, diag_cs)
@@ -4481,7 +4524,7 @@ subroutine downsample_field_3d(field_in, field_out, dL, method, mask, diag_cs, d
   real, dimension(:,:,:), allocatable :: field_out !< Downsampled field in the same arbitrary units [A ~> a]
   integer, intent(in) :: dL                !< Level of down sampling
   integer,  intent(in) :: method           !< Sampling method
-  real,  dimension(:,:,:), pointer :: mask !< Mask for field [nondim]
+  real,  dimension(:,:,:), pointer :: mask !< Mask for input field [nondim]
   type(diag_ctrl), intent(in) :: diag_CS   !< Structure used to regulate diagnostic output
   type(diag_type), intent(in) :: diag      !< A structure describing the diagnostic to post
   integer, intent(in) :: isv_o             !< Original i-start index
@@ -4511,6 +4554,7 @@ subroutine downsample_field_3d(field_in, field_out, dL, method, mask, diag_cs, d
                     ! value [nondim], [L2 ~> m2], [H L ~> m2 or kg m-1] or [H L2 ~> m3 or kg]
   real :: total_weight ! The sum of weights contributing to a point [nondim], [L2 ~> m2],
                     ! [H L ~> m2 or kg m-1] or [H L2 ~> m3 or kg]
+  real :: h_face    ! The thickness at a velocity face [H ~> m or kg m-2]
   real :: eps_vol   ! A negligibly small volume or mass [H L2 ~> m3 or kg]
   real :: eps_area  ! A negligibly small area [L2 ~> m2]
   real :: eps_face  ! A negligibly small face area [H L ~> m2 or kg m-1]
@@ -4537,7 +4581,7 @@ subroutine downsample_field_3d(field_in, field_out, dL, method, mask, diag_cs, d
     f1 = f1 + mod(f_in1, dL)
     f2 = f2 + mod(f_in2, dL)
   endif
-  allocate(field_out(1:f1,1:f2,ks:ke))
+  allocate(field_out(1:f1,1:f2,ks:ke), source=0.0)
 
   ! These are the starting point offsets between full array and reduced array indices when i or j is 0.
   i0_off = (isv_o-1) - dL*isv_d
@@ -4579,8 +4623,14 @@ subroutine downsample_field_3d(field_in, field_out, dL, method, mask, diag_cs, d
       II = dL*I + I0_off + (dL-1)
       do j_dn=1,dL
         jj = j_dn + (dL*j + j0_off)
-        !### The thickness here is offset by have a grid point from the rest of the expression.
-        wt_1d(j_dn) = mask(II,jj,k) * diag_cs%G%dyCu(II,jj) * diag_cs%h(ii,jj,k)
+        if (diag_cs%OBC_u(II,jj) == 0) then    ! This is not an OBC face.
+          h_face = 0.5*(diag_cs%h(ii,jj,k) + diag_cs%h(ii+1,jj,k))
+        elseif (diag_cs%OBC_u(II,jj) < 0) then ! This is a western OBC face.
+          h_face = diag_cs%h(ii+1,jj,k)
+        else  ! (diag_cs%OBC_u(II,jj) > 0)     ! This is an eastern OBC face.
+          h_face = diag_cs%h(ii,jj,k)
+        endif
+        wt_1d(j_dn) = mask(II,jj,k) * diag_cs%G%dyCu(II,jj) * h_face
         wtd_field_1d(j_dn) = field_in(II,jj,k) * wt_1d(j_dn)
       enddo
       field_out(I,j,k)  = sum_1d(wtd_field_1d(1:dL), dL) / &
@@ -4609,8 +4659,14 @@ subroutine downsample_field_3d(field_in, field_out, dL, method, mask, diag_cs, d
       JJ = dL*J + J0_off + (dL-1)
       do i_dn=1,dL
         ii = i_dn + (dL*i + i0_off)
-        !### The thickness here is offset by have a grid point from the rest of the expression.
-        wt_1d(i_dn) = mask(ii,JJ,k) * diag_cs%G%dxCv(ii,JJ) * diag_cs%h(ii,jj,k)
+        if (diag_cs%OBC_v(ii,JJ) == 0) then    ! This is not an OBC face.
+          h_face = 0.5*(diag_cs%h(ii,jj,k) + diag_cs%h(ii,jj+1,k))
+        elseif (diag_cs%OBC_v(ii,JJ) < 0) then ! This is a southern OBC face.
+          h_face = diag_cs%h(ii,jj+1,k)
+        else  ! (diag_cs%OBC_v(ii,JJ) > 0)     ! This is a northern OBC face.
+          h_face = diag_cs%h(ii,jj,k)
+        endif
+        wt_1d(i_dn) = mask(ii,JJ,k) * diag_cs%G%dxCv(ii,JJ) * h_face
         wtd_field_1d(i_dn) = field_in(ii,JJ,k) * wt_1d(i_dn)
       enddo
       field_out(i,J,k)  = sum_1d(wtd_field_1d(1:dL), dL) / &
@@ -4632,7 +4688,7 @@ subroutine downsample_field_2d(field_in, field_out, dl, method, mask, diag_cs, d
   real, dimension(:,:), allocatable :: field_out !< Downsampled field in the same arbitrary units [A ~> a]
   integer, intent(in) :: dl                !< Level of down sampling
   integer,  intent(in) :: method           !< Sampling method
-  real, dimension(:,:), pointer :: mask    !< Mask for field [nondim]
+  real, dimension(:,:), pointer :: mask    !< Mask for input field [nondim]
   type(diag_ctrl),   intent(in) :: diag_CS !< Structure used to regulate diagnostic output
   type(diag_type),   intent(in) :: diag    !< A structure describing the diagnostic to post
   integer, intent(in) :: isv_o             !< Original i-start index
@@ -4641,6 +4697,7 @@ subroutine downsample_field_2d(field_in, field_out, dl, method, mask, diag_cs, d
   integer, intent(in) :: iev_d             !< i-end index of down sampled data
   integer, intent(in) :: jsv_d             !< j-start index of down sampled data
   integer, intent(in) :: jev_d             !< j-end index of down sampled data
+
   ! Local variables
   character(len=240) :: mesg
   integer :: i, j, i_dn, j_dn, i0, j0, f1, f2, f_in1, f_in2
@@ -4673,8 +4730,8 @@ subroutine downsample_field_2d(field_in, field_out, dl, method, mask, diag_cs, d
   ! Fill the down sampled field on the down sampled diagnostics (almost always compute) domain
   f_in1 = size(field_in,1)
   f_in2 = size(field_in,2)
-  f1 = f_in1/dl
-  f2 = f_in2/dl
+  f1 = f_in1 / dL
+  f2 = f_in2 / dL
   ! Correction for the symmetric case
   if (diag_cs%G%symmetric) then
     f1 = f1 + mod(f_in1,dl)
@@ -4725,7 +4782,6 @@ subroutine downsample_field_2d(field_in, field_out, dl, method, mask, diag_cs, d
     enddo ; enddo
   elseif (method == PMP) then
     do j=jsv_d,jev_d ; do I=isv_d,iev_d
-      ! This expression for ii agrees with what was here before, but is it what we want?
       II = dL*I + I0_off + (dL-1)
       do j_dn=1,dL
         jj = j_dn + (dL*j + j0_off)
