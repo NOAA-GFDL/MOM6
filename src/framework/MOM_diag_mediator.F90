@@ -2606,7 +2606,7 @@ logical function register_diag_field_expand_cmor(dm_id, module_name, field_name,
     call add_diag_to_list(diag_cs, dm_id, fms_id, this_diag, axes, module_name, field_name)
     this_diag%fms_xyave_diag_id = fms_xyave_id
     ! Encode and save the cell methods for this diagnostic
-    call add_xyz_method(this_diag, axes, x_cell_method, y_cell_method, v_cell_method, v_extensive)
+    this_diag%xyz_method = xyz_method(axes, x_cell_method, y_cell_method, v_cell_method, v_extensive)
     if (present(v_extensive)) this_diag%v_extensive = v_extensive
     if (present(conversion)) this_diag%conversion_factor = conversion
     register_diag_field_expand_cmor = .true.
@@ -2655,7 +2655,7 @@ logical function register_diag_field_expand_cmor(dm_id, module_name, field_name,
       call add_diag_to_list(diag_cs, dm_id, fms_id, this_diag, axes, module_name, field_name)
       this_diag%fms_xyave_diag_id = fms_xyave_id
       ! Encode and save the cell methods for this diagnostic
-      call add_xyz_method(this_diag, axes, x_cell_method, y_cell_method, v_cell_method, v_extensive)
+      this_diag%xyz_method = xyz_method(axes, x_cell_method, y_cell_method, v_cell_method, v_extensive)
       if (present(v_extensive)) this_diag%v_extensive = v_extensive
       if (present(conversion)) this_diag%conversion_factor = conversion
       register_diag_field_expand_cmor = .true.
@@ -2795,10 +2795,9 @@ subroutine add_diag_to_list(diag_cs, dm_id, fms_id, this_diag, axes, module_name
 
 end subroutine add_diag_to_list
 
-!> Adds the encoded "cell_methods" for a diagnostics as a diag% property
-!! This allows access to the cell_method for a given diagnostics at the time of sending
-subroutine add_xyz_method(diag, axes, x_cell_method, y_cell_method, v_cell_method, v_extensive)
-  type(diag_type),          pointer       :: diag !< This diagnostic
+!> Returns an integer encoding the "cell_methods" for diagnostic, allowing simpler
+!! access to the cell_method for a given diagnostic at the time of sending
+integer function xyz_method(axes, x_cell_method, y_cell_method, v_cell_method, v_extensive)
   type(axes_grp),             intent(in)  :: axes !< Container w/ up to 3 integer handles that indicates
                                                   !! axes for this field
   character(len=*), optional, intent(in)  :: x_cell_method !< Specifies the cell method for the x-direction.
@@ -2809,7 +2808,7 @@ subroutine add_xyz_method(diag, axes, x_cell_method, y_cell_method, v_cell_metho
                                                          !! Use '' have no method.
   logical,          optional, intent(in)  :: v_extensive !< True for vertically extensive fields
                                                          !! (vertically integrated). Default/absent for intensive.
-  integer :: xyz_method
+
   character(len=9) :: mstr
 
   ! This is a simple way to encode the cell method information made from 3 strings
@@ -2821,9 +2820,9 @@ subroutine add_xyz_method(diag, axes, x_cell_method, y_cell_method, v_cell_metho
 
   xyz_method = 111
 
-  mstr = diag%axes%v_cell_method
+  mstr = axes%v_cell_method
   if (present(v_extensive)) then
-    if (present(v_cell_method)) call MOM_error(FATAL, "add_xyz_method: " // &
+    if (present(v_cell_method)) call MOM_error(FATAL, "xyz_method: " // &
        'Vertical cell method was specified along with the vertically extensive flag.')
     if (v_extensive) then
       mstr='sum'
@@ -2839,7 +2838,7 @@ subroutine add_xyz_method(diag, axes, x_cell_method, y_cell_method, v_cell_metho
     xyz_method = xyz_method + 2
   endif
 
-  mstr = diag%axes%y_cell_method
+  mstr = axes%y_cell_method
   if (present(y_cell_method)) mstr = y_cell_method
   if (trim(mstr)=='sum') then
     xyz_method = xyz_method + 10
@@ -2847,7 +2846,7 @@ subroutine add_xyz_method(diag, axes, x_cell_method, y_cell_method, v_cell_metho
     xyz_method = xyz_method + 20
   endif
 
-  mstr = diag%axes%x_cell_method
+  mstr = axes%x_cell_method
   if (present(x_cell_method)) mstr = x_cell_method
   if (trim(mstr)=='sum') then
     xyz_method = xyz_method + 100
@@ -2855,8 +2854,7 @@ subroutine add_xyz_method(diag, axes, x_cell_method, y_cell_method, v_cell_metho
     xyz_method = xyz_method + 200
   endif
 
-  diag%xyz_method = xyz_method
-end subroutine add_xyz_method
+end function xyz_method
 
 !> Attaches "cell_methods" attribute to a variable based on defaults for axes_grp or optional arguments.
 subroutine attach_cell_methods(id, axes, ostring, cell_methods, &
