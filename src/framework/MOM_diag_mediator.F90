@@ -182,7 +182,6 @@ integer :: MMP=331  !< x:mean,y:mean,z:point
 integer :: MMS=332  !< x:mean,y:mean,z:sum
 integer :: SSS=222  !< x:sum,y:sum,z:sum
 integer :: MMM=333  !< x:mean,y:mean,z:mean
-integer :: MSK=-1   !< Use the downsample method of a mask
 
 !> This type is used to represent a diagnostic at the diag_mediator level.
 !!
@@ -1446,6 +1445,8 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
   integer :: isv, iev, jsv, jev, i, j, isv_o, jsv_o
   real, dimension(:,:), allocatable, target :: locfield_dsamp ! A downsampled version of locfield [a]
   real, dimension(:,:), allocatable, target :: locmask_dsamp  ! A downsampled version of locmask [nondim]
+  real, dimension(:,:), pointer :: ones => NULL() ! An array of ones for testing where masks do not apply [nondim]
+  real, dimension(:,:), pointer :: mask_in => NULL() ! A pointer to the input mask [nondim]
   integer :: dl
   integer :: time_days
   integer :: time_seconds
@@ -1521,8 +1522,13 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
     if ((diag%conversion_factor /= 0.) .and. (diag%conversion_factor /= 1.)) deallocate( locfield )
     locfield => locfield_dsamp
     if (present(mask)) then
-      call downsample_field_2d(locmask, locmask_dsamp, dl, MSK, locmask, diag_cs, diag, &
+      ! Replicate the downsampling of other fields to find unmasked points.
+      allocate(ones, mold=locmask) ; ones(:,:) = 1.0
+      mask_in => mask
+      call downsample_field_2d(ones, locmask_dsamp, dL, diag%xyz_method, mask_in, diag_cs, diag, &
                                isv_o, jsv_o, isv, iev, jsv, jev)
+      deallocate(ones)
+      where (abs(locmask_dsamp) > 0.0) locmask_dsamp = 1.0
       locmask => locmask_dsamp
     elseif (associated(diag%axes%dsamp(dl)%mask2d)) then
       locmask => diag%axes%dsamp(dl)%mask2d
@@ -1762,7 +1768,9 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
   integer :: isv, iev, jsv, jev, ks, ke, i, j, k, isv_c, jsv_c, isv_o, jsv_o
   real, dimension(:,:,:), allocatable, target :: locfield_dsamp ! A downsampled version of locfield [a]
   real, dimension(:,:,:), allocatable, target :: locmask_dsamp  ! A downsampled version of locmask [nondim]
-  integer :: dl
+  real, dimension(:,:,:), pointer :: ones => NULL() ! An array of ones for testing where masks do not apply [nondim]
+  real, dimension(:,:,:), pointer :: mask_in => NULL() ! A pointer to the input mask [nondim]
+  integer :: dL
 
   integer :: time_days
   integer :: time_seconds
@@ -1855,8 +1863,13 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
     if ((diag%conversion_factor /= 0.) .and. (diag%conversion_factor /= 1.)) deallocate( locfield )
     locfield => locfield_dsamp
     if (present(mask)) then
-      call downsample_field_3d(locmask, locmask_dsamp, dl, MSK, locmask, diag_cs, diag, &
+      ! Replicate the downsampling of other fields to find unmasked points.
+      allocate(ones, mold=locmask) ; ones(:,:,:) = 1.0
+      mask_in => mask
+      call downsample_field_3d(ones, locmask_dsamp, dL, diag%xyz_method, mask_in, diag_cs, diag, &
                                isv_o, jsv_o, isv, iev, jsv, jev)
+      deallocate(ones)
+      where (abs(locmask_dsamp) > 0.0) locmask_dsamp = 1.0
       locmask => locmask_dsamp
     elseif (associated(diag%axes%dsamp(dl)%mask3d)) then
       locmask => diag%axes%dsamp(dl)%mask3d
@@ -4603,16 +4616,6 @@ subroutine downsample_field_3d(field_in, field_out, dL, method, mask, diag_cs, d
       field_out(i,J,k)  = sum_1d(wtd_field_1d(1:dL), dL) / &
                          (sum_1d(wt_1d(1:dL), dL) + eps_face)  ! Eps_face avoids division by 0.
     enddo ; enddo ; enddo
-  elseif (method == MSK) then ! The input field is a mask, so subsample it instead of averaging.
-    field_out(:,:,:) = 0.0
-    do k=ks,ke ; do j=jsv_d,jev_d ; do i=isv_d,iev_d
-      ave = 0.0
-      do j_dn=1,dL ; do i_dn=1,dL
-        jj = j_dn + (dL*j + j0_off) ; ii = i_dn + (dL*i + i0_off)
-        ave = ave + field_in(ii,jj,k)
-      enddo ; enddo
-      if (ave > 0.0) field_out(i,j,k) = 1.0
-    enddo ; enddo ; enddo
   else
     write (mesg,*) " unknown sampling method: ",method
     call MOM_error(FATAL, "downsample_field_3d: "//trim(mesg)//" "//trim(diag%debug_str))
@@ -4744,16 +4747,6 @@ subroutine downsample_field_2d(field_in, field_out, dl, method, mask, diag_cs, d
       enddo
       field_out(i,J) = sum_1d(wtd_field_1d(1:dL), dL) / &
                       (sum_1d(wt_1d(1:dL), dL) + Eps_len)  ! Eps_len avoids division by 0.
-    enddo ; enddo
-  elseif (method == MSK) then ! The input field is a mask, so subsample it instead of averaging.
-    field_out(:,:) = 0.0
-    do j=jsv_d,jev_d ; do i=isv_d,iev_d
-      ave = 0.0
-      do j_dn=1,dL ; do i_dn=1,dL
-        jj = j_dn + (dL*j + j0_off) ; ii = i_dn + (dL*i + i0_off)
-        ave = ave + field_in(ii,jj)
-      enddo ; enddo
-      if (ave > 0.0) field_out(i,j) = 1.0
     enddo ; enddo
   else
     write (mesg,*) " unknown sampling method: ",method
