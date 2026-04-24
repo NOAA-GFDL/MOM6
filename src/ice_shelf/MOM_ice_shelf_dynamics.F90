@@ -1984,19 +1984,19 @@ subroutine ice_shelf_solve_inner_CG(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, A
                         Zu, Zv, &     ! Preconditioned residuals [L T-1 ~> m s-1]
                         Du, Dv        ! Search directions [L T-1 ~> m s-1]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: sum_vec ! Pointwise D·A products for the alpha_k global sum
-                                                  ! [R L4 Z T-3 ~> m2 kg s-3]
+                                                  ! [kg m2 s-3]
   real, dimension(SZDIB_(G),SZDJB_(G),2) :: sum_vec_3d ! Array used for various residuals
-                                                       ! sum_vec_3d(:,:,1) [m s-1] [m kg s-2]
-                                                       ! sum_vec_3d(:,:,2) [m2 kg2 s-4]
+                                                       ! sum_vec_3d(:,:,1) [kg m2 s-3]
+                                                       ! sum_vec_3d(:,:,2) [kg2 m2 s-4]
   real    :: beta_k      ! Ratio of residuals used to update search direction [nondim]
   real    :: resid0tol2  ! Convergence tolerance times the initial residual [m2 kg2 s-4]
   real    :: sv3dsum     ! An unused variable returned when taking global sum of residuals [various]
   real    :: sv3dsums(2) ! The index-wise global sums of sum_vec_3d
-                         ! sv3dsums(1) [R L4 Z T-3 ~> m2 kg s-3]
-                         ! sv3dsums(2) [m2 kg2 s-4]
+                         ! sv3dsums(1) [kg m2 s-3]
+                         ! sv3dsums(2) [kg2 m2 s-4]
   real    :: alpha_k     ! A scaling factor for iterative corrections [nondim]
   real    :: rho_old     ! The preconditioned residual inner product Z·R from the previous CG
-                         ! iteration, scaled by resid_scale [R L4 Z T-3 ~> m2 kg s-3]
+                         ! iteration, scaled by resid_scale [kg m2 s-3]
   real    :: resid2_scale ! A scaling factor for redimensionalizing the global squared residuals
                          ! [R2 L6 Z2 T-4 ~> m2 kg2 s-4]
   integer :: cg_halo     ! Number of halo vertices to include during a CG iteration
@@ -2209,19 +2209,22 @@ subroutine ice_shelf_solve_inner_MINRES(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, A
         W_old_u, W_old_v, W_curr_u, W_curr_v, W_new_u, W_new_v, & ! MINRES search directions [L T-1 ~> m s-1]
         Qu, Qv            ! A * Z_curr [R L3 Z T-2 ~> m kg s-2]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: sum_vec_3d ! Pointwise products for global sums
-                                                     ! [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: alpha       ! Lanczos diagonal element (Rayleigh quotient) [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: beta1       ! Current Lanczos off-diagonal coefficient [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: beta2       ! Next Lanczos off-diagonal coefficient [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: eta         ! MINRES residual norm estimate [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: eta_curr    ! Effective step magnitude for current iteration [R L4 Z T-3 ~> m2 kg s-3]
+                                                     ! [kg m2 s-3] before normalization;
+                                                     ! [nondim] inside loop (after Lanczos normalization)
+  real    :: alpha       ! Lanczos diagonal element (Rayleigh quotient) [nondim]
+  real    :: beta1       ! Current Lanczos off-diagonal coefficient;
+                         ! initial value [kg^1/2 m s^-3/2], then [nondim] after iter 1
+  real    :: beta2       ! Next Lanczos off-diagonal coefficient [nondim]
+  real    :: eta         ! MINRES residual norm estimate [kg^1/2 m s^-3/2]
+  real    :: eta_curr    ! Effective step magnitude for current iteration [kg^1/2 m s^-3/2]
   real    :: c0, s0, c1, s1, c2, s2  ! Givens rotation cosines and sines [nondim]
-  real    :: d0, d1, d2  ! Tridiagonal QR factorization coefficients [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: resid0tol   ! Convergence tolerance (CS%cg_tol_newton * beta1) [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: current_norm ! Current MINRES residual norm estimate [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: sv3dsum     ! Global reproducing sum of sum_vec_3d [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: Ibeta1      ! Reciprocal of beta1 [nondim]
-  real    :: Ibeta2      ! Reciprocal of beta2  [nondim]
+  real    :: d0, d1, d2  ! Tridiagonal QR factorization coefficients [nondim]
+  real    :: resid0tol   ! Convergence tolerance (CS%cg_tol_newton * beta1) [kg^1/2 m s^-3/2]
+  real    :: current_norm ! Current MINRES residual norm estimate [kg^1/2 m s^-3/2]
+  real    :: sv3dsum     ! Global reproducing sum of sum_vec_3d;
+                         ! [kg m2 s-3] before normalization, [nondim] inside loop
+  real    :: Ibeta1      ! Reciprocal of initial beta1 [kg^-1/2 m-1 s^3/2]
+  real    :: Ibeta2      ! Reciprocal of beta2 [nondim]
   real    :: Id1         ! Reciprocal of d1 [nondim]
   integer :: iter, i, j, isc, iec, jsc, jec
   integer :: Isdq, Iedq, Jsdq, Jedq, Iscq, Iecq, Jscq, Jecq
@@ -2372,15 +2375,15 @@ subroutine ice_shelf_solve_inner_MINRES(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, A
        endif
     enddo ; enddo
 
-    ! Sync Z_curr for the next iteration's CG_action
-    call pass_vector(Z_curr_u, Z_curr_v, G%domain, TO_ALL, BGRID_NE)
-
     ! --- STEP 8: Check Convergence ---
     if (current_norm <= resid0tol .or. beta2 == 0.0) then
       iters = iter
       conv_flag = 1
       exit
     endif
+
+    ! Sync Z_curr for the next iteration's CG_action
+    call pass_vector(Z_curr_u, Z_curr_v, G%domain, TO_ALL, BGRID_NE)
 
     beta1 = beta2
     c0 = c1 ; c1 = c2
@@ -2442,21 +2445,20 @@ subroutine ice_shelf_solve_inner_CR(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, A
                         Du, Dv, &         ! Search directions (p) [L T-1 ~> m s-1]
                         Qu, Qv            ! A * p [R L3 Z T-2 ~> m kg s-2]
   real, dimension(SZDIB_(G),SZDJB_(G),2) :: sum_vec_3d ! Pointwise products for global sums.
-                                ! sum_vec_3d(:,:,1): r^2 [R2 L6 Z2 T-4 ~> m2 kg2 s-4] or
-                                !                   z·q [R L4 Z T-3 ~> m2 kg s-3] (context-dependent)
-                                ! sum_vec_3d(:,:,2): z·w or q·(M^-1 q) [R L4 Z T-3 ~> m2 kg s-3]
+                                ! sum_vec_3d(:,:,1): r^2 [kg2 m2 s-4] or z·q [kg m2 s-3] (context-dependent)
+                                ! sum_vec_3d(:,:,2): z·w or q·(M^-1 q) [kg m2 s-3]
   real    :: alpha        ! Step length [nondim]
   real    :: beta         ! Direction update coefficient [nondim]
-  real    :: r_norm_sq    ! Squared residual norm [R2 L6 Z2 T-4 ~> m2 kg2 s-4]
-  real    :: z_w_sum      ! Inner product (z_k, A z_k); beta numerator [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: z_w_sum_new  ! Inner product (z_{k+1}, A z_{k+1}) [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: z_q_sum      ! Inner product (z_k, A p_k); alpha numerator [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: q_s_sum      ! Inner product (A p_k, M^-1 A p_k); alpha denom [R L4 Z T-3 ~> m2 kg s-3]
-  real    :: resid0tol2   ! Convergence threshold: tol^2 * ||r_0||^2 [R2 L6 Z2 T-4 ~> m2 kg2 s-4]
+  real    :: r_norm_sq    ! Squared residual norm [kg2 m2 s-4]
+  real    :: z_w_sum      ! Inner product (z_k, A z_k); beta denominator [kg m2 s-3]
+  real    :: z_w_sum_new  ! Inner product (z_{k+1}, A z_{k+1}); beta numerator [kg m2 s-3]
+  real    :: z_q_sum      ! Inner product (z_k, A p_k); alpha numerator [kg m2 s-3]
+  real    :: q_s_sum      ! Inner product (A p_k, M^-1 A p_k); alpha denom [kg m2 s-3]
+  real    :: resid0tol2   ! Convergence threshold: tol^2 * ||r_0||^2 [kg2 m2 s-4]
   real    :: sv3dsum      ! Unused scalar return from reproducing_sum [various]
   real    :: sv3dsums(2)  ! Component sums from reproducing_sum
-                          ! sv3dsums(1): r^2 or z·q [R2 L6 Z2 T-4 or R L4 Z T-3] (context-dependent)
-                          ! sv3dsums(2): z·w or q·M^-1 q [R L4 Z T-3 ~> m2 kg s-3]
+                          ! sv3dsums(1): r^2 or z·q [kg2 m2 s-4 or kg m2 s-3] (context-dependent)
+                          ! sv3dsums(2): z·w or q·M^-1 q [kg m2 s-3]
   real    :: resid2_scale ! Scaling for squared-stress inner products [R2 L6 Z2 T-4 ~> m2 kg2 s-4]
   integer :: iter, i, j, isc, iec, jsc, jec
   integer :: Isdq, Iedq, Jsdq, Jedq, Iscq, Iecq, Jscq, Jecq
