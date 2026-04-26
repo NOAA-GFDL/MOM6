@@ -4846,11 +4846,9 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, h, Time)
     endif
 
     ! Update tracer registry
-    do m = NUM_PHYS_FIELDS-1, segment%num_fields ! F_T = NUM_PHYS_FIELDS-1 and F_S = NUM_PHYS_FIELDS
-      if (.not. allocated(segment%field(m)%buffer_dst) .or. &
-          (segment%field(m)%bgc_tracer .and. (.not. OBC%update_OBC_seg_data))) then
-        cycle
-      endif
+    do m=NUM_PHYS_FIELDS-1, segment%num_fields ! F_T = NUM_PHYS_FIELDS-1 and F_S = NUM_PHYS_FIELDS
+      if ((.not. allocated(segment%field(m)%buffer_dst)) .or. &
+          (segment%field(m)%bgc_tracer .and. (.not. OBC%update_OBC_seg_data))) cycle
       nt = segment%field(m)%tr_index
       ! Note the following unnecessary IF-branch is kept from the old code (as recent as Jan 2026).
       ! In the old code segment%field(m)%buffer_dst is always allocated at this point, and therefore
@@ -4912,7 +4910,8 @@ subroutine initialize_OBC_segment_reservoirs(GV, OBC)
     ! Tracers
     ! If the tracer reservoir has not yet been initialized, then set to external value.
     do m=NUM_PHYS_FIELDS-1, segment%num_fields ! F_T = NUM_PHYS_FIELDS-1 and F_S = NUM_PHYS_FIELDS
-      if (.not. allocated(segment%field(m)%buffer_dst)) cycle
+      if ((.not. allocated(segment%field(m)%buffer_dst)) .or. &
+          (segment%field(m)%bgc_tracer .and. (.not. OBC%update_OBC_seg_data))) cycle
       nt = segment%field(m)%tr_index
       if (.not. segment%tr_Reg%Tr(nt)%is_initialized) then ! T/S may be initialized by fill_temp_salt_segments
         do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
