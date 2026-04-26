@@ -2627,12 +2627,6 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  units="s", default=default_val, scale=US%s_to_T, do_not_read=(dtbt > 0.0))
   endif
 
-  call get_param(param_file, "MOM", "DT_OBC_SEG_UPDATE_OBGC", CS%dt_obc_seg_period, &
-               "The time between OBC segment data updates for OBGC tracers. "//&
-               "This must be an integer multiple of DT and DT_THERM. "//&
-               "The default is set to DT.", &
-               units="s", default=US%T_to_s*CS%dt, scale=US%s_to_T, do_not_log=.not.associated(OBC_in))
-
   ! This is here in case these values are used inappropriately.
   use_frazil = .false. ; bound_salinity = .false. ; use_p_surf_in_EOS = .false.
   CS%tv%P_Ref = 2.0e7*US%Pa_to_RL2_T2
@@ -2879,6 +2873,11 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
 
   ! Allocate initialize time-invariant MOM variables.
   call MOM_initialize_fixed(dG_in, US, OBC_in, param_file)
+
+  call get_param(param_file, "MOM", "DT_OBC_SEG_UPDATE_OBGC", CS%dt_obc_seg_period, &
+                 "The time between OBC segment data updates for OBGC tracers.  This must be an "//&
+                 "integer multiple of DT and DT_THERM.  The default is set to DT.", units="s", &
+                 default=US%T_to_s*CS%dt, scale=US%s_to_T, do_not_log=.not.associated(OBC_in))
 
   ! Copy the grid metrics and bathymetry to the ocean_grid_type
   call copy_dyngrid_to_MOM_grid(dG_in, G_in, US)
