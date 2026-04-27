@@ -128,7 +128,6 @@ use MOM_open_boundary,         only : rotate_OBC_config
 use MOM_open_boundary,         only : open_boundary_halo_update, write_OBC_info, chksum_OBC_segments
 use MOM_open_boundary,         only : segment_thickness_reservoir_init
 use MOM_open_boundary,         only : fill_temp_salt_segments, fill_thickness_segments
-use MOM_open_boundary,         only : set_initialized_OBC_tracer_reservoirs
 use MOM_open_boundary,         only : open_boundary_test_extern_h
 use MOM_open_boundary,         only : copy_OBC_radiation_coefs
 use MOM_open_boundary,         only : copy_OBC_tracer_reservoirs, copy_OBC_thickness_reservoirs
@@ -3426,22 +3425,16 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   endif
 
   if (associated(CS%OBC)) then
-    if (use_temperature) then
-      if (.not. OBC_TS_reservoir_init_bug) then
-        ! Store the updated temperatures and salinities at the open boundaries, noting that they may
-        ! still be updated by the calls in the next 50 lines, so the code setting the tracer
-        ! reservoir values will come later in the calling routine.
-        call fill_temp_salt_segments(G, GV, US, CS%OBC, CS%tv)
-      endif
-      if (OBC_reservoir_init_bug .and. is_new_run(restart_CSp)) then
-        ! Set up OBC%trex_x and OBC%tres_y as they have not been read from a restart file.
-        ! When OBC_RESERVOIR_INIT_BUG is false, setup_OBC_tracer_reservoirs() is called from initialize_MOM
-        ! after all tracer package initialization is finished and grid rotation has been dealt with.
-        call setup_OBC_tracer_reservoirs(G, GV, CS%OBC)
-        ! Ensure that the values of the tracer reservoirs that have just been set will not be revised.
-        call set_initialized_OBC_tracer_reservoirs(G, CS%OBC, restart_CSp)
-      endif
-    endif
+
+    if (use_temperature .and. ((.not. OBC_TS_reservoir_init_bug) .and. OBC_reservoir_init_bug)) &
+      call fill_temp_salt_segments(G, GV, US, CS%OBC, CS%tv)
+      ! For either OBC_TS_reservoir_init_bug=True or OBC_reservoir_init_bug=True, initialize_OBC_segment_reservoirs
+      ! is no longer called. So segment's %tres set by fill_temp_salt_segments is preserved for the rest of the
+      ! initialize_MOM subroutine. Therefore, we no longer need call setup_OBC_tracer_reservoirs here to set up
+      ! OBC%tres_x/y with %t at this point. And subroutine set_initialized_OBC_tracer_reservoirs, which locks the
+      ! restart fields, is also not needed. Because we can now set OBC%tres_x/y with %tres (unchanged when
+      ! setup_OBC_tracer_reservoirs is called in ~line 3755), the OBC%tres_x/y=%t route in setup_OBC_tracer_reservoirs
+      ! is now unused and removed, as changed there by this commmit.
 
     call initialize_user_OBCs(CS%tv, CS%OBC, G, GV, US, param_file, CS%tracer_Reg)
 
@@ -3467,7 +3460,13 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     ! BGC data is not read/updated at initialization since OBC%update_OBC_seg_data is false.
     call read_OBC_tracer_data(G, GV, US, CS%OBC, Time, include_bgc=.false.)
     call update_OBC_tracer_data(CS%OBC, include_bgc=.false.)
-    call initialize_OBC_tracer_reservoirs(CS%OBC)
+    ! Conditionally call to initialize_OBC_tracer_reservoirs so that %tres is not overwritten by %t
+    ! in the bug route. In this way, in new runs %tres -> OBC%tres_x/y (call to setup_OBC_tracer_reservoirs)
+    ! can be pushed down to the block in line 3738. Restart runs are not affected.
+    if (((.not. OBC_reservoir_init_bug) .or. CS%diabatic_first) .and. is_new_run(restart_CSp)) &
+      ! T/S tracer reservoirs copy %t -> %tres and set is_initialized=.True. [but not BGC]
+      ! BGC data is not read/updated at initialization since OBC%update_OBC_seg_data is false.
+      call initialize_OBC_tracer_reservoirs(CS%OBC)
   endif
 
   if (use_ice_shelf .and. CS%debug) then

@@ -76,7 +76,6 @@ public copy_OBC_tracer_reservoirs
 public copy_OBC_thickness_reservoirs
 public update_segment_tracer_reservoirs
 public update_segment_thickness_reservoirs
-public set_initialized_OBC_tracer_reservoirs
 public update_OBC_ramp
 public remap_OBC_fields
 public rotate_OBC_config
@@ -2604,26 +2603,19 @@ subroutine setup_OBC_tracer_reservoirs(G, GV, OBC, restart_CS)
 
         if (segment%is_E_or_W .and. set_tres_x) then
           I = segment%HI%IsdB
-          if (segment%tr_Reg%Tr(m)%is_initialized) then
-            do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
-              OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,j,k)
-            enddo ; enddo
-          else
-            do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
-              OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%t(i,j,k)
-            enddo ; enddo
-          endif
+          do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
+            ! The only place OBC%tres_x/y = %t route was used was when OBC_RESERVOIR_INIT_BUG=True in a new run,
+            ! in which case is_initialized is not turned on in fill_temp_salt_segments, and this subroutine is
+            ! called immediately afterward. Now, as initialize_OBC_tracer_reservoirs in initialize_MOM is
+            ! not called when OBC_RESERVOIR_INIT_BUG=True, %tres is not modified and is_initialized is not set,
+            ! the call to setup_OBC_tracer_reservoirs can be safely postponed, the OBC%tres_x=%t route can be removed.
+            OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,j,k)
+          enddo ; enddo
         elseif (segment%is_N_or_S .and. set_tres_y) then
           J = segment%HI%JsdB
-          if (segment%tr_Reg%Tr(m)%is_initialized) then
-            do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
-              OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,J,k)
-            enddo ; enddo
-          else
-            do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
-              OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%t(i,J,k)
-            enddo ; enddo
-          endif
+          do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
+            OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,J,k)
+          enddo ; enddo
         endif
       endif ; endif
     enddo
@@ -2695,30 +2687,6 @@ subroutine setup_OBC_thickness_reservoirs(G, GV, OBC, restart_CS)
   enddo
 
 end subroutine setup_OBC_thickness_reservoirs
-
-!> Record that the tracer reservoirs have been initialized so that their values are not reset later.
-subroutine set_initialized_OBC_tracer_reservoirs(G, OBC, restart_CS)
-  type(ocean_grid_type),          intent(in)    :: G   !< Ocean grid structure
-  type(ocean_OBC_type),           intent(in)    :: OBC !< Open boundary control structure
-  type(MOM_restart_CS),           intent(inout) :: restart_CS !< MOM restart control structure
-  character(len=12) :: x_var_name, y_var_name
-  integer :: m
-
-  do m=1,OBC%ntr
-    ! Set the names of the reservoirs for this tracer in the restart file
-    if (modulo(G%HI%turns, 2) == 0) then
-      write(x_var_name,'("tres_x_",I3.3)') m
-      write(y_var_name,'("tres_y_",I3.3)') m
-    else
-      write(x_var_name,'("tres_y_",I3.3)') m
-      write(y_var_name,'("tres_x_",I3.3)') m
-    endif
-
-    if (OBC%tracer_x_reservoirs_used(m)) call set_initialized(OBC%tres_x, x_var_name, restart_CS)
-    if (OBC%tracer_y_reservoirs_used(m)) call set_initialized(OBC%tres_y, y_var_name, restart_CS)
-  enddo
-
-end subroutine set_initialized_OBC_tracer_reservoirs
 
 !> Copy radiation and oblique boundary condition coefficients (phase speeds and normalizing
 !! denominator) from the global restart arrays into the per-segment arrays.
