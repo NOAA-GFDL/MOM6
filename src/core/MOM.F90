@@ -3878,19 +3878,20 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     call register_diags_offline_transport(Time, CS%diag, CS%offline_CSp, GV, US)
   endif
 
+  ! [if new_sim] Save %tres to OBC%tres_[xy] (needs to be after tracer_flow_control_init to init BGC)
+  ! [if restart] copy OBC%tres_[xy] to %tres
   if (associated(CS%OBC)) then
-    ! At this point any information related to the tracer reservoirs has either been read from
-    ! the restart file or has been specified in the segments.  Initialize the tracer reservoir
-    ! values from the segments if they have not been set via the restart file.
-    call setup_OBC_tracer_reservoirs(G, GV, CS%OBC, restart_CSp)
-    call setup_OBC_thickness_reservoirs(G, GV, CS%OBC, restart_CSp)
-    call open_boundary_halo_update(G, CS%OBC)
-    call copy_OBC_radiation_coefs(CS%OBC)
-    if (.not. (CS%OBC%reservoir_init_bug .and. new_sim .and. CS%diabatic_first)) &
-      ! The if-guard is needed to preserve old answers with OBC_RESERVOIR_INIT_BUG=True, in which case
-      ! segment T/S reservoir %tres and global restart arrays OBC%tres_x/y have diverged at this point.
+    if (is_new_run(restart_CSp)) then
+      if (save_IC) then
+        call setup_OBC_tracer_reservoirs(G, GV, CS%OBC, restart_CSp)
+        call setup_OBC_thickness_reservoirs(G, GV, CS%OBC, restart_CSp)
+      endif
+    else
+      call open_boundary_halo_update(G, CS%OBC)
+      call copy_OBC_radiation_coefs(CS%OBC)
       call copy_OBC_tracer_reservoirs(CS%OBC)
-    call copy_OBC_thickness_reservoirs(CS%OBC, G, GV)
+      call copy_OBC_thickness_reservoirs(CS%OBC, G, GV)
+    endif
   endif
 
   call register_obsolete_diagnostics(param_file, CS%diag)
