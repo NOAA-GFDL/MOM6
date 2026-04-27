@@ -5453,31 +5453,12 @@ subroutine fill_obgc_segments(G, GV, OBC, tr_ptr, tr_name)
       enddo ; enddo
     endif
 
-    if (.not.segment%tr_Reg%Tr(nt)%is_initialized) &
-      segment%tr_Reg%Tr(nt)%tres(:,:,:) = segment%tr_Reg%Tr(nt)%t(:,:,:)
+    ! The only place that sets is_initialized=.true. is in initialize_OBC_tracer_reservoirs, but
+    ! that can never happen because for BGC tracers update_OBC_seg_data=.false. during initialization.
+    segment%tr_Reg%Tr(nt)%tres(:,:,:) = segment%tr_Reg%Tr(nt)%t(:,:,:)
 
-    if (OBC%reservoir_init_bug) then
-      ! OBC%tres_x and OBC%tres_y should not be set here, but in a subsequent call to setup_OBC_tracer_reservoirs.
-      ! Note that fill_obgc_segments is not called for runs that start from a restart file.
-      I_scale = 1.0
-      if (segment%tr_Reg%Tr(nt)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(nt)%scale
-      if (segment%is_E_or_W) then
-        if (allocated(OBC%tres_x)) then
-          I = segment%HI%IsdB
-          do k=1,nz ; do j=segment%HI%jsd,segment%HI%jed
-            OBC%tres_x(I,j,k,nt) = I_scale * segment%tr_Reg%Tr(nt)%tres(I,j,k)
-          enddo ; enddo
-        endif
-      else  ! segment%is_N_or_S
-        if (allocated(OBC%tres_y)) then
-          J = segment%HI%JsdB
-          do k=1,nz ; do i=segment%HI%isd,segment%HI%ied
-            OBC%tres_y(i,J,k,nt) = I_scale * segment%tr_Reg%Tr(nt)%tres(i,J,k)
-          enddo ; enddo
-        endif
-      endif
-    endif
-
+    ! For the bug route, BGC tracers' OBC%tres_x/y is set by per-segment %tres in ~line 3727 in MOM.F90 by a call
+    ! to setup_OBC_tracer_reservoirs.
   enddo ! End of loop over segments.
 
 end subroutine fill_obgc_segments
@@ -5533,10 +5514,11 @@ subroutine fill_temp_salt_segments(G, GV, US, OBC, tv)
         endif
       enddo ; enddo
     endif
-    if (.not.segment%tr_Reg%Tr(1)%is_initialized) &
-      segment%tr_Reg%Tr(1)%tres(:,:,:) = segment%tr_Reg%Tr(1)%t(:,:,:)
-    if (.not.segment%tr_Reg%Tr(2)%is_initialized) &
-      segment%tr_Reg%Tr(2)%tres(:,:,:) = segment%tr_Reg%Tr(2)%t(:,:,:)
+
+    ! fill_temp_salt_segments is only called before initialize_OBC_tracer_reservoirs, the only
+    ! place is_initialized can be set to .true. So the conditional assign is redundant.
+    segment%tr_Reg%Tr(1)%tres(:,:,:) = segment%tr_Reg%Tr(1)%t(:,:,:)
+    segment%tr_Reg%Tr(2)%tres(:,:,:) = segment%tr_Reg%Tr(2)%t(:,:,:)
   enddo
 
 end subroutine fill_temp_salt_segments
