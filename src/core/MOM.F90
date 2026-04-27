@@ -7,7 +7,7 @@ module MOM
 
 ! Infrastructure modules
 use MOM_array_transform,      only : rotate_array, rotate_vector
-use MOM_debugging,            only : MOM_debugging_init, hchksum, uvchksum, qchksum, totalTandS
+use MOM_debugging,            only : MOM_debugging_init, hchksum, uvchksum, totalTandS
 use MOM_debugging,            only : check_redundant, query_debugging_checks
 use MOM_checksum_packages,    only : MOM_thermo_chksum, MOM_state_chksum
 use MOM_checksum_packages,    only : MOM_accel_chksum, MOM_surface_chksum
@@ -3425,48 +3425,46 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   endif
 
   if (associated(CS%OBC)) then
-
-    if (use_temperature .and. ((.not. OBC_TS_reservoir_init_bug) .and. OBC_reservoir_init_bug)) &
-      call fill_temp_salt_segments(G, GV, US, CS%OBC, CS%tv)
-      ! For either OBC_TS_reservoir_init_bug=True or OBC_reservoir_init_bug=True, initialize_OBC_segment_reservoirs
-      ! is no longer called. So segment's %tres set by fill_temp_salt_segments is preserved for the rest of the
-      ! initialize_MOM subroutine. Therefore, we no longer need call setup_OBC_tracer_reservoirs here to set up
-      ! OBC%tres_x/y with %t at this point. And subroutine set_initialized_OBC_tracer_reservoirs, which locks the
-      ! restart fields, is also not needed. Because we can now set OBC%tres_x/y with %tres (unchanged when
-      ! setup_OBC_tracer_reservoirs is called in ~line 3755), the OBC%tres_x/y=%t route in setup_OBC_tracer_reservoirs
-      ! is now unused and removed, as changed there by this commmit.
-
-    call initialize_user_OBCs(CS%tv, CS%OBC, G, GV, US, param_file, CS%tracer_Reg)
-
-    if (CS%debug) then
-      call hchksum(G%mask2dT, 'After initialize_user_OBCs: mask2dT ', G%HI)
-      call uvchksum('After initialize_user_OBCs: mask2dC[uv]', G%mask2dCu, G%mask2dCv, G%HI)
-      call qchksum(G%mask2dBu, 'After initialize_user_OBCs: mask2dBu ', G%HI)
-    endif
-    if (obc_debug_test) call open_boundary_test_extern_h(G, GV, CS%OBC, CS%h)
-
+    ! Read and calculate segment dynamic fields. Needed for
+    ! (a) continuity calls in initialize_dyn_*
+    ! (b) segment%dz used for subsequent read_OBC_tracer_data call
+    ! (c) One-time dynamic update when OBC_VALUE_UPDATE_BUG=True
+    !   Calcualte tv%SpV_avg for dz used in read_OBC_segment_data
+    call calc_derived_thermo(CS%tv, CS%h, G, GV, US)
+    !   OBC file -> segment%field()%buffer_dst
+    call read_OBC_dynamics_data(G, GV, US, CS%OBC, CS%tv, CS%h, Time)
+    !   segment%field()%buffer_dst -> segment%normal_trans etc
+    call update_OBC_dynamics_data(G, GV, US, CS%OBC, CS%h, Time)
+    !   h -> %h and %h_res
     if (CS%OBC%use_h_res) &
       call fill_thickness_segments(G, GV, US, CS%OBC, CS%h)
 
-    if (use_temperature) then
-      call pass_var(CS%tv%T, G%Domain, complete=.false.)
-      call pass_var(CS%tv%S, G%Domain, complete=.true.)
-    endif
-    call calc_derived_thermo(CS%tv, CS%h, G, GV, US)
+    ! Initialize OBC segment T/S reservoir [segment%tr_Reg%Tr()%tres]
+    if (is_new_run(restart_CSp) .and. use_temperature) then
+      ! T/S reservoirs are initialized by interior data.
+      ! They may be overriden by external data again a few lines later. The only reason that this
+      ! call is made unconditional to OBC_reservoir_init_bug or diabatic_first is to provide a
+      ! fallback for buggy cases where use_temperature is True but external T/S are not given.
+      if (.not. OBC_TS_reservoir_init_bug) &
+        ! Interior T/S -> segment%tr_Reg%Tr()%t and segment%tr_Reg%Tr()%tres
+        call fill_temp_salt_segments(G, GV, US, CS%OBC, CS%tv)
 
-    ! Call this during initialization to fill boundary arrays from fixed values
-    call read_OBC_dynamics_data(G, GV, US, CS%OBC, CS%tv, CS%h, Time)
-    call update_OBC_dynamics_data(G, GV, US, CS%OBC, CS%h, Time)
-    ! BGC data is not read/updated at initialization since OBC%update_OBC_seg_data is false.
-    call read_OBC_tracer_data(G, GV, US, CS%OBC, Time, include_bgc=.false.)
-    call update_OBC_tracer_data(CS%OBC, include_bgc=.false.)
-    ! Conditionally call to initialize_OBC_tracer_reservoirs so that %tres is not overwritten by %t
-    ! in the bug route. In this way, in new runs %tres -> OBC%tres_x/y (call to setup_OBC_tracer_reservoirs)
-    ! can be pushed down to the block in line 3738. Restart runs are not affected.
-    if (((.not. OBC_reservoir_init_bug) .or. CS%diabatic_first) .and. is_new_run(restart_CSp)) &
-      ! T/S tracer reservoirs copy %t -> %tres and set is_initialized=.True. [but not BGC]
-      ! BGC data is not read/updated at initialization since OBC%update_OBC_seg_data is false.
-      call initialize_OBC_tracer_reservoirs(CS%OBC)
+      ! T/S reservoirs are initialized by external data.
+      ! OBC file -> segment%field()%buffer_dst -> segment%tr_Reg%Tr()%t -> segment%tr_Reg%Tr()%tres.
+      ! Note BGC data is deliberately not read/updated at initialization since OBC%update_OBC_seg_data is false.
+      if ((.not. OBC_reservoir_init_bug) .or. CS%diabatic_first) then
+        ! OBC file -> segment%field()%buffer_dst
+        call read_OBC_tracer_data(G, GV, US, CS%OBC, Time, include_bgc=.false.)
+        ! [T/S] segment%field()%buffer_dst -> segment%tr_Reg%Tr()%t
+        call update_OBC_tracer_data(CS%OBC, include_bgc=.false.)
+        ! [T/S] segment%tr_Reg%Tr()%t -> segment%tr_Reg%Tr()%tres
+        call initialize_OBC_tracer_reservoirs(CS%OBC)
+      endif
+    endif
+
+    call initialize_user_OBCs(CS%tv, CS%OBC, G, GV, US, param_file, CS%tracer_Reg)
+
+    if (obc_debug_test) call open_boundary_test_extern_h(G, GV, CS%OBC, CS%h)
   endif
 
   if (use_ice_shelf .and. CS%debug) then

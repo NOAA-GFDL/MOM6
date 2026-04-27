@@ -5453,12 +5453,7 @@ subroutine fill_obgc_segments(G, GV, OBC, tr_ptr, tr_name)
       enddo ; enddo
     endif
 
-    ! The only place that sets is_initialized=.true. is in initialize_OBC_tracer_reservoirs, but
-    ! that can never happen because for BGC tracers update_OBC_seg_data=.false. during initialization.
     segment%tr_Reg%Tr(nt)%tres(:,:,:) = segment%tr_Reg%Tr(nt)%t(:,:,:)
-
-    ! For the bug route, BGC tracers' OBC%tres_x/y is set by per-segment %tres in ~line 3727 in MOM.F90 by a call
-    ! to setup_OBC_tracer_reservoirs.
   enddo ! End of loop over segments.
 
 end subroutine fill_obgc_segments
