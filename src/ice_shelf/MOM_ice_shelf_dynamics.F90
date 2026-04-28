@@ -4505,6 +4505,10 @@ subroutine bilinear_shape_fn_grid(G, i, j, Phi, Jac)
 ! This should be a one-off; once per nonlinear solve? once per lifetime?
 
   real, dimension(4) :: xquad, yquad ! [nondim]
+  ! Mirror lookups: xquad_m(qp) == 1 - xquad(qp), yquad_m(qp) == 1 - yquad(qp) mathematically,
+  ! but each mirror entry is the stored value at the x- or y-mirrored quadrature point. This
+  ! ensures rotation-paired QPs read bit-identical operand values.
+  real, dimension(4) :: xquad_m, yquad_m ! Mirrors of xquad, yquad [nondim]
   real :: a, d       ! Interpolated grid spacings [L ~> m]
   real :: xexp, yexp ! [nondim]
   integer :: node, qpoint, xnode, ynode
@@ -4512,31 +4516,33 @@ subroutine bilinear_shape_fn_grid(G, i, j, Phi, Jac)
   xquad(1:3:2) = .5 * (1-sqrt(1./3)) ; yquad(1:2) = .5 * (1-sqrt(1./3))
   xquad(2:4:2) = .5 * (1+sqrt(1./3)) ; yquad(3:4) = .5 * (1+sqrt(1./3))
 
+  ! x-mirror swaps qp 1<->2 and 3<->4; y-mirror swaps 1<->3 and 2<->4
+  xquad_m(1) = xquad(2) ; xquad_m(2) = xquad(1) ; xquad_m(3) = xquad(4) ; xquad_m(4) = xquad(3)
+  yquad_m(1) = yquad(3) ; yquad_m(2) = yquad(4) ; yquad_m(3) = yquad(1) ; yquad_m(4) = yquad(2)
+
   do qpoint=1,4
     if (J>1) then
-      a = (G%dxCv(i,J-1) * (1-yquad(qpoint))) + (G%dxCv(i,J) * yquad(qpoint)) ! d(x)/d(x*)
+      a = (G%dxCv(i,J-1) * yquad_m(qpoint)) + (G%dxCv(i,J) * yquad(qpoint)) ! d(x)/d(x*)
     else
       a = G%dxCv(i,J) !* yquad(qpoint) ! d(x)/d(x*)
     endif
     if (I>1) then
-      d = (G%dyCu(I-1,j) * (1-xquad(qpoint))) + (G%dyCu(I,j) * xquad(qpoint)) ! d(y)/d(y*)
+      d = (G%dyCu(I-1,j) * xquad_m(qpoint)) + (G%dyCu(I,j) * xquad(qpoint)) ! d(y)/d(y*)
     else
       d = G%dyCu(I,j) !* xquad(qpoint)
     endif
-!    a = G%dxCv(i,J-1) * (1-yquad(qpoint)) + G%dxCv(i,J) * yquad(qpoint) ! d(x)/d(x*)
-!    d = G%dyCu(I-1,j) * (1-xquad(qpoint)) + G%dyCu(I,j) * xquad(qpoint) ! d(y)/d(y*)
 
     do node=1,4
       xnode = 2-mod(node,2) ; ynode = ceiling(REAL(node)/2)
 
       if (ynode == 1) then
-        yexp = 1-yquad(qpoint)
+        yexp = yquad_m(qpoint)
       else
         yexp = yquad(qpoint)
       endif
 
       if (1 == xnode) then
-        xexp = 1-xquad(qpoint)
+        xexp = xquad_m(qpoint)
       else
         xexp = xquad(qpoint)
       endif
@@ -4625,21 +4631,27 @@ subroutine bilinear_shape_functions_subgrid(Phisub, nsub)
     !  1 - 2
 
   integer :: i, j, qx, qy
-  real,dimension(2)    :: xquad
-  real                 :: x0, y0, x, y, fracx
+  real,dimension(2)    :: xquad ! [nondim]
+  real                 :: fracx ! The fractional sub-cell area in reference space [nondim]
+  ! Mirror-symmetric per-direction node weights: a_left == 1-x_global, a_right == x_global
+  ! mathematically, but constructed so that a_right(qx,i) is computed by exactly the same
+  ! operand sequence as a_left(3-qx, nsub+1-i). This guarantees bit-exact rotation symmetry.
+  real, dimension(2,nsub) :: a_left, a_right ! [nondim]
 
   xquad(1) = .5 * (1-sqrt(1./3)) ; xquad(2) = .5 * (1+sqrt(1./3))
   fracx = 1.0/real(nsub)
 
+  do i=1,nsub ; do qx=1,2
+    a_left (qx,i) = (real(nsub-i) + xquad(3-qx)) * fracx
+    a_right(qx,i) = (real(i-1)    + xquad(qx))   * fracx
+  enddo ; enddo
+
   do j=1,nsub ; do i=1,nsub
-    x0 = (i-1) * fracx ; y0 = (j-1) * fracx
     do qy=1,2 ; do qx=1,2
-      x = x0 + fracx*xquad(qx)
-      y = y0 + fracx*xquad(qy)
-      Phisub(qx,qy,i,j,1,1) = (1.0-x) * (1.0-y)
-      Phisub(qx,qy,i,j,1,2) = (1.0-x) * y
-      Phisub(qx,qy,i,j,2,1) = x * (1.0-y)
-      Phisub(qx,qy,i,j,2,2) = x * y
+      Phisub(qx,qy,i,j,1,1) = a_left (qx,i) * a_left (qy,j)
+      Phisub(qx,qy,i,j,1,2) = a_left (qx,i) * a_right(qy,j)
+      Phisub(qx,qy,i,j,2,1) = a_right(qx,i) * a_left (qy,j)
+      Phisub(qx,qy,i,j,2,2) = a_right(qx,i) * a_right(qy,j)
     enddo ; enddo
   enddo ; enddo
 
