@@ -741,7 +741,7 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
     allocate(CS%Jac(1:4,isd:ied,jsd:jed), source=0.0)
     do j=G%jsd,G%jed ; do i=G%isd,G%ied
       call bilinear_shape_fn_grid(G, i, j, CS%Phi(:,:,i,j), CS%Jac(:,i,j))
-    enddo; enddo
+    enddo ; enddo
 
     if (CS%GL_regularize) then
       allocate(CS%Phisub(2,2,CS%n_sub_regularize,CS%n_sub_regularize,2,2), source=0.0)
@@ -1799,10 +1799,9 @@ end subroutine ice_shelf_solve_outer
 !! Performs shared setup (RHS, preconditioner, initial matrix-vector product),
 !! dispatches to the selected Krylov method, and applies boundary conditions.
 subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H_node, float_cond, &
-                                  hmask, conv_flag, iters, time, Phi, Phisub)
+                                 hmask, conv_flag, iters, time, Phi, Phisub)
   type(ice_shelf_dyn_CS), intent(in)    :: CS !< A pointer to the ice shelf control structure
-  type(ice_shelf_state),  intent(in)    :: ISS !< A structure with elements that describe
-                                           !! the ice-shelf state
+  type(ice_shelf_state),  intent(in)    :: ISS !< A structure with elements that describe the ice-shelf state
   type(ocean_grid_type),  intent(inout) :: G  !< The grid structure used by the ice shelf.
   type(unit_scale_type),  intent(in)    :: US !< A structure containing unit conversion factors
   real, dimension(SZDIB_(G),SZDJB_(G)), &
@@ -1814,27 +1813,26 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
   real, dimension(SZDIB_(G),SZDJB_(G)), &
                           intent(in)    :: taudy  !< The y-direction driving stress [R L3 Z T-2 ~> kg m s-2]
   real, dimension(SZDIB_(G),SZDJB_(G)), &
-                          intent(in)    :: H_node !< The ice shelf thickness at nodal (corner)
-                                             !! points [Z ~> m].
+                          intent(in)    :: H_node !< The ice shelf thickness at nodal (corner) points [Z ~> m].
   real, dimension(SZDI_(G),SZDJ_(G)), &
                           intent(in)    :: float_cond !< If GL_regularize=true, indicates cells containing
-                                                !! the grounding line (float_cond=1) or not (float_cond=0)
+                                                      !! the grounding line (float_cond=1) or not (float_cond=0)
   real, dimension(SZDI_(G),SZDJ_(G)), &
                           intent(in)    :: hmask !< A mask indicating which tracer points are
-                                             !! partly or fully covered by an ice-shelf
+                                                 !! partly or fully covered by an ice-shelf
   integer,                intent(out)   :: conv_flag !< A flag indicating whether (1) or not (0) the
-                                           !! iterations have converged to the specified tolerance
+                                                     !! iterations have converged to the specified tolerance
   integer,                intent(out)   :: iters !< The number of iterations used in the solver.
   type(time_type),        intent(in)    :: Time !< The current model time
   real, dimension(8,4,SZDI_(G),SZDJ_(G)), &
                           intent(in)    :: Phi !< The gradients of bilinear basis elements at Gaussian
-                                             !! quadrature points surrounding the cell vertices [L-1 ~> m-1].
+                                               !! quadrature points surrounding the cell vertices [L-1 ~> m-1].
   real, dimension(:,:,:,:,:,:), &
                           intent(in)    :: Phisub !< Quadrature structure weights at subgridscale
-                                            !! locations for finite element calculations [nondim]
+                                                  !! locations for finite element calculations [nondim]
 
   real, dimension(SZDIB_(G),SZDJB_(G)) :: &
-        RHSu, RHSv, &     ! Right hand side of the stress balance [R L3 Z T-2 ~> m kg s-2]
+        RHSu, RHSv, &      ! Right hand side of the stress balance [R L3 Z T-2 ~> m kg s-2]
         Au, Av, &          ! Matrix-vector product A*x [R L3 Z T-2 ~> kg m s-2]
         DIAGu, DIAGv, &    ! Diagonals [R L2 Z T-1 ~> kg s-1]
         IDIAGu, IDIAGv     ! Reciprocal diagonals [R-1 L-2 Z-1 T ~> kg-1 s]
@@ -1895,19 +1893,19 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
   select case (CS%inner_solver)
     case (INNER_CG)
       call ice_shelf_solve_inner_CG(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
-                                     IDIAGu, IDIAGv, H_node, float_cond, hmask, &
-                                     rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
-                                     Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
+                                    IDIAGu, IDIAGv, H_node, float_cond, hmask, &
+                                    rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                    Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
     case (INNER_MINRES)
       call ice_shelf_solve_inner_MINRES(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
-                                         IDIAGu, IDIAGv, H_node, float_cond, hmask, &
-                                         rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
-                                         Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
+                                        IDIAGu, IDIAGv, H_node, float_cond, hmask, &
+                                        rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                        Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
     case (INNER_CR)
       call ice_shelf_solve_inner_CR(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
-                                     IDIAGu, IDIAGv, H_node, float_cond, hmask, &
-                                     rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
-                                     Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
+                                    IDIAGu, IDIAGv, H_node, float_cond, hmask, &
+                                    rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                    Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
   end select
 
   ! Shared teardown: Apply boundary conditions
@@ -2065,7 +2063,7 @@ subroutine ice_shelf_solve_inner_CG(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, A
   !!              !!
   !! MAIN CG LOOP !!
   !!              !!
-!!!!!!!!!!!!!!!!!!
+  !!!!!!!!!!!!!!!!!!
 
   do iter = 1,CS%cg_max_iterations
 
@@ -3510,7 +3508,7 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
 end subroutine CG_action
 
 subroutine CG_action_subgrid_basal(Phisub, H, U, V, bathyT, dens_ratio, Ucontr, Vcontr, &
-                                    dxCv_S, dxCv_N, dyCu_W, dyCu_E, IareaT)
+                                   dxCv_S, dxCv_N, dyCu_W, dyCu_E, IareaT)
   real, dimension(:,:,:,:,:,:), &
                         intent(in)    :: Phisub !< Quadrature structure weights at subgridscale
                                             !! locations for finite element calculations [nondim]
@@ -3573,12 +3571,12 @@ subroutine CG_action_subgrid_basal(Phisub, H, U, V, bathyT, dens_ratio, Ucontr, 
       !calculate quadrature point contributions for the sub-cell, to each node
       Ucontr_q(qx,qy) = jac_sub_wt * Phisub(qx,qy,i,j,m,n) * uloc_arr(qx,qy,i,j)
       Vcontr_q(qx,qy) = jac_sub_wt * Phisub(qx,qy,i,j,m,n) * vloc_arr(qx,qy,i,j)
-    enddo; enddo
+    enddo ; enddo
 
     !calculate sub-cell contribution to each node by summing up quadrature point contributions from the sub-cell
     Ucontr_sub(i,j,m,n) = (Ucontr_q(1,1) + Ucontr_q(2,2)) + (Ucontr_q(1,2)+Ucontr_q(2,1))
     Vcontr_sub(i,j,m,n) = (Vcontr_q(1,1) + Vcontr_q(2,2)) + (Vcontr_q(1,2)+Vcontr_q(2,1))
-  enddo; enddo ; enddo ; enddo
+  enddo ; enddo ; enddo ; enddo
 
   !sum up the sub-cell contributions to each node
   do n=1,2 ; do m=1,2
@@ -3853,8 +3851,8 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, basal_trac, 
 
 end subroutine matrix_diagonal
 
-subroutine CG_diagonal_subgrid_basal (Phisub, H_node, bathyT, dens_ratio, f_grnd, &
-                                       dxCv_S, dxCv_N, dyCu_W, dyCu_E, IareaT)
+subroutine CG_diagonal_subgrid_basal(Phisub, H_node, bathyT, dens_ratio, f_grnd, &
+                                     dxCv_S, dxCv_N, dyCu_W, dyCu_E, IareaT)
   real, dimension(:,:,:,:,:,:), &
                         intent(in) :: Phisub !< Quadrature structure weights at subgridscale
                                              !! locations for finite element calculations [nondim]
