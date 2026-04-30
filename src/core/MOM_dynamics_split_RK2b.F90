@@ -1193,7 +1193,7 @@ subroutine register_restarts_dyn_split_RK2b(HI, GV, US, param_file, CS, restart_
 
   integer :: isd, ied, jsd, jed, nz, IsdB, IedB, JsdB, JedB
   character(len=40) :: mdl = "MOM_dynamics_split_RK2" ! This module's name.
-  
+
   isd  = HI%isd  ; ied  = HI%ied  ; jsd  = HI%jsd  ; jed  = HI%jed ; nz = GV%ke
   IsdB = HI%IsdB ; IedB = HI%IedB ; JsdB = HI%JsdB ; JedB = HI%JedB
 
