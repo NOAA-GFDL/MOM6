@@ -21,7 +21,7 @@
 !! Sfn_unlim convention.
 module MOM_meso_sfn_ANN
 
-use MOM_ANN,              only : ANN_init, ANN_apply_vector_oi, ANN_end, ANN_CS
+use MOM_ANN,              only : ANN_init, ANN_apply_array_sio, ANN_end, ANN_CS
 use MOM_diag_mediator,    only : post_data, register_diag_field, diag_ctrl, time_type
 use MOM_error_handler,    only : MOM_error, FATAL
 use MOM_file_parser,      only : get_param, log_version, param_file_type
@@ -95,6 +95,7 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
 
   ! Local variables
   integer :: i, j, k, is, ie, js, je, nz, shift, stencil_points, ii, jj
+  integer :: nij, m
 
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1) :: drdx_u !< Zonal density gradient at u [R L-1 ~> kg m-4]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1) :: drdz_u !< Vertical density gradient at u [R Z-1 ~> kg m-4]
@@ -119,6 +120,8 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dudy !< du/dy at cell center [T-1 ~> s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dvdx !< dv/dx at cell center [T-1 ~> s-1]
 
+  real, dimension(SZIB_(G),SZJ_(G)) :: norm_y !< Scaling coefficient for ANN outputs [R L-1 T-1 ~> kg m-4 s-1]
+
   real, allocatable :: drdx_local(:,:) !< Local stencil of drdx [R L-1 ~> kg m-4]
   real, allocatable :: drdy_local(:,:) !< Local stencil of drdy [R L-1 ~> kg m-4]
   real, allocatable :: dudx_local(:,:) !< Local stencil of du/dx [T-1 ~> s-1]
@@ -130,8 +133,9 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   real, allocatable :: vort_local(:,:)  !< Local stencil of relative vorticity [T-1 ~> s-1]
   real :: vel_grad_mag !< Magnitude of velocity gradient tensor over stencil [T-1 ~> s-1]
   real :: rho_grad_mag !< Magnitude of density gradient over stencil [R L-1 ~> kg m-4]
-  real, allocatable :: x(:) !< Input vector to the ANN
-  real, allocatable :: y(:) !< Output vector from the ANN
+  real, allocatable :: x(:,:) !< Input vector to the ANN
+  real, allocatable :: y(:,:) !< Output vector from the ANN
+  real, allocatable :: yy(:)   !< Local output vector from the ANN
   real :: mag_grad !< Magnitude of 3-D density gradient [R Z-1 ~> kg m-4]
   logical :: use_stanley
   logical :: use_EOS
@@ -164,7 +168,10 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   shift = (CS%ann_window-1)/2
   stencil_points = CS%ann_window * CS%ann_window
 
-  allocate(x(stencil_points*5), y(2))
+  ! Number of horizontal grid points in ANN inference loop below
+  nij = (ie - is + 3) * (je - js + 3)
+  allocate(x(nij, stencil_points*5), y(nij, 2))
+  allocate(yy(2))
 
   slope_x(:,:,:) = 0.0
   slope_y(:,:,:) = 0.0
@@ -210,7 +217,9 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
 
   ! Compute the density fluxes at center points using the ANN.
   do k = 1, nz+1
+    m = 0
     do j = js-1, je+1 ; do i = is-1, ie+1
+      m = m + 1
       drdx_local(:,:) = drdx_c(i-shift:i+shift,j-shift:j+shift,k)
       drdy_local(:,:) = drdy_c(i-shift:i+shift,j-shift:j+shift,k)
       ! Take the velocity gradients below the interface k
@@ -238,6 +247,7 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
       enddo
       rho_grad_mag = sqrt(rho_grad_mag) + rho_grad_neglect
       vel_grad_mag = sqrt(vel_grad_mag) + vel_grad_neglect
+      norm_y(i,j) = rho_grad_mag * vel_grad_mag
 
       ! Normalize inputs
       drdx_local(:,:) = drdx_local(:,:) / rho_grad_mag
@@ -248,27 +258,32 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
       vort_local(:,:) = vort_local(:,:)/ vel_grad_mag
 
       ! Prepare input vector for ANN
-      x(1:stencil_points) = RESHAPE(drdx_local, (/stencil_points/))
-      x(stencil_points+1:2*stencil_points) = RESHAPE(drdy_local, (/stencil_points/))
-      x(2*stencil_points+1:3*stencil_points) = RESHAPE(sh_xx_local, (/stencil_points/))
-      x(3*stencil_points+1:4*stencil_points) = RESHAPE(sh_xy_local, (/stencil_points/))
-      x(4*stencil_points+1:5*stencil_points) = RESHAPE(vort_local, (/stencil_points/))
+      x(m,1:stencil_points) = RESHAPE(drdx_local, (/stencil_points/))
+      x(m,stencil_points+1:2*stencil_points) = RESHAPE(drdy_local, (/stencil_points/))
+      x(m,2*stencil_points+1:3*stencil_points) = RESHAPE(sh_xx_local, (/stencil_points/))
+      x(m,3*stencil_points+1:4*stencil_points) = RESHAPE(sh_xy_local, (/stencil_points/))
+      x(m,4*stencil_points+1:5*stencil_points) = RESHAPE(vort_local, (/stencil_points/))
 
-      ! Call the ANN
-      call ANN_apply_vector_oi(x,y, CS%ann_rho_flux)
+    enddo ; enddo
+    
+    ! Call the ANN
+    call ANN_apply_array_sio(nij, x,y, CS%ann_rho_flux)
 
+    m=0
+    do j = js-1, je+1 ; do i = is-1, ie+1
+      m=m+1
       ! Dimensionalize the output. The factors applied here must match the
       ! nondimensionalization used when the network was trained; this is
       ! an implicit contract with the training procedure.
-      y(:) = y(:) * rho_grad_mag * vel_grad_mag * G%areaT(i,j) * CS%ann_coeff
+      yy(:) = ((y(m,:) * norm_y(i,j)) * G%areaT(i,j)) * CS%ann_coeff
 
       ! Clamp ANN output to prevent extreme values
-      y(1) = max(-CS%flux_clamp, min(CS%flux_clamp, y(1)))
-      y(2) = max(-CS%flux_clamp, min(CS%flux_clamp, y(2)))
+      yy(1) = max(-CS%flux_clamp, min(CS%flux_clamp, yy(1)))
+      yy(2) = max(-CS%flux_clamp, min(CS%flux_clamp, yy(2)))
 
       ! The sign convention is that ANN outputs -u'rho', so we negate.
-      Fx_c(i,j,k) = -y(1)
-      Fy_c(i,j,k) = -y(2)
+      Fx_c(i,j,k) = -yy(1)
+      Fy_c(i,j,k) = -yy(2)
 
     enddo ; enddo
   enddo
@@ -342,6 +357,10 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
 
   if (CS%id_sfn_u > 0) call post_data(CS%id_sfn_u, sfn_u, CS%diag)
   if (CS%id_sfn_v > 0) call post_data(CS%id_sfn_v, sfn_v, CS%diag)
+
+  deallocate(drdx_local, drdy_local, dudx_local, dudy_local, dvdx_local, dvdy_local, &
+             sh_xx_local, sh_xy_local, vort_local)
+  deallocate(x, y, yy)
 end subroutine meso_sfn_ANN_compute
 
 !> Interpolate density gradients from u- and v-points to cell centers.
