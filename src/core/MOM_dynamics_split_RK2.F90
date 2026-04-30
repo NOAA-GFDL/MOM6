@@ -1947,14 +1947,15 @@ subroutine end_dyn_split_RK2(CS)
   DEALLOC_(CS%CAu_pred) ; DEALLOC_(CS%CAv_pred)
   DEALLOC_(CS%PFu)   ; DEALLOC_(CS%PFv)
 
+  if (associated(CS%taux_bot)) deallocate(CS%taux_bot)
+  if (associated(CS%tauy_bot)) deallocate(CS%tauy_bot)
+
   DEALLOC_(CS%uhbt) ; DEALLOC_(CS%vhbt)
   DEALLOC_(CS%u_accel_bt) ; DEALLOC_(CS%v_accel_bt)
   DEALLOC_(CS%visc_rem_u) ; DEALLOC_(CS%visc_rem_v)
 
   DEALLOC_(CS%eta) ; DEALLOC_(CS%eta_PF) ; DEALLOC_(CS%pbce)
   DEALLOC_(CS%h_av) ; DEALLOC_(CS%u_av) ; DEALLOC_(CS%v_av)
-
-  DEALLOC_(CS%taux_bot) ; DEALLOC_(CS%tauy_bot)
 
   call dealloc_BT_cont_type(CS%BT_cont)
   deallocate(CS%AD_pred)
