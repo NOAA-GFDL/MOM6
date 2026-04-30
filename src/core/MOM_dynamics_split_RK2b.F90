@@ -1192,7 +1192,8 @@ subroutine register_restarts_dyn_split_RK2b(HI, GV, US, param_file, CS, restart_
   character(len=48) :: thickness_units, flux_units
 
   integer :: isd, ied, jsd, jed, nz, IsdB, IedB, JsdB, JedB
-
+  character(len=40) :: mdl = "MOM_dynamics_split_RK2" ! This module's name.
+  
   isd  = HI%isd  ; ied  = HI%ied  ; jsd  = HI%jsd  ; jed  = HI%jed ; nz = GV%ke
   IsdB = HI%IsdB ; IedB = HI%IedB ; JsdB = HI%JsdB ; JedB = HI%JedB
 
@@ -1214,6 +1215,9 @@ subroutine register_restarts_dyn_split_RK2b(HI, GV, US, param_file, CS, restart_
   ALLOC_(CS%PFv(isd:ied,JsdB:JedB,nz))   ; CS%PFv(:,:,:)   = 0.0
   ALLOC_(CS%du_av_inst(IsdB:IedB,jsd:jed)) ; CS%du_av_inst(:,:) = 0.0
   ALLOC_(CS%dv_av_inst(isd:ied,JsdB:JedB)) ; CS%dv_av_inst(:,:) = 0.0
+
+  ALLOC_(CS%taux_bot(IsdB:IedB,jsd:jed)) ; CS%taux_bot(:,:) = 0.0
+  ALLOC_(CS%tauy_bot(isd:ied,JsdB:JedB)) ; CS%tauy_bot(:,:) = 0.0
 
   ALLOC_(CS%eta(isd:ied,jsd:jed))       ; CS%eta(:,:)    = 0.0
 
@@ -1237,6 +1241,18 @@ subroutine register_restarts_dyn_split_RK2b(HI, GV, US, param_file, CS, restart_
                              conversion=US%L_T_to_m_s)
 
   call register_barotropic_restarts(HI, GV, US, param_file, CS%barotropic_CSp, restart_CS)
+
+  call get_param(param_file, mdl, "SPLIT_BOTTOM_STRESS", CS%split_bottom_stress, &
+                 "If true, provide the bottom stress calculated by the "//&
+                 "vertical viscosity to the barotropic solver.", default=.false.,&
+                 do_not_log=.true.)
+
+  if (CS%split_bottom_stress) then
+    vd(1) = var_desc("taux_bot", "kg m-1 s-2", "Zonal bottom stress", 'u', '1')
+    vd(2) = var_desc("tauy_bot", "kg m-1 s-2", "Meridional bottom_stress", 'v', '1')
+    call register_restart_pair(CS%taux_bot, CS%tauy_bot, vd(1), vd(2), .false., restart_CS, &
+                             conversion=US%RLZ_T2_to_Pa)
+  endif
 
 end subroutine register_restarts_dyn_split_RK2b
 
@@ -1416,9 +1432,6 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
                  "continuity() and btstep() calls in the corrector step. Default of this flag "//&
                  "is set by VISC_REM_BUG", default=visc_rem_bug)
 
-
-  allocate(CS%taux_bot(IsdB:IedB,jsd:jed), source=0.0)
-  allocate(CS%tauy_bot(isd:ied,JsdB:JedB), source=0.0)
 
   ALLOC_(CS%uhbt(IsdB:IedB,jsd:jed))          ; CS%uhbt(:,:)         = 0.0
   ALLOC_(CS%vhbt(isd:ied,JsdB:JedB))          ; CS%vhbt(:,:)         = 0.0
@@ -1740,8 +1753,7 @@ subroutine end_dyn_split_RK2b(CS)
   DEALLOC_(CS%CAu_pred) ; DEALLOC_(CS%CAv_pred)
   DEALLOC_(CS%PFu)   ; DEALLOC_(CS%PFv)
 
-  if (associated(CS%taux_bot)) deallocate(CS%taux_bot)
-  if (associated(CS%tauy_bot)) deallocate(CS%tauy_bot)
+  DEALLOC_(CS%taux_bot) ; DEALLOC_(CS%tauy_bot)
   DEALLOC_(CS%uhbt) ; DEALLOC_(CS%vhbt)
   DEALLOC_(CS%du_av_inst) ; DEALLOC_(CS%dv_av_inst)
   DEALLOC_(CS%u_accel_bt) ; DEALLOC_(CS%v_accel_bt)
