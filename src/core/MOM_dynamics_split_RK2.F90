@@ -1265,8 +1265,8 @@ subroutine register_restarts_dyn_split_RK2(HI, GV, US, param_file, CS, restart_C
   ALLOC_(CS%v_av(isd:ied,JsdB:JedB,nz)) ; CS%v_av(:,:,:) = 0.0
   ALLOC_(CS%h_av(isd:ied,jsd:jed,nz))   ; CS%h_av(:,:,:) = GV%Angstrom_H
 
-  ALLOC_(CS%taux_bot(IsdB:IedB,jsd:jed)) ; CS%taux_bot(:,:) = 0.0
-  ALLOC_(CS%tauy_bot(isd:ied,JsdB:JedB)) ; CS%tauy_bot(:,:) = 0.0
+  allocate(CS%taux_bot(IsdB:IedB,jsd:jed), source = 0.0)
+  allocate(CS%tauy_bot(isd:ied,JsdB:JedB), source = 0.0)
 
   thickness_units = get_thickness_units(GV)
   flux_units = get_flux_units(GV)
@@ -1320,7 +1320,7 @@ subroutine register_restarts_dyn_split_RK2(HI, GV, US, param_file, CS, restart_C
 
   if (CS%split_bottom_stress) then
     vd(1) = var_desc("taux_bot", "kg m-1 s-2", "Zonal bottom stress", 'u', '1')
-    vd(2) = var_desc("tauy_bot", "kg m-1 s-2", "Meridional bottom_stress", 'v', '1')
+    vd(2) = var_desc("tauy_bot", "kg m-1 s-2", "Meridional bottom stress", 'v', '1')
     call register_restart_pair(CS%taux_bot, CS%tauy_bot, vd(1), vd(2), .false., restart_CS, &
                              conversion=US%RLZ_T2_to_Pa)
   endif
