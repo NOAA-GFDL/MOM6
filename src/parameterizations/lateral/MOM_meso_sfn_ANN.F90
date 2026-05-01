@@ -49,7 +49,7 @@ type, public :: MESO_SFN_ANN_CS; private
 
   type(ANN_CS) :: ann_rho_flux !< ANN instance for off-diagonal and diagonal stress
   character(len=200) :: ann_file_rho_flux !< Path to netcdf file with ANN
-  real :: min_dist_from_boundary  !< Minimum distance from bottom for valid interface [Z]
+  real :: min_dist_from_boundary  !< Minimum distance from bottom for valid interface [Z ~> m]
   real :: mag_grad_floor  !< Floor for density gradient magnitude [R Z-1 ~> kg m-4]
   real :: flux_clamp  !< Maximum magnitude of ANN output density flux [R L T-1 ~> kg m-2 s-1]
   real :: Upsilon_clamp !< Maximum magnitude of the velocity-scale streamfunction
@@ -82,8 +82,8 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   type(verticalGrid_type),                    intent(in)    :: GV     !< Vertical grid structure
   type(unit_scale_type),                      intent(in)    :: US     !< A dimensional unit scaling type
   type(thermo_var_ptrs),                      intent(in)    :: tv     !< Thermodynamics structure
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)    :: h      !< Layer thickness [H ~> m or kg m-2]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1),  intent(in)    :: e      !< Layer thickness [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)    :: h      !< Layer thickness [Z ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1),  intent(in)    :: e      !< Layer thickness [Z ~> m or kg m-2]
   type(MESO_SFN_ANN_CS),                intent(inout) :: CS !< Control structure for thickness_flux_ann
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: sfn_u  !< Mesoscale volume streamfunction
                                                                      !! on u-points [Z L2 T-1 ~> m3 s-1]
@@ -120,7 +120,7 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dudy !< du/dy at cell center [T-1 ~> s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dvdx !< dv/dx at cell center [T-1 ~> s-1]
 
-  real, dimension(SZIB_(G),SZJ_(G)) :: norm_y !< Scaling coefficient for ANN outputs [R L-1 T-1 ~> kg m-4 s-1]
+  real, dimension(SZI_(G),SZJ_(G)) :: norm_y !< Scaling coefficient for ANN outputs [R L-1 T-1 ~> kg m-4 s-1]
 
   real, allocatable :: drdx_local(:,:) !< Local stencil of drdx [R L-1 ~> kg m-4]
   real, allocatable :: drdy_local(:,:) !< Local stencil of drdy [R L-1 ~> kg m-4]
@@ -139,8 +139,8 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   real :: mag_grad !< Magnitude of 3-D density gradient [R Z-1 ~> kg m-4]
   logical :: use_stanley
   logical :: use_EOS
-  real :: dist_from_bot_a, dist_from_bot_b  ! Distance from interface to bottom [Z]
-  real :: dist_from_sfc_a, dist_from_sfc_b  ! Distance from interface to surface [Z]
+  real :: dist_from_bot_a, dist_from_bot_b  ! Distance from interface to bottom [Z ~> m]
+  real :: dist_from_sfc_a, dist_from_sfc_b  ! Distance from interface to surface [Z ~> m]
   real :: Upsilon_u  ! Velocity-scale streamfunction at u-point (Ferrari et al. 2010) [L Z T-1 ~> m2 s-1]
   real :: Upsilon_v  ! Velocity-scale streamfunction at v-point (Ferrari et al. 2010) [L Z T-1 ~> m2 s-1]
   real :: rho_grad_neglect  ! A density gradient magnitude so small it is lost in
@@ -155,8 +155,8 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   use_EOS = associated(tv%eqn_of_state)
   is  = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec ; nz = GV%ke
 
-  rho_grad_neglect = 1.0e-30 * US%kg_m3_to_R * US%m_to_L
-  vel_grad_neglect = 1.0e-30 * US%s_to_T
+  rho_grad_neglect = 1.0e-30 * US%kg_m3_to_R * US%L_to_m
+  vel_grad_neglect = 1.0e-30 * US%T_to_s
 
   ! Allocate the local stencil variables
   allocate(drdx_local(CS%ann_window, CS%ann_window), drdy_local(CS%ann_window, CS%ann_window), &
@@ -216,7 +216,7 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   if (CS%id_drdy_c > 0) call post_data(CS%id_drdy_c, drdy_c, CS%diag)
 
   ! Compute the density fluxes at center points using the ANN.
-  do k = 1, nz+1
+  do k = 2, nz
     m = 0
     do j = js-1, je+1 ; do i = is-1, ie+1
       m = m + 1
@@ -265,7 +265,7 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
       x(m,4*stencil_points+1:5*stencil_points) = RESHAPE(vort_local, (/stencil_points/))
 
     enddo ; enddo
-    
+
     ! Call the ANN
     call ANN_apply_array_sio(nij, x,y, CS%ann_rho_flux)
 
@@ -396,10 +396,10 @@ end subroutine center_grad_rho
 subroutine center2uv(var1_c, var2_c, var1_u, var2_v, G, GV)
   type(ocean_grid_type),                      intent(in)    :: G      !< Ocean grid structure
   type(verticalGrid_type),                    intent(in)    :: GV     !< Vertical grid structure
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1),  intent(in)    :: var1_c !< Variable at center points
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1),  intent(in)    :: var2_c !< Variable at center points
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(inout)   :: var1_u !< Variable at u points
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(inout)   :: var2_v !< Variable at v points
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1),  intent(in)    :: var1_c !< Variable at center points [arbitrary]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1),  intent(in)    :: var2_c !< Variable at center points [arbitrary]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(inout)   :: var1_u !< Variable at u points [arbitrary]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(inout)   :: var2_v !< Variable at v points [arbitrary]
 
   integer :: i, j, k, is, ie, js, je, nz
 
@@ -471,12 +471,12 @@ subroutine calc_layered_density_gradients(G, GV, US, h, e, &
   type(ocean_grid_type),                       intent(in)  :: G
   type(verticalGrid_type),                     intent(in)  :: GV
   type(unit_scale_type),                       intent(in)  :: US
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),   intent(in)  :: h   ! Layer thickness [H]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(in)  :: e   ! Interface heights [Z]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: drdx_u ! [R L-1]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(out) :: drdy_v ! [R L-1]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: drdz_u ! [R Z-1]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(out) :: drdz_v ! [R Z-1]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),   intent(in)  :: h   ! Layer thickness [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(in)  :: e   ! Interface heights [Z ~> m]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: drdx_u ! [R L-1 ~> kg m-4]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(out) :: drdy_v ! [R L-1 ~> kg m-4]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: drdz_u ! [R Z-1 ~> kg m-4]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(out) :: drdz_v ! [R Z-1 ~> kg m-4]
   integer,                                      intent(in)  :: halo
   real,                                         intent(in)  :: min_dist_from_boundary  ! Threshold for boundaries [Z]
 
@@ -620,11 +620,11 @@ subroutine meso_sfn_ANN_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "MESO_SFN_MAG_GRAD_FLOOR", CS%mag_grad_floor, &
              "Minimum density gradient magnitude below which the streamfunction "//&
              "is set to zero to avoid division by near-zero values.", &
-             units="kg m-4", default=1.0e-10, scale=US%kg_m3_to_R*US%m_to_Z)
+             units="kg m-4", default=1.0e-10, scale=US%kg_m3_to_R*US%Z_to_m)
   call get_param(param_file, mdl, "MESO_SFN_FLUX_CLAMP", CS%flux_clamp, &
              "Maximum magnitude of ANN output density flux before conversion "//&
              "to streamfunction.", &
-             units="kg m-2 s-1", default=1.0e2)
+             units="kg m-2 s-1", default=1.0e2, scale=US%kg_m3_to_R*US%m_to_L*US%T_to_s)
   call get_param(param_file, mdl, "MESO_UPSILON_CLAMP", CS%Upsilon_clamp, &
              "Maximum magnitude of the velocity-scale mesoscale streamfunction "//&
              "(Upsilon in Ferrari et al. 2010).", &
@@ -633,8 +633,8 @@ subroutine meso_sfn_ANN_init(Time, G, GV, US, param_file, diag, CS)
                       "Number of horizontal grid points to use in the thickness flux ANN window", default=1)
   ! The stencil reads drdx_c(i-shift:i+shift,...) with shift=(ann_window-1)/2.
   ! halo=3 is requested in meso_sfn_ANN_compute, so shift must be <= 3.
-  if (CS%ann_window < 1 .or. CS%ann_window > 7 .or. mod(CS%ann_window, 2) == 0) &
-    call MOM_error(FATAL, "meso_sfn_ANN_init: MESO_SFN_ANN_WINDOW must be an odd integer in [1,7].")
+  if (CS%ann_window < 1 .or. CS%ann_window > 3 .or. mod(CS%ann_window, 2) == 0) &
+    call MOM_error(FATAL, "meso_sfn_ANN_init: MESO_SFN_ANN_WINDOW must be an odd integer in [1,3].")
   call get_param(param_file, mdl, "MESO_SFN_ANN_FILE", CS%ann_file_rho_flux, &
                "ANN parameters for prediction of density fluxes (netcdf)", &
                default="INPUT/rho_flux.nc")
