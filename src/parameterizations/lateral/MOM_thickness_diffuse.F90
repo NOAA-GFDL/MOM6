@@ -2384,6 +2384,8 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
                    "The minimum total depth over which to average the diffusivity used for MEKE.  "//&
                    "When the total depth is less than this, the diffusivity is scaled away.", &
                    units="m", default=1.0, scale=GV%m_to_H, do_not_log=.not.CS%Use_KH_in_MEKE)
+  else
+    CS%Use_KH_in_MEKE = .false.
   endif
 
   call get_param(param_file, mdl, "USE_GME", CS%use_GME_thickness_diffuse, &
