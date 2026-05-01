@@ -27,7 +27,7 @@ use MOM_EOS,               only : prac_saln_to_abs_saln, abs_saln_to_prac_saln
 use MOM_error_handler,     only : MOM_error, FATAL, WARNING
 use MOM_file_parser,       only : get_param, log_version, param_file_type
 use MOM_grid,              only : ocean_grid_type
-use MOM_interface_heights, only : find_eta, find_dz_for_eta, find_col_mass
+use MOM_interface_heights, only : find_eta, find_bsl, find_dz_for_eta, find_col_mass
 use MOM_spatial_means,     only : global_area_mean, global_layer_mean
 use MOM_spatial_means,     only : global_volume_mean, global_area_integral
 use MOM_tracer_registry,   only : tracer_registry_type, post_tracer_transport_diagnostics
@@ -126,6 +126,7 @@ type, public :: diagnostics_CS ; private
   integer :: id_h_pre_sync     = -1
   integer :: id_tosq           = -1, id_sosq           = -1
   integer :: id_t20d           = -1, id_t17d           = -1
+  integer :: id_bsl            = -1
 
   !>@}
   type(wave_speed_CS) :: wave_speed  !< Wave speed control struct
@@ -920,6 +921,7 @@ subroutine calculate_vertical_integrals(h, tv, p_surf, G, GV, US, CS)
     z_top, &  ! Height of the top of a layer or the ocean [Z ~> m].
     z_bot, &  ! Height of the bottom of a layer (for id_mass) or the
               ! (positive) depth of the ocean (for id_col_ht) [Z ~> m].
+    bsl, &    ! Baroclinic sea level [Z ~> m]
     mass, &   ! integrated mass of the water column [R Z ~> kg m-2].  For
               ! non-Boussinesq models this is rho*dz. For Boussinesq
               ! models, this is either the integral of in-situ density
@@ -983,6 +985,12 @@ subroutine calculate_vertical_integrals(h, tv, p_surf, G, GV, US, CS)
     endif
     if (CS%id_col_mass > 0) call post_data(CS%id_col_mass, mass, CS%diag)
   endif
+
+  if (CS%id_bsl > 0) then
+    call find_bsl(h, tv, G, GV, US, bsl, dZref=G%Z_ref)
+    call post_data(CS%id_bsl, bsl, CS%diag)
+  endif
+
   if (CS%id_t20d > 0 .or. CS%id_t17d > 0) then
     call PPM%init(GV%ke, h_neglect=0.)
     do j=js,je ; do i=is,ie
@@ -2294,6 +2302,9 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
   CS%id_pbo = register_diag_field('ocean_model', 'pbo', diag%axesT1, Time, &
       long_name='Sea Water Pressure at Sea Floor', standard_name='sea_water_pressure_at_sea_floor', &
       units='Pa', conversion=US%RL2_T2_to_Pa)
+  CS%id_bsl = register_diag_field('ocean_model', 'bsl', diag%axesT1, Time, &
+      long_name='Baroclinic Sea Level', standard_name='baroclinic_sea_level', &
+      units='m', conversion=US%Z_to_m)
 
   ! Register time derivatives and allocate memory for diagnostics that need
   ! access from across several modules.
