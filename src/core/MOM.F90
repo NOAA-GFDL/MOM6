@@ -102,7 +102,7 @@ use MOM_grid,                  only : set_first_direction
 use MOM_harmonic_analysis,     only : HA_accum, harmonic_analysis_CS
 use MOM_hor_index,             only : hor_index_type, hor_index_init
 use MOM_hor_index,             only : rotate_hor_index
-use MOM_interface_heights,     only : find_eta, calc_derived_thermo, thickness_to_dz
+use MOM_interface_heights,     only : find_eta, find_bsl, calc_derived_thermo, thickness_to_dz
 use MOM_interface_filter,      only : interface_filter, interface_filter_init, interface_filter_end
 use MOM_interface_filter,      only : interface_filter_CS
 use MOM_internal_tides,        only : int_tide_CS
@@ -428,6 +428,8 @@ type, public :: MOM_control_struct ; private
     !< Pointer to the control structure used for an alternate version of the mode-split RK2 dynamics
   type(harmonic_analysis_CS),    pointer :: HA_CSp => NULL()
     !< Pointer to the control structure for harmonic analysis
+  logical                                :: HA_bsl
+    !< If true, perform harmonic analysis of baroclinic sea level
   type(thickness_diffuse_CS) :: thickness_diffuse_CSp
     !< Pointer to the control structure used for the isopycnal height diffusive transport.
     !! This is also common referred to as Gent-McWilliams diffusion
@@ -616,6 +618,8 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
                 ! the time-evolving surface density in non-Boussinesq mode [Z T-1 ~> m s-1]
   real, dimension(SZI_(CS%G),SZJ_(CS%G)) :: &
     ssh         ! sea surface height, which may be based on eta_av [Z ~> m]
+  real, dimension(SZI_(CS%G),SZJ_(CS%G)) :: &
+    bsl         ! Baroclinic sea level [Z ~> m]
   real, dimension(SZI_(CS%G),SZJ_(CS%G),SZK_(CS%GV)) :: &
     dz          ! Vertical distance across layers [Z ~> m]
 
@@ -1078,6 +1082,10 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
       call post_tracer_integral_diagnostics(G, GV, US, CS%Tracer_reg, h, CS%tv, CS%diag)
 
       call diag_copy_diag_to_storage(CS%diag_pre_sync, h, CS%diag)
+      if (associated(CS%HA_CSp) .and. CS%HA_bsl) then
+        call find_bsl(h, CS%tv, G, GV, US, bsl, dZref=G%Z_ref)
+        call HA_accum('bsl', bsl, Time_local, G, CS%HA_CSp)
+      endif
       if (showCallTree) call callTree_waypoint("finished calculate_diagnostic_fields (step_MOM)")
       call disable_averaging(CS%diag)
       CS%t_dyn_rel_diag = 0.0
@@ -3714,6 +3722,14 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
       CS%dt_obc_seg_time = Time_init + CS%dt_obc_seg_interval * &
                            ((Time - Time_init) / CS%dt_obc_seg_interval + 1)
     endif
+  endif
+
+  if (associated(CS%HA_CSp)) then
+    call get_param(param_file, "MOM", "HA_BSL",CS%HA_bsl, &
+                   "If true, perform harmonic analysis of baroclinic sea level.", &
+                   default=.false., do_not_log=.true.)
+  else
+    CS%HA_bsl = .false.
   endif
 
   call callTree_waypoint("dynamics initialized (initialize_MOM)")
