@@ -705,9 +705,9 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
       enddo
 
       ! diagnostics
-      if (associated(Tr(m)%ad_x)) then ; do I=is-1,ie ; if (do_i(i,j) .or. do_i(i+1,j)) then
+      if (associated(Tr(m)%ad_x)) then ; do I=is-1,ie
         Tr(m)%ad_x(I,j,k) = Tr(m)%ad_x(I,j,k) + flux_x(I,j,m)*Idt
-      endif ; enddo ; endif
+      enddo ; endif
 
       ! diagnose convergence of flux_x (do not use the Ihnew(i) part of the logic).
       ! division by areaT to get into W/m2 for heat and kg/(s*m2) for salt.
@@ -735,9 +735,9 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
   !$OMP ordered
   do m=1,ntr ; if (associated(Tr(m)%ad2d_x)) then
     do j=js,je ; if (domore_u_initial(j,k)) then
-      do I=is-1,ie ; if (do_i(i,j) .or. do_i(i+1,j)) then
+      do I=is-1,ie
         Tr(m)%ad2d_x(I,j) = Tr(m)%ad2d_x(I,j) + flux_x(I,j,m)*Idt
-      endif ; enddo
+      enddo
     endif ; enddo
   endif ; enddo ! End of m-loop.
   !$OMP end ordered
@@ -1134,17 +1134,17 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
   !$OMP ordered
   do m=1,ntr ; if (associated(Tr(m)%ad_y)) then
     do J=js-1,je ; if (domore_v_initial(J)) then
-      do i=is,ie ; if (do_i(i,j) .or. do_i(i,j+1)) then
+      do i=is,ie
         Tr(m)%ad_y(i,J,k) = Tr(m)%ad_y(i,J,k) + flux_y(i,m,J)*Idt
-      endif ; enddo
+      enddo
     endif ; enddo
   endif ; enddo ! End of m-loop.
 
   do m=1,ntr ; if (associated(Tr(m)%ad2d_y)) then
     do J=js-1,je ; if (domore_v_initial(J)) then
-      do i=is,ie ; if (do_i(i,j) .or. do_i(i,j+1)) then
+      do i=is,ie
         Tr(m)%ad2d_y(i,J) = Tr(m)%ad2d_y(i,J) + flux_y(i,m,J)*Idt
-      endif ; enddo
+      enddo
     endif ; enddo
   endif ; enddo ! End of m-loop.
   !$OMP end ordered
