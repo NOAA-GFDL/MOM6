@@ -628,7 +628,7 @@ subroutine meso_sfn_ANN_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "MESO_UPSILON_CLAMP", CS%Upsilon_clamp, &
              "Maximum magnitude of the velocity-scale mesoscale streamfunction "//&
              "(Upsilon in Ferrari et al. 2010).", &
-             units="m2 s-1", default=1.0e4, scale=US%m_to_L*US%m_to_Z*US%T_to_s)
+             units="m2 s-1", default=15., scale=US%m_to_L*US%m_to_Z*US%T_to_s)
   call get_param(param_file, mdl, "MESO_SFN_ANN_WINDOW", CS%ann_window, &
                       "Number of horizontal grid points to use in the thickness flux ANN window", default=1)
   ! The stencil reads drdx_c(i-shift:i+shift,...) with shift=(ann_window-1)/2.
