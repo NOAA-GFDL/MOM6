@@ -32,7 +32,7 @@ program Shelf_main
   use MOM_domains,         only : MOM_infra_init, MOM_infra_end
   use MOM_domains,         only : MOM_domains_init, clone_MOM_domain, pass_var
   use MOM_dyn_horgrid,     only : dyn_horgrid_type, create_dyn_horgrid, destroy_dyn_horgrid
-  use MOM_error_handler,   only : MOM_error, MOM_mesg, WARNING, FATAL, is_root_pe
+  use MOM_error_handler,   only : MOM_set_verbosity, MOM_error, MOM_mesg, WARNING, FATAL, is_root_pe
   use MOM_error_handler,   only : callTree_enter, callTree_leave, callTree_waypoint
   use MOM_file_parser,     only : read_param, get_param, log_param, log_version, param_file_type
   use MOM_file_parser,     only : close_param_file
@@ -149,7 +149,7 @@ program Shelf_main
   character(len=9)  :: month
   character(len=16) :: calendar = 'noleap'
   integer :: calendar_type=-1
-
+  integer :: verbosity
   integer :: unit, io_status, ierr
   logical :: symmetric
 
@@ -195,6 +195,9 @@ program Shelf_main
   ! Get the names of the I/O directories and initialization file.
   ! Also calls the subroutine that opens run-time parameter files.
   call Get_MOM_Input(param_file, dirs)
+
+  call get_param(param_file, mod_name, "VERBOSITY", verbosity, default=5)
+  call MOM_set_verbosity(verbosity)
 
   ! Read ocean_solo restart, which can override settings from the namelist.
   if (file_exists(trim(dirs%restart_input_dir)//'ice_solo.res')) then

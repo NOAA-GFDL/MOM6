@@ -14,6 +14,7 @@ use MOM_IS_diag_mediator, only : register_diag_field=>register_MOM_IS_diag_field
 use MOM_IS_diag_mediator, only : diag_ctrl, time_type, enable_averages, disable_averaging
 use MOM_domains, only : MOM_domains_init, clone_MOM_domain
 use MOM_domains, only : pass_var, pass_vector, TO_ALL, CGRID_NE, BGRID_NE, AGRID, CORNER, CENTER
+use MOM_domains, only : create_group_pass, do_group_pass, group_pass_type
 use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : read_param, get_param, log_param, log_version, param_file_type
 use MOM_grid, only : MOM_grid_init, ocean_grid_type
@@ -130,6 +131,7 @@ type, public :: ice_shelf_dyn_CS ; private
                                !! [(T L-1)^CF_PostPeak]; 0 for Weertman.
                                !! Updated each outer iteration by calc_shelf_basal_prefactors.
   real :: alpha_coulomb = 1.0  !< Coulomb prefactor (CF_PostPeak-1)^(CF_PostPeak-1)/CF_PostPeak^CF_PostPeak [nondim]
+  real :: coulomb_pp_n         !< CF_PostPeak/n_basal_fric [nondim]
   real, pointer, dimension(:,:) :: OD_rt => NULL()         !< A running total for calculating OD_av [Z ~> m].
   real, pointer, dimension(:,:) :: ground_frac_rt => NULL() !< A running total for calculating ground_frac.
   real, pointer, dimension(:,:) :: OD_av => NULL()         !< The time average open ocean depth [Z ~> m].
@@ -209,24 +211,42 @@ type, public :: ice_shelf_dyn_CS ; private
                             !! circulation or thermodynamics.  It is used to estimate the
                             !! gravitational driving force at the shelf front (until we think of
                             !! a better way to do it, but any difference will be negligible).
+  real :: rhoi_rhow         !< The density of ice divided by a typical water density [nondim]
+  real :: rhow_rhoi         !< A typical water density divided by the density of ice [nondim]
   real :: thresh_float_col_depth !< The water column depth over which the shelf if considered to be floating
   logical :: moving_shelf_front  !< Specify whether to advance shelf front (and calve).
   logical :: calve_to_mask       !< If true, calve off the ice shelf when it passes the edge of a mask.
   real :: min_thickness_simple_calve !< min. ice shelf thickness criteria for calving [Z ~> m].
   real :: T_shelf_missing   !< An ice shelf temperature to use where there is no ice shelf [C ~> degC]
-  real :: cg_tolerance !< The tolerance in the CG solver, relative to initial residual, that
+  real :: cg_tolerance !< For Picard iterations, the tolerance in the CG solver, relative to initial residual, that
                        !! determines when to stop the conjugate gradient iterations [nondim].
-  real :: cg_tol_newton !< Working CG tolerance for the current inner solve [nondim].
+  real :: cg_newton_tolerance !< For inexact Newton iterations, the initial tolerance in the CG solver, relative to
+                              !!  initial residual, that determines when to stop the CG iterations [nondim].
+  real :: cg_tol_current !< Working CG tolerance for the current inner solve [nondim].
   real :: nonlinear_tolerance !< The fractional nonlinear tolerance, relative to the initial error,
                               !! that sets when to stop the iterative velocity solver [nondim]
   real :: newton_after_tolerance !< The fractional nonlinear tolerance, relative to the initial error, at
-                                 !! which to switch from Picard to Newton iterations in the velocity solver [nondim]
+                                 !! which to switch from Picard to Newton iterations in the velocity solver
+                                 !! If set to <= 0, no Picard [nondim]
+  type(group_pass_type) :: pass_visc_and_newton !< Handle for Newton-and-viscosity-related group passes
+  type(group_pass_type) :: pass_newton !< Handle for Newton-related group passes
   logical :: newton_adapt_cg_tol !< Use an adaptive CG tolerance during Newton iterations
+  real :: ew_gamma !< Gamma in Eisenstat-Walker adaptive Newton tolerance [nondim].
+  real :: ew_alpha !< Alpha in Eisenstat-Walker adaptive Newton tolerance [nondim].
+  integer :: ew_safety !< Safeguard Eisenstat-Walker using:
+                    !!(0) no safeguard, (1) EW choice 2 threshold or (2) PETSc option 3 (Chacon 2008)
+  real :: ew_1_thres !< Threshold for Eisenstat-Walker version 1 [nondim]
+  real :: ew_eta_max !< Maximum allowed Eisenstat-Walker eta [nondim]
   integer :: cg_max_iterations !< The maximum number of iterations that can be used in the CG solver
-  integer :: nonlin_solve_err_mode  !< 1: exit vel solve based on nonlin residual
+  integer :: nonlin_solve_err_mode  !< 1: exit based on nonlin residual | F | / | F_0 | where | | is infty-norm
                     !! 2: exit based on "fixed point" metric (|u - u_last| / |u| < tol) where | | is infty-norm
-                    !! 3: exit based on change of norm
-
+                    !! 3: exit based on change of solution norm 2*abs(|u|-|u_last|)/(|u|+|u_last|) where | | is L2-norm
+                    !! 4: exit based on nonlin residual  | F | / | F_0 | where | | is L2-norm
+                    !! 5: exit based on relative residual | F | / | tau | where | | is L2-norm
+  logical :: ssa_add_rel_resid !< Nonlinear error in velocity solve will also depend on the
+                                   !! L2 residual norm relative to RHS norm
+  real :: rr_nonlinear_tolerance !< If ssa_add_rel_resid, the additional nonlin tolerance in the iterative
+                    !! velocity solve used for the relative residual [nondim]
   ! for write_ice_shelf_energy
   type(time_type) :: energysavedays            !< The interval between writing the energies
                                                !! and other integral quantities of the run.
@@ -414,6 +434,16 @@ subroutine register_ice_shelf_dyn_restarts(G, US, param_file, CS, restart_CS)
     allocate(CS%v_face_mask_bdry(IsdB:iedB,JsdB:JedB), source=-2.0)
     allocate(CS%h_bdry_val(isd:ied,jsd:jed), source=0.0)
 
+    ! Create group pass handles
+    call create_group_pass(CS%pass_visc_and_newton, CS%ice_visc, G%domain)
+    call create_group_pass(CS%pass_visc_and_newton, CS%newton_str_sh, G%domain)
+    call create_group_pass(CS%pass_visc_and_newton, CS%newton_visc_factor, G%domain)
+    call create_group_pass(CS%pass_visc_and_newton, CS%newton_str_ux, CS%newton_str_vy, G%domain, TO_ALL, AGRID)
+
+    call create_group_pass(CS%pass_newton, CS%newton_str_sh, G%domain)
+    call create_group_pass(CS%pass_newton, CS%newton_visc_factor, G%domain)
+    call create_group_pass(CS%pass_newton, CS%newton_str_ux, CS%newton_str_vy, G%domain, TO_ALL, AGRID)
+
    ! additional restarts for ice shelf state
     call register_restart_field(CS%u_shelf, "u_shelf", .false., restart_CS, &
                                 "ice sheet/shelf u-velocity", &
@@ -589,22 +619,53 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
                  units="none", default=0.5, fail_if_missing=.false.)
     ! Pre-compute Coulomb prefactor alpha = (q-1)^(q-1)/q^q for q=CF_PostPeak [nondim].
     ! Default is 1.0; only update when Coulomb is active and q /= 1.
-    if (CS%CoulombFriction .and. CS%CF_PostPeak /= 1.0) &
-      CS%alpha_coulomb = (CS%CF_PostPeak-1.0)**(CS%CF_PostPeak-1.0) / CS%CF_PostPeak**CS%CF_PostPeak
+    ! Also store CS%coulomb_pp_n = CF_PostPeak/n_basal_fric [nondim]
+    if (CS%CoulombFriction) then
+      if (CS%CF_PostPeak /= 1.0) then
+        CS%alpha_coulomb = (CS%CF_PostPeak-1.0)**(CS%CF_PostPeak-1.0) / CS%CF_PostPeak**CS%CF_PostPeak
+      endif
+      CS%coulomb_pp_n = CS%CF_PostPeak/CS%n_basal_fric
+    endif
 
     call get_param(param_file, mdl, "DENSITY_ICE", CS%density_ice, &
                  "A typical density of ice.", units="kg m-3", default=917.0, scale=US%kg_m3_to_R)
+
+    ! Precompute commonly-used density ratios
+    CS%rhoi_rhow=CS%density_ice / CS%density_ocean_avg
+    CS%rhow_rhoi=CS%density_ocean_avg / CS%density_ice
+
     call get_param(param_file, mdl, "CONJUGATE_GRADIENT_TOLERANCE", CS%cg_tolerance, &
-                "tolerance in CG solver, relative to initial residual", units="nondim", default=1.e-6)
-    CS%cg_tol_newton = CS%cg_tolerance  ! Will be tightened adaptively during Newton iterations
+                 "For Picard iterations, the tolerance in CG solver, relative to initial residual", &
+                 units="nondim", default=1.e-6)
+    call get_param(param_file, mdl, "NEWTON_CONJUGATE_GRADIENT_TOLERANCE", CS%cg_newton_tolerance, &
+                 "For inexact Newton iterations, the initial tolerance in CG solver, relative to initial residual", &
+                 units="nondim", default=CS%cg_tolerance)
+    CS%cg_tol_current = CS%cg_tolerance  ! Can be tightened adaptively during inexact Newton iterations
     call get_param(param_file, mdl, "ICE_NONLINEAR_TOLERANCE", CS%nonlinear_tolerance, &
                 "nonlin tolerance in iterative velocity solve", units="nondim", default=1.e-6)
     call get_param(param_file, mdl, "NEWTON_AFTER_TOLERANCE", CS%newton_after_tolerance, &
                 "Switch from Picard to Newton iterations in the nonlinear ice velocity solve when "//&
-                "the fractional nonlinear residual falls below this tolerance.",&
+                "the fractional nonlinear residual falls below this tolerance. If <=0, no Picard.",&
                 units="none", default=CS%nonlinear_tolerance)
     call get_param(param_file, mdl, "NEWTON_ADAPT_CG_TOL", CS%newton_adapt_cg_tol, &
                 "Use an adaptive CG tolerance during Newton iterations.", default=.true.)
+    call get_param(param_file, mdl, "NEWTON_EW_GAMMA", CS%ew_gamma, &
+                "Gamma in Eisenstat-Walker adaptive Newton tolerance", units="nondim", default=0.9, &
+                do_not_log=(.not. CS%newton_adapt_cg_tol))
+    call get_param(param_file, mdl, "NEWTON_EW_ALPHA", CS%ew_alpha, &
+                "Alpha in Eisenstat-Walker adaptive Newton tolerance", units="nondim", default=2.0,  &
+                do_not_log=(.not. CS%newton_adapt_cg_tol))
+    call get_param(param_file, mdl, "NEWTON_EW_SAFETY", CS%ew_safety, &
+                "Safeguard Eisenstat-Walker using (0) no safeguard, (1) EW choice 2 threshold "//&
+                "or (2) PETSc option 3 (Chacon 2008)", default=2, do_not_log=(.not. CS%newton_adapt_cg_tol))
+    call get_param(param_file, mdl, "NEWTON_EW_1_THRESHOLD", CS%ew_1_thres, &
+                "Eisenstat-Walker version 1 threshold", &
+                units="nondim", default=0.1, do_not_log=(.not. CS%newton_adapt_cg_tol))
+    call get_param(param_file, mdl, "NEWTON_EW_ETA_MAX", CS%ew_eta_max, &
+                "Maximum allowed Eisenstat-Walker eta (between 0 and 1)", &
+                units="nondim", default=0.9, do_not_log=(.not. CS%newton_adapt_cg_tol))
+    if (CS%ew_eta_max<=0 .or. CS%ew_eta_max>= 1) &
+      call MOM_error(FATAL, "NEWTON_EW_ETA_MAX must be between 0 and 1.")
     call get_param(param_file, mdl, "ICE_SHELF_INNER_SOLVER", inner_solver_str, &
                 "Choice of inner linear solver for the ice-shelf SSA velocity system. "//&
                 "Valid choices are CG (default), CR, and MINRES.", &
@@ -630,8 +691,19 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
                 units="m", default=1.e-3, scale=US%m_to_Z)
     call get_param(param_file, mdl, "NONLIN_SOLVE_ERR_MODE", CS%nonlin_solve_err_mode, &
                 "Choose whether nonlin error in vel solve is based on nonlinear "//&
-                "residual (1), relative change since last iteration (2), or change in norm (3)", default=3)
-
+                "Linf norm residual (1), Linf norm relative change since last iteration (2), "//&
+                "change in solution L2 norm (3), L2 norm residual (4), L2 backward norm (5)", default=3)
+    if (CS%nonlin_solve_err_mode /= 5) then
+      call get_param(param_file, mdl, "SSA_ADD_REL_RESID", CS%ssa_add_rel_resid, &
+                  "Nonlinear error in vel solve will also depend on "// &
+                  "L2 residual norm relative to RHS norm.", default=.false.)
+    else
+      CS%ssa_add_rel_resid = .false. !Avoids redundantly calculating err_mode 5 twice
+    endif
+    call get_param(param_file, mdl, "ICE_RR_NONLINEAR_TOLERANCE", CS%rr_nonlinear_tolerance, &
+              "if ssa_add_rel_resid, the additional nonlin tolerance "//&
+              "in the iterative velocity solve for the residual norm relative to RHS norm", &
+              units="nondim", default=1.e-4)
     call get_param(param_file, mdl, "SHELF_MOVING_FRONT", CS%moving_shelf_front, &
                  "Specify whether to advance shelf front (and calve).", &
                  default=.false.)
@@ -972,17 +1044,15 @@ subroutine initialize_diagnostic_fields(CS, ISS, G, US, Time)
   type(time_type),        intent(in)    :: Time !< The current model time
 
   integer         :: i, j, iters, isd, ied, jsd, jed
-  real            :: rhoi_rhow
   real            :: OD  ! Depth of open water below the ice shelf [Z ~> m]
   type(time_type) :: dummy_time
 !
-  rhoi_rhow = CS%density_ice / CS%density_ocean_avg
   dummy_time = set_time(0,0)
   isd=G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
 
   do j=jsd,jed
     do i=isd,ied
-      OD = CS%bed_elev(i,j) - rhoi_rhow * max(ISS%h_shelf(i,j),CS%min_h_shelf)
+      OD = CS%bed_elev(i,j) - CS%rhoi_rhow * max(ISS%h_shelf(i,j),CS%min_h_shelf)
       if (OD >= 0) then
     ! ice thickness does not take up whole ocean column -> floating
         CS%OD_av(i,j) = OD
@@ -1093,13 +1163,10 @@ subroutine volume_above_floatation(CS, G, ISS, vaf, hemisphere)
   real, dimension(SZI_(G),SZJ_(G))  :: vaf_cell !< cell-wise volume above floatation [Z L2 ~> m3]
   integer, dimension(SZI_(G),SZJ_(G))  :: mask ! a mask for active cells depending on hemisphere indicated
   integer :: is,ie,js,je,i,j
-  real :: rhoi_rhow, rhow_rhoi
 
   if (CS%GL_couple) &
     call MOM_error(FATAL, "MOM_ice_shelf_dyn, volume above floatation calculation assumes GL_couple=.FALSE..")
 
-  rhoi_rhow = CS%density_ice / CS%density_ocean_avg
-  rhow_rhoi = CS%density_ocean_avg / CS%density_ice
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
 
   if (present(hemisphere)) then
@@ -1129,7 +1196,7 @@ subroutine volume_above_floatation(CS, G, ISS, vaf, hemisphere)
         vaf_cell(i,j) = ISS%h_shelf(i,j) * ISS%area_shelf_h(i,j)
       else
         !grounded if vaf_cell(i,j) > 0
-        vaf_cell(i,j) = max(ISS%h_shelf(i,j) - rhow_rhoi * CS%bed_elev(i,j), 0.0) * ISS%area_shelf_h(i,j)
+        vaf_cell(i,j) = max(ISS%h_shelf(i,j) - CS%rhow_rhoi * CS%bed_elev(i,j), 0.0) * ISS%area_shelf_h(i,j)
       endif
     endif
   enddo ; enddo
@@ -1522,16 +1589,22 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   real, dimension(SZDI_(G),SZDJ_(G)) :: float_cond ! If GL_regularize=true, indicates cells containing
                                                 ! the grounding line (float_cond=1) or not (float_cond=0)
   real, dimension(SZDIB_(G),SZDJB_(G)) :: Normvec  ! Velocities used for convergence [L2 T-2 ~> m2 s-2]
+  logical :: converged ! Indicates nonlinear convergence
+  logical :: calc_Au_for_convergence ! Used for convergence criteria than need a CG_action
   character(len=160) :: mesg  ! The text of an error message
   integer :: conv_flag, i, j, k,l, iter, nodefloat
   integer :: Isdq, Iedq, Jsdq, Jedq, isd, ied, jsd, jed
   integer :: Iscq, Iecq, Jscq, Jecq, isc, iec, jsc, jec
   real    :: err_max, err_tempu, err_tempv, err_init ! Errors in [R L3 Z T-2 ~> kg m s-2] or [L T-1 ~> m s-1]
-  real    :: ew_prev_err  ! Previous outer residual for Eisenstat-Walker CG tolerance (same units as err_max)
+  real    :: norm_tau, err_rr ! Errors in [R L3 Z T-2 ~> kg m s-2] for relative residual
+  real    :: ew_resid       = 0.0  ! L2 norm of stress residual ||A(u)u - tau|| for Eisenstat-Walker [kg m s-2]
+  real    :: ew_prev_resid  = 0.0  ! Previous ew_resid; 0.0 flags first Newton call [kg m s-2]
+  real    :: ew_eta         = 0.0  ! Current EW inner tolerance [nondim]
+  real    :: ew_eta_prev    = 0.0  ! Previous EW inner tolerance for Chacon 2008 sharp-decrease safeguard [nondim]
+  real    :: ew_stol                ! Temporary safeguard tolerance [nondim]
   real    :: max_vel  ! The maximum velocity magnitude [L T-1 ~> m s-1]
   real    :: tempu, tempv   ! Temporary variables with velocity magnitudes [L T-1 ~> m s-1]
   real    :: Norm, PrevNorm ! Velocities used to assess convergence [L T-1 ~> m s-1]
-  real    :: rhoi_rhow ! The density of ice divided by a typical water density [nondim]
   integer :: Is_sum, Js_sum, Ie_sum, Je_sum ! Loop bounds for global sums or arrays starting at 1.
   integer :: Iscq_sv, Jscq_sv ! Starting loop bound for sum_vec
 
@@ -1539,7 +1612,22 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   Iscq = G%IscB ; Iecq = G%IecB ; Jscq = G%JscB ; Jecq = G%JecB
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
-  rhoi_rhow = CS%density_ice / CS%density_ocean_avg
+
+  ! Determine the loop limits for sums, bearing in mind that the arrays will be starting at 1.
+  ! Includes the edge of the tile is at the western/southern bdry (if symmetric)
+  if (CS%nonlin_solve_err_mode >= 3 .or. CS%ssa_add_rel_resid) then
+    if ((isc+G%idg_offset==G%isg) .and. (.not. CS%reentrant_x)) then
+      Is_sum = Iscq + (1-Isdq) ; Iscq_sv = Iscq
+    else
+      Is_sum = isc  + (1-Isdq) ; Iscq_sv = isc
+    endif
+    if ((jsc+G%jdg_offset==G%jsg) .and. (.not. CS%reentrant_y)) then
+      Js_sum = Jscq + (1-Jsdq) ; Jscq_sv = Jscq
+    else
+      Js_sum = jsc + (1-Jsdq) ; Jscq_sv = jsc
+    endif
+    Ie_sum = Iecq + (1-Isdq) ; Je_sum = Jecq + (1-Jsdq)
+  endif
 
   taudx(:,:) = 0.0 ; taudy(:,:) = 0.0
   Au(:,:) = 0.0 ; Av(:,:) = 0.0
@@ -1550,22 +1638,25 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
 
   if (.not. CS%GL_couple) then
     do j=G%jsc,G%jec ; do i=G%isc,G%iec
-      if (rhoi_rhow * max(ISS%h_shelf(i,j),CS%min_h_shelf) - CS%bed_elev(i,j) > 0) then
+      if (CS%rhoi_rhow * max(ISS%h_shelf(i,j),CS%min_h_shelf) - CS%bed_elev(i,j) > 0) then
         CS%ground_frac(i,j) = 1.0
         CS%OD_av(i,j) =0.0
       endif
     enddo ; enddo
   endif
 
+  ! Warning: This turns off Picard entirely and may not converge.
+  if (CS%newton_after_tolerance<=0.0) CS%doing_newton=.true.
+
+  ! Calculate RHS
   call calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, CS%OD_av)
   call pass_vector(taudx, taudy, G%domain, TO_ALL, BGRID_NE)
+
   ! This is to determine which cells contain the grounding line, the criterion being that the cell
   ! is ice-covered, with some nodes floating and some grounded flotation condition is estimated by
   ! assuming topography is cellwise constant and H is bilinear in a cell; floating where
   ! rho_i/rho_w * H_node - D is negative
-
   ! need to make this conditional on GL interp
-
   if (CS%GL_regularize) then
 
     call interpolate_H_to_B(G, ISS%h_shelf, ISS%hmask, H_node, CS%min_h_shelf)
@@ -1575,7 +1666,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
 
       do l=0,1 ; do k=0,1
         if ((ISS%hmask(i,j) == 1 .or. ISS%hmask(i,j)==3) .and. &
-            (rhoi_rhow * H_node(i-1+k,j-1+l) - CS%bed_elev(i,j) <= 0)) then
+            (CS%rhoi_rhow * H_node(i-1+k,j-1+l) - CS%bed_elev(i,j) <= 0)) then
           nodefloat = nodefloat + 1
         endif
       enddo ; enddo
@@ -1594,23 +1685,22 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   call calc_shelf_basal_prefactors(CS, ISS, G, US)
   call calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
   if (CS%doing_newton) then
-    call pass_var(CS%ice_visc, G%domain, complete=.false.)
-    call pass_var(CS%newton_str_sh, G%domain, complete=.false.)
-    call pass_var(CS%newton_visc_factor, G%domain, complete=.true.)
-    call pass_vector(CS%newton_str_ux, CS%newton_str_vy, G%domain, TO_ALL, AGRID)
+    ! halo pass for ice_visc, newton_str_sh, newton_visc_factor, newton_str_x
+    call do_group_pass(CS%pass_visc_and_newton, G%domain)
   else
     call pass_var(CS%ice_visc, G%domain, complete=.true.)
   endif
 
-  if (CS%nonlin_solve_err_mode == 1) then
-
+  ! Calculate err_init, the denominator for some convergence criteria
+  if (CS%nonlin_solve_err_mode == 1 .or. CS%nonlin_solve_err_mode == 4) then
     Au(:,:) = 0.0 ; Av(:,:) = 0.0
-
     call CG_action(CS, Au, Av, u_shlf, v_shlf, CS%Phi, CS%Phisub, CS%umask, CS%vmask, ISS%hmask, H_node, &
                    CS%ice_visc, CS%float_cond, CS%bed_elev, u_shlf, v_shlf, &
-                   G, US, G%isc-1, G%iec+1, G%jsc-1, G%jec+1, rhoi_rhow, use_newton_in=.false.)
-    call pass_vector(Au, Av, G%domain, TO_ALL, BGRID_NE)
+                   G, US, G%isc-1, G%iec+1, G%jsc-1, G%jec+1, CS%rhoi_rhow, use_newton_in=.false.)
+    call pass_vector(Au, Av, G%domain, TO_ALL, BGRID_NE) ! TODO: is this needed?
+  endif
 
+  if (CS%nonlin_solve_err_mode == 1) then
     err_init = 0 ; err_tempu = 0 ; err_tempv = 0
     do J=G%JscB,G%JecB ; do I=G%IscB,G%IecB
       if (CS%umask(I,J) == 1) then
@@ -1622,39 +1712,57 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
         if (err_tempv >= err_init) err_init = err_tempv
       endif
     enddo ; enddo
-
     call max_across_PEs(err_init)
+
   elseif (CS%nonlin_solve_err_mode == 3) then
     Normvec(:,:) = 0.0
-
-    ! Determine the loop limits for sums, bearing in mind that the arrays will be starting at 1.
-    ! Includes the edge of the tile is at the western/southern bdry (if symmetric)
-    if ((isc+G%idg_offset==G%isg) .and. (.not. CS%reentrant_x)) then
-      Is_sum = Iscq + (1-Isdq) ; Iscq_sv = Iscq
-    else
-      Is_sum = isc  + (1-Isdq) ; Iscq_sv = isc
-    endif
-    if ((jsc+G%jdg_offset==G%jsg) .and. (.not. CS%reentrant_y)) then
-      Js_sum = Jscq + (1-Jsdq) ; Jscq_sv = Jscq
-    else
-      Js_sum = jsc + (1-Jsdq) ; Jscq_sv = jsc
-    endif
-    Ie_sum = Iecq + (1-Isdq) ; Je_sum = Jecq + (1-Jsdq)
-
     do J=Jscq_sv,Jecq ; do I=Iscq_sv,Iecq
-      if (CS%umask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + u_shlf(I,J)**2
-      if (CS%vmask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + v_shlf(I,J)**2
+      if (CS%umask(I,J) == 1) Normvec(I,J) = (u_shlf(I,J)**2)
+      if (CS%vmask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + (v_shlf(I,J)**2)
     enddo ; enddo
     Norm = sqrt( reproducing_sum( Normvec, Is_sum, Ie_sum, Js_sum, Je_sum, unscale=US%L_T_to_m_s**2 ) )
+
+  elseif (CS%nonlin_solve_err_mode == 4) then
+    Normvec(:,:) = 0.0
+    do J=Jscq_sv,Jecq ; do I=Iscq_sv,Iecq
+      if (CS%umask(I,J) == 1) Normvec(I,J) = ((Au(I,J) - taudx(I,J))**2)
+      if (CS%vmask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + ((Av(I,J) - taudy(I,J))**2)
+    enddo ; enddo
+    err_init = sqrt(reproducing_sum(Normvec, Is_sum, Ie_sum, Js_sum, Je_sum, &
+                    unscale=((US%RZ_to_kg_m2*US%L_to_m)*US%L_T_to_m_s**2)**2))
+  endif
+
+  if (CS%nonlin_solve_err_mode == 5 .or. CS%ssa_add_rel_resid) then
+    Normvec(:,:) = 0.0
+    do J=Jscq_sv,Jecq ; do I=Iscq_sv,Iecq
+      if (CS%umask(I,J) == 1) Normvec(I,J) = (taudx(I,J)**2)
+      if (CS%vmask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + (taudy(I,J)**2)
+    enddo ; enddo
+    if (CS%nonlin_solve_err_mode == 5) then
+      err_init = sqrt(reproducing_sum(Normvec, Is_sum, Ie_sum, Js_sum, Je_sum, &
+                      unscale=((US%RZ_to_kg_m2*US%L_to_m)*US%L_T_to_m_s**2)**2))
+    else
+      norm_tau = sqrt(reproducing_sum(Normvec, Is_sum, Ie_sum, Js_sum, Je_sum, &
+                      unscale=((US%RZ_to_kg_m2*US%L_to_m)*US%L_T_to_m_s**2)**2))
+    endif
   endif
 
   u_last(:,:) = u_shlf(:,:) ; v_last(:,:) = v_shlf(:,:)
-  CS%cg_tol_newton = CS%cg_tolerance
+  if (CS%doing_newton) then
+    CS%cg_tol_current = CS%cg_newton_tolerance
+  else
+    CS%cg_tol_current = CS%cg_tolerance
+  endif
+  ew_prev_resid  = 0.0
+  converged = .false.
+  calc_Au_for_convergence = (CS%nonlin_solve_err_mode == 1 .or. CS%nonlin_solve_err_mode == 4 .or. &
+                             CS%nonlin_solve_err_mode == 5 .or. CS%ssa_add_rel_resid)
 
   !! begin loop
 
   do iter=1,50
 
+    ! The linear solve
     call ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H_node, CS%float_cond, &
                                ISS%hmask, conv_flag, iters, time, CS%Phi, CS%Phisub)
 
@@ -1670,40 +1778,54 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
     call calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
 
     if (CS%doing_newton) then
-      call pass_var(CS%ice_visc, G%domain, complete=.false.)
-      call pass_var(CS%newton_str_sh, G%domain, complete=.false.)
-      call pass_var(CS%newton_visc_factor, G%domain, complete=.true.)
-      call pass_vector(CS%newton_str_ux, CS%newton_str_vy, G%domain, TO_ALL, AGRID)
+      ! halo pass for ice_visc, newton_str_sh, newton_visc_factor, newton_str_x
+      call do_group_pass(CS%pass_visc_and_newton, G%domain)
     else
       call pass_var(CS%ice_visc, G%domain, complete=.true.)
     endif
 
-    if (CS%nonlin_solve_err_mode == 1) then
-
+    ! Calculate convergence norms
+    if (calc_Au_for_convergence) then
       Au(:,:) = 0 ; Av(:,:) = 0
+      call CG_action(CS, Au, Av, u_shlf, v_shlf, CS%Phi, CS%Phisub, CS%umask, CS%vmask, ISS%hmask, &
+                     H_node, CS%ice_visc, CS%float_cond, CS%bed_elev, u_shlf, v_shlf, &
+                     G, US, G%isc-1, G%iec+1, G%jsc-1, G%jec+1, CS%rhoi_rhow, use_newton_in=.false.)
 
-      call CG_action(CS, Au, Av, u_shlf, v_shlf, CS%Phi, CS%Phisub, CS%umask, CS%vmask, ISS%hmask, H_node, &
-                     CS%ice_visc, CS%float_cond, CS%bed_elev, u_shlf, v_shlf, &
-                     G, US, G%isc-1, G%iec+1, G%jsc-1, G%jec+1, rhoi_rhow, use_newton_in=.false.)
+      if (CS%nonlin_solve_err_mode == 1) then
+        err_max = 0
 
-      call pass_vector(Au, Av, G%domain, TO_ALL, BGRID_NE)
+        do J=G%jscB,G%jecB ; do I=G%iscB,G%iecB
+          if (CS%umask(I,J) == 1) then
+            err_tempu = ABS(Au(I,J) - taudx(I,J))
+            if (err_tempu >= err_max) err_max = err_tempu
+          endif
+          if (CS%vmask(I,J) == 1) then
+            err_tempv = ABS(Av(I,J) - taudy(I,J))
+            if (err_tempv >= err_max) err_max = err_tempv
+          endif
+        enddo ; enddo
 
-      err_max = 0
+        call max_across_PEs(err_max)
+      endif
 
-      do J=G%jscB,G%jecB ; do I=G%iscB,G%iecB
-        if (CS%umask(I,J) == 1) then
-          err_tempu = ABS(Au(I,J) - taudx(I,J))
-          if (err_tempu >= err_max) err_max = err_tempu
+      if (CS%nonlin_solve_err_mode == 4 .or. CS%nonlin_solve_err_mode == 5 .or. CS%ssa_add_rel_resid) then
+        Normvec(:,:) = 0.0
+        do J=Jscq_sv,Jecq ; do I=Iscq_sv,Iecq
+          if (CS%umask(I,J) == 1) Normvec(I,J) = ((Au(I,J) - taudx(I,J))**2)
+          if (CS%vmask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + ((Av(I,J) - taudy(I,J))**2)
+        enddo ; enddo
+        if (CS%nonlin_solve_err_mode == 4 .or. CS%nonlin_solve_err_mode == 5) then
+          err_max = sqrt(reproducing_sum(Normvec, Is_sum, Ie_sum, Js_sum, Je_sum, &
+            unscale=((US%RZ_to_kg_m2*US%L_to_m)*US%L_T_to_m_s**2)**2))
+          if (CS%ssa_add_rel_resid) err_rr = err_max
+        elseif (CS%ssa_add_rel_resid) then
+          err_rr = sqrt(reproducing_sum(Normvec, Is_sum, Ie_sum, Js_sum, Je_sum, &
+            unscale=((US%RZ_to_kg_m2*US%L_to_m)*US%L_T_to_m_s**2)**2))
         endif
-        if (CS%vmask(I,J) == 1) then
-          err_tempv = ABS(Av(I,J) - taudy(I,J))
-          if (err_tempv >= err_max) err_max = err_tempv
-        endif
-      enddo ; enddo
+      endif
+    endif
 
-      call max_across_PEs(err_max)
-
-    elseif (CS%nonlin_solve_err_mode == 2) then
+    if (CS%nonlin_solve_err_mode == 2) then
 
       err_max=0. ;  max_vel = 0 ; tempu = 0 ; tempv = 0 ; err_tempu = 0
       do J=G%jscB,G%jecB ; do I=G%iscB,G%iecB
@@ -1732,43 +1854,121 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
     elseif (CS%nonlin_solve_err_mode == 3) then
       PrevNorm = Norm ; Norm = 0.0 ; Normvec=0.0
       do J=Jscq_sv,Jecq ; do I=Iscq_sv,Iecq
-        if (CS%umask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + u_shlf(I,J)**2
-        if (CS%vmask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + v_shlf(I,J)**2
+        if (CS%umask(I,J) == 1) Normvec(I,J) = (u_shlf(I,J)**2)
+        if (CS%vmask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + (v_shlf(I,J)**2)
       enddo ; enddo
       Norm = sqrt( reproducing_sum( Normvec, Is_sum, Ie_sum, Js_sum, Je_sum, unscale=US%L_T_to_m_s**2 ) )
       err_max = 2.*abs(Norm-PrevNorm) ; err_init = Norm+PrevNorm
     endif
 
-    write(mesg,*) "ice_shelf_solve_outer: nonlinear fractional residual = ", err_max/err_init
-    call MOM_mesg(mesg, 5)
-
-    if (err_max <= CS%newton_after_tolerance * err_init .and. .not. CS%doing_newton) then
-      CS%doing_newton = .true.
-      ew_prev_err = err_max  ! seed Eisenstat-Walker with residual at the Newton switch point
-      write(mesg,*) "ice_shelf_solve_outer: switching to Newton iterations at iter = ", iter
-      call MOM_mesg(mesg, 5)
-    endif
-
-    ! Eisenstat-Walker Choice II (Eisenstat & Walker 1994): η_k = γ*(||F_k||/||F_{k-1}||)^α
-    ! with γ=0.9, α=2.  Uses the ratio of consecutive outer residuals so that the CG
-    ! tolerance scales linearly with the current error (enabling quadratic outer convergence)
-    ! without over-tightening at later Newton steps.  The first Newton step uses the standard
-    ! cg_tolerance (ratio = 1 on entry).
-    if (CS%doing_newton .and. CS%newton_adapt_cg_tol) then
-      CS%cg_tol_newton = min(CS%cg_tolerance, 0.9 * (err_max / ew_prev_err)**2)
-      ew_prev_err = err_max
-    endif
-
+    !Test convergence
     if (err_max <= CS%nonlinear_tolerance * err_init) then
-      exit
+      if (CS%ssa_add_rel_resid) then
+        if (err_rr <= CS%rr_nonlinear_tolerance * norm_tau) converged = .true.
+      else
+        converged = .true.
+      endif
     endif
 
+    if (converged) then
+      exit
+    else
+      write(mesg,*) "ice_shelf_solve_outer: nonlinear fractional residual = ", err_max/err_init
+      call MOM_mesg(mesg, 5)
+
+      if (CS%ssa_add_rel_resid) then
+        write(mesg,*) "ice_shelf_solve_outer: nonlinear relative stress residual = ", err_rr/norm_tau
+        call MOM_mesg(mesg, 5)
+      endif
+
+      ! Activate Newton
+      if (err_max <= CS%newton_after_tolerance * err_init .and. .not. CS%doing_newton) then
+        CS%doing_newton = .true.
+        write(mesg,*) "ice_shelf_solve_outer: switching to Newton iterations at iter = ", iter
+        call MOM_mesg(mesg, 7)
+        ! halo pass for newton_str_sh, newton_visc_factor, newton_str_x
+        call do_group_pass(CS%pass_newton, G%domain)
+        CS%cg_tol_current = CS%cg_newton_tolerance
+      endif
+
+      ! Inexact Newton: Adapt inner solver tolerance to prevent oversolving
+      ! Based on Eisenstat-Walker Choice II (Eisenstat & Walker 1994): η_k = γ*(||F_k||/||F_{k-1}||)^α
+      ! with γ=0.9, α=2 as default.  Uses the L2 norm of the nonlinear stress residual ||Au - tau||_2,
+      ! consistent with the inner solver's convergence check (sv3dsums(3)).
+      ! The first Newton step uses the standard cg_tolerance.
+      if (CS%doing_newton .and. CS%newton_adapt_cg_tol) then
+        !calculate residual needed for EW; some convergence criteria already did this
+        if (CS%nonlin_solve_err_mode >= 4) then
+          ew_resid=err_max
+        elseif (CS%ssa_add_rel_resid) then
+          ew_resid=err_rr
+        else
+          if (.not. calc_Au_for_convergence) then
+            Au(:,:) = 0 ; Av(:,:) = 0
+            call CG_action(CS, Au, Av, u_shlf, v_shlf, CS%Phi, CS%Phisub, CS%umask, CS%vmask, ISS%hmask, &
+                           H_node, CS%ice_visc, CS%float_cond, CS%bed_elev, u_shlf, v_shlf, &
+                           G, US, G%isc-1, G%iec+1, G%jsc-1, G%jec+1, CS%rhoi_rhow, use_newton_in=.false.)
+          endif
+          Normvec(:,:) = 0.0
+          do J=Jscq_sv,Jecq ; do I=Iscq_sv,Iecq
+            if (CS%umask(I,J) == 1) Normvec(I,J) = ((Au(I,J) - taudx(I,J))**2)
+            if (CS%vmask(I,J) == 1) Normvec(I,J) = Normvec(I,J) + ((Av(I,J) - taudy(I,J))**2)
+          enddo ; enddo
+          ew_resid = sqrt(reproducing_sum(Normvec, Is_sum, Ie_sum, Js_sum, Je_sum, &
+            unscale=((US%RZ_to_kg_m2*US%L_to_m)*US%L_T_to_m_s**2)**2))
+        endif
+
+        if (ew_prev_resid == 0.0) then
+          ! First Newton iteration: seed residuals; use initial newton cg_tolerance this step
+          ew_prev_resid  = ew_resid
+          CS%cg_tol_current = CS%cg_newton_tolerance
+          ew_eta_prev = CS%cg_tol_current
+        else
+          ! Safeguarding and oversolving adjustments:
+          ! Eisenstat-Walker Choice II safeguard base formula
+          ew_eta = CS%ew_gamma * (ew_resid / ew_prev_resid)**CS%ew_alpha
+          ew_stol = CS%ew_gamma * ew_eta_prev**CS%ew_alpha
+          !Safeguards to sharp decrease/oversolving:
+          if (CS%ew_safety==1) then
+            ! Eisenstat-Walker Choice II safeguard:
+            write(mesg,*) "ice_shelf_solve_outer: ew_stol = ", ew_stol
+            call MOM_mesg(mesg, 8)
+            if (ew_stol > CS%ew_1_thres) ew_eta = max(ew_eta, ew_stol)
+          elseif (CS%ew_safety==2) then
+            ! PETSc choice 3 safeguard (e,g, Chacon 2008, J. Phys: Conf. Ser. 125 012041):
+            ! Avoid steep decreases in ew_eta
+            ew_eta  = min(CS%cg_newton_tolerance, max(ew_eta, ew_stol))
+            ! Avoid oversolving in last Newton iters:
+            ! The original is technically only applicable for nonlin_solve_err_mode=4:
+            ! ew_stol = CS%ew_gamma * ew_resid_first * CS%nonlinear_tolerance / ew_resid
+            ! Here, adapt for all nonlin_solve_err_modes:
+            ew_stol = CS%ew_gamma * err_init * CS%nonlinear_tolerance / err_max
+            if (CS%ssa_add_rel_resid) then
+              ew_stol = min(ew_stol, CS%ew_gamma * norm_tau * CS%rr_nonlinear_tolerance / err_rr)
+            endif
+            ew_eta  = min(CS%cg_newton_tolerance, max(ew_eta, ew_stol))
+            write(mesg,*) "ice_shelf_solve_outer: ew_stol = ", ew_stol
+            call MOM_mesg(mesg, 8)
+          endif
+          ew_eta = min(ew_eta,CS%ew_eta_max)
+          CS%cg_tol_current = ew_eta
+          ew_eta_prev   = ew_eta
+          ew_prev_resid = ew_resid
+          write(mesg,*) "ice_shelf_solve_outer: New inner tolerance = ", CS%cg_tol_current
+          call MOM_mesg(mesg, 8)
+        endif
+      endif
+    endif
   enddo
   CS%doing_newton = .false.
-  CS%cg_tol_newton = CS%cg_tolerance
+  CS%cg_tol_current = CS%cg_tolerance
 
   write(mesg,*) "ice_shelf_solve_outer: nonlinear fractional residual = ", err_max/err_init
   call MOM_mesg(mesg)
+  if (CS%ssa_add_rel_resid) then
+    write(mesg,*) "ice_shelf_solve_outer: nonlinear relative residual = ", err_rr/norm_tau
+    call MOM_mesg(mesg, 5)
+  endif
   write(mesg,*) "ice_shelf_solve_outer: exiting nonlinear solve after ",iter," iterations"
   call MOM_mesg(mesg)
 
@@ -1815,7 +2015,6 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
         Au, Av, &          ! Matrix-vector product A*x [R L3 Z T-2 ~> kg m s-2]
         DIAGu, DIAGv, &    ! Diagonals [R L2 Z T-1 ~> kg s-1]
         IDIAGu, IDIAGv     ! Reciprocal diagonals [R-1 L-2 Z-1 T ~> kg-1 s]
-  real    :: rhoi_rhow     ! The density of ice divided by a typical water density [nondim]
   real    :: resid_scale   ! A scaling factor for redimensionalizing the global residuals
                            ! [T3 kg m2 R-1 Z-1 L-4 s-3 ~> 1]
   integer :: Is_sum, Js_sum, Ie_sum, Je_sum ! Loop bounds for global sums or arrays starting at 1.
@@ -1827,8 +2026,6 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
   Isdq = G%IsdB ; Iedq = G%IedB ; Jsdq = G%JsdB ; Jedq = G%JedB
   Iscq = G%IscB ; Iecq = G%IecB ; Jscq = G%JscB ; Jecq = G%JecB
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
-
-  rhoi_rhow = CS%density_ice / CS%density_ocean_avg
 
   ! Initialize shared arrays
   Au(:,:) = 0 ; Av(:,:) = 0 ; DIAGu(:,:) = 0 ; DIAGv(:,:) = 0
@@ -1851,12 +2048,12 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
   call pass_vector(RHSu, RHSv, G%domain, TO_ALL, BGRID_NE, complete=.false.)
 
   call matrix_diagonal(CS, G, US, float_cond, H_node, CS%ice_visc, u_shlf, v_shlf, &
-                       hmask, rhoi_rhow, Phi, Phisub, DIAGu, DIAGv)
+                       hmask, CS%rhoi_rhow, Phi, Phisub, DIAGu, DIAGv)
   call pass_vector(DIAGu, DIAGv, G%domain, TO_ALL, BGRID_NE, complete=.false.)
 
   call CG_action(CS, Au, Av, u_shlf, v_shlf, Phi, Phisub, CS%umask, CS%vmask, hmask, &
                  H_node, CS%ice_visc, float_cond, CS%bed_elev, u_shlf, v_shlf, &
-                 G, US, isc-1, iec+1, jsc-1, jec+1, rhoi_rhow, use_newton_in=.false.)
+                 G, US, isc-1, iec+1, jsc-1, jec+1, CS%rhoi_rhow, use_newton_in=.false.)
   call pass_vector(Au, Av, G%domain, TO_ALL, BGRID_NE, complete=.true.)
 
   ! Precompute reciprocal diagonal
@@ -1873,17 +2070,17 @@ subroutine ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H
     case (INNER_CG)
       call ice_shelf_solve_inner_CG(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
                                     IDIAGu, IDIAGv, H_node, float_cond, hmask, &
-                                    rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                    CS%rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
                                     Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
     case (INNER_MINRES)
       call ice_shelf_solve_inner_MINRES(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
                                         IDIAGu, IDIAGv, H_node, float_cond, hmask, &
-                                        rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                        CS%rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
                                         Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
     case (INNER_CR)
       call ice_shelf_solve_inner_CR(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, Av, &
                                     IDIAGu, IDIAGv, H_node, float_cond, hmask, &
-                                    rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
+                                    CS%rhoi_rhow, resid_scale, Phi, Phisub, conv_flag, iters, &
                                     Is_sum, Js_sum, Ie_sum, Je_sum, Iscq_sv, Jscq_sv)
   end select
 
@@ -2023,7 +2220,7 @@ subroutine ice_shelf_solve_inner_CG(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, A
 
   rho_old = sv3dsums(1)
   !resid0 = sqrt(sv3dsums(2))
-  resid0tol2 = CS%cg_tol_newton**2 * sv3dsums(2)
+  resid0tol2 = CS%cg_tol_current**2 * sv3dsums(2)
 
   if (G%symmetric) then
     max_cg_halo=min(nx_halo,ny_halo)
@@ -2271,7 +2468,7 @@ subroutine ice_shelf_solve_inner_MINRES(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, A
   call pass_vector(Z_curr_u, Z_curr_v, G%domain, TO_ALL, BGRID_NE)
 
   eta = beta1
-  resid0tol = CS%cg_tol_newton * beta1
+  resid0tol = CS%cg_tol_current * beta1
   conv_flag = 0
 
   c0 = 1.0 ; s0 = 0.0 ; c1 = 1.0 ; s1 = 0.0
@@ -2510,7 +2707,7 @@ subroutine ice_shelf_solve_inner_CR(CS, G, US, u_shlf, v_shlf, RHSu, RHSv, Au, A
   r_norm_sq = sv3dsums(1)
   z_w_sum   = sv3dsums(2)
 
-  resid0tol2 = CS%cg_tol_newton**2 * r_norm_sq
+  resid0tol2 = CS%cg_tol_current**2 * r_norm_sq
   conv_flag = 0
 
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -3062,7 +3259,7 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
 
   real, dimension(SIZE(OD,1),SIZE(OD,2))  :: S     ! surface elevation [Z ~> m].
   real, dimension(SZDI_(G),SZDJ_(G)) :: sx_e, sy_e !element contributions to driving stress
-  real    :: rho, rhow, rhoi_rhow ! Ice and ocean densities [R ~> kg m-3]
+  real    :: rho, rhow ! Ice and ocean densities [R ~> kg m-3]
   real    :: sx, sy    ! Ice shelf top slopes at tracer points [Z L-1 ~> nondim]
   real    :: neumann_val ! [R Z L2 T-2 ~> kg s-2]
   real    :: grav      ! The gravitational acceleration [L2 Z-1 T-2 ~> m s-2]
@@ -3087,7 +3284,6 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
   rho =  CS%density_ice
   rhow = CS%density_ocean_avg
   grav = CS%g_Earth
-  rhoi_rhow = rho/rhow
   ! prelim - go through and calculate S
 
   if (CS%GL_couple) then
@@ -3097,8 +3293,8 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
   else
     ! check whether the ice is floating or grounded
     do j=jsc-2,jec+2 ; do i=isc-2,iec+2
-      if (rhoi_rhow * max(ISS%h_shelf(i,j),CS%min_h_shelf) - CS%bed_elev(i,j) <= 0) then
-        S(i,j) = (1 - rhoi_rhow)*max(ISS%h_shelf(i,j),CS%min_h_shelf)
+      if (CS%rhoi_rhow * max(ISS%h_shelf(i,j),CS%min_h_shelf) - CS%bed_elev(i,j) <= 0) then
+        S(i,j) = (1 - CS%rhoi_rhow)*max(ISS%h_shelf(i,j),CS%min_h_shelf)
       else
         S(i,j) = max(ISS%h_shelf(i,j),CS%min_h_shelf)-CS%bed_elev(i,j)
       endif
@@ -3191,7 +3387,7 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
         if (CS%ground_frac(i,j) == 1) then
           neumann_val = ((.5 * grav) * (rho * max(ISS%h_shelf(i,j),CS%min_h_shelf)**2 - rhow * CS%bed_elev(i,j)**2))
         else
-          neumann_val = (.5 * grav) * ((1-rho/rhow) * (rho * max(ISS%h_shelf(i,j),CS%min_h_shelf)**2))
+          neumann_val = (.5 * grav) * ((1-CS%rhoi_rhow) * (rho * max(ISS%h_shelf(i,j),CS%min_h_shelf)**2))
         endif
         if ((CS%u_face_mask_bdry(I-1,j) == 2) .OR. &
           ((ISS%hmask(i-1,j) == 0 .OR. ISS%hmask(i-1,j) == 2) .AND. (CS%reentrant_x .OR. (i+i_off /= gisc)))) then
@@ -4246,6 +4442,8 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
   real :: Visc_coef, n_g
   real :: ux, uy, vx, vy
   real :: eps_min   ! Velocity shears [T-1 ~> s-1]
+  real :: In_g ! inverse of Glen's exponent [nondim]
+  real :: eps_e2_exp ! (1.-n_g)/(2.*n_g) [nondim]
   logical :: model_qp1, model_qp4
 
   isc = G%isc ; jsc = G%jsc ; iec = G%iec ; jec = G%jec
@@ -4267,6 +4465,8 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
   endif
 
   n_g = CS%n_glen ; eps_min = CS%eps_glen_min
+  In_g=1./n_g
+  eps_e2_exp=(1.-n_g)/(2.*n_g)
 
   do j=jsc,jec ; do i=isc,iec
 
@@ -4285,7 +4485,7 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
       elseif (model_qp1) then
         ! calculate viscosity at 1 cell-centered quadrature point per cell
 
-        Visc_coef = (CS%AGlen_visc(i,j))**(-1./n_g)
+        Visc_coef = (CS%AGlen_visc(i,j))**(-In_g)
         ! Units of Aglen_visc [Pa-(n_g) s-1]
 
         ux = ((u_shlf(I-1,J-1) * CS%PhiC(1,i,j)) + &
@@ -4310,24 +4510,23 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
 
         CS%ice_visc(i,j,1) = (G%areaT(i,j) * max(ISS%h_shelf(i,j),CS%min_h_shelf)) * &
             max(0.5 * Visc_coef * &
-            (US%s_to_T**2 * (((ux**2) + (vy**2)) + ((ux*vy) + 0.25*((uy+vx)**2)) + eps_min**2))**((1.-n_g)/(2.*n_g)) * &
+            (US%s_to_T**2 * (((ux**2) + (vy**2)) + ((ux*vy) + 0.25*((uy+vx)**2)) + eps_min**2))**(eps_e2_exp) * &
             (US%Pa_to_RL2_T2*US%s_to_T),CS%min_ice_visc)  ! Rescale after the fractional power law.
         ! Store Newton tangent stiffness data: strain rates and coefficient for Newton iterations.
-        ! The Newton correction coefficient is (1/n-1)/2 * ice_visc / eps_e2,
+        ! The Newton correction coefficient is (1/n-1) * ice_visc / eps_e2,
         ! where eps_e2 = ux^2 + vy^2 + ux*vy + (uy+vx)^2/4 + eps_min^2 [T-2].
         ! It is zero where ice_visc is limited by min_ice_visc (viscosity is not smooth there).
         CS%newton_str_ux(i,j,1) = ux ; CS%newton_str_vy(i,j,1) = vy
         CS%newton_str_sh(i,j,1) = uy + vx
         CS%newton_visc_factor(i,j,1) = 0.0
         if (CS%ice_visc(i,j,1) > CS%min_ice_visc * (G%areaT(i,j) * max(ISS%h_shelf(i,j),CS%min_h_shelf))) then
-          CS%newton_visc_factor(i,j,1) = ((1./n_g - 1.) / &
+          CS%newton_visc_factor(i,j,1) = ((In_g - 1.) / &
               (((ux**2) + (vy**2)) + ((ux*vy) + 0.25*((uy+vx)**2)) + eps_min**2)) * &
               CS%ice_visc(i,j,1)
         endif
       elseif (model_qp4) then
         !calculate viscosity at 4 quadrature points per cell
-
-        Visc_coef = (CS%AGlen_visc(i,j))**(-1./n_g)
+        Visc_coef = (CS%AGlen_visc(i,j))**(-In_g)
 
         do iq=1,2 ; do jq=1,2
 
@@ -4353,7 +4552,7 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
 
           CS%ice_visc(i,j,2*(jq-1)+iq) = (G%areaT(i,j) * max(ISS%h_shelf(i,j),CS%min_h_shelf)) * &
               max(0.5 * Visc_coef * &
-              (US%s_to_T**2*(((ux**2) + (vy**2)) + ((ux*vy) + 0.25*((uy+vx)**2)) + eps_min**2))**((1.-n_g)/(2.*n_g)) * &
+              (US%s_to_T**2*(((ux**2) + (vy**2)) + ((ux*vy) + 0.25*((uy+vx)**2)) + eps_min**2))**(eps_e2_exp) * &
               (US%Pa_to_RL2_T2*US%s_to_T),CS%min_ice_visc)  ! Rescale after the fractional power law.
           ! Store Newton tangent stiffness data at each quadrature point.
           CS%newton_str_ux(i,j,2*(jq-1)+iq) = ux ; CS%newton_str_vy(i,j,2*(jq-1)+iq) = vy
@@ -4361,7 +4560,7 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
           CS%newton_visc_factor(i,j,2*(jq-1)+iq) = 0.0
           if (CS%ice_visc(i,j,2*(jq-1)+iq) > &
               CS%min_ice_visc * (G%areaT(i,j) * max(ISS%h_shelf(i,j),CS%min_h_shelf))) then
-            CS%newton_visc_factor(i,j,2*(jq-1)+iq) = ((1./n_g - 1.) / &
+            CS%newton_visc_factor(i,j,2*(jq-1)+iq) = ((In_g - 1.) / &
                 (((ux**2) + (vy**2)) + ((ux*vy) + 0.25*((uy+vx)**2)) + eps_min**2)) * &
                 CS%ice_visc(i,j,2*(jq-1)+iq)
           endif
@@ -4388,11 +4587,11 @@ subroutine calc_shelf_basal_prefactors(CS, ISS, G, US)
   do j = jsd, jed ; do i = isd, ied
     CS%coef_prefactor(i,j) = G%areaT(i,j) * CS%C_basal_friction(i,j) * US%L_T_to_m_s
     if (CS%CoulombFriction .and. (ISS%hmask(i,j) == 1 .or. ISS%hmask(i,j) == 3)) then
-      Hf = max((CS%density_ocean_avg/CS%density_ice) * CS%bed_elev(i,j), 0.0)
+      Hf = max(CS%rhow_rhoi * CS%bed_elev(i,j), 0.0)
       fN = max((US%L_to_Z*(CS%density_ice * CS%g_Earth) * &
                 (max(ISS%h_shelf(i,j), CS%min_h_shelf) - Hf)), CS%CF_MinN)
       CS%fB_elem(i,j) = CS%alpha_coulomb * &
-          (CS%C_basal_friction(i,j) / (CS%CF_Max * fN))**(CS%CF_PostPeak/CS%n_basal_fric)
+          (CS%C_basal_friction(i,j) / (CS%CF_Max * fN))**(CS%coulomb_pp_n)
     else
       CS%fB_elem(i,j) = 0.0
     endif
@@ -4426,7 +4625,7 @@ subroutine calc_shelf_taub(CS, ISS, G, basal_tr)
 
   if (CS%CoulombFriction) then
     if (CS%CF_PostPeak /= 1.0) then
-      alpha = (CS%CF_PostPeak-1.0)**(CS%CF_PostPeak-1.0) / CS%CF_PostPeak**CS%CF_PostPeak
+      alpha = CS%alpha_coulomb
     else
       alpha = 1.0
     endif
@@ -4444,9 +4643,9 @@ subroutine calc_shelf_taub(CS, ISS, G, basal_tr)
       !Coulomb friction (Schoof 2005, Gagliardini et al 2007)
       if (CS%CoulombFriction) then
         !Effective pressure
-        Hf = max((CS%density_ocean_avg/CS%density_ice) * CS%bed_elev(i,j), 0.0)
+        Hf = max(CS%rhow_rhoi * CS%bed_elev(i,j), 0.0)
         fN = max((G%US%L_to_Z*(CS%density_ice * CS%g_Earth) * (max(ISS%h_shelf(i,j),CS%min_h_shelf) - Hf)), CS%CF_MinN)
-        fB = alpha * (CS%C_basal_friction(i,j) / (CS%CF_Max * fN))**(CS%CF_PostPeak/CS%n_basal_fric)
+        fB = alpha * (CS%C_basal_friction(i,j) / (CS%CF_Max * fN))**(CS%coulomb_pp_n)
         fBuq = fB * unorm**CS%CF_PostPeak
         basal_trac = ((G%areaT(i,j) * CS%C_basal_friction(i,j)) * &
             (unorm**(CS%n_basal_fric-1.0) / (1.0 + fBuq)**(CS%n_basal_fric))) * &
@@ -4511,14 +4710,13 @@ subroutine update_OD_ffrac_uncoupled(CS, G, h_shelf)
                           intent(in)    :: h_shelf !< the thickness of the ice shelf [Z ~> m].
 
   integer :: i, j, isd, ied, jsd, jed
-  real    :: rhoi_rhow, OD
+  real    :: OD
 
-  rhoi_rhow = CS%density_ice / CS%density_ocean_avg
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
 
   do j=jsd,jed
     do i=isd,ied
-      OD = CS%bed_elev(i,j) - rhoi_rhow * max(h_shelf(i,j),CS%min_h_shelf)
+      OD = CS%bed_elev(i,j) - CS%rhoi_rhow * max(h_shelf(i,j),CS%min_h_shelf)
       if (OD >= 0) then
     ! ice thickness does not take up whole ocean column -> floating
         CS%OD_av(i,j) = OD
@@ -4543,9 +4741,8 @@ subroutine change_in_draft(CS, G, h_shelf0, h_shelf1, ddraft)
                           intent(inout)    :: ddraft !< the change in shelf draft thickness
   real :: b0,b1
   integer :: i, j, isc, iec, jsc, jec
-  real    :: rhoi_rhow, OD
+  real    :: OD
 
-  rhoi_rhow = CS%density_ice / CS%density_ocean_avg
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
   ddraft = 0.0
 
@@ -4555,20 +4752,20 @@ subroutine change_in_draft(CS, G, h_shelf0, h_shelf1, ddraft)
       b0 = 0.0 ; b1 = 0.0
 
       if (h_shelf0(i,j)>0.0) then
-        OD = CS%bed_elev(i,j) - rhoi_rhow * h_shelf0(i,j)
+        OD = CS%bed_elev(i,j) - CS%rhoi_rhow * h_shelf0(i,j)
         if (OD >= 0) then
           !floating
-          b0 = rhoi_rhow * h_shelf0(i,j)
+          b0 = CS%rhoi_rhow * h_shelf0(i,j)
         else
           b0 = CS%bed_elev(i,j)
         endif
       endif
 
       if (h_shelf1(i,j)>0.0) then
-        OD = CS%bed_elev(i,j) - rhoi_rhow * h_shelf1(i,j)
+        OD = CS%bed_elev(i,j) - CS%rhoi_rhow * h_shelf1(i,j)
         if (OD >= 0) then
           !floating
-          b1 = rhoi_rhow * h_shelf1(i,j)
+          b1 = CS%rhoi_rhow * h_shelf1(i,j)
         else
           b1 = CS%bed_elev(i,j)
         endif
