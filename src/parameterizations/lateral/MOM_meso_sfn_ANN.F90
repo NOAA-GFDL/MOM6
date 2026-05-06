@@ -30,6 +30,7 @@ use MOM_isopycnal_slopes, only : calc_isoneutral_slopes
 use MOM_unit_scaling,     only : unit_scale_type
 use MOM_variables,        only : thermo_var_ptrs
 use MOM_verticalGrid,     only : verticalGrid_type
+use MOM_domains,          only : pass_vector
 
 implicit none ; private
 
@@ -348,6 +349,8 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
 
     enddo ; enddo
   enddo
+
+  call pass_vector(sfn_u, sfn_v, G%Domain)
 
   if (CS%id_Fx_c > 0) call post_data(CS%id_Fx_c, Fx_c, CS%diag)
   if (CS%id_Fy_c > 0) call post_data(CS%id_Fy_c, Fy_c, CS%diag)
