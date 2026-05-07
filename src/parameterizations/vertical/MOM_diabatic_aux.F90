@@ -878,9 +878,9 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   !$OMP                                  netmassinout_rate,netheat_rate,netsalt_rate,      &
   !$OMP                                  drhodt,drhods,pen_sw_bnd_rate,                    &
   !$OMP                                  pen_TKE_2d,Temp_in,Salin_in,RivermixConst,        &
-  !$OMP                                  A_brine,plume_flux,mixing_depth,total_h, &
+  !$OMP                                  A_brine,plume_flux,mixing_depth,total_h,          &
   !$OMP                                  plume_source,salt_added, salt_removed,salt_before,&
-  !$OMP                                  salt_after,top,bottom)      &
+  !$OMP                                  salt_after,top,bottom, nz_finite)                 &
   !$OMP                     firstprivate(SurfPressure)
   do j=js,je
   ! Work in vertical slices for efficiency
@@ -1000,7 +1000,8 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
       if (CS%do_brine_plume .and. associated(fluxes%salt_left_behind)) then
         if (fluxes%salt_left_behind(i,j) > 0.0) then
           !Don't add in the salt that will later be distributed by the brine plume scheme
-          netSalt(i) = netSalt(i) - dt*((1000.0*US%ppt_to_S) * (CS%plume_strength * fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
+          netSalt(i) = netSalt(i) - dt*((1000.0*US%ppt_to_S) * &
+                                        (CS%plume_strength * fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
         endif
       endif
     enddo
@@ -1213,7 +1214,8 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
 
               ! Track salt added
               salt_added = salt_added + plume_flux
-              if (CS%check_salt_verbose) write(0,*)'Salt to layer k and remaining deficit:',k,salt_added,salt_removed-salt_added
+              if (CS%check_salt_verbose) write(0,*)'Salt to layer k and remaining deficit:',&
+                                                   k,salt_added,salt_removed-salt_added
 
               if (CS%id_brine_input > 0.) then
                 CS%brine_input(i,j,k) = plume_flux/dt
