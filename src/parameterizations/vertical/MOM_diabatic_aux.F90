@@ -802,7 +802,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   real :: total_h     ! Total thickness of the water column [H ~> m or kg m-2]
   real :: plume_source! The rate of salt removal by the brine plume scheme
                       ! [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
-  real :: salt_added, salt_removed ! Helpers to keep stock of salt being moved by brine flux
+  real :: salt_added, salt_removed ! Trackers to keep stock of salt being moved by brine flux
                                    ! [S H ~> ppt m or ppt kg m-2]
   real :: salt_before, salt_after  ! Helpers to keep stock of salt before and after the brine plume scheme
                                    ! [S H ~> ppt m or ppt kg m-2]
@@ -1176,8 +1176,6 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
             A_brine = (CS%brine_plume_n + 1) / (mixing_depth**(CS%brine_plume_n + 1))
 
             if (CS%check_salt_bp) then
-              !Helpers for debugging
-              salt_added = 0.0
               ! Record the total salt in the column before applying the plume scheme
               salt_before = 0.0
               do k=1,nz
@@ -1188,7 +1186,10 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
 
             ! Set the plume strength based on the salt rejected
             plume_source = ((1000.0*US%ppt_to_S) * (CS%plume_strength * fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
-            if (CS%check_salt_bp) salt_removed = plume_source*dt
+            ! Note salt removed
+            salt_removed = plume_source*dt
+            ! Track salt added
+            salt_added = 0.0
 
             ! Add salt back to any level (starting at top)
             bottom = 0.0
@@ -1210,10 +1211,9 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
               Ithickness  = 1.0/h2d(i,k)
               tv%S(i,j,k) = tv%S(i,j,k) + plume_flux*Ithickness
 
-              if (CS%check_salt_bp) then
-                salt_added = salt_added + plume_flux
-                if (CS%check_salt_verbose) write(0,*)'Salt to layer k and remaining deficit:',k,salt_added,salt_removed-salt_added
-              endif
+              ! Track salt added
+              salt_added = salt_added + plume_flux
+              if (CS%check_salt_verbose) write(0,*)'Salt to layer k and remaining deficit:',k,salt_added,salt_removed-salt_added
 
               if (CS%id_brine_input > 0.) then
                 CS%brine_input(i,j,k) = plume_flux/dt
