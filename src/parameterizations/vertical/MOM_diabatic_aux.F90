@@ -72,11 +72,14 @@ type, public :: diabatic_aux_CS ; private
   logical :: chl_from_file   !< If true, chl_a is read from a file.
   logical :: do_brine_plume  !< If true, insert salt flux below the surface according to
                              !! a parameterization by \cite Nguyen2009.
+  logical :: check_salt_bp   !< A logical to check for salt conservation in the brine plume scheme
+  logical :: check_salt_verbose !< A logical to be verbose when checking salt conservation
   integer :: brine_plume_n   !< The exponent in the brine plume parameterization.
   real :: plume_strength     !< Fraction of the available brine to take to the bottom of the mixed
                              !! layer [nondim].
   real :: plume_mld_fac      !< Proportionality factor between the mixed/mixing layer depth and the
                              !! vertical scale used for the brine plume parameterization [nondim].
+  real :: check_salt_threshold!< The maximum relative salt change acceptable in a time step [nondim]
 
   type(time_type), pointer :: Time => NULL() !< A pointer to the ocean model's clock.
   type(diag_ctrl), pointer :: diag !< Structure used to regulate timing of diagnostic output
@@ -760,9 +763,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
     netheat_rate, &  ! netheat but for dt=1 [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
     netsalt_rate, &  ! netsalt but for dt=1 (e.g. returns a rate)
                      ! [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
-    netMassInOut_rate, & ! netmassinout but for dt=1 [H T-1 ~> m s-1 or kg m-2 s-1]
-    mixing_depth, &  ! The mixing depth for brine plumes [H ~> m or kg m-2]
-    total_h          ! Total thickness of the water column [H ~> m or kg m-2]
+    netMassInOut_rate! netmassinout but for dt=1 [H T-1 ~> m s-1 or kg m-2 s-1]
   real, dimension(SZI_(G), SZK_(GV)) :: &
     h2d, &           ! A 2-d copy of the thicknesses [H ~> m or kg m-2]
     ! dz, &            ! Layer thicknesses in depth units [Z ~> m]
@@ -795,13 +796,19 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
                       ! and rejected brine are initially applied in vanishingly thin layers at the
                       ! top of the layer before being mixed throughout the layer.
   logical :: calculate_buoyancy ! If true, calculate the surface buoyancy flux.
-  real :: dK(SZI_(G))  ! Depth of the layer center in thickness units [H ~> m or kg m-2]
-  real :: A_brine(SZI_(G))  ! Constant [H-(n+1) ~> m-(n+1) or m(2n+2) kg-(n+1)].
-  real :: fraction_left_brine ! Fraction of the brine that has not been applied yet [nondim]
-  real :: plume_fraction ! Fraction of the brine that is applied to a layer [nondim]
+  real :: A_brine     ! Constant [H-(n+1) ~> m-(n+1) or m(2n+2) kg-(n+1)].
   real :: plume_flux  ! Brine flux to move downwards  [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
-  real :: salt_added, salt_removed, net_flux ! Helpers to keep stock of salt being moved by brine flux
-                                             ! [S H ~> ppt m or ppt kg m-2]
+  real :: mixing_depth! The mixing depth for brine plumes [H ~> m or kg m-2]
+  real :: total_h     ! Total thickness of the water column [H ~> m or kg m-2]
+  real :: plume_source! The rate of salt removal by the brine plume scheme
+                      ! [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
+  real :: salt_added, salt_removed ! Helpers to keep stock of salt being moved by brine flux
+                                   ! [S H ~> ppt m or ppt kg m-2]
+  real :: salt_before, salt_after  ! Helpers to keep stock of salt before and after the brine plume scheme
+                                   ! [S H ~> ppt m or ppt kg m-2]
+  real :: top, bottom ! The thickness (positive) of the top and bottom of the cell [H ~> m or kg m-2]
+  real :: np1, inp1   ! Brine plume exponent plus 1 and its inverse for integrals [nondim]
+  integer :: nz_finite! the index of the last (deepest) finite thickness layer
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   integer :: i, j, is, ie, js, je, k, nz, nb
   character(len=45) :: mesg
@@ -809,6 +816,8 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
   Idt = 1.0 / dt
+  inp1 = 1./(CS%brine_plume_n+1)
+  np1 = CS%brine_plume_n+1
 
   calculate_energetics = (present(cTKE) .and. present(dSV_dT) .and. present(dSV_dS))
   calculate_buoyancy = present(SkinBuoyFlux)
@@ -860,7 +869,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   !$OMP                                  minimum_forcing_depth,evap_CFL_limit,dt,EOSdom,   &
   !$OMP                                  calculate_buoyancy,netPen_rate,SkinBuoyFlux,GoRho,&
   !$OMP                                  calculate_energetics,dSV_dT,dSV_dS,cTKE,g_Hconv2, &
-  !$OMP                                  EnthalpyConst,MLD_h)                              &
+  !$OMP                                  EnthalpyConst,MLD_h,np1,inp1)                     &
   !$OMP                          private(opacityBand,h2d,T2d,netMassInOut,netMassOut,      &
   !$OMP                                  netHeat,netSalt,Pen_SW_bnd,fractionOfForcing,     &
   !$OMP                                  IforcingDepthScale,g_conv,dSpV_dT,dSpV_dS,        &
@@ -869,10 +878,10 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   !$OMP                                  netmassinout_rate,netheat_rate,netsalt_rate,      &
   !$OMP                                  drhodt,drhods,pen_sw_bnd_rate,                    &
   !$OMP                                  pen_TKE_2d,Temp_in,Salin_in,RivermixConst,        &
-  !$OMP                                  mixing_depth,A_brine,fraction_left_brine,         &
-  !$OMP                                  plume_fraction,dK,total_h,salt_removed,           &
-  !$OMP                                  salt_added, net_flux)                             &
-  !$OMP                     firstprivate(SurfPressure,plume_flux)
+  !$OMP                                  A_brine,plume_flux,mixing_depth,total_h, &
+  !$OMP                                  plume_source,salt_added, salt_removed,salt_before,&
+  !$OMP                                  salt_after,top,bottom)      &
+  !$OMP                     firstprivate(SurfPressure)
   do j=js,je
   ! Work in vertical slices for efficiency
 
@@ -987,6 +996,12 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
       else
         fluxes%netMassOut(i,j) = 0.0
         fluxes%netMassIn(i,j) = 0.0
+      endif
+      if (CS%do_brine_plume .and. associated(fluxes%salt_left_behind)) then
+        if (fluxes%salt_left_behind(i,j) > 0.0) then
+          !Don't add in the salt that will later be distributed by the brine plume scheme
+          netSalt(i) = netSalt(i) - dt*((1000.0*US%ppt_to_S) * (CS%plume_strength * fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
+        endif
       endif
     enddo
 
@@ -1146,64 +1161,93 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
         enddo ! k
 
         if (CS%do_brine_plume .and. associated(fluxes%salt_left_behind)) then
-          ! Find the plume mixing depth.
-          total_h(i) = 0.5*h2d(i,1)
-          do k=2,nz ; total_h(i) = total_h(i) + 0.5*(h2d(i,k-1)+h2d(i,k)) ; enddo
-          mixing_depth(i) = min( max(CS%plume_mld_fac * MLD_h(i,j) - minimum_forcing_depth, minimum_forcing_depth), &
-                            max(total_h(i), GV%angstrom_h) ) + GV%H_subroundoff
-          A_brine(i) = (CS%brine_plume_n + 1) / (mixing_depth(i) ** (CS%brine_plume_n + 1))
+          if (fluxes%salt_left_behind(i,j) > 0.0) then
 
-          !Helpers for debugging
-          salt_added = 0.0
-          salt_removed = 0.0
-          net_flux = 0.0
+            ! Find the plume mixing depth.
+            total_h = 0.0
+            do k=1,nz
+              total_h = total_h + h2d(i,k)
+              if (h2d(i,k)>GV%h_subroundoff) nz_finite = k
+            enddo
+            mixing_depth = min( max(CS%plume_mld_fac * MLD_h(i,j), minimum_forcing_depth), &
+                                max(total_h, GV%angstrom_h) )
 
-          !Resetting fields used for prognostic salt calculation
-          fraction_left_brine = 1.0
-          plume_flux = 0.0
-          do k=1,nz
-            if (fluxes%salt_left_behind(i,j) > 0 .and. fraction_left_brine > 0.0) then
-              ! Place forcing into this layer by depth for brine plume parameterization.
-              if (k == 1) then
-                dK(i) = 0.5 * h2d(i,k)         ! Depth of center of layer K
-                ! salt_left_behind has units of R Z T-1, plume flux thus has units of S H T-1
-                plume_flux = - (1000.0*US%ppt_to_S * (CS%plume_strength * fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
-                salt_removed = plume_flux*dt
-                plume_fraction = 1.0
-              else
-                dK(i) = dK(i) + 0.5 * ( h2d(i,k) + h2d(i,k-1) ) ! Depth of center of layer K
-                plume_flux = 0.0
-              endif
-              if (dK(i) <= mixing_depth(i) .and. fraction_left_brine > 0.0 .and. k<nz) then
-                plume_fraction = min(fraction_left_brine, (A_brine(i) * dK(i)**CS%brine_plume_n) * h2d(i,k))
-              else
-                IforcingDepthScale = 1. / GV%H_subroundoff
-                ! plume_fraction = fraction_left_brine, unless h2d is less than IforcingDepthScale.
-                plume_fraction = min(fraction_left_brine, h2d(i,k)*IforcingDepthScale)
-              endif
-              fraction_left_brine = fraction_left_brine - plume_fraction
-              plume_flux = plume_flux + plume_fraction * (1000.0*US%ppt_to_S * (CS%plume_strength * &
-                           fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
-              salt_added = salt_added + plume_fraction * (1000.0*US%ppt_to_S * (CS%plume_strength * &
-                           fluxes%salt_left_behind(i,j))) * GV%RZ_to_H*dt
-            else
-              plume_flux = 0.0
+            ! Sets the brine plume coefficient based on integral constraint
+            A_brine = (CS%brine_plume_n + 1) / (mixing_depth**(CS%brine_plume_n + 1))
+
+            if (CS%check_salt_bp) then
+              !Helpers for debugging
+              salt_added = 0.0
+              ! Record the total salt in the column before applying the plume scheme
+              salt_before = 0.0
+              do k=1,nz
+                salt_before = salt_before + h2d(i,k)*tv%S(i,j,k)
+              enddo
+              if (CS%check_salt_verbose) write(0,*)'Salt before brine plume: ',salt_before
             endif
-            net_flux = net_flux + plume_flux
-            Ithickness  = 1.0/h2d(i,k)
-            tv%S(i,j,k) = (h2d(i,k)*tv%S(i,j,k) + plume_flux*dt)*Ithickness
-            if (CS%id_brine_input > 0.) then
-               CS%brine_input(i,j,k) = plume_flux
+
+            ! Set the plume strength based on the salt rejected
+            plume_source = ((1000.0*US%ppt_to_S) * (CS%plume_strength * fluxes%salt_left_behind(i,j))) * GV%RZ_to_H
+            if (CS%check_salt_bp) salt_removed = plume_source*dt
+
+            ! Add salt back to any level (starting at top)
+            bottom = 0.0
+            do k=1,nz ; if (salt_removed > salt_added) then
+              top = bottom
+              bottom = top+h2d(i,k)
+
+              if (bottom <= mixing_depth .and. k<nz_finite) then
+                !Flux convergence integrated over layer
+                plume_flux = min(salt_removed-salt_added, dt * ( (plume_source * A_brine) &
+                                                     * ( (bottom**np1-top**np1) * inp1)))
+              elseif (h2d(i,k)>GV%H_subroundoff) then
+                ! if the bottom of the cell is > MLD or we are in the last
+                ! finite thickness cell, we put all the remaining salt in the level
+                plume_flux = salt_removed-salt_added
+              endif
+
+              ! Update salinity
+              Ithickness  = 1.0/h2d(i,k)
+              tv%S(i,j,k) = tv%S(i,j,k) + plume_flux*Ithickness
+
+              if (CS%check_salt_bp) then
+                salt_added = salt_added + plume_flux
+                if (CS%check_salt_verbose) write(0,*)'Salt to layer k and remaining deficit:',k,salt_added,salt_removed-salt_added
+              endif
+
+              if (CS%id_brine_input > 0.) then
+                CS%brine_input(i,j,k) = plume_flux/dt
+              endif
+
+            endif ; enddo
+
+            if (CS%check_salt_bp) then
+              salt_after = 0.0
+              do k=1,nz
+                salt_after = salt_after + h2d(i,k)*tv%S(i,j,k)
+              enddo
+              if (abs((salt_after-salt_before-salt_removed)/salt_after)>CS%check_salt_threshold) then
+                write(0,*)'Net plume strength    ',fluxes%salt_left_behind(i,j)
+                write(0,*)' H/BP dpt (h-unit)',total_h,mixing_depth
+                write(0,*)' H/BP dpt (m)     ',total_h*GV%H_to_Z,mixing_depth*GV%H_to_Z
+                write(0,*)' Salt before/after BP ',salt_before,salt_after
+                write(0,*)' Salt change BP       ',salt_after-salt_before,(salt_after-salt_before)/salt_after
+                write(0,*)' Salt removed by BP   ',salt_removed,salt_removed/salt_after
+                write(0,*)' Salt added by BP     ',salt_added,salt_added/salt_after
+                write(0,*)' Scheme error         ',(salt_added-salt_removed)/salt_after
+                write(0,*)' Diagnosed salt error ',(salt_after-salt_before-salt_removed)/salt_after
+                write(0,*)' Threshold            ',CS%check_salt_threshold
+                !write(0,*),'------'
+                !write(0,*),'h',h2d(i,:)
+                !write(0,*),'z',h2d(i,:)*GV%H_to_Z
+                !write(0,*),'S',tv%S(i,j,:)
+                call MOM_error(FATAL,'Salt change in brine plume scheme exceeds CHECK_SALT_BRINE_PLUME_THRESHOLD')
+              endif
             endif
-          enddo
-          !if (fluxes%salt_left_behind(i,j) > 0 .and. abs(net_flux)>0.0) then
-          !  if (fraction_left_brine>0.0) then
-          !    print*,'Leftover brine?'
-          !    print*,total_h(i),mixing_depth(i),salt_removed
-          !    print*,salt_added+salt_removed,net_flux, fraction_left_brine
-          !  endif
-          !endif
-        endif
+
+          endif ! Salt was rejected
+
+        endif ! Do brine plume
 
       ! Check if trying to apply fluxes over land points
       elseif ((abs(netHeat(i)) + abs(netSalt(i)) + abs(netMassIn(i)) + abs(netMassOut(i))) > 0.) then
@@ -1486,6 +1530,15 @@ subroutine diabatic_aux_init(Time, G, GV, US, param_file, diag, CS, useALEalgori
                  "Proportionality factor between plume scale and  MLD used in brine plume parameteterization.", &
                  units="nondim", default=1.0, do_not_log=.not.CS%do_brine_plume)
   if (CS%plume_mld_fac<0.0) call MOM_error(FATAL,"BRINE_PLUME_MLD_FAC shouldn't be negative!")
+  call get_param(param_file, mdl, "CHECK_SALT_BRINE_PLUME", CS%check_salt_bp, &
+                 "If true, check for conservation in the brine plume scheme.", default=.false.)
+  if (CS%check_salt_bp) then
+    call get_param(param_file, mdl, "CHECK_SALT_BRINE_PLUME_THRESHOLD", CS%check_salt_threshold, &
+                   "Maximum allowed relative salt change in brine plume scheme.", &
+                   units="nondim", default=1.0e-14)
+    call get_param(param_file, mdl, "CHECK_SALT_BRINE_PLUME_VERBOSE", CS%check_salt_verbose, &
+                 "Add output tracking salt conservation with brine plume scheme enabled.", default=.false.)
+  endif
 
 
   if (useALEalgorithm) then
