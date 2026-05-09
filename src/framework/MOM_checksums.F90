@@ -286,13 +286,10 @@ subroutine chksum_pair_h_2d(mesg, arrayA, arrayB, HI, haloshift, omit_corners, &
                                                             !! for checksums and output [a A-1 ~> 1].
                                                             !! Here scale and unscale are synonymous, but unscale
                                                             !! takes precedence if both are present.
-  logical :: vector_pair
+
   integer :: turns
   type(hor_index_type), pointer :: HI_in
   real, dimension(:,:), pointer :: arrayA_in, arrayB_in ! Rotated arrays [A ~> a]
-
-  vector_pair = .true.
-  if (present(scalar_pair)) vector_pair = .not. scalar_pair
 
   turns = HI%turns
   if (modulo(turns, 4) /= 0) then
@@ -302,7 +299,7 @@ subroutine chksum_pair_h_2d(mesg, arrayA, arrayB, HI, haloshift, omit_corners, &
     allocate(arrayA_in(HI_in%isd:HI_in%ied, HI_in%jsd:HI_in%jed))
     allocate(arrayB_in(HI_in%isd:HI_in%ied, HI_in%jsd:HI_in%jed))
 
-    if (vector_pair) then
+    if (.not. present_and_true(scalar_pair)) then
       call rotate_vector(arrayA, arrayB, -turns, arrayA_in, arrayB_in)
     else
       call rotate_array_pair(arrayA, arrayB, -turns, arrayA_in, arrayB_in)
@@ -345,13 +342,9 @@ subroutine chksum_pair_h_3d(mesg, arrayA, arrayB, HI, haloshift, omit_corners, &
                                                                !! Here scale and unscale are synonymous, but unscale
                                                                !! takes precedence if both are present.
   ! Local variables
-  logical :: vector_pair
   integer :: turns
   type(hor_index_type), pointer :: HI_in
   real, dimension(:,:,:), pointer :: arrayA_in, arrayB_in ! Rotated arrays [A ~> a]
-
-  vector_pair = .true.
-  if (present(scalar_pair)) vector_pair = .not. scalar_pair
 
   turns = HI%turns
   if (modulo(turns, 4) /= 0) then
@@ -361,7 +354,7 @@ subroutine chksum_pair_h_3d(mesg, arrayA, arrayB, HI, haloshift, omit_corners, &
     allocate(arrayA_in(HI_in%isd:HI_in%ied, HI_in%jsd:HI_in%jed, size(arrayA, 3)))
     allocate(arrayB_in(HI_in%isd:HI_in%ied, HI_in%jsd:HI_in%jed, size(arrayB, 3)))
 
-    if (vector_pair) then
+    if (.not. present_and_true(scalar_pair)) then
       call rotate_vector(arrayA, arrayB, -turns, arrayA_in, arrayB_in)
     else
       call rotate_array_pair(arrayA, arrayB, -turns, arrayA_in, arrayB_in)
@@ -415,7 +408,6 @@ subroutine chksum_h_2d(array_m, mesg, HI_m, haloshift, omit_corners, scale, logu
   real :: aMean, aMin, aMax  ! Array mean, global minimum and global maximum [a]
   integer :: bc0, bcSW, bcSE, bcNW, bcNE, hshift
   integer :: bcN, bcS, bcE, bcW
-  logical :: do_corners
   integer :: turns                      ! Quarter turns from input to model grid
 
 
@@ -480,10 +472,7 @@ subroutine chksum_h_2d(array_m, mesg, HI_m, haloshift, omit_corners, scale, logu
   if (hshift==0) then
     if (is_root_pe()) call chk_sum_msg("h-point:", bc0, mesg, iounit)
   else
-    do_corners = .true.
-    if (present(omit_corners)) do_corners = .not. omit_corners
-
-    if (do_corners) then
+    if (.not. present_and_true(omit_corners)) then
       bcSW = subchk(array, HI, -hshift, -hshift, scaling)
       bcSE = subchk(array, HI, hshift, -hshift, scaling)
       bcNW = subchk(array, HI, -hshift, hshift, scaling)
@@ -580,13 +569,9 @@ subroutine chksum_pair_B_2d(mesg, arrayA, arrayB, HI, haloshift, symmetric, &
                                                             !! takes precedence if both are present.
 
   logical :: sym
-  logical :: vector_pair
   integer :: turns
   type(hor_index_type), pointer :: HI_in
   real, dimension(:,:), pointer :: arrayA_in, arrayB_in ! Rotated arrays [A ~> a]
-
-  vector_pair = .true.
-  if (present(scalar_pair)) vector_pair = .not. scalar_pair
 
   turns = HI%turns
   if (modulo(turns, 4) /= 0) then
@@ -596,7 +581,7 @@ subroutine chksum_pair_B_2d(mesg, arrayA, arrayB, HI, haloshift, symmetric, &
     allocate(arrayA_in(HI_in%IsdB:HI_in%IedB, HI_in%JsdB:HI_in%JedB))
     allocate(arrayB_in(HI_in%IsdB:HI_in%IedB, HI_in%JsdB:HI_in%JedB))
 
-    if (vector_pair) then
+    if (.not. present_and_true(scalar_pair)) then
       call rotate_vector(arrayA, arrayB, -turns, arrayA_in, arrayB_in)
     else
       call rotate_array_pair(arrayA, arrayB, -turns, arrayA_in, arrayB_in)
@@ -607,7 +592,7 @@ subroutine chksum_pair_B_2d(mesg, arrayA, arrayB, HI, haloshift, symmetric, &
     arrayB_in => arrayB
   endif
 
-  sym = .false. ; if (present(symmetric)) sym = symmetric
+  sym = present_and_true(symmetric)
 
   if (present(haloshift)) then
     call chksum_B_2d(arrayA_in, 'x '//mesg, HI_in, haloshift, symmetric=sym, &
@@ -646,13 +631,9 @@ subroutine chksum_pair_B_3d(mesg, arrayA, arrayB, HI, haloshift, symmetric, &
                                                                !! Here scale and unscale are synonymous, but unscale
                                                                !! takes precedence if both are present.
   ! Local variables
-  logical :: vector_pair
   integer :: turns
   type(hor_index_type), pointer :: HI_in
   real, dimension(:,:,:), pointer :: arrayA_in, arrayB_in ! Rotated arrays [A ~> a]
-
-  vector_pair = .true.
-  if (present(scalar_pair)) vector_pair = .not. scalar_pair
 
   turns = HI%turns
   if (modulo(turns, 4) /= 0) then
@@ -662,7 +643,7 @@ subroutine chksum_pair_B_3d(mesg, arrayA, arrayB, HI, haloshift, symmetric, &
     allocate(arrayA_in(HI_in%IsdB:HI_in%IedB, HI_in%JsdB:HI_in%JedB, size(arrayA, 3)))
     allocate(arrayB_in(HI_in%IsdB:HI_in%IedB, HI_in%JsdB:HI_in%JedB, size(arrayB, 3)))
 
-    if (vector_pair) then
+    if (.not. present_and_true(scalar_pair)) then
       call rotate_vector(arrayA, arrayB, -turns, arrayA_in, arrayB_in)
     else
       call rotate_array_pair(arrayA, arrayB, -turns, arrayA_in, arrayB_in)
@@ -720,7 +701,7 @@ subroutine chksum_B_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   real :: aMean, aMin, aMax  ! Array mean, global minimum and global maximum [a]
   integer :: bc0, bcSW, bcSE, bcNW, bcNE, hshift
   integer :: bcN, bcS, bcE, bcW
-  logical :: do_corners, sym, sym_stats
+  logical :: sym, sym_stats
   integer :: turns                      ! Quarter turns from input to model grid
 
   ! Rotate array to the input grid
@@ -747,7 +728,7 @@ subroutine chksum_B_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   elseif (present(scale)) then ; scaling = scale ; endif
 
   iounit = error_unit ; if (present(logunit)) iounit = logunit
-  sym_stats = .false. ; if (present(symmetric)) sym_stats = symmetric
+  sym_stats = present_and_true(symmetric)
   if (present(haloshift)) then ; if (haloshift > 0) sym_stats = .true. ; endif
 
   if (calculateStatistics) then
@@ -784,15 +765,12 @@ subroutine chksum_B_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
 
   bc0 = subchk(array, HI, 0, 0, scaling)
 
-  sym = .false. ; if (present(symmetric)) sym = symmetric
+  sym = present_and_true(symmetric)
 
   if ((hshift==0) .and. .not.sym) then
     if (is_root_pe()) call chk_sum_msg("B-point:", bc0, mesg, iounit)
   else
-    do_corners = .true.
-    if (present(omit_corners)) do_corners = .not. omit_corners
-
-    if (do_corners) then
+    if (.not. present_and_true(omit_corners)) then
       if (sym) then
         bcSW = subchk(array, HI, -hshift-1, -hshift-1, scaling)
         bcSE = subchk(array, HI, hshift, -hshift-1, scaling)
@@ -900,13 +878,9 @@ subroutine chksum_uv_2d(mesg, arrayU, arrayV, HI, haloshift, symmetric, &
                                                              !! Here scale and unscale are synonymous, but unscale
                                                              !! takes precedence if both are present.
   ! Local variables
-  logical :: vector_pair
   integer :: turns
   type(hor_index_type), pointer :: HI_in
   real, dimension(:,:), pointer :: arrayU_in, arrayV_in ! Rotated arrays [A ~> a]
-
-  vector_pair = .true.
-  if (present(scalar_pair)) vector_pair = .not. scalar_pair
 
   turns = HI%turns
   if (modulo(turns, 4) /= 0) then
@@ -916,7 +890,7 @@ subroutine chksum_uv_2d(mesg, arrayU, arrayV, HI, haloshift, symmetric, &
     allocate(arrayU_in(HI_in%IsdB:HI_in%IedB, HI_in%jsd:HI_in%jed))
     allocate(arrayV_in(HI_in%isd:HI_in%ied, HI_in%JsdB:HI_in%JedB))
 
-    if (vector_pair) then
+    if (.not. present_and_true(scalar_pair)) then
       call rotate_vector(arrayU, arrayV, -turns, arrayU_in, arrayV_in)
     else
       call rotate_array_pair(arrayU, arrayV, -turns, arrayU_in, arrayV_in)
@@ -963,13 +937,9 @@ subroutine chksum_uv_3d(mesg, arrayU, arrayV, HI, haloshift, symmetric, &
                                                                !! Here scale and unscale are synonymous, but unscale
                                                                !! takes precedence if both are present.
   ! Local variables
-  logical :: vector_pair
   integer :: turns
   type(hor_index_type), pointer :: HI_in
   real, dimension(:,:,:), pointer :: arrayU_in, arrayV_in ! Rotated arrays [A ~> a]
-
-  vector_pair = .true.
-  if (present(scalar_pair)) vector_pair = .not. scalar_pair
 
   turns = HI%turns
   if (modulo(turns, 4) /= 0) then
@@ -979,7 +949,7 @@ subroutine chksum_uv_3d(mesg, arrayU, arrayV, HI, haloshift, symmetric, &
     allocate(arrayU_in(HI_in%IsdB:HI_in%IedB, HI_in%jsd:HI_in%jed, size(arrayU, 3)))
     allocate(arrayV_in(HI_in%isd:HI_in%ied, HI_in%JsdB:HI_in%JedB, size(arrayV, 3)))
 
-    if (vector_pair) then
+    if (.not. present_and_true(scalar_pair)) then
       call rotate_vector(arrayU, arrayV, -turns, arrayU_in, arrayV_in)
     else
       call rotate_array_pair(arrayU, arrayV, -turns, arrayU_in, arrayV_in)
@@ -1036,7 +1006,7 @@ subroutine chksum_u_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   real :: aMean, aMin, aMax  ! Array mean, global minimum and global maximum [a]
   integer :: bc0, bcSW, bcSE, bcNW, bcNE, hshift
   integer :: bcN, bcS, bcE, bcW
-  logical :: do_corners, sym, sym_stats
+  logical :: sym, sym_stats
   integer :: turns                      ! Quarter turns from input to model grid
 
   ! Rotate array to the input grid
@@ -1072,7 +1042,7 @@ subroutine chksum_u_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   elseif (present(scale)) then ; scaling = scale ; endif
 
   iounit = error_unit ; if (present(logunit)) iounit = logunit
-  sym_stats = .false. ; if (present(symmetric)) sym_stats = symmetric
+  sym_stats = present_and_true(symmetric)
   if (present(haloshift)) then ; if (haloshift > 0) sym_stats = .true. ; endif
 
   if (calculateStatistics) then
@@ -1109,18 +1079,15 @@ subroutine chksum_u_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
 
   bc0 = subchk(array, HI, 0, 0, scaling)
 
-  sym = .false. ; if (present(symmetric)) sym = symmetric
+  sym = present_and_true(symmetric)
 
   if ((hshift==0) .and. .not.sym) then
     if (is_root_pe()) call chk_sum_msg("u-point:", bc0, mesg, iounit)
   else
-    do_corners = .true.
-    if (present(omit_corners)) do_corners = .not. omit_corners
-
     if (hshift==0) then
       bcW = subchk(array, HI, -hshift-1, 0, scaling)
       if (is_root_pe()) call chk_sum_msg_W("u-point:", bc0, bcW, mesg, iounit)
-    elseif (do_corners) then
+    elseif (.not. present_and_true(omit_corners)) then
       if (sym) then
         bcSW = subchk(array, HI, -hshift-1, -hshift, scaling)
         bcNW = subchk(array, HI, -hshift-1, hshift, scaling)
@@ -1240,7 +1207,7 @@ subroutine chksum_v_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   real :: aMean, aMin, aMax  ! Array mean, global minimum and global maximum [a]
   integer :: bc0, bcSW, bcSE, bcNW, bcNE, hshift
   integer :: bcN, bcS, bcE, bcW
-  logical :: do_corners, sym, sym_stats
+  logical :: sym, sym_stats
   integer :: turns                      ! Quarter turns from input to model grid
 
   ! Rotate array to the input grid
@@ -1276,7 +1243,7 @@ subroutine chksum_v_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   elseif (present(scale)) then ; scaling = scale ; endif
 
   iounit = error_unit ; if (present(logunit)) iounit = logunit
-  sym_stats = .false. ; if (present(symmetric)) sym_stats = symmetric
+  sym_stats = present_and_true(symmetric)
   if (present(haloshift)) then ; if (haloshift > 0) sym_stats = .true. ; endif
 
   if (calculateStatistics) then
@@ -1313,18 +1280,15 @@ subroutine chksum_v_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
 
   bc0 = subchk(array, HI, 0, 0, scaling)
 
-  sym = .false. ; if (present(symmetric)) sym = symmetric
+  sym = present_and_true(symmetric)
 
   if ((hshift==0) .and. .not.sym) then
     if (is_root_pe()) call chk_sum_msg("v-point:", bc0, mesg, iounit)
   else
-    do_corners = .true.
-    if (present(omit_corners)) do_corners = .not. omit_corners
-
     if (hshift==0) then
       bcS = subchk(array, HI, 0, -hshift-1, scaling)
       if (is_root_pe()) call chk_sum_msg_S("v-point:", bc0, bcS, mesg, iounit)
-    elseif (do_corners) then
+    elseif (.not. present_and_true(omit_corners)) then
       if (sym) then
         bcSW = subchk(array, HI, -hshift, -hshift-1, scaling)
         bcSE = subchk(array, HI, hshift, -hshift-1, scaling)
@@ -1441,7 +1405,6 @@ subroutine chksum_h_3d(array_m, mesg, HI_m, haloshift, omit_corners, scale, logu
   real :: aMean, aMin, aMax  ! Array mean, global minimum and global maximum [a]
   integer :: bc0, bcSW, bcSE, bcNW, bcNE, hshift
   integer :: bcN, bcS, bcE, bcW
-  logical :: do_corners
   integer :: turns                      ! Quarter turns from input to model grid
 
   ! Rotate array to the input grid
@@ -1507,10 +1470,7 @@ subroutine chksum_h_3d(array_m, mesg, HI_m, haloshift, omit_corners, scale, logu
   if (hshift==0) then
     if (is_root_pe()) call chk_sum_msg("h-point:", bc0, mesg, iounit)
   else
-    do_corners = .true.
-    if (present(omit_corners)) do_corners = .not. omit_corners
-
-    if (do_corners) then
+    if (.not. present_and_true(omit_corners)) then
       bcSW = subchk(array, HI, -hshift, -hshift, scaling)
       bcSE = subchk(array, HI, hshift, -hshift, scaling)
       bcNW = subchk(array, HI, -hshift, hshift, scaling)
@@ -1617,7 +1577,7 @@ subroutine chksum_B_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   real :: aMean, aMin, aMax  ! Array mean, global minimum and global maximum [a]
   integer :: bc0, bcSW, bcSE, bcNW, bcNE, hshift
   integer :: bcN, bcS, bcE, bcW
-  logical :: do_corners, sym, sym_stats
+  logical :: sym, sym_stats
   integer :: turns                      ! Quarter turns from input to model grid
 
   ! Rotate array to the input grid
@@ -1644,7 +1604,7 @@ subroutine chksum_B_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   elseif (present(scale)) then ; scaling = scale ; endif
 
   iounit = error_unit ; if (present(logunit)) iounit = logunit
-  sym_stats = .false. ; if (present(symmetric)) sym_stats = symmetric
+  sym_stats = present_and_true(symmetric)
   if (present(haloshift)) then ; if (haloshift > 0) sym_stats = .true. ; endif
 
   if (calculateStatistics) then
@@ -1683,15 +1643,12 @@ subroutine chksum_B_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
 
   bc0 = subchk(array, HI, 0, 0, scaling)
 
-  sym = .false. ; if (present(symmetric)) sym = symmetric
+  sym = present_and_true(symmetric)
 
   if ((hshift==0) .and. .not.sym) then
     if (is_root_pe()) call chk_sum_msg("B-point:", bc0, mesg, iounit)
   else
-  do_corners = .true.
-    if (present(omit_corners)) do_corners = .not. omit_corners
-
-    if (do_corners) then
+    if (.not. present_and_true(omit_corners)) then
       if (sym) then
         bcSW = subchk(array, HI, -hshift-1, -hshift-1, scaling)
         bcSE = subchk(array, HI, hshift, -hshift-1, scaling)
@@ -1813,7 +1770,7 @@ subroutine chksum_u_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   real :: aMean, aMin, aMax  ! Array mean, global minimum and global maximum [a]
   integer :: bc0, bcSW, bcSE, bcNW, bcNE, hshift
   integer :: bcN, bcS, bcE, bcW
-  logical :: do_corners, sym, sym_stats
+  logical :: sym, sym_stats
   integer :: turns                      ! Quarter turns from input to model grid
 
   ! Rotate array to the input grid
@@ -1849,7 +1806,7 @@ subroutine chksum_u_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   elseif (present(scale)) then ; scaling = scale ; endif
 
   iounit = error_unit ; if (present(logunit)) iounit = logunit
-  sym_stats = .false. ; if (present(symmetric)) sym_stats = symmetric
+  sym_stats = present_and_true(symmetric)
   if (present(haloshift)) then ; if (haloshift > 0) sym_stats = .true. ; endif
 
   if (calculateStatistics) then
@@ -1886,18 +1843,15 @@ subroutine chksum_u_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
 
   bc0 = subchk(array, HI, 0, 0, scaling)
 
-  sym = .false. ; if (present(symmetric)) sym = symmetric
+  sym = present_and_true(symmetric)
 
   if ((hshift==0) .and. .not.sym) then
     if (is_root_pe()) call chk_sum_msg("u-point:", bc0, mesg, iounit)
   else
-    do_corners = .true.
-    if (present(omit_corners)) do_corners = .not. omit_corners
-
     if (hshift==0) then
       bcW = subchk(array, HI, -hshift-1, 0, scaling)
       if (is_root_pe()) call chk_sum_msg_W("u-point:", bc0, bcW, mesg, iounit)
-    elseif (do_corners) then
+    elseif (.not. present_and_true(omit_corners)) then
       if (sym) then
         bcSW = subchk(array, HI, -hshift-1, -hshift, scaling)
         bcNW = subchk(array, HI, -hshift-1, hshift, scaling)
@@ -2017,7 +1971,7 @@ subroutine chksum_v_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   integer :: bc0, bcSW, bcSE, bcNW, bcNE, hshift
   integer :: bcN, bcS, bcE, bcW
   real :: aMean, aMin, aMax  ! Array mean, global minimum and global maximum [a]
-  logical :: do_corners, sym, sym_stats
+  logical :: sym, sym_stats
   integer :: turns                      ! Quarter turns from input to model grid
 
   ! Rotate array to the input grid
@@ -2053,7 +2007,7 @@ subroutine chksum_v_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
   elseif (present(scale)) then ; scaling = scale ; endif
 
   iounit = error_unit ; if (present(logunit)) iounit = logunit
-  sym_stats = .false. ; if (present(symmetric)) sym_stats = symmetric
+  sym_stats = present_and_true(symmetric)
   if (present(haloshift)) then ; if (haloshift > 0) sym_stats = .true. ; endif
 
   if (calculateStatistics) then
@@ -2090,18 +2044,15 @@ subroutine chksum_v_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
 
   bc0 = subchk(array, HI, 0, 0, scaling)
 
-  sym = .false. ; if (present(symmetric)) sym = symmetric
+  sym = present_and_true(symmetric)
 
   if ((hshift==0) .and. .not.sym) then
     if (is_root_pe()) call chk_sum_msg("v-point:", bc0, mesg, iounit)
   else
-    do_corners = .true.
-    if (present(omit_corners)) do_corners = .not. omit_corners
-
     if (hshift==0) then
       bcS = subchk(array, HI, 0, -hshift-1, scaling)
       if (is_root_pe()) call chk_sum_msg_S("v-point:", bc0, bcS, mesg, iounit)
-    elseif (do_corners) then
+    elseif (.not. present_and_true(omit_corners)) then
       if (sym) then
         bcSW = subchk(array, HI, -hshift, -hshift-1, scaling)
         bcSE = subchk(array, HI, hshift, -hshift-1, scaling)
@@ -2685,5 +2636,14 @@ integer function bitcount(x)
   ! NOTE: Assumes that reals and integers of kind=xk are the same size
   bitcount = popcnt(transfer(x, 1_xk))
 end function bitcount
+
+
+!> This routine returns true if its single optional argument is both present and true.
+logical function present_and_true(arg)
+  logical, optional, intent(in) :: arg !< An optional logical to argument to use.
+
+  present_and_true = .false.
+  if (present(arg)) present_and_true = arg
+end function present_and_true
 
 end module MOM_checksums
