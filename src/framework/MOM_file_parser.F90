@@ -274,7 +274,7 @@ subroutine close_param_file(CS, quiet_close, component)
 # include "version_variable.h"
   integer :: i, n, num_unused
 
-  if (present(quiet_close)) then ; if (quiet_close) then
+  if (present_and_true(quiet_close)) then
     do i = 1, CS%nfiles
       if (is_root_pe()) close(CS%iounit(i))
       call MOM_mesg("close_param_file: "// trim(CS%filename(i))// &
@@ -290,7 +290,7 @@ subroutine close_param_file(CS, quiet_close, component)
     call doc_end(CS%doc)
     deallocate(CS%doc)
     return
-  endif ; endif
+  endif
 
   ! Log the parameters for the parser.
   docfile_default = "MOM_parameter_doc"
@@ -639,7 +639,7 @@ subroutine read_param_int(CS, varname, value, fail_if_missing, set)
     read(value_string(1),*,err = 1001) value
     if (present(set)) set = .true.
   else
-    if (present(fail_if_missing)) then ; if (fail_if_missing) then
+    if (present_and_true(fail_if_missing)) then
       if (.not.found) then
         call MOM_error(FATAL,'read_param_int: Unable to find variable '//trim(varname)// &
                              ' in any input files.')
@@ -647,7 +647,7 @@ subroutine read_param_int(CS, varname, value, fail_if_missing, set)
         call MOM_error(FATAL,'read_param_int: Variable '//trim(varname)// &
                              ' found but not set in input files.')
       endif
-    endif ; endif
+    endif
     if (present(set)) set = .false.
   endif
   return
@@ -676,7 +676,7 @@ subroutine read_param_int_array(CS, varname, value, fail_if_missing, set)
     read(value_string(1),*,end=991,err=1002) value
  991 return
   else
-    if (present(fail_if_missing)) then ; if (fail_if_missing) then
+    if (present_and_true(fail_if_missing)) then
       if (.not.found) then
         call MOM_error(FATAL,'read_param_int_array: Unable to find variable '//trim(varname)// &
                              ' in any input files.')
@@ -684,7 +684,7 @@ subroutine read_param_int_array(CS, varname, value, fail_if_missing, set)
         call MOM_error(FATAL,'read_param_int_array: Variable '//trim(varname)// &
                              ' found but not set in input files.')
       endif
-    endif ; endif
+    endif
     if (present(set)) set = .false.
   endif
   return
@@ -716,7 +716,7 @@ subroutine read_param_real(CS, varname, value, fail_if_missing, scale, set)
     if (present(scale)) value = scale*value
     if (present(set)) set = .true.
   else
-    if (present(fail_if_missing)) then ; if (fail_if_missing) then
+    if (present_and_true(fail_if_missing)) then
       if (.not.found) then
         call MOM_error(FATAL,'read_param_real: Unable to find variable '//trim(varname)// &
                              ' in any input files.')
@@ -724,7 +724,7 @@ subroutine read_param_real(CS, varname, value, fail_if_missing, scale, set)
         call MOM_error(FATAL,'read_param_real: Variable '//trim(varname)// &
                              ' found but not set in input files.')
       endif
-    endif ; endif
+    endif
     if (present(set)) set = .false.
   endif
   return
@@ -757,7 +757,7 @@ subroutine read_param_real_array(CS, varname, value, fail_if_missing, scale, set
     if (present(scale)) value(:) = scale*value(:)
     if (present(set)) set = .true.
   else
-    if (present(fail_if_missing)) then ; if (fail_if_missing) then
+    if (present_and_true(fail_if_missing)) then
       if (.not.found) then
         call MOM_error(FATAL,'read_param_real_array: Unable to find variable '//trim(varname)// &
                              ' in any input files.')
@@ -765,7 +765,7 @@ subroutine read_param_real_array(CS, varname, value, fail_if_missing, scale, set
         call MOM_error(FATAL,'read_param_real_array: Variable '//trim(varname)// &
                              ' found but not set in input files.')
       endif
-    endif ; endif
+    endif
     if (present(set)) set = .false.
   endif
   return
@@ -791,9 +791,9 @@ subroutine read_param_char(CS, varname, value, fail_if_missing, set)
   call get_variable_line(CS, varname, found, defined, value_string)
   if (found) then
     value = trim(strip_quotes(value_string(1)))
-  elseif (present(fail_if_missing)) then ; if (fail_if_missing) then
+  elseif (present_and_true(fail_if_missing)) then
     call MOM_error(FATAL, 'Unable to find variable '//trim(varname)//' in any input files.')
-  endif ; endif
+  endif
 
   if (present(set)) set = found
 
@@ -832,9 +832,9 @@ subroutine read_param_char_array(CS, varname, value, fail_if_missing, set)
       i_out = i_out+1
     endif
     do i=i_out,SIZE(value) ; value(i) = " " ; enddo
-  elseif (present(fail_if_missing)) then ; if (fail_if_missing) then
+  elseif (present_and_true(fail_if_missing)) then
     call MOM_error(FATAL, 'Unable to find variable '//trim(varname)//' in any input files.')
-  endif ; endif
+  endif
 
   if (present(set)) set = found
 
@@ -859,9 +859,9 @@ subroutine read_param_logical(CS, varname, value, fail_if_missing, set)
   call get_variable_line(CS, varname, found, defined, value_string, paramIsLogical=.true.)
   if (found) then
     value = defined
-  elseif (present(fail_if_missing)) then ; if (fail_if_missing) then
+  elseif (present_and_true(fail_if_missing)) then
     call MOM_error(FATAL, 'Unable to find variable '//trim(varname)//' in any input files.')
-  endif ; endif
+  endif
 
   if (present(set)) set = found
 
@@ -925,13 +925,13 @@ subroutine read_param_time(CS, varname, value, timeunit, fail_if_missing, date_f
     endif
     if (present(set)) set = .true.
   else
-    if (present(fail_if_missing)) then ; if (fail_if_missing) then
+    if (present_and_true(fail_if_missing)) then
       if (.not.found) then
         call MOM_error(FATAL, 'Unable to find variable '//trim(varname)//' in any input files.')
       else
         call MOM_error(FATAL, 'Variable '//trim(varname)//' found but not set in input files.')
       endif
-    endif ; endif
+    endif
     if (present(set)) set = .false.
   endif
   return
@@ -1046,16 +1046,13 @@ subroutine get_variable_line(CS, varname, found, defined, value_string, paramIsL
   logical            :: found_override, found_equals
   logical            :: found_define, found_undef
   logical            :: force_cycle, defined_in_line, continuedLine
-  logical            :: variableKindIsLogical, valueIsSame
+  logical            :: valueIsSame
   logical            :: inWrongBlock, fullPathParameter
   logical, parameter :: requireNamedClose = .false.
   integer, parameter :: verbose = 1
   set = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
   continuationBuffer = repeat(" ", CS%max_line_len)
   contBufSize = 0
-
-  variableKindIsLogical=.false.
-  if (present(paramIsLogical)) variableKindIsLogical = paramIsLogical
 
   ! Find the first instance (if any) where the named variable is found, and
   ! return variables indicating whether this variable is defined and the string
@@ -1226,7 +1223,7 @@ subroutine get_variable_line(CS, varname, found, defined, value_string, paramIsL
         lname = trim(line(is:ise-1))
         if (trim(lname) /= trim(varname)) cycle
         val_str = trim(adjustl(line(ise+3:last)))
-        if (variableKindIsLogical) then ! Special handling for logicals
+        if (present_and_true(paramIsLogical)) then ! Special handling for logicals
           read(val_str(:len_trim(val_str)),*) defined_in_line
         else
           defined_in_line = .true.
@@ -1768,8 +1765,8 @@ subroutine get_param_int(CS, modulename, varname, value, desc, units, &
   logical :: new_name_used, old_name_used, same_value
   integer :: new_name_value  ! The value that is set when the standard name is used.
 
-  do_read = .true. ; if (present(do_not_read)) do_read = .not.do_not_read
-  do_log  = .true. ; if (present(do_not_log))  do_log  = .not.do_not_log
+  do_read = .not. present_and_true(do_not_read)
+  do_log  = .not. present_and_true(do_not_log)
 
   if (do_read) then
     if (present(default)) value = default
@@ -1835,8 +1832,8 @@ subroutine get_param_int_array(CS, modulename, varname, value, desc, units, &
   integer :: new_name_value(size(value))  ! The values that are set when the old name is used.
   integer :: m
 
-  do_read = .true. ; if (present(do_not_read)) do_read = .not.do_not_read
-  do_log  = .true. ; if (present(do_not_log))  do_log  = .not.do_not_log
+  do_read = .not. present_and_true(do_not_read)
+  do_log  = .not. present_and_true(do_not_log)
 
   if (present(defaults)) then
     if (present(default)) call MOM_error(FATAL, &
@@ -1911,8 +1908,8 @@ subroutine get_param_real(CS, modulename, varname, value, desc, units, &
   logical :: new_name_used, old_name_used, same_value
   real :: new_name_value  ! The value that is set when the old name is used.
 
-  do_read = .true. ; if (present(do_not_read)) do_read = .not.do_not_read
-  do_log  = .true. ; if (present(do_not_log))  do_log  = .not.do_not_log
+  do_read = .not. present_and_true(do_not_read)
+  do_log  = .not. present_and_true(do_not_log)
 
   if (do_read) then
     if (present(default)) value = default
@@ -1983,8 +1980,8 @@ subroutine get_param_real_array(CS, modulename, varname, value, desc, units, &
   real    :: new_name_value(size(value))  ! The values that are set when the standard name is used.
   integer :: m
 
-  do_read = .true. ; if (present(do_not_read)) do_read = .not.do_not_read
-  do_log  = .true. ; if (present(do_not_log))  do_log  = .not.do_not_log
+  do_read = .not. present_and_true(do_not_read)
+  do_log  = .not. present_and_true(do_not_log)
 
   if (present(defaults)) then
     if (present(default)) call MOM_error(FATAL, &
@@ -2060,8 +2057,8 @@ subroutine get_param_char(CS, modulename, varname, value, desc, units, &
   logical :: new_name_used, old_name_used, same_value
   character(len=:), allocatable :: new_name_value  ! The value that is set when the standard name is used.
 
-  do_read = .true. ; if (present(do_not_read)) do_read = .not.do_not_read
-  do_log  = .true. ; if (present(do_not_log))  do_log  = .not.do_not_log
+  do_read = .not. present_and_true(do_not_read)
+  do_log  = .not. present_and_true(do_not_log)
 
   if (do_read) then
     if (present(default)) value = default
@@ -2122,8 +2119,8 @@ subroutine get_param_char_array(CS, modulename, varname, value, desc, units, &
   character(len=:), allocatable :: cat_val
   character(len=:), allocatable :: new_name_value(:)  ! The value that is set when the standard name is used.
 
-  do_read = .true. ; if (present(do_not_read)) do_read = .not.do_not_read
-  do_log  = .true. ; if (present(do_not_log))  do_log  = .not.do_not_log
+  do_read = .not. present_and_true(do_not_read)
+  do_log  = .not. present_and_true(do_not_log)
 
   if (do_read) then
     if (present(default)) value(:) = default
@@ -2196,8 +2193,8 @@ subroutine get_param_logical(CS, modulename, varname, value, desc, units, &
   logical :: new_name_used, old_name_used, same_value
   logical :: new_name_value  ! The value that is set when the standard name is used.
 
-  do_read = .true. ; if (present(do_not_read)) do_read = .not.do_not_read
-  do_log  = .true. ; if (present(do_not_log))  do_log  = .not.do_not_log
+  do_read = .not. present_and_true(do_not_read)
+  do_log  = .not. present_and_true(do_not_log)
 
   if (do_read) then
     if (present(default)) value = default
@@ -2266,8 +2263,8 @@ subroutine get_param_time(CS, modulename, varname, value, desc, units, &
   logical :: new_name_used, old_name_used, same_value
   type(time_type) :: new_name_value  ! The value that is set when the standard name is used.
 
-  do_read = .true. ; if (present(do_not_read)) do_read = .not.do_not_read
-  do_log  = .true. ; if (present(do_not_log))  do_log  = .not.do_not_log
+  do_read = .not. present_and_true(do_not_read)
+  do_log  = .not. present_and_true(do_not_log)
   log_date = .false.
 
   if (do_read) then
@@ -2349,15 +2346,11 @@ subroutine openParameterBlock(CS, blockName, desc, do_not_log)
     !< Log block entry if true.  This only prevents logging of entry to the block, and not the contents.
 
   type(parameter_block), pointer :: block => NULL()
-  logical :: do_log
-
-  do_log = .true.
-  if (present(do_not_log)) do_log = .not. do_not_log
 
   if (associated(CS%blockName)) then
     block => CS%blockName
     block%name = pushBlockLevel(block%name,blockName)
-    if (do_log) then
+    if (.not. present_and_true(do_not_log)) then
       call doc_openBlock(CS%doc, block%name, desc)
       block%log_access = .true.
     else
@@ -2418,6 +2411,15 @@ function popBlockLevel(oldblockName)
       'popBlockLevel: A pop was attempted leaving an empty block name.')
   endif
 end function popBlockLevel
+
+
+!> This routine returns true if its single optional argument is both present and true.
+logical function present_and_true(arg)
+  logical, optional, intent(in) :: arg !< An optional logical to argument to use.
+
+  present_and_true = .false.
+  if (present(arg)) present_and_true = arg
+end function present_and_true
 
 !> \namespace mom_file_parser
 !!
