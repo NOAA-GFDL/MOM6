@@ -636,15 +636,12 @@ subroutine chksum_vec_C3d(mesg, u_comp, v_comp, G, halos, scalars, unscale)
                                                              !! scalars that are being checked.
   real,                    optional, intent(in)    :: unscale !< A factor that undoes the scaling for the
                                                              !! arrays to give consistent output [a A-1 ~> 1]
-  ! Local variables
-  logical :: are_scalars
-  are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
     call uvchksum(mesg, u_comp, v_comp, G%HI, halos, unscale=unscale)
   endif
   if (debug_redundant) then
-    if (are_scalars) then
+    if (present_and_true(scalars)) then
       call check_redundant_C(mesg, u_comp, v_comp, G, direction=To_All+Scalar_Pair, unscale=unscale)
     else
       call check_redundant_C(mesg, u_comp, v_comp, G, unscale=unscale)
@@ -668,15 +665,12 @@ subroutine chksum_vec_C2d(mesg, u_comp, v_comp, G, halos, scalars, unscale)
                                                            !! scalars that are being checked.
   real,                  optional, intent(in)    :: unscale !< A factor that undoes the scaling for the
                                                            !! arrays to give consistent output [a A-1 ~> 1]
-  ! Local variables
-  logical :: are_scalars
-  are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
     call uvchksum(mesg, u_comp, v_comp, G%HI, halos, unscale=unscale)
   endif
   if (debug_redundant) then
-    if (are_scalars) then
+    if (present_and_true(scalars)) then
       call check_redundant_C(mesg, u_comp, v_comp, G, direction=To_All+Scalar_Pair, unscale=unscale)
     else
       call check_redundant_C(mesg, u_comp, v_comp, G, unscale=unscale)
@@ -700,16 +694,13 @@ subroutine chksum_vec_B3d(mesg, u_comp, v_comp, G, halos, scalars, unscale)
                                                               !! scalars that are being checked.
   real,                     optional, intent(in)    :: unscale !< A factor that undoes the scaling for the
                                                               !! arrays to give consistent output [a A-1 ~> 1]
-  ! Local variables
-  logical :: are_scalars
-  are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
     call Bchksum(u_comp, mesg//"(u)", G%HI, halos, unscale=unscale)
     call Bchksum(v_comp, mesg//"(v)", G%HI, halos, unscale=unscale)
   endif
   if (debug_redundant) then
-    if (are_scalars) then
+    if (present_and_true(scalars)) then
       call check_redundant_B(mesg, u_comp, v_comp, G, direction=To_All+Scalar_Pair, unscale=unscale)
     else
       call check_redundant_B(mesg, u_comp, v_comp, G, unscale=unscale)
@@ -735,16 +726,13 @@ subroutine chksum_vec_B2d(mesg, u_comp, v_comp, G, halos, scalars, symmetric, un
                                                             !! full symmetric computational domain.
   real,                   optional, intent(in)    :: unscale !< A factor that undoes the scaling for the
                                                             !! arrays to give consistent output [a A-1 ~> 1]
-  ! Local variables
-  logical :: are_scalars
-  are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
     call Bchksum(u_comp, mesg//"(u)", G%HI, halos, symmetric=symmetric, unscale=unscale)
     call Bchksum(v_comp, mesg//"(v)", G%HI, halos, symmetric=symmetric, unscale=unscale)
   endif
   if (debug_redundant) then
-    if (are_scalars) then
+    if (present_and_true(scalars)) then
       call check_redundant_B(mesg, u_comp, v_comp, G, direction=To_All+Scalar_Pair, unscale=unscale)
     else
       call check_redundant_B(mesg, u_comp, v_comp, G, unscale=unscale)
@@ -768,16 +756,13 @@ subroutine chksum_vec_A3d(mesg, u_comp, v_comp, G, halos, scalars, unscale)
                                                             !! scalars that are being checked.
   real,                   optional, intent(in)    :: unscale !< A factor that undoes the scaling for the
                                                             !! arrays to give consistent output [a A-1 ~> 1]
-  ! Local variables
-  logical :: are_scalars
-  are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
     call hchksum(u_comp, mesg//"(u)", G%HI, halos, unscale=unscale)
     call hchksum(v_comp, mesg//"(v)", G%HI, halos, unscale=unscale)
   endif
   if (debug_redundant) then
-    if (are_scalars) then
+    if (present_and_true(scalars)) then
       call check_redundant_T(mesg, u_comp, v_comp, G, direction=To_All+Scalar_Pair, unscale=unscale)
     else
       call check_redundant_T(mesg, u_comp, v_comp, G, unscale=unscale)
@@ -801,16 +786,13 @@ subroutine chksum_vec_A2d(mesg, u_comp, v_comp, G, halos, scalars, unscale)
                                                           !! scalars that are being checked.
   real,                 optional, intent(in)    :: unscale !< A factor that undoes the scaling for the
                                                           !! arrays to give consistent output [a A-1 ~> 1]
-  ! Local variables
-  logical :: are_scalars
-  are_scalars = .false. ; if (present(scalars)) are_scalars = scalars
 
   if (debug_chksums) then
     call hchksum(u_comp, mesg//"(u)", G%HI, halos, unscale=unscale)
     call hchksum(v_comp, mesg//"(v)", G%HI, halos, unscale=unscale)
   endif
   if (debug_redundant) then
-    if (are_scalars) then
+    if (present_and_true(scalars)) then
       call check_redundant_T(mesg, u_comp, v_comp, G, direction=To_All+Scalar_Pair, unscale=unscale)
     else
       call check_redundant_T(mesg, u_comp, v_comp, G, unscale=unscale)
@@ -1010,5 +992,14 @@ logical function check_column_integrals(nk_1, field_1, nk_2, field_2, missing_va
   endif
 
 end function check_column_integrals
+
+
+!> This routine returns true if its single optional argument is both present and true.
+logical function present_and_true(arg)
+  logical, optional, intent(in) :: arg !< An optional logical to argument to use.
+
+  present_and_true = .false.
+  if (present(arg)) present_and_true = arg
+end function present_and_true
 
 end module MOM_debugging
