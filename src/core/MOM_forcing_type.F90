@@ -540,14 +540,10 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
   ! Initializes/sets logicals if 'rates' are requested
   ! These factors are required for legacy reasons
   !  and therefore computed only when optional outputs are requested
-  do_NHR = .false.
-  do_NSR = .false.
-  do_NMIOR = .false.
-  do_PSWBR = .false.
-  if (present(net_heat_rate)) do_NHR = .true.
-  if (present(net_salt_rate)) do_NSR = .true.
-  if (present(netmassinout_rate)) do_NMIOR = .true.
-  if (present(pen_sw_bnd_rate)) do_PSWBR = .true.
+  do_NHR = present(net_heat_rate)
+  do_NSR = present(net_salt_rate)
+  do_NMIOR = present(netmassinout_rate)
+  do_PSWBR = present(pen_sw_bnd_rate)
   !}BGR
 
   ! GMM: by default heat content from mass entering and leaving the ocean (enthalpy)
@@ -1198,7 +1194,7 @@ subroutine find_ustar_fluxes(fluxes, tv, U_star, G, GV, US, halo, H_T_units)
   hs = 0 ; if (present(halo)) hs = max(halo, 0)
   is = G%isc - hs ; ie = G%iec + hs ; js = G%jsc - hs ; je = G%jec + hs
 
-  Z_T_units = .true. ; if (present(H_T_units)) Z_T_units = .not.H_T_units
+  Z_T_units = .not. present_and_true(H_T_units)
 
   if (.not.(associated(fluxes%ustar) .or. associated(fluxes%tau_mag))) &
     call MOM_error(FATAL, "find_ustar_fluxes requires that either ustar or tau_mag be associated.")
@@ -1263,7 +1259,7 @@ subroutine find_ustar_mech_forcing(forces, tv, U_star, G, GV, US, halo, H_T_unit
   hs = 0 ; if (present(halo)) hs = max(halo, 0)
   is = G%isc - hs ; ie = G%iec + hs ; js = G%jsc - hs ; je = G%jec + hs
 
-  Z_T_units = .true. ; if (present(H_T_units)) Z_T_units = .not.H_T_units
+  Z_T_units = .not. present_and_true(H_T_units)
 
   if (.not.(associated(forces%ustar) .or. associated(forces%tau_mag))) &
     call MOM_error(FATAL, "find_ustar_mech requires that either ustar or tau_mag be associated.")
@@ -1588,34 +1584,30 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
   handles%id_omega_w2x = register_diag_field('ocean_model', 'omega_w2x', diag%axesT1, Time, &
       'Counter-clockwise angle of the wind stress from the horizontal axis.', 'rad', conversion=1.0)
 
-  if (present(use_berg_fluxes)) then
-    if (use_berg_fluxes) then
-      handles%id_ustar_berg = register_diag_field('ocean_model', 'ustar_berg', diag%axesT1, Time, &
-          'Friction velocity below iceberg ', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
+  if (present_and_true(use_berg_fluxes)) then
+    handles%id_ustar_berg = register_diag_field('ocean_model', 'ustar_berg', diag%axesT1, Time, &
+        'Friction velocity below iceberg ', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
 
-      handles%id_area_berg = register_diag_field('ocean_model', 'area_berg', diag%axesT1, Time, &
-          'Area of grid cell covered by iceberg ', 'm2 m-2', conversion=1.0)
+    handles%id_area_berg = register_diag_field('ocean_model', 'area_berg', diag%axesT1, Time, &
+        'Area of grid cell covered by iceberg ', 'm2 m-2', conversion=1.0)
 
-      handles%id_mass_berg = register_diag_field('ocean_model', 'mass_berg', diag%axesT1, Time, &
-          'Mass of icebergs ', 'kg m-2', conversion=US%RZ_to_kg_m2)
+    handles%id_mass_berg = register_diag_field('ocean_model', 'mass_berg', diag%axesT1, Time, &
+        'Mass of icebergs ', 'kg m-2', conversion=US%RZ_to_kg_m2)
 
-      handles%id_ustar_ice_cover = register_diag_field('ocean_model', 'ustar_ice_cover', diag%axesT1, Time, &
-          'Friction velocity below iceberg and ice shelf together', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
+    handles%id_ustar_ice_cover = register_diag_field('ocean_model', 'ustar_ice_cover', diag%axesT1, Time, &
+        'Friction velocity below iceberg and ice shelf together', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
 
-      handles%id_frac_ice_cover = register_diag_field('ocean_model', 'frac_ice_cover', diag%axesT1, Time, &
-          'Area of grid cell below iceberg and ice shelf together ', 'm2 m-2', conversion=1.0)
-    endif
+    handles%id_frac_ice_cover = register_diag_field('ocean_model', 'frac_ice_cover', diag%axesT1, Time, &
+        'Area of grid cell below iceberg and ice shelf together ', 'm2 m-2', conversion=1.0)
   endif
 
   ! See:
-  if (present(use_cfcs)) then
-    if (use_cfcs) then
-      handles%id_ice_fraction = register_diag_field('ocean_model', 'ice_fraction', diag%axesT1, Time, &
-          'Fraction of cell area covered by sea ice', 'm2 m-2', conversion=1.0)
+  if (present_and_true(use_cfcs)) then
+    handles%id_ice_fraction = register_diag_field('ocean_model', 'ice_fraction', diag%axesT1, Time, &
+        'Fraction of cell area covered by sea ice', 'm2 m-2', conversion=1.0)
 
-      handles%id_u10_sqr = register_diag_field('ocean_model', 'u10_sqr', diag%axesT1, Time, &
-          'Wind magnitude at 10m, squared', 'm2 s-2', conversion=US%L_to_m**2*US%s_to_T**2)
-    endif
+    handles%id_u10_sqr = register_diag_field('ocean_model', 'u10_sqr', diag%axesT1, Time, &
+        'Wind magnitude at 10m, squared', 'm2 s-2', conversion=US%L_to_m**2*US%s_to_T**2)
   endif
 
   handles%id_psurf = register_diag_field('ocean_model', 'p_surf', diag%axesT1, Time, &
@@ -1694,7 +1686,7 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
         cmor_standard_name='water_flux_into_sea_water_from_rivers',                           &
         cmor_long_name='Water Flux into Sea Water From Rivers')
 
-  if (present(use_glc_runoff)) then
+  if (present_and_true(use_glc_runoff)) then
     handles%id_frunoff_glc = register_diag_field('ocean_model', 'frunoff_glc', diag%axesT1, Time,    &
           'Frozen glacier runoff (calving) and iceberg melt into ocean', &
           units='kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s, &
@@ -1788,7 +1780,7 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
       cmor_standard_name='water_flux_into_sea_water_from_rivers_area_integrated',             &
       cmor_long_name='Water Flux into Sea Water From Rivers Area Integrated')
 
-  if (present(use_glc_runoff)) then
+  if (present_and_true(use_glc_runoff)) then
     handles%id_total_frunoff_glc = register_scalar_field('ocean_model', 'total_frunoff_glc', Time, diag, &
         long_name='Area integrated frozen glacier runoff (calving) & iceberg melt into ocean', &
         units='kg s-1', conversion=US%RZL2_to_kg*US%s_to_T)
@@ -1858,15 +1850,13 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
         'W m-2', conversion=US%QRZ_T_to_W_m2, &
         standard_name='temperature_flux_due_to_runoff_expressed_as_heat_flux_into_sea_water')
 
-  if (present(use_carbon_runoff)) then
-    if (use_carbon_runoff) then
-       handles%id_carbon_content_lrunoff = register_diag_field('ocean_model', 'carbon_content_lrunoff', &
-             diag%axesT1, Time, 'Carbon content of liquid runoff into ocean',        &
-             'kg m-2 s-1', standard_name='carbon_flux_due_to_runoff')
-    endif
+  if (present_and_true(use_carbon_runoff)) then
+     handles%id_carbon_content_lrunoff = register_diag_field('ocean_model', 'carbon_content_lrunoff', &
+           diag%axesT1, Time, 'Carbon content of liquid runoff into ocean',        &
+           'kg m-2 s-1', standard_name='carbon_flux_due_to_runoff')
   endif
 
-  if (present(use_glc_runoff)) then
+  if (present_and_true(use_glc_runoff)) then
     handles%id_heat_content_frunoff_glc = register_diag_field('ocean_model', 'heat_content_frunoff_glc', &
           diag%axesT1, Time, 'Heat content (relative to 0C) of solid glacier runoff into ocean',         &
           'W m-2', conversion=US%QRZ_T_to_W_m2)
@@ -1980,7 +1970,7 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
         cmor_standard_name='heat_flux_into_sea_water_due_to_iceberg_thermodynamics',               &
         cmor_long_name='Latent Heat to Melt Frozen Runoff/Iceberg')
 
-  if (present(use_glc_runoff)) then
+  if (present_and_true(use_glc_runoff)) then
     handles%id_lat_frunoff_glc = register_diag_field('ocean_model', 'latent_frunoff_glc', diag%axesT1, Time, &
           'Latent heat flux into ocean due to melting of frozen glacier runoff', 'W m-2', conversion=US%QRZ_T_to_W_m2)
   endif
@@ -2024,7 +2014,7 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
       cmor_long_name=                                                                        &
       'Temperature Flux due to Runoff Expressed as Heat Flux into Sea Water Area Integrated')
 
-  if (present(use_glc_runoff)) then
+  if (present_and_true(use_glc_runoff)) then
     handles%id_total_heat_content_frunoff_glc = register_scalar_field('ocean_model',                 &
         'total_heat_content_frunoff_glc', Time, diag,                                                &
         long_name='Area integrated heat content (relative to 0C) of solid glacier runoff',           &
@@ -2153,7 +2143,7 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
       cmor_long_name=                                                                             &
       'Heat Flux into Sea Water due to Iceberg Thermodynamics Area Integrated')
 
-  if (present(use_glc_runoff)) then
+  if (present_and_true(use_glc_runoff)) then
     handles%id_total_lat_frunoff_glc = register_scalar_field('ocean_model',                             &
         'total_lat_frunoff_glc', Time, diag,                                                            &
         long_name='Area integrated latent heat flux due to melting frozen glacier runoff',              &
@@ -2309,11 +2299,9 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
 
   !===============================================================
   ! wave forcing diagnostics
-  if (present(use_waves)) then
-    if (use_waves) then
-      handles%id_lamult = register_diag_field('ocean_model', 'lamult', &
+  if (present_and_true(use_waves)) then
+    handles%id_lamult = register_diag_field('ocean_model', 'lamult', &
         diag%axesT1, Time, long_name='Langmuir enhancement factor received from WW3', units="nondim", conversion=1.0)
-    endif
   endif
 
 end subroutine register_forcing_type_diags
@@ -2536,11 +2524,8 @@ subroutine copy_common_forcing_fields(forces, fluxes, G, skip_pres)
   type(ocean_grid_type),   intent(in)    :: G        !< grid type
   logical,       optional, intent(in)    :: skip_pres !< If present and true, do not copy pressure fields.
 
-  logical :: do_pres
   integer :: i, j, is, ie, js, je
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
-
-  do_pres = .true. ; if (present(skip_pres)) do_pres = .not.skip_pres
 
   if (associated(forces%ustar) .and. associated(fluxes%ustar)) then
     do j=js,je ; do i=is,ie
@@ -2558,7 +2543,7 @@ subroutine copy_common_forcing_fields(forces, fluxes, G, skip_pres)
     enddo ; enddo
   endif
 
-  if (do_pres) then
+  if (.not. present_and_true(skip_pres)) then
     if (associated(forces%p_surf) .and. associated(fluxes%p_surf)) then
       do j=js,je ; do i=is,ie
         fluxes%p_surf(i,j) = forces%p_surf(i,j)
@@ -2803,8 +2788,7 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
 
   call cpu_clock_begin(handles%id_clock_forcing)
 
-  mom_enthalpy = .true.
-  if (present(enthalpy)) mom_enthalpy = .not. enthalpy
+  mom_enthalpy = .not. present_and_true(enthalpy)
 
   ! NOTE: post_data expects data to be on the rotated index map, so any
   !   rotations must be applied before saving the output.
@@ -3470,17 +3454,13 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
 
   ! Local variables
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
-  logical :: shelf_sfc_acc, enthalpy_mom
+  logical :: enthalpy_mom
 
   ! if true, allocate fluxes needed to calculate enthalpy terms in MOM6
-  enthalpy_mom = .true.
-  if (present (hevap)) enthalpy_mom = .not. hevap
+  enthalpy_mom = .not. present_and_true(hevap)
 
   isd  = G%isd   ; ied  = G%ied    ; jsd  = G%jsd   ; jed  = G%jed
   IsdB = G%IsdB  ; IedB = G%IedB   ; JsdB = G%JsdB  ; JedB = G%JedB
-
-  shelf_sfc_acc = .false.
-  if (present(shelf_sfc_accumulation)) shelf_sfc_acc = shelf_sfc_accumulation
 
   call myAlloc(fluxes%ustar,isd,ied,jsd,jed, ustar)
   call myAlloc(fluxes%ustar_gustless,isd,ied,jsd,jed, ustar)
@@ -3514,7 +3494,7 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
   call myAlloc(fluxes%salt_flux,isd,ied,jsd,jed, salt)
   call myAlloc(fluxes%carbon_content_lrunoff,isd,ied,jsd,jed, carbon)
 
-  if (present(heat) .and. present(water)) then ; if (heat .and. water) then
+  if (present_and_true(heat) .and. present_and_true(water)) then
     call myAlloc(fluxes%heat_content_cond,isd,ied,jsd,jed, .true.)
     call myAlloc(fluxes%heat_content_evap,isd,ied,jsd,jed, .not. enthalpy_mom)
     call myAlloc(fluxes%heat_content_lprec,isd,ied,jsd,jed, .true.)
@@ -3526,17 +3506,18 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
     call myAlloc(fluxes%heat_content_frunoff_glc,isd,ied,jsd,jed, .true.)
     call myAlloc(fluxes%heat_content_massout,isd,ied,jsd,jed, enthalpy_mom)
     call myAlloc(fluxes%heat_content_massin,isd,ied,jsd,jed,  enthalpy_mom)
-  endif ; endif
+  endif
 
   call myAlloc(fluxes%p_surf,isd,ied,jsd,jed, press)
 
   ! These fields should only be allocated if ice shelf is enabled.
-  if (present(shelf)) then ; if (shelf) then
+  if (present_and_true(shelf)) then
     call myAlloc(fluxes%frac_shelf_h,isd,ied,jsd,jed, shelf)
     call myAlloc(fluxes%ustar_shelf,isd,ied,jsd,jed, shelf)
     call myAlloc(fluxes%iceshelf_melt,isd,ied,jsd,jed, shelf)
-    if (shelf_sfc_acc) call myAlloc(fluxes%shelf_sfc_mass_flux,isd,ied,jsd,jed, shelf_sfc_acc)
-  endif ; endif
+    if (present_and_true(shelf_sfc_accumulation)) &
+      call myAlloc(fluxes%shelf_sfc_mass_flux,isd,ied,jsd,jed, .true.)
+  endif
 
   !These fields should only be allocated when iceberg area is being passed through the coupler.
   call myAlloc(fluxes%ustar_berg,isd,ied,jsd,jed, iceberg)
@@ -3680,7 +3661,7 @@ subroutine allocate_mech_forcing_by_group(G, forces, stress, ustar, shelf, &
   call myAlloc(forces%mass_berg,isd,ied,jsd,jed, iceberg)
 
   !These fields should only be allocated when waves
-  if (present(waves)) then ; if (waves) then
+  if (present_and_true(waves)) then
     if (.not. present(num_stk_bands)) then
       call MOM_error(FATAL,"Requested to &
       &initialize with waves, but no waves are present.")
@@ -3692,7 +3673,7 @@ subroutine allocate_mech_forcing_by_group(G, forces, stress, ustar, shelf, &
         allocate(forces%vstkb(isd:ied,jsd:jed,num_stk_bands), source=0.0)
       endif
     endif
-  endif ; endif
+  endif
 
 end subroutine allocate_mech_forcing_by_group
 
@@ -3785,9 +3766,9 @@ subroutine myAlloc_2d(array, is, ie, js, je, flag)
   integer,           intent(in) :: je !< End j-index
   logical, optional, intent(in) :: flag !< Flag to indicate to allocate
 
-  if (present(flag)) then ; if (flag) then ; if (.not.associated(array)) then
-    allocate(array(is:ie,js:je), source=0.0)
-  endif ; endif ; endif
+  if (present_and_true(flag)) then
+    if (.not.associated(array)) allocate(array(is:ie,js:je), source=0.0)
+  endif
 end subroutine myAlloc_2d
 
 subroutine myAlloc_3d(array, is, ie, js, je, ks, ke, flag)
@@ -3800,9 +3781,9 @@ subroutine myAlloc_3d(array, is, ie, js, je, ks, ke, flag)
   integer,             intent(in) :: ke !< End k-index
   logical, optional,   intent(in) :: flag !< Flag to indicate to allocate
 
-  if (present(flag)) then ; if (flag) then ; if (.not.associated(array)) then
-    allocate(array(is:ie,js:je,ks:ke), source=0.0)
-  endif ; endif ; endif
+  if (present_and_true(flag)) then
+    if (.not.associated(array)) allocate(array(is:ie,js:je,ks:ke), source=0.0)
+  endif
 end subroutine myAlloc_3d
 
 !> Deallocate the forcing type
@@ -4115,15 +4096,12 @@ subroutine homogenize_mech_forcing(forces, G, US, Rho0, UpdateUstar)
   real :: tx_mean, ty_mean ! Mean wind stresses [R L Z T-2 ~> Pa]
   real :: tau_mag      ! The magnitude of the wind stresses [R Z2 T-2 ~> Pa]
   real :: Irho0        ! Inverse of the mean density [R-1 ~> m3 kg-1]
-  logical :: do_stress, do_ustar, do_taumag, do_shelf, do_press, do_iceberg, tau2ustar
+  logical :: do_stress, do_ustar, do_taumag, do_shelf, do_press, do_iceberg
   integer :: i, j, is, ie, js, je, isB, ieB, jsB, jeB
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   isB = G%iscB ; ieB = G%iecB ; jsB = G%jscB ; jeB = G%jecB
 
   Irho0 = 1.0 / Rho0
-
-  tau2ustar = .false.
-  if (present(UpdateUstar)) tau2ustar = UpdateUstar
 
   call get_mech_forcing_groups(forces, do_stress, do_ustar, do_taumag, do_shelf, &
                               do_press, do_iceberg)
@@ -4137,7 +4115,7 @@ subroutine homogenize_mech_forcing(forces, G, US, Rho0, UpdateUstar)
     do j=jsB,jeB ; do i=is,ie
       if (G%mask2dCv(i,J) > 0.0) forces%tauy(i,J) = ty_mean
     enddo ; enddo
-    if (tau2ustar) then
+    if (present_and_true(UpdateUstar)) then
       tau_mag = US%L_to_Z*sqrt((tx_mean**2) + (ty_mean**2))
       if (associated(forces%tau_mag)) then ; do j=js,je ; do i=is,ie ; if (G%mask2dT(i,j) > 0.0) then
         forces%tau_mag(i,j) = tau_mag
@@ -4356,6 +4334,15 @@ subroutine homogenize_field_u(var, G, tmp_scale)
   enddo ; enddo
 
 end subroutine homogenize_field_u
+
+
+!> This routine returns true if its single optional argument is both present and true.
+logical function present_and_true(arg)
+  logical, optional, intent(in) :: arg !< An optional logical to argument to use.
+
+  present_and_true = .false.
+  if (present(arg)) present_and_true = arg
+end function present_and_true
 
 !> \namespace mom_forcing_type
 !!
