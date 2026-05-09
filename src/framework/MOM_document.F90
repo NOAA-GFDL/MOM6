@@ -113,8 +113,7 @@ subroutine doc_param_logical(doc, varname, desc, units, val, default, &
       mesg = undef_string(doc, varname, units)
     endif
 
-    equalsDefault = .false.
-    if (present(like_default)) equalsDefault = like_default
+    equalsDefault = present_and_true(like_default)
     if (present(default)) then
       if (val .eqv. default) equalsDefault = .true.
       if (default) then
@@ -165,7 +164,7 @@ subroutine doc_param_logical_array(doc, varname, desc, units, vals, default, &
 
     mesg = define_string(doc, varname, valstring, units)
 
-    equalsDefault = .false.
+    equalsDefault = present_and_true(like_default)
     if (present(default)) then
       equalsDefault = .true.
       do i=1,size(vals) ; if (vals(i) .neqv. default) equalsDefault = .false. ; enddo
@@ -175,7 +174,6 @@ subroutine doc_param_logical_array(doc, varname, desc, units, vals, default, &
         mesg = trim(mesg)//" default = "//STRING_FALSE
       endif
     endif
-    if (present(like_default)) then ; if (like_default) equalsDefault = .true. ; endif
 
     if (mesgHasBeenDocumented(doc, varName, mesg)) return ! Avoid duplicates
     call writeMessageAndDesc(doc, mesg, desc, equalsDefault, &
@@ -209,8 +207,7 @@ subroutine doc_param_int(doc, varname, desc, units, val, default, &
     valstring = int_string(val)
     mesg = define_string(doc, varname, valstring, units)
 
-    equalsDefault = .false.
-    if (present(like_default)) equalsDefault = like_default
+    equalsDefault = present_and_true(like_default)
     if (present(default)) then
       if (val == default) equalsDefault = .true.
       mesg = trim(mesg)//" default = "//(trim(int_string(default)))
@@ -254,7 +251,7 @@ subroutine doc_param_int_array(doc, varname, desc, units, vals, default, default
 
     mesg = define_string(doc, varname, valstring, units)
 
-    equalsDefault = .false.
+    equalsDefault = present_and_true(like_default)
     if (present(default)) then
       equalsDefault = .true.
       do i=1,size(vals) ; if (vals(i) /= default) equalsDefault = .false. ; enddo
@@ -265,7 +262,6 @@ subroutine doc_param_int_array(doc, varname, desc, units, vals, default, default
       do i=1,size(vals) ; if (vals(i) /= defaults(i)) equalsDefault = .false. ; enddo
       mesg = trim(mesg)//" default = "//trim(int_array_string(defaults))
     endif
-    if (present(like_default)) then ; if (like_default) equalsDefault = .true. ; endif
 
     if (mesgHasBeenDocumented(doc, varName, mesg)) return ! Avoid duplicates
     call writeMessageAndDesc(doc, mesg, desc, equalsDefault, &
@@ -298,8 +294,7 @@ subroutine doc_param_real(doc, varname, desc, units, val, default, debuggingPara
     valstring = real_string(val)
     mesg = define_string(doc, varname, valstring, units)
 
-    equalsDefault = .false.
-    if (present(like_default)) equalsDefault = like_default
+    equalsDefault = present_and_true(like_default)
     if (present(default)) then
       if (val == default) equalsDefault = .true.
       mesg = trim(mesg)//" default = "//trim(real_string(default))
@@ -338,7 +333,7 @@ subroutine doc_param_real_array(doc, varname, desc, units, vals, default, defaul
 
     mesg = define_string(doc, varname, valstring, units)
 
-    equalsDefault = .false.
+    equalsDefault = present_and_true(like_default)
     if (present(default)) then
       equalsDefault = .true.
       do i=1,size(vals) ; if (vals(i) /= default) equalsDefault = .false. ; enddo
@@ -349,7 +344,6 @@ subroutine doc_param_real_array(doc, varname, desc, units, vals, default, defaul
       do i=1,size(vals) ; if (vals(i) /= defaults(i)) equalsDefault = .false. ; enddo
       mesg = trim(mesg)//" default = "//trim(real_array_string(defaults))
     endif
-    if (present(like_default)) then ; if (like_default) equalsDefault = .true. ; endif
 
     if (mesgHasBeenDocumented(doc, varName, mesg)) return ! Avoid duplicates
     call writeMessageAndDesc(doc, mesg, desc, equalsDefault, debuggingParam=debuggingParam)
@@ -382,8 +376,7 @@ subroutine doc_param_char(doc, varname, desc, units, val, default, &
   if (doc%filesAreOpen) then
     mesg = define_string(doc, varname, '"'//trim(val)//'"', units)
 
-    equalsDefault = .false.
-    if (present(like_default)) equalsDefault = like_default
+    equalsDefault = present_and_true(like_default)
     if (present(default)) then
       if (trim(val) == trim(default)) equalsDefault = .true.
       mesg = trim(mesg)//' default = "'//trim(adjustl(default))//'"'
@@ -474,8 +467,7 @@ subroutine doc_param_time(doc, varname, desc, val, default, units, debuggingPara
       mesg = define_string(doc, varname, valstring, "[days : seconds]")
     endif
 
-    equalsDefault = .false.
-    if (present(like_default)) equalsDefault = like_default
+    equalsDefault = present_and_true(like_default)
     if (present(default)) then
       if (val == default) equalsDefault = .true.
       mesg = trim(mesg)//" default = "//trim(time_string(default))
@@ -512,8 +504,8 @@ subroutine writeMessageAndDesc(doc, vmesg, desc, valueWasDefault, indent, &
   logical :: msg_done, reset_msg_pad   ! Logicals used to format messages.
   logical :: all, short, layout, debug ! Flags indicating which files to write into.
 
-  layout = .false. ; if (present(layoutParam)) layout = layoutParam
-  debug = .false. ; if (present(debuggingParam)) debug = debuggingParam
+  layout = present_and_true(layoutParam)
+  debug = present_and_true(debuggingParam)
   all = doc%complete .and. (doc%unitAll > 0) .and. .not. (layout .or. debug)
   short = doc%minimal .and. (doc%unitShort > 0) .and. .not. (layout .or. debug)
   if (present(valueWasDefault)) short = short .and. (.not. valueWasDefault)
@@ -881,17 +873,17 @@ subroutine doc_module(doc, modname, desc, log_to_all, all_default, layoutMod, de
     mesg = "! === module "//trim(modname)//" ==="
     call writeMessageAndDesc(doc, mesg, desc, valueWasDefault=all_default, indent=0, &
                              layoutParam=layoutMod, debuggingParam=debuggingMod)
-    if (present(log_to_all)) then ; if (log_to_all) then
+    if (present_and_true(log_to_all)) then
       ! Log the module version again if the previous call was intercepted for use to document
       ! a layout or debugging module.
       repeat_doc = .false.
-      if (present(layoutMod)) then ; if (layoutMod) repeat_doc = .true. ; endif
-      if (present(debuggingMod)) then ; if (debuggingMod) repeat_doc = .true. ; endif
+      if (present_and_true(layoutMod)) repeat_doc = .true.
+      if (present_and_true(debuggingMod)) repeat_doc = .true.
       if (repeat_doc) then
         call writeMessageAndDesc(doc, '', '', valueWasDefault=all_default)
         call writeMessageAndDesc(doc, mesg, desc, valueWasDefault=all_default, indent=0)
       endif
-    endif ; endif
+    endif
   endif
 end subroutine doc_module
 
@@ -1151,5 +1143,14 @@ function mesgHasBeenDocumented(doc,varName,mesg)
     last%next => newLink
   endif
 end function mesgHasBeenDocumented
+
+
+!> This routine returns true if its single optional argument is both present and true.
+logical function present_and_true(arg)
+  logical, optional, intent(in) :: arg !< An optional logical to argument to use.
+
+  present_and_true = .false.
+  if (present(arg)) present_and_true = arg
+end function present_and_true
 
 end module MOM_document
