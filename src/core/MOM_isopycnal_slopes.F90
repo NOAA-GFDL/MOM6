@@ -68,11 +68,15 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
                                                                      !! to calculate stratification at open boundary
                                                                      !! condition faces.
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), &
-                                     optional, intent(inout) :: drdx_u !< Zonal density gradient
-                                                                       !! at u [R L-1 ~> kg m-4]
+                                     optional, intent(inout) :: drdx_u !< Zonal density gradient at u
+                                                                       !! along surfaces of constant z
+                                                                       !! (not along isopycnals or
+                                                                       !! model interfaces) [R L-1 ~> kg m-4]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), &
-                                     optional, intent(inout) :: drdy_v !< Meridional density gradient
-                                                                       !! at v [R L-1 ~> kg m-4]
+                                     optional, intent(inout) :: drdy_v !< Meridional density gradient at v
+                                                                       !! along surfaces of constant z
+                                                                       !! (not along isopycnals or
+                                                                       !! model interfaces) [R L-1 ~> kg m-4]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), &
                                      optional, intent(inout) :: drdz_u !< Vertical density gradient
                                                                        !! at u [R Z-1 ~> kg m-4]
