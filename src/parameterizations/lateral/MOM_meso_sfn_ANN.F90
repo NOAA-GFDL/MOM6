@@ -217,13 +217,13 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   if (CS%id_drdy_c > 0) call post_data(CS%id_drdy_c, drdy_c, CS%diag)
 
   ! Compute the density fluxes at center points using the ANN.
-  do k = 2, nz
+  do K = 2, nz
     m = 0
     do j = js-1, je+1 ; do i = is-1, ie+1
       m = m + 1
-      drdx_local(:,:) = drdx_c(i-shift:i+shift,j-shift:j+shift,k)
-      drdy_local(:,:) = drdy_c(i-shift:i+shift,j-shift:j+shift,k)
-      ! Take the velocity gradients below the interface k
+      drdx_local(:,:) = drdx_c(i-shift:i+shift,j-shift:j+shift,K)
+      drdy_local(:,:) = drdy_c(i-shift:i+shift,j-shift:j+shift,K)
+      ! Take the velocity gradients below the interface K
       dudx_local(:,:) = dudx(i-shift:i+shift,j-shift:j+shift,k)
       dudy_local(:,:) = dudy(i-shift:i+shift,j-shift:j+shift,k)
       dvdx_local(:,:) = dvdx(i-shift:i+shift,j-shift:j+shift,k)
@@ -283,8 +283,8 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
       yy(2) = max(-CS%flux_clamp, min(CS%flux_clamp, yy(2)))
 
       ! The sign convention is that ANN outputs -u'rho', so we negate.
-      Fx_c(i,j,k) = -yy(1)
-      Fy_c(i,j,k) = -yy(2)
+      Fx_c(i,j,K) = -yy(1)
+      Fy_c(i,j,K) = -yy(2)
 
     enddo ; enddo
   enddo
@@ -292,7 +292,7 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   ! Interpolate the density fluxes to u and v points.
   call center2uv(Fx_c, Fy_c, Fx_u, Fy_v, G, GV)
 
-  do k=2, nz
+  do K=2, nz
     do j=js,je ; do I=is-1,ie
       ! In layered mode, skip interfaces at the bottom or surface
       if (.not. use_EOS) then
@@ -304,23 +304,23 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
             dist_from_bot_b < CS%min_dist_from_boundary .or. &
             dist_from_sfc_a < CS%min_dist_from_boundary .or. &
             dist_from_sfc_b < CS%min_dist_from_boundary) then
-          sfn_u(I,j,k) = 0.0
+          sfn_u(I,j,K) = 0.0
           cycle
         endif
       endif
       ! Skip if density gradient is too small (prevents division by ~zero)
-      mag_grad = sqrt( (US%Z_to_L*drdx_u(I,j,k))*(US%Z_to_L*drdx_u(I,j,k)) + drdz_u(I,j,k)*drdz_u(I,j,k) )
+      mag_grad = sqrt( US%Z_to_L**2*drdx_u(I,j,K)**2 + drdz_u(I,j,K)**2 )
       if (mag_grad < CS%mag_grad_floor) then
-        sfn_u(I,j,k) = 0.0
+        sfn_u(I,j,K) = 0.0
         cycle
       endif
       ! Velocity-scale (grid-independent) streamfunction, Upsilon in Ferrari et al. 2010.
-      Upsilon_u = (Fx_u(I,j,k)/mag_grad) * G%OBCmaskCu(I,j)
+      Upsilon_u = (Fx_u(I,j,K)/mag_grad) * G%OBCmaskCu(I,j)
       Upsilon_u = max(-CS%Upsilon_clamp, min(CS%Upsilon_clamp, Upsilon_u))
-      sfn_u(I,j,k) = Upsilon_u * G%dy_Cu(I,j)
+      sfn_u(I,j,K) = Upsilon_u * G%dy_Cu(I,j)
 
     enddo ; enddo
-    do j=js-1,je ; do i=is,ie
+    do J=js-1,je ; do i=is,ie
       if (.not. use_EOS) then
         dist_from_bot_a = e(i,j,K) - e(i,j,nz+1)
         dist_from_bot_b = e(i,j+1,K) - e(i,j+1,nz+1)
@@ -330,22 +330,22 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
             dist_from_bot_b < CS%min_dist_from_boundary .or. &
             dist_from_sfc_a < CS%min_dist_from_boundary .or. &
             dist_from_sfc_b < CS%min_dist_from_boundary) then
-          sfn_v(i,J,k) = 0.0
+          sfn_v(i,J,K) = 0.0
           cycle
         endif
       endif
       ! Skip if density gradient is too small (prevents division by ~zero)
-      mag_grad = sqrt( (US%Z_to_L*drdy_v(i,j,k))*(US%Z_to_L*drdy_v(i,j,k)) + drdz_v(i,j,k)*drdz_v(i,j,k) )
+      mag_grad = sqrt( US%Z_to_L**2*drdy_v(i,J,K)**2 + drdz_v(i,J,K)**2 )
 
       if (mag_grad < CS%mag_grad_floor) then
-        sfn_v(i,J,k) = 0.0
+        sfn_v(i,J,K) = 0.0
         cycle
       endif
 
       ! Velocity-scale (grid-independent) streamfunction, Upsilon in Ferrari et al. 2010.
-      Upsilon_v = (Fy_v(i,j,k)/mag_grad) * G%OBCmaskCv(i,J)
+      Upsilon_v = (Fy_v(i,J,K)/mag_grad) * G%OBCmaskCv(i,J)
       Upsilon_v = max(-CS%Upsilon_clamp, min(CS%Upsilon_clamp, Upsilon_v))
-      sfn_v(i,J,k) = Upsilon_v * G%dx_Cv(i,J)
+      sfn_v(i,J,K) = Upsilon_v * G%dx_Cv(i,J)
 
     enddo ; enddo
   enddo
@@ -386,10 +386,10 @@ subroutine center_grad_rho(drdx_u, drdy_v, drdx_c, drdy_c, G, GV, CS)
 
   shift = (CS%ann_window-1)/2
 
-  do k=1, nz+1
+  do K=1, nz+1
     do j=js-shift-1,je+shift+1 ; do i=is-shift-1,ie+shift+1
-      drdx_c(i,j,k) = 0.5 * (drdx_u(i-1,j,k) * G%mask2dCu(i-1,j) + drdx_u(i,j,k) * G%mask2dCu(i,j)) * G%mask2dT(i,j)
-      drdy_c(i,j,k) = 0.5 * (drdy_v(i,j-1,k) * G%mask2dCv(i,j-1) + drdy_v(i,j,k) * G%mask2dCv(i,j)) * G%mask2dT(i,j)
+      drdx_c(i,j,K) = 0.5 * (drdx_u(i-1,j,K) * G%mask2dCu(i-1,j) + drdx_u(i,j,K) * G%mask2dCu(i,j)) * G%mask2dT(i,j)
+      drdy_c(i,j,K) = 0.5 * (drdy_v(i,j-1,K) * G%mask2dCv(i,j-1) + drdy_v(i,j,K) * G%mask2dCv(i,j)) * G%mask2dT(i,j)
     enddo ; enddo
   enddo
 
@@ -407,12 +407,12 @@ subroutine center2uv(var1_c, var2_c, var1_u, var2_v, G, GV)
   integer :: i, j, k, is, ie, js, je, nz
 
   is  = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec ; nz = GV%ke
-  do k=1, nz+1
-    do j=js,je ; do i=is-1,ie
-      var1_u(I,j,k) = 0.5 * (var1_c(i,j,k) * G%mask2dT(i,j) + var1_c(i+1,j,k) * G%mask2dT(i+1,j)) * G%mask2dCu(I,j)
+  do K=1, nz+1
+    do j=js,je ; do I=is-1,ie
+      var1_u(I,j,K) = 0.5 * (var1_c(i,j,K) * G%mask2dT(i,j) + var1_c(i+1,j,K) * G%mask2dT(i+1,j)) * G%mask2dCu(I,j)
     enddo ; enddo
-    do j=js-1,je ; do i=is,ie
-      var2_v(i,J,k) = 0.5 * (var2_c(i,j,k) * G%mask2dT(i,j) + var2_c(i,j+1,k) * G%mask2dT(i,j+1)) * G%mask2dCv(i,J)
+    do J=js-1,je ; do i=is,ie
+      var2_v(i,J,K) = 0.5 * (var2_c(i,j,K) * G%mask2dT(i,j) + var2_c(i,j+1,K) * G%mask2dT(i,j+1)) * G%mask2dCv(i,J)
     enddo ; enddo
   enddo
 
