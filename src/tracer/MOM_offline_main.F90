@@ -130,10 +130,8 @@ type, public :: offline_transport_CS ; private
                         !! routine [H L2 ~> m3 or kg]
   !>@{ Diagnostic manager IDs for some fields that may be of interest when doing offline transport
   integer :: &
-    id_uhr = -1, &
-    id_vhr = -1, &
-    id_ear = -1, &
-    id_ebr = -1, &
+    id_uhr = -1, id_vhr = -1, &
+    ! Unused: id_ear = -1, id_ebr = -1, &
     id_hr = -1,  &
     id_hdiff = -1, &
     id_uhr_redist = -1, &
@@ -1179,10 +1177,10 @@ subroutine register_diags_offline_transport(Time, diag, CS, GV, US)
     'm', conversion=GV%H_to_m)
   CS%id_hr  = register_diag_field('ocean_model', 'hr', diag%axesTL, Time, &
     'Layer thickness at end of offline step', 'm', conversion=GV%H_to_m)
-  CS%id_ear  = register_diag_field('ocean_model', 'ear', diag%axesTL, Time, &
-    'Remaining thickness entrained from above', 'm')
-  CS%id_ebr  = register_diag_field('ocean_model', 'ebr', diag%axesTL, Time, &
-    'Remaining thickness entrained from below', 'm')
+  ! Unused:  CS%id_ear  = register_diag_field('ocean_model', 'ear', diag%axesTL, Time, &
+  !              'Remaining thickness entrained from above', 'm')
+  ! Unused:  CS%id_ebr  = register_diag_field('ocean_model', 'ebr', diag%axesTL, Time, &
+  !              'Remaining thickness entrained from below', 'm')
   CS%id_eta_pre_distribute = register_diag_field('ocean_model','eta_pre_distribute', &
     diag%axesT1, Time, 'Total water column height before residual transport redistribution', &
     'm', conversion=GV%H_to_m)
