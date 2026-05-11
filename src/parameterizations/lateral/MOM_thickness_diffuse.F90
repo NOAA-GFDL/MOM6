@@ -109,7 +109,7 @@ type, public :: thickness_diffuse_CS ; private
                                  !! isopycnal height diffusivity
   logical :: use_stanley_gm      !< If true, also use the Stanley parameterization in MOM_thickness_diffuse
 
-  logical, public :: use_meso_sfn_ANN  !< If true, use the meso-scale streamfunction ANN parameterization
+  logical :: use_meso_sfn_ANN  !< If true, use the meso-scale streamfunction ANN parameterization
   type(MESO_SFN_ANN_CS) :: meso_sfn_ANN_CS !< Control structure for the meso-scale streamfunction ANN parameterization
 
   type(diag_ctrl), pointer :: diag => NULL() !< structure used to regulate timing of diagnostics
