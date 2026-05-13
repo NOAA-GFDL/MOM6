@@ -111,17 +111,15 @@ integer function MOM_diag_axis_init(name, data, units, cart_name, long_name, MOM
   endif ; endif
 
   if (present(MOM_domain)) then
-    coarsening = 1 ; if (present(coarsen)) coarsening = coarsen
-    if (coarsening == 1) then
+    coarsening = 0 ; if (present(coarsen)) coarsening = coarsen
+    if (coarsening == 0) then
       MOM_diag_axis_init = fms_axis_init(name, data, units, cart_name, long_name=long_name, &
               direction=direction, set_name=set_name, edges=edges, &
               domain2=MOM_domain%mpp_domain, domain_position=position)
-    elseif (coarsening == 2) then
+    else
       MOM_diag_axis_init = fms_axis_init(name, data, units, cart_name, long_name=long_name, &
               direction=direction, set_name=set_name, edges=edges, &
-              domain2=MOM_domain%mpp_domain_d2, domain_position=position)
-    else
-      call MOM_error(FATAL, "diag_axis_init called with an invalid value of coarsen.")
+              domain2=MOM_domain%mpp_domain_d(coarsening), domain_position=position)
     endif
   else
     if (present(coarsen)) then ; if (coarsen /= 1) then
