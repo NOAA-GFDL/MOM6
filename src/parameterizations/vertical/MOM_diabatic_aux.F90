@@ -883,7 +883,8 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   !$OMP                                  pen_TKE_2d,Temp_in,Salin_in,RivermixConst,        &
   !$OMP                                  A_brine,plume_flux,mixing_depth,total_h,          &
   !$OMP                                  plume_source,salt_added, salt_removed,salt_before,&
-  !$OMP                                  salt_after,top,bottom, nz_finite)                 &
+  !$OMP                                  salt_after,top,bottom, nz_finite, bottom_np1,     &
+  !$OMP                                  top_np1, salt_error_mesg)
   !$OMP                     firstprivate(SurfPressure)
   do j=js,je
   ! Work in vertical slices for efficiency
