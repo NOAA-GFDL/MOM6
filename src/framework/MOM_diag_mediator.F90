@@ -133,8 +133,10 @@ type, public :: axes_grp
   logical :: needs_interpolating = .false. !< If true, indicates that this axes group is for a sampled
                                          !! interface-located field that must be interpolated to
                                          !! these axes. Used for rank>2.
-  integer :: downsample_level_factor = 1 !< If greater than 1, the factor by which this diagnostic/axes/masks be downsampled
-  integer :: downsample_level_index = 0 !< If greater than 0, the index for the downsample level for this diagnostic in the diag_cs%dsamp array.
+  integer :: downsample_level_factor = 1 !< If greater than 1, the factor by which this diagnostic/axes/masks
+                                         !! be downsampled
+  integer :: downsample_level_index = 0 !< If greater than 0, the index for the downsample level for this diagnostic
+                                        !! in the diag_cs%dsamp array.
   ! For horizontally averaged diagnostics (applies to 2d and 3d fields only)
   type(axes_grp), pointer :: xyave_axes => null() !< The associated 1d axes for horizontally area-averaged diagnostics
   ! ID's for cell_measures
@@ -305,7 +307,7 @@ type, public :: diag_ctrl
   real, dimension(:,:,:), pointer :: mask3dCvi => null()
 
   integer :: num_diag_dsamp_levels !< The number of downsampled levels requested in the parameters files (default 0)
-  integer, dimension(:), allocatable :: diag_dsamp_levels !< The downsample levels requested by diagnostics registrations
+  integer, dimension(:), allocatable :: diag_dsamp_levels !< The downsample levels requested by diag registrations
   type(diagcs_dsamp), dimension(:), allocatable :: dsamp !< Downsample control container
                                                          !! The size to be determined from paramaters files (default 0)
 
@@ -3577,19 +3579,19 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
   diag_cs%isd = G%isd ; diag_cs%ied = G%ied
   diag_cs%jsd = G%jsd ; diag_cs%jed = G%jed
 
-  !In this code design 
+  !In this code design
   !diag_cs%num_diag_dsamp_levels is the number of downsampling levels requested in the parameters
-  !diag_cs%diag_dsamp_levels(dl) is the actual downsampling factor for each level, 
+  !diag_cs%diag_dsamp_levels(dl) is the actual downsampling factor for each level,
   !which is used to as the division factor to define the axes for that level.
-  !Note that the downsampling axes and domains are created at initialization based on what is 
-  !requested in the parameter files (default is none) regardless of whether 
+  !Note that the downsampling axes and domains are created at initialization based on what is
+  !requested in the parameter files (default is none) regardless of whether
   !any downsampled diagnostics are present in the diag_table.
-  !Are downsampled diagnostics requested? 
+  !Are downsampled diagnostics requested?
   call get_param(param_file, mdl, 'NUM_DIAG_DOWNSAMP_LEV', diag_cs%num_diag_dsamp_levels, &
                  'The number of diagnostic downsample levels to use. '//&
                  'For each level, an entry in DIAG_DOWNSAMP_LEV must be provided.', &
                  default=0)
-  if (diag_cs%num_diag_dsamp_levels > 0) then   
+  if (diag_cs%num_diag_dsamp_levels > 0) then
     allocate(diag_cs%diag_dsamp_levels(diag_cs%num_diag_dsamp_levels))
     call get_param(param_file, mdl, 'DIAG_DOWNSAMP_LEVS', diag_cs%diag_dsamp_levels, &
                   'A comma separated list of diagnostic downsample levels to be used. ', &
@@ -3604,7 +3606,7 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
     do dl=1, diag_cs%num_diag_dsamp_levels
       dlfac = diag_cs%diag_dsamp_levels(dl)
       !Create the auxiliary mpp_domain for this level of downsampled diagnostics
-      !Downsample diagnostics calculations do not need halos. 
+      !Downsample diagnostics calculations do not need halos.
       call clone_MOM_domain(G%Domain, G%Domain%mpp_domain_d(dl), coarsen=dlfac, & !halo_size=0, &
                             domain_name="MOM_domain_d" // char(48+dlfac))
 
@@ -3628,8 +3630,10 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
       G%HId(dl)%IegB = G%HId(dl)%ieg ; G%HId(dl)%JegB = G%HId(dl)%jeg
 
       !Downsample indices for diagnostics that are on a coarser grid than the model grid.
-      diag_cs%dsamp(dl)%isc = G%HId(dl)%isc - (G%HId(dl)%isd-1) ; diag_cs%dsamp(dl)%iec = G%HId(dl)%iec - (G%HId(dl)%isd-1)
-      diag_cs%dsamp(dl)%jsc = G%HId(dl)%jsc - (G%HId(dl)%jsd-1) ; diag_cs%dsamp(dl)%jec = G%HId(dl)%jec - (G%HId(dl)%jsd-1)
+      diag_cs%dsamp(dl)%isc = G%HId(dl)%isc - (G%HId(dl)%isd-1)
+      diag_cs%dsamp(dl)%iec = G%HId(dl)%iec - (G%HId(dl)%isd-1)
+      diag_cs%dsamp(dl)%jsc = G%HId(dl)%jsc - (G%HId(dl)%jsd-1)
+      diag_cs%dsamp(dl)%jec = G%HId(dl)%jec - (G%HId(dl)%jsd-1)
       diag_cs%dsamp(dl)%isd = G%HId(dl)%isd ; diag_cs%dsamp(dl)%ied = G%HId(dl)%ied
       diag_cs%dsamp(dl)%jsd = G%HId(dl)%jsd ; diag_cs%dsamp(dl)%jed = G%HId(dl)%jed
       diag_cs%dsamp(dl)%isg = G%HId(dl)%isg ; diag_cs%dsamp(dl)%ieg = G%HId(dl)%ieg
@@ -3637,7 +3641,7 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
       diag_cs%dsamp(dl)%isgB = G%HId(dl)%isgB ; diag_cs%dsamp(dl)%iegB = G%HId(dl)%iegB
       diag_cs%dsamp(dl)%jsgB = G%HId(dl)%jsgB ; diag_cs%dsamp(dl)%jegB = G%HId(dl)%jegB
     enddo
-  endif 
+  endif
   ! Initialze available diagnostic log file
   if (is_root_pe() .and. (diag_CS%available_diag_doc_unit < 0)) then
     write(this_pe,'(i6.6)') PE_here()
@@ -4370,13 +4374,17 @@ subroutine downsample_diag_masks_set(G, nz, diag_cs)
     dlfac = diag_cs%diag_dsamp_levels(dl) !Actual downsampling factor for this level
     ! 2d mask
     call downsample_mask(G%mask2dT, diag_cs%dsamp(dl)%mask2dT,  dlfac, MMP, G%isc, G%jsc, G%isd, G%jsd, &
-            G%HId(dl)%isc, G%HId(dl)%iec, G%HId(dl)%jsc, G%HId(dl)%jec, G%HId(dl)%isd, G%HId(dl)%ied, G%HId(dl)%jsd, G%HId(dl)%jed)
+                         G%HId(dl)%isc, G%HId(dl)%iec, G%HId(dl)%jsc, G%HId(dl)%jec, G%HId(dl)%isd, G%HId(dl)%ied, &
+                         G%HId(dl)%jsd, G%HId(dl)%jed)
     call downsample_mask(G%mask2dBu, diag_cs%dsamp(dl)%mask2dBu, dlfac, PPP,G%IscB, G%JscB, G%IsdB, G%JsdB, &
-            G%HId(dl)%IscB,G%HId(dl)%IecB, G%HId(dl)%JscB,G%HId(dl)%JecB,G%HId(dl)%IsdB,G%HId(dl)%IedB,G%HId(dl)%JsdB,G%HId(dl)%JedB)
+                         G%HId(dl)%IscB,G%HId(dl)%IecB, G%HId(dl)%JscB,G%HId(dl)%JecB,G%HId(dl)%IsdB,G%HId(dl)%IedB, &
+                         G%HId(dl)%JsdB,G%HId(dl)%JedB)
     call downsample_mask(G%mask2dCu, diag_cs%dsamp(dl)%mask2dCu, dlfac, PMP, G%IscB, G%jsc, G%IsdB, G%jsd, &
-            G%HId(dl)%IscB,G%HId(dl)%IecB, G%HId(dl)%jsc, G%HId(dl)%jec,G%HId(dl)%IsdB,G%HId(dl)%IedB,G%HId(dl)%jsd, G%HId(dl)%jed)
+                         G%HId(dl)%IscB,G%HId(dl)%IecB, G%HId(dl)%jsc, G%HId(dl)%jec,G%HId(dl)%IsdB,G%HId(dl)%IedB, &
+                         G%HId(dl)%jsd, G%HId(dl)%jed)
     call downsample_mask(G%mask2dCv, diag_cs%dsamp(dl)%mask2dCv, dlfac, MPP, G %isc ,G%JscB, G%isd, G%JsdB, &
-            G%HId(dl)%isc ,G%HId(dl)%iec, G%HId(dl)%JscB,G%HId(dl)%JecB,G%HId(dl)%isd ,G%HId(dl)%ied, G%HId(dl)%JsdB,G%HId(dl)%JedB)
+                         G%HId(dl)%isc ,G%HId(dl)%iec, G%HId(dl)%JscB,G%HId(dl)%JecB,G%HId(dl)%isd ,G%HId(dl)%ied, &
+                         G%HId(dl)%JsdB,G%HId(dl)%JedB)
     ! 3d native masks are needed by diag_manager but the native variables
     ! can only be masked 2d - for ocean points, all layers exists.
     allocate(diag_cs%dsamp(dl)%mask3dTL(G%HId(dl)%isd:G%HId(dl)%ied,G%HId(dl)%jsd:G%HId(dl)%jed,1:nz))
