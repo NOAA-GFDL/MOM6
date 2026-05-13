@@ -12,7 +12,7 @@ use MOM_diag_mediator, only : post_data, register_diag_field, safe_alloc_ptr
 use MOM_diag_mediator, only : diag_ctrl, time_type
 use MOM_EOS,           only : calculate_density, calculate_TFreeze, EOS_domain
 use MOM_EOS,           only : calculate_specific_vol_derivs, calculate_density_derivs
-use MOM_error_handler, only : MOM_error, FATAL, WARNING, callTree_showQuery
+use MOM_error_handler, only : MOM_error, FATAL, WARNING, NOTE, callTree_showQuery
 use MOM_error_handler, only : callTree_enter, callTree_leave, callTree_waypoint
 use MOM_file_parser,   only : get_param, log_param, log_version, param_file_type
 use MOM_forcing_type,  only : forcing, extractFluxes1d, forcing_SinglePointPrint
@@ -73,7 +73,8 @@ type, public :: diabatic_aux_CS ; private
   logical :: do_brine_plume  !< If true, insert salt flux below the surface according to
                              !! a parameterization by \cite Nguyen2009.
   logical :: check_salt_bp   !< A logical to check for salt conservation in the brine plume scheme
-  logical :: check_salt_verbose !< A logical to be verbose when checking salt conservation
+  !TODO: Delete DEBUG lines after brine plume is proven to be conservative to numerical precision.
+  !DEBUG logical :: check_salt_verbose !< A logical to be verbose when checking salt conservation
   integer :: brine_plume_n   !< The exponent in the brine plume parameterization.
   real :: plume_strength     !< Fraction of the available brine to take to the bottom of the mixed
                              !! layer [nondim].
@@ -808,10 +809,12 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
                                    ! [S H ~> ppt m or ppt kg m-2]
   real :: top, bottom ! The thickness (positive) of the top and bottom of the cell [H ~> m or kg m-2]
   real :: np1, inp1   ! Brine plume exponent plus 1 and its inverse for integrals [nondim]
+  real :: top_np1, bottom_np1 ! top/bottom raised to power np1 [H^(n+1) ~> m^(n+1) or (kg m-2)^(n+1)]
   integer :: nz_finite! the index of the last (deepest) finite thickness layer
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
-  integer :: i, j, is, ie, js, je, k, nz, nb
+  integer :: i, j, is, ie, js, je, k, nz, nb, ne
   character(len=45) :: mesg
+  character(len=80), dimension(10) :: salt_error_mesg
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
@@ -839,7 +842,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
 
   if (CS%do_brine_plume .and. .not.present(MLD_h)) then
     call MOM_error(FATAL, "MOM_diabatic_aux.F90, applyBoundaryFluxesInOut(): "//&
-                   "Brine plume parameterization requires a mixed-layer depth argument,\n"//&
+                   "Brine plume parameterization requires a mixed-layer depth argument, "//&
                    "currently coming from the energetic PBL scheme.")
   endif
   if (CS%do_brine_plume .and. .not.associated(MLD_h)) then
@@ -848,7 +851,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
   endif
   if (CS%do_brine_plume .and. .not. associated(fluxes%salt_left_behind)) then
     call MOM_error(FATAL, "MOM_diabatic_aux.F90, applyBoundaryFluxesInOut(): "//&
-                   "Brine plume parameterization requires DO_BRINE_PLUME\n"//&
+                   "Brine plume parameterization requires DO_BRINE_PLUME "//&
                    "to be turned on in SIS2 as well as MOM6.")
   endif
 
@@ -1149,6 +1152,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
             tv%S(i,j,k) = (hOld*tv%S(i,j,k) + dSalt)*Ithickness
           elseif (h2d(i,k) < 0.0) then ! h2d==0 is a special limit that needs no extra handling
             call forcing_SinglePointPrint(fluxes,G,i,j,'applyBoundaryFluxesInOut (h<0)')
+            !TODO: remove write statements
             write(0,*) 'applyBoundaryFluxesInOut(): lon,lat=',G%geoLonT(i,j),G%geoLatT(i,j)
             write(0,*) 'applyBoundaryFluxesInOut(): netT,netS,netH=', &
                 US%C_to_degC*netHeat(i), US%S_to_ppt*netSalt(i), netMassInOut(i)
@@ -1182,7 +1186,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
               do k=1,nz
                 salt_before = salt_before + h2d(i,k)*tv%S(i,j,k)
               enddo
-              if (CS%check_salt_verbose) write(0,*)'Salt before brine plume: ',salt_before
+              !DEBUG if (CS%check_salt_verbose) call MOM_error(NOTE,'Salt before brine plume: ',salt_before)
             endif
 
             ! Set the plume strength based on the salt rejected
@@ -1194,14 +1198,17 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
 
             ! Add salt back to any level (starting at top)
             bottom = 0.0
+            bottom_np1 = 0.0
             do k=1,nz ; if (salt_removed > salt_added) then
               top = bottom
               bottom = top+h2d(i,k)
 
               if (bottom <= mixing_depth .and. k<nz_finite) then
                 !Flux convergence integrated over layer
+                top_np1 = bottom_np1
+                bottom_np1 = bottom**np1
                 plume_flux = min(salt_removed-salt_added, dt * ( (plume_source * A_brine) &
-                                                     * ( (bottom**np1-top**np1) * inp1)))
+                                                     * ( (bottom_np1 - top_np1) * inp1)))
               elseif (h2d(i,k)>GV%H_subroundoff) then
                 ! if the bottom of the cell is > MLD or we are in the last
                 ! finite thickness cell, we put all the remaining salt in the level
@@ -1214,11 +1221,14 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
 
               ! Track salt added
               salt_added = salt_added + plume_flux
-              if (CS%check_salt_verbose) write(0,*)'Salt to layer k and remaining deficit:',&
-                                                   k,salt_added,salt_removed-salt_added
+              !DEBUG if (CS%check_salt_verbose) then
+              !DEBUG   write(mesg, '(A, I0, A, ES24.16, A, ES24.16)') &
+              !DEBUG        'Salt to layer ', k, ' and remaining deficit: ', salt_added, ', ', salt_removed-salt_added
+              !DEBUG   call MOM_error(NOTE,trim(mesg))
+              !DEBUG endif
 
               if (CS%id_brine_input > 0.) then
-                CS%brine_input(i,j,k) = plume_flux/dt
+                CS%brine_input(i,j,k) = plume_flux*Idt
               endif
 
             endif ; enddo
@@ -1229,21 +1239,44 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
                 salt_after = salt_after + h2d(i,k)*tv%S(i,j,k)
               enddo
               if (abs((salt_after-salt_before-salt_removed)/salt_after)>CS%check_salt_threshold) then
-                write(0,*)'Net plume strength    ',fluxes%salt_left_behind(i,j)
-                write(0,*)' H/BP dpt (h-unit)',total_h,mixing_depth
-                write(0,*)' H/BP dpt (m)     ',total_h*GV%H_to_Z,mixing_depth*GV%H_to_Z
-                write(0,*)' Salt before/after BP ',salt_before,salt_after
-                write(0,*)' Salt change BP       ',salt_after-salt_before,(salt_after-salt_before)/salt_after
-                write(0,*)' Salt removed by BP   ',salt_removed,salt_removed/salt_after
-                write(0,*)' Salt added by BP     ',salt_added,salt_added/salt_after
-                write(0,*)' Scheme error         ',(salt_added-salt_removed)/salt_after
-                write(0,*)' Diagnosed salt error ',(salt_after-salt_before-salt_removed)/salt_after
-                write(0,*)' Threshold            ',CS%check_salt_threshold
-                !write(0,*),'------'
-                !write(0,*),'h',h2d(i,:)
-                !write(0,*),'z',h2d(i,:)*GV%H_to_Z
-                !write(0,*),'S',tv%S(i,j,:)
-                call MOM_error(FATAL,'Salt change in brine plume scheme exceeds CHECK_SALT_BRINE_PLUME_THRESHOLD')
+                write(salt_error_mesg(1), '(A, ES24.16)')  &
+                      'Net plume strength:    ', fluxes%salt_left_behind(i,j)
+                write(salt_error_mesg(2), '(A, 2ES24.16)') &
+                     ' H/Plume dpt (h-unit): ', total_h, mixing_depth
+                write(salt_error_mesg(3), '(A, 2ES24.16)') &
+                     ' H/Plume dpt (m):      ', total_h*GV%H_to_Z, mixing_depth*GV%H_to_Z
+                write(salt_error_mesg(4), '(A, 2ES24.16)') &
+                     ' Salt before/after BP: ', salt_before, salt_after
+                write(salt_error_mesg(5), '(A, 2ES24.16)') &
+                     ' Salt change, abs/rel: ', salt_after-salt_before, (salt_after-salt_before)/salt_after
+                write(salt_error_mesg(6), '(A, 2ES24.16)') &
+                     ' Salt removed, abs/rel:', salt_removed, salt_removed/salt_after
+                write(salt_error_mesg(7), '(A, 2ES24.16)') &
+                     ' Salt added, abs/rel:  ', salt_added, salt_added/salt_after
+                write(salt_error_mesg(8), '(A, ES24.16)')  &
+                     ' Scheme relative error:', (salt_added-salt_removed)/salt_after
+                write(salt_error_mesg(9), '(A, ES24.16)')  &
+                     ' Diagnosed salt error: ', (salt_after-salt_before-salt_removed)/salt_after
+                write(salt_error_mesg(10),'(A, ES24.16)')  &
+                     ' Allowed error:        ', CS%check_salt_threshold
+
+                !DEBUG write(0,*),'h',h2d(i,:)
+                !DEBUG write(0,*),'z',h2d(i,:)*GV%H_to_Z
+                !DEBUG write(0,*),'S',tv%S(i,j,:)
+
+                ! Ideally this would be written to a single fatal error call,
+                !  but the long message seems to hit an FMS character limit?
+                call MOM_error(WARNING,'Salt change in brine plume scheme exceeds CHECK_SALT_BRINE_PLUME_THRESHOLD ')
+                do ne=1,10
+                  call MOM_error(WARNING,salt_error_mesg(ne),all_print=.true.)
+                enddo
+                call MOM_error(FATAL,'Salt conservation failed check in brine plume parameterization')
+                !call MOM_error(FATAL,'Salt conservation failed check in brine plume parameterization'//&
+                !               NEW_LINE('a')//salt_error_mesg(1)//NEW_LINE('a')//salt_error_mesg(2)//&
+                !               NEW_LINE('a')//salt_error_mesg(3)//NEW_LINE('a')//salt_error_mesg(4)//&
+                !               NEW_LINE('a')//salt_error_mesg(5)//NEW_LINE('a')//salt_error_mesg(6)//&
+                !               NEW_LINE('a')//salt_error_mesg(7)//NEW_LINE('a')//salt_error_mesg(8)//&
+                !               NEW_LINE('a')//salt_error_mesg(9)//NEW_LINE('a')//salt_error_mesg(10))
               endif
             endif
 
@@ -1256,6 +1289,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
 
         if (.not. CS%ignore_fluxes_over_land) then
            call forcing_SinglePointPrint(fluxes,G,i,j,'applyBoundaryFluxesInOut (land)')
+           !TODO: Remove write statements
            write(0,*) 'applyBoundaryFluxesInOut(): lon,lat=',G%geoLonT(i,j),G%geoLatT(i,j)
            write(0,*) 'applyBoundaryFluxesInOut(): netHeat,netSalt,netMassIn,netMassOut=',&
                US%C_to_degC*netHeat(i), US%S_to_ppt*netSalt(i), netMassIn(i), netMassOut(i)
@@ -1533,13 +1567,14 @@ subroutine diabatic_aux_init(Time, G, GV, US, param_file, diag, CS, useALEalgori
                  units="nondim", default=1.0, do_not_log=.not.CS%do_brine_plume)
   if (CS%plume_mld_fac<0.0) call MOM_error(FATAL,"BRINE_PLUME_MLD_FAC shouldn't be negative!")
   call get_param(param_file, mdl, "CHECK_SALT_BRINE_PLUME", CS%check_salt_bp, &
-                 "If true, check for conservation in the brine plume scheme.", default=.false.)
+                 "If true, check for conservation in the brine plume scheme.", default=.false., debuggingParam=.true.)
   if (CS%check_salt_bp) then
     call get_param(param_file, mdl, "CHECK_SALT_BRINE_PLUME_THRESHOLD", CS%check_salt_threshold, &
                    "Maximum allowed relative salt change in brine plume scheme.", &
-                   units="nondim", default=1.0e-14)
-    call get_param(param_file, mdl, "CHECK_SALT_BRINE_PLUME_VERBOSE", CS%check_salt_verbose, &
-                 "Add output tracking salt conservation with brine plume scheme enabled.", default=.false.)
+                   units="nondim", default=1.0e-14, debuggingParam=.true.)
+    !DEBUG call get_param(param_file, mdl, "CHECK_SALT_BRINE_PLUME_VERBOSE", CS%check_salt_verbose, &
+    !DEBUG                "Add output tracking salt conservation with brine plume scheme enabled.", default=.false., &
+    !DEBUG                debuggingParam=.true.)
   endif
 
 
