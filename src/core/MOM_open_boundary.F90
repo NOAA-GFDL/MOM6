@@ -5163,18 +5163,13 @@ subroutine segment_thickness_reservoir_init(GV, US, OBC, param_file)
 
 end subroutine segment_thickness_reservoir_init
 
-!> Register a tracer array that is active on an OBC segment, potentially also specifying how the
-!! tracer inflow values are specified.
+!> Register a tracer on an OBC segment, allocate its t and tres arrays, and set the
+!! per-tracer inverse length scales (I_Lscale_in/out) that control reservoir relaxation.
 subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, OBC_scalar, &
                                    scale, resrv_lfac_in, resrv_lfac_out)
   type(verticalGrid_type), intent(in)   :: GV         !< ocean vertical grid structure
-  type(tracer_type), target             :: tr_ptr     !< A target that can be used to set a pointer to the
-                                                      !! stored value of tr. This target must be
-                                                      !! an enduring part of the control structure,
-                                                      !! because the tracer registry will use this memory,
-                                                      !! but it also means that any updates to this
-                                                      !! structure in the calling module will be
-                                                      !! available subsequently to the tracer registry.
+  type(tracer_type), target             :: tr_ptr     !< Tracer to register; must persist in the caller's
+                                                      !! control structure for the lifetime of the segment.
   integer, intent(in)                   :: ntr_index  !< index of segment tracer in the global tracer registry
   type(param_file_type),  intent(in)    :: param_file !< file to parse for model parameter values
   type(OBC_segment_type), intent(inout) :: segment    !< current segment data structure
@@ -5994,7 +5989,17 @@ subroutine open_boundary_register_restarts(HI, GV, US, OBC, Reg, param_file, res
 
 end subroutine open_boundary_register_restarts
 
-!> Update the OBC tracer reservoirs after the tracers have been updated.
+!> Update OBC tracer reservoirs (segment%tr_Reg%Tr%tres) using a backward-Euler implicit step,
+!! then copy the result into OBC%tres_x / OBC%tres_y for restart I/O.
+!!
+!! The reservoir at each boundary cell is nudged toward the adjacent interior tracer (on outflow)
+!! or the open-ocean boundary value (on inflow), weighted by the volume flux and the per-tracer
+!! inverse length scale I_Lscale. Three regimes, set at registration via I_Lscale_in/out:
+!! - **Frozen** (I_Lscale = 0): tres is unchanged every timestep.
+!! - **Finite length scale** (I_Lscale > 0): tres relaxes toward the interior or boundary value
+!!   at a rate proportional to the flux and I_Lscale.
+!! - **Instant update** (I_Lscale = -1): tres is immediately replaced by the interior value
+!!   (outflow) or the boundary value (inflow).
 subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, Reg)
   type(ocean_grid_type),                      intent(in) :: G   !< The ocean's grid structure
   type(verticalGrid_type),                    intent(in) :: GV  !< Ocean vertical grid structure
@@ -6052,7 +6057,6 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, Reg)
     if (segment%is_E_or_W) then
       I = segment%HI%IsdB ; ii = segment%HI%isd
       js = segment%HI%jsd ; je = segment%HI%jed
-      ! Update the reservoir tracer concentration implicitly using a Backward-Euler timestep
       do m=1,segment%tr_Reg%ntseg
         ntr_id = segment%tr_Reg%Tr(m)%ntr_index
         resrv_lfac_out = segment%tr_Reg%Tr(m)%resrv_lfac_out
@@ -6089,7 +6093,6 @@ subroutine update_segment_tracer_reservoirs(G, GV, uhr, vhr, h, OBC, Reg)
     elseif (segment%is_N_or_S) then
       J = segment%HI%JsdB ; ji = segment%HI%jsd
       is = segment%HI%isd ; ie = segment%HI%ied
-      ! Update the reservoir tracer concentration implicitly using a Backward-Euler timestep
       do m=1,segment%tr_Reg%ntseg
         ntr_id = segment%tr_Reg%Tr(m)%ntr_index
         resrv_lfac_out = segment%tr_Reg%Tr(m)%resrv_lfac_out
