@@ -155,8 +155,8 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
   type(cont_diag_ptrs),                       intent(inout) :: CDp    !< Diagnostics for the continuity equation
   type(thickness_diffuse_CS),                 intent(inout) :: CS     !< Control structure for thickness_diffuse
   type(stochastic_CS),                        intent(inout) :: STOCH !< Stochastic control structure
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), optional, intent(in)    :: u      !< Zonal velocity [L T-1 ~> m s-1].
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), optional, intent(in)    :: v      !< Meridional velocity [L T-1 ~>
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in) :: u !< Zonal velocity [L T-1 ~> m s-1].
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in) :: v !< Meridional velocity [L T-1 ~> m s-1].
 
   ! Local variables
   real :: e(SZI_(G),SZJ_(G),SZK_(GV)+1) ! heights of interfaces, relative to mean
@@ -201,7 +201,6 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
                                     ! to layer centers [L2 T-1 ~> m2 s-1]
   logical :: use_VarMix, Resoln_scaled, Depth_scaled, use_stored_slopes, khth_use_vert_struct, use_Visbeck
   logical :: use_QG_Leith
-  logical :: present_vel
   integer :: i, j, k, is, ie, js, je, nz
 
   if (.not. CS%initialized) call MOM_error(FATAL, "MOM_thickness_diffuse: "//&
@@ -217,8 +216,6 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
   if (allocated(MEKE%GM_src)) then
     do j=js,je ; do i=is,ie ; MEKE%GM_src(i,j) = 0. ; enddo ; enddo
   endif
-
-  present_vel = PRESENT(u) .and. PRESENT(v)
 
   use_VarMix = .false. ; Resoln_scaled = .false. ; use_stored_slopes = .false.
   khth_use_vert_struct = .false. ; use_Visbeck = .false. ; use_QG_Leith = .false.
@@ -500,7 +497,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
     call add_interface_Kh(G, GV, US, CS, Kh_u, Kh_v, KH_u_CFL, KH_v_CFL, int_slope_u, int_slope_v)
   endif
 
-  if (CS%use_meso_sfn_ANN .and. present_vel) then
+  if (CS%use_meso_sfn_ANN) then
     call meso_sfn_ANN_compute(h, e, Sfn_unlim_u_3D, Sfn_unlim_v_3D, G, GV, US, tv, &
                               CS%meso_sfn_ANN_CS, dt, u, v)
   endif
