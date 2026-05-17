@@ -246,8 +246,13 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
       (dt * ((G%IdxCv(i,J)*G%IdxCv(i,J)) + (G%IdyCv(i,J)*G%IdyCv(i,J))))
   enddo ; enddo
 
-  ! Calculates interface heights, e, in [Z ~> m].
-  call find_eta(h, tv, G, GV, US, e, halo_size=3)
+  ! Calculates interface heights, e, in [Z ~> m]. The ANN streamfunction
+  ! needs a wider halo on e; default users keep the original halo_size=1.
+  if (CS%use_meso_sfn_ANN) then
+    call find_eta(h, tv, G, GV, US, e, halo_size=3)
+  else
+    call find_eta(h, tv, G, GV, US, e, halo_size=1)
+  endif
 
   ! Set the diffusivities.
   !$OMP parallel default(shared)
