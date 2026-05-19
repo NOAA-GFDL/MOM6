@@ -2622,12 +2622,12 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     default_val = US%T_to_s*CS%dt_therm ; if (dtbt > 0.0) default_val = -1.0
     CS%dtbt_reset_period = -1.0
     call get_param(param_file, "MOM", "DTBT_RESET_PERIOD", CS%dtbt_reset_period, &
-                 "The period between recalculations of DTBT (if DTBT <= 0). "//&
-                 "If DTBT_RESET_PERIOD is negative, DTBT is set based "//&
-                 "only on information available at initialization.  If 0, "//&
-                 "DTBT will be set every dynamics time step. The default "//&
-                 "is set by DT_THERM.  This is only used if SPLIT is true.", &
-                 units="s", default=default_val, scale=US%s_to_T, do_not_read=(dtbt > 0.0))
+                   "The period between recalculations of DTBT (if DTBT <= 0). If "//&
+                   "DTBT_RESET_PERIOD is negative, DTBT is set based only on information "//&
+                   "available at initialization.  If 0, DTBT will be set every dynamics time "//&
+                   "step. Values between 0 and DT are treated as 0.  The default is set by "//&
+                   "DT_THERM. This is only used if SPLIT is true.", &
+                   units="s", default=default_val, scale=US%s_to_T, do_not_read=(dtbt > 0.0))
   endif
 
   ! This is here in case these values are used inappropriately.
@@ -3554,16 +3554,22 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
               CS%visc, dirs, CS%ntrunc, CS%pbv, calc_dtbt=calc_dtbt, &
               cont_stencil=CS%cont_stencil, dyn_h_stencil=CS%dyn_h_stencil)
     endif
+    ! A reset period no longer than dt is equivalent to recalculating every step.
+    if (CS%dtbt_reset_period > 0.0 .and. CS%dtbt_reset_period <= CS%dt) &
+        CS%dtbt_reset_period = 0.0
     if (CS%dtbt_reset_period > 0.0) then
       CS%dtbt_reset_interval = real_to_time(CS%dtbt_reset_period, unscale=US%T_to_s)
-      ! Set dtbt_reset_time to be the next even multiple of dtbt_reset_interval.
-      CS%dtbt_reset_time = Time_init + CS%dtbt_reset_interval * &
-                                 ((Time - Time_init) / CS%dtbt_reset_interval)
-      if ((CS%dtbt_reset_time > Time) .and. calc_dtbt) then
-        ! Back up dtbt_reset_time one interval to force dtbt to be calculated,
-        ! because the restart was not aligned with the interval to recalculate
-        ! dtbt, and dtbt was not read from a restart file.
-        CS%dtbt_reset_time = CS%dtbt_reset_time - CS%dtbt_reset_interval
+      if (calc_dtbt) then
+        ! No restart DTBT (not found or new run) or DTBT_RESTART_BUG=True: set to the most recent
+        ! multiple of the interval before or equal to current time, so the set_dtbt is called on
+        ! the first step.
+        CS%dtbt_reset_time = Time_init + CS%dtbt_reset_interval * &
+                                   ((Time - Time_init) / CS%dtbt_reset_interval)
+      else
+        ! Restart DTBT available: defer to the next multiple after current time so the first step
+        ! uses the restart value unless a reset is naturally due.
+        CS%dtbt_reset_time = Time_init + CS%dtbt_reset_interval * &
+                                   ((Time - Time_init) / CS%dtbt_reset_interval + 1)
       endif
     endif
   elseif (CS%use_RK2) then

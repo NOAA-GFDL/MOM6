@@ -5562,6 +5562,7 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
                           ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: visc_rem_bug ! Stores the value of runtime paramter VISC_REM_BUG.
+  logical :: dtbt_restart_bug ! Stores the value of runtime parameter DTBT_RESTART_BUG.
   character(len=48) :: thickness_units, flux_units
   character*(40) :: hvel_str
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
@@ -5745,7 +5746,10 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                  "answers for some configurations that use OBCs.", &
                  default=enable_bugs, do_not_log=.true.)
   CS%interior_OBC_PV = .not.OBC_projection_bug
-
+  call get_param(param_file, mdl, "DTBT_RESTART_BUG", dtbt_restart_bug, &
+                 "If true, recover a bug where the barotropic timestep DTBT read from a "//&
+                 "restart file is immediately overridden by a recalculation on the "//&
+                 "first dynamics step.", default=.true.)
   call get_param(param_file, mdl, "TIDES", use_tides, &
                  "If true, apply tidal momentum forcing.", default=.false.)
   if (use_tides .and. present(HA_CSp)) CS%HA_CSp => HA_CSp
@@ -6256,7 +6260,11 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
     CS%dtbt = dtbt_restart
   endif
 
-  calc_dtbt = .true. ; if ((dtbt_restart > 0.0) .and. (dtbt_input > 0.0)) calc_dtbt = .false.
+  if (dtbt_restart_bug) then
+    calc_dtbt = .true. ; if ((dtbt_restart > 0.0) .and. (dtbt_input > 0.0)) calc_dtbt = .false.
+  else
+    calc_dtbt = (dtbt_restart <= 0.0)
+  endif
 
   call log_param(param_file, mdl, "DTBT as used", CS%dtbt, units="s", unscale=US%T_to_s)
   call log_param(param_file, mdl, "estimated maximum DTBT", CS%dtbt_max, units="s", unscale=US%T_to_s)
