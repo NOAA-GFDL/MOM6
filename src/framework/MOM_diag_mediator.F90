@@ -307,7 +307,7 @@ type, public :: diag_ctrl
 
   integer :: num_diag_dsamp_levels !< The number of downsampled levels requested in the parameters files (default 0)
   integer, dimension(:), allocatable :: diag_dsamp_levels !< The downsample levels requested by diag registrations
-  type(diagcs_dsamp), dimension(:), allocatable :: dsamp !< An array of downsampling control containers 
+  type(diagcs_dsamp), dimension(:), allocatable :: dsamp !< An array of downsampling control containers
                                                          !! for each level of downsampling that is being used,
                                                          !! with a size determined at runtime via NUM_DIAG_DOWNSAMP_LEV
   !>@}
