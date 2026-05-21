@@ -133,8 +133,7 @@ type, public :: axes_grp
   logical :: needs_interpolating = .false. !< If true, indicates that this axes group is for a sampled
                                          !! interface-located field that must be interpolated to
                                          !! these axes. Used for rank>2.
-  integer :: downsample_level_factor = 1 !< If greater than 1, the factor by which this diagnostic/axes/masks
-                                         !! be downsampled
+  integer :: downsample_level_factor = 1 !< If greater than 1, the factor by which this diagnostic will be downsampled
   integer :: downsample_level_index = 0 !< If greater than 0, the index for the downsample level for this diagnostic
                                         !! in the diag_cs%dsamp array.
   ! For horizontally averaged diagnostics (applies to 2d and 3d fields only)
@@ -308,9 +307,9 @@ type, public :: diag_ctrl
 
   integer :: num_diag_dsamp_levels !< The number of downsampled levels requested in the parameters files (default 0)
   integer, dimension(:), allocatable :: diag_dsamp_levels !< The downsample levels requested by diag registrations
-  type(diagcs_dsamp), dimension(:), allocatable :: dsamp !< Downsample control container
-                                                         !! The size to be determined from paramaters files (default 0)
-
+  type(diagcs_dsamp), dimension(:), allocatable :: dsamp !< An array of downsampling control containers 
+                                                         !! for each level of downsampling that is being used,
+                                                         !! with a size determined at runtime via NUM_DIAG_DOWNSAMP_LEV
   !>@}
 
 ! Space for diagnostics is dynamically allocated as it is needed.
@@ -651,7 +650,7 @@ subroutine set_axes_info_dsamp(G, GV, param_file, diag_cs, id_zl_native, id_zi_n
             'q point nominal longitude', G%Domain, coarsen=dl)
       id_yq = diag_axis_init('yq', gridLatB_dsamp, G%y_axis_units, 'y', &
             'q point nominal latitude', G%Domain, coarsen=dl)
-      deallocate(gridLonB_dsamp,gridLatB_dsamp)
+      deallocate(gridLonB_dsamp, gridLatB_dsamp)
     else
       allocate(gridLonB_dsamp(diag_cs%dsamp(dl)%isg:diag_cs%dsamp(dl)%ieg))
       allocate(gridLatB_dsamp(diag_cs%dsamp(dl)%jsg:diag_cs%dsamp(dl)%jeg))
@@ -661,7 +660,7 @@ subroutine set_axes_info_dsamp(G, GV, param_file, diag_cs, id_zl_native, id_zi_n
             'q point nominal longitude', G%Domain, coarsen=dl)
       id_yq = diag_axis_init('yq', gridLatB_dsamp, G%y_axis_units, 'y', &
             'q point nominal latitude', G%Domain, coarsen=dl)
-      deallocate(gridLonB_dsamp,gridLatB_dsamp)
+      deallocate(gridLonB_dsamp, gridLatB_dsamp)
     endif
 
     allocate(gridLonT_dsamp(diag_cs%dsamp(dl)%isg:diag_cs%dsamp(dl)%ieg))
@@ -676,7 +675,7 @@ subroutine set_axes_info_dsamp(G, GV, param_file, diag_cs, id_zl_native, id_zi_n
     deallocate(gridLonT_dsamp, gridLatT_dsamp)
 
     ! Axis groupings for the model layers
-    id_zl = id_zl_native ; id_zi = id_zi_native !This should be inside the dl loop
+    id_zl = id_zl_native ; id_zi = id_zi_native
 
     call define_axes_group_dsamp(diag_cs, (/ id_xh, id_yh, id_zL /), diag_cs%dsamp(dl)%axesTL, dl, &
             x_cell_method='mean', y_cell_method='mean', v_cell_method='mean', &
@@ -3569,14 +3568,14 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
   diag_cs%isd = G%isd ; diag_cs%ied = G%ied
   diag_cs%jsd = G%jsd ; diag_cs%jed = G%jed
 
-  !In this code design
-  !diag_cs%num_diag_dsamp_levels is the number of downsampling levels requested in the parameters
-  !diag_cs%diag_dsamp_levels(dl) is the actual downsampling factor for each level,
-  !which is used to as the division factor to define the axes for that level.
-  !Note that the downsampling axes and domains are created at initialization based on what is
-  !requested in the parameter files (default is none) regardless of whether
-  !any downsampled diagnostics are present in the diag_table.
-  !Are downsampled diagnostics requested?
+  ! In this code design
+  ! diag_cs%num_diag_dsamp_levels is the number of downsampling levels requested in the parameters
+  ! diag_cs%diag_dsamp_levels(dl) is the actual downsampling factor for each level,
+  ! which is used to as the division factor to define the axes for that level.
+  ! Note that the downsampling axes and domains are created at initialization based on what is
+  ! requested in the parameter files (default is none) regardless of whether
+  ! any downsampled diagnostics are present in the diag_table.
+  ! Are downsampled diagnostics requested?
   call get_param(param_file, mdl, 'NUM_DIAG_DOWNSAMP_LEV', diag_cs%num_diag_dsamp_levels, &
                  'The number of diagnostic downsample levels to use. '//&
                  'For each level, an entry in DIAG_DOWNSAMP_LEV must be provided.', &
@@ -4518,7 +4517,7 @@ subroutine downsample_diag_field_2d(locfield, locfield_dsamp, dl, diag_cs, diag,
   endif
 
   call downsample_field(locfield, locfield_dsamp, diag_cs%diag_dsamp_levels(dl), diag%xyz_method, &
-                        locmask, diag_cs,diag, isv_o, jsv_o, isv, iev, jsv, jev)
+                        locmask, diag_cs, diag, isv_o, jsv_o, isv, iev, jsv, jev)
 
 end subroutine downsample_diag_field_2d
 
