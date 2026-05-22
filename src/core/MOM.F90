@@ -3583,6 +3583,19 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
 
   ! Set the next time to update OBC segment BGC tracer data
   if (associated(CS%OBC) .and. (CS%dt_obc_seg_period > 0.0)) then
+    if (CS%dt_obc_seg_period > CS%dt_tr_adv) then
+      if (new_sim) then
+        call MOM_error(WARNING, "DT_OBC_SEG_UPDATE_OBGC > DT_TRACER_ADVECT: this run will "//&
+            "proceed normally, but any restart from it will fail with a FATAL error because "//&
+            "BGC OBC external data is not saved in restart files. "//&
+            "Set DT_OBC_SEG_UPDATE_OBGC = DT_TRACER_ADVECT or 0 until this is fixed.")
+      else
+        call MOM_error(FATAL, "DT_OBC_SEG_UPDATE_OBGC > DT_TRACER_ADVECT is not supported "//&
+            "for restart runs: BGC OBC external data is not saved in restart files, so the "//&
+            "first tracer advection step after restart may use incorrect boundary data. "//&
+            "Set DT_OBC_SEG_UPDATE_OBGC = DT_TRACER_ADVECT or 0 until this is fixed.")
+      endif
+    endif
     CS%dt_obc_seg_interval = real_to_time(CS%dt_obc_seg_period, unscale=US%T_to_s)
     if (OBC_bgc_time_ref_bug) then
       CS%dt_obc_seg_time = Time + CS%dt_obc_seg_interval
