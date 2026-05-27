@@ -134,8 +134,14 @@ type, public :: surface_forcing_CS ; private
                                             !! for salinity restoring.
   real    :: ice_salt_concentration         !< Salt concentration for sea ice [kg/kg]
   logical :: mask_srestore_marginal_seas    !< If true, then mask SSS restoring in marginal seas
-  real    :: min_ratio_srestore             !< Minimm fraction of restoring salinity to preserve [nondim]
+  logical :: max_delta_srestore_file        !< If true, apply a 2-dimensional maximum delta salinity
+                                            !! when restoring. The file should be
+                                            !! in inputdir/max_delta_srestore.nc and the field
+                                            !! should be named 'max_delta_srestore'
+  real, pointer, dimension(:,:) :: max_delta_srestore_2d => NULL()
+                                            !< Maximum delta salinity used for restoring [S ~> ppt]
   real    :: max_delta_srestore             !< Maximum delta salinity used for restoring [S ~> ppt]
+  real    :: min_ratio_srestore             !< Minimm fraction of restoring salinity to preserve [nondim]
   real    :: max_delta_trestore             !< Maximum delta sst used for restoring [C ~> degC]
   real, pointer, dimension(:,:) :: basin_mask => NULL() !< Mask for surface salinity restoring by basin [nondim]
   integer :: answer_date        !< The vintage of the order of arithmetic and expressions in the
@@ -383,8 +389,18 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
       do j=js,je ; do i=is,ie
         delta_sss = data_restore(i,j) - sfc_state%SSS(i,j)
         if (sfc_state%SSS(i,j) >= data_restore(i,j)*CS%min_ratio_srestore) then
-          delta_sss = sign(1.0,delta_sss) * min(abs(delta_sss), CS%max_delta_srestore)
-        endif
+          if (.not. CS%max_delta_srestore_file) then
+            delta_sss = sign(1.0,delta_sss) * min(abs(delta_sss), CS%max_delta_srestore)
+          else
+            if (abs(delta_sss) > abs(CS%max_delta_srestore_2d(i,j))) then
+              if (CS%max_delta_srestore_2d(i,j) < 0.0) then
+                delta_sss = 0.0  !turn off restoring
+              else !clip restoring
+                delta_sss = sign(1.0,delta_sss) * min(abs(delta_sss), CS%max_delta_srestore_2d(i,j))
+              endif
+            endif
+          endif !max_delta_srestore_file
+        endif !min_ratio_srestore
         fluxes%salt_flux(i,j) = 1.e-3*US%S_to_ppt*G%mask2dT(i,j) * (CS%rho_restore*CS%Flux_const_salt)* &
              (CS%basin_mask(i,j)*open_ocn_mask(i,j)*CS%srestore_mask(i,j)) * delta_sss  ! R Z T-1 ~> kg Salt m-2 s-1
       enddo ; enddo
@@ -407,8 +423,18 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
         if (G%mask2dT(i,j) > 0.0) then
           delta_sss = sfc_state%SSS(i,j) - data_restore(i,j)
           if (sfc_state%SSS(i,j) >= data_restore(i,j)*CS%min_ratio_srestore) then
-            delta_sss = sign(1.0,delta_sss) * min(abs(delta_sss), CS%max_delta_srestore)
-          endif
+            if (.not. CS%max_delta_srestore_file) then
+              delta_sss = sign(1.0,delta_sss) * min(abs(delta_sss), CS%max_delta_srestore)
+            else
+              if (abs(delta_sss) > abs(CS%max_delta_srestore_2d(i,j))) then
+                if (CS%max_delta_srestore_2d(i,j) < 0.0) then
+                  delta_sss = 0.0  !turn off restoring
+                else !clip restoring
+                  delta_sss = sign(1.0,delta_sss) * min(abs(delta_sss), CS%max_delta_srestore_2d(i,j))
+                endif
+              endif
+            endif !max_delta_srestore_file
+          endif !min_ratio_srestore
           fluxes%vprec(i,j) = (CS%basin_mask(i,j)*open_ocn_mask(i,j)*CS%srestore_mask(i,j))* &
                       (CS%rho_restore*CS%Flux_const_salt) * &
                       delta_sss / (0.5*(sfc_state%SSS(i,j) + data_restore(i,j)))
@@ -1516,12 +1542,24 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
     call get_param(param_file, mdl, "SRESTORE_AS_SFLUX", CS%salt_restore_as_sflux, &
                  "If true, the restoring of salinity is applied as a salt "//&
                  "flux instead of as a freshwater flux.", default=.false.)
-    call get_param(param_file, mdl, "MAX_DELTA_SRESTORE", CS%max_delta_srestore, &
-                 "The maximum salinity difference used in restoring terms.", &
-                 units="PSU or g kg-1", default=999.0, scale=US%ppt_to_S)
+   call get_param(param_file, mdl, "MAX_DELTA_SRESTORE_FROM_FILE", CS%max_delta_srestore_file, &
+                 "If true, read a file (max_delta_srestore.nc) containing the field "//&
+                 "max_delta_srestore for the maximum salinity difference used in restoring terms. "//&
+                 "Where the field's value is negative turn off restoring when the salinity "//&
+                 "difference magnitude exceeds abs(value).", default=.false.)
+    if (.not. CS%max_delta_srestore_file) then
+      call get_param(param_file, mdl, "MAX_DELTA_SRESTORE", CS%max_delta_srestore, &
+                   "The maximum salinity difference used in restoring terms.", &
+                   units="PSU or g kg-1", default=999.0, scale=US%ppt_to_S)
+    else
+      CS%max_delta_srestore = 999.0
+      call safe_alloc_ptr(CS%max_delta_srestore_2d,isd,ied,jsd,jed)
+      flnam = trim(CS%inputdir) // 'max_delta_srestore.nc'
+      call MOM_read_data(flnam,'max_delta_srestore', CS%max_delta_srestore_2d, G%domain, timelevel=1)
+    endif
     call get_param(param_file, mdl, "MIN_RATIO_SRESTORE", CS%min_ratio_srestore, &
                  "Turn off MAX_DELTA_SRESTORE where the ratio of SSS to restoring salinity "//&
-                 "is less than this value.", units="nondim", default=0.0) 
+                 "is less than this value.", units="nondim", default=0.0)
     call get_param(param_file, mdl, "MASK_SRESTORE_UNDER_ICE", CS%mask_srestore_under_ice, &
                  "If true, disables SSS restoring under sea-ice based on a frazil "//&
                  "criteria (SST<=Tf). Only used when RESTORE_SALINITY is True.",      &
