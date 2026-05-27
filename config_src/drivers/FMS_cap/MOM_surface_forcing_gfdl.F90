@@ -134,6 +134,7 @@ type, public :: surface_forcing_CS ; private
                                             !! for salinity restoring.
   real    :: ice_salt_concentration         !< Salt concentration for sea ice [kg/kg]
   logical :: mask_srestore_marginal_seas    !< If true, then mask SSS restoring in marginal seas
+  real    :: min_ratio_srestore             !< Minimm fraction of restoring salinity to preserve [nondim]
   real    :: max_delta_srestore             !< Maximum delta salinity used for restoring [S ~> ppt]
   real    :: max_delta_trestore             !< Maximum delta sst used for restoring [C ~> degC]
   real, pointer, dimension(:,:) :: basin_mask => NULL() !< Mask for surface salinity restoring by basin [nondim]
@@ -381,7 +382,9 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     if (CS%salt_restore_as_sflux) then
       do j=js,je ; do i=is,ie
         delta_sss = data_restore(i,j) - sfc_state%SSS(i,j)
-        delta_sss = sign(1.0,delta_sss) * min(abs(delta_sss), CS%max_delta_srestore)
+        if (sfc_state%SSS(i,j) >= data_restore(i,j)*CS%min_ratio_srestore) then
+          delta_sss = sign(1.0,delta_sss) * min(abs(delta_sss), CS%max_delta_srestore)
+        endif
         fluxes%salt_flux(i,j) = 1.e-3*US%S_to_ppt*G%mask2dT(i,j) * (CS%rho_restore*CS%Flux_const_salt)* &
              (CS%basin_mask(i,j)*open_ocn_mask(i,j)*CS%srestore_mask(i,j)) * delta_sss  ! R Z T-1 ~> kg Salt m-2 s-1
       enddo ; enddo
@@ -403,7 +406,9 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
       do j=js,je ; do i=is,ie
         if (G%mask2dT(i,j) > 0.0) then
           delta_sss = sfc_state%SSS(i,j) - data_restore(i,j)
-          delta_sss = sign(1.0,delta_sss) * min(abs(delta_sss), CS%max_delta_srestore)
+          if (sfc_state%SSS(i,j) >= data_restore(i,j)*CS%min_ratio_srestore) then
+            delta_sss = sign(1.0,delta_sss) * min(abs(delta_sss), CS%max_delta_srestore)
+          endif
           fluxes%vprec(i,j) = (CS%basin_mask(i,j)*open_ocn_mask(i,j)*CS%srestore_mask(i,j))* &
                       (CS%rho_restore*CS%Flux_const_salt) * &
                       delta_sss / (0.5*(sfc_state%SSS(i,j) + data_restore(i,j)))
@@ -1514,6 +1519,9 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
     call get_param(param_file, mdl, "MAX_DELTA_SRESTORE", CS%max_delta_srestore, &
                  "The maximum salinity difference used in restoring terms.", &
                  units="PSU or g kg-1", default=999.0, scale=US%ppt_to_S)
+    call get_param(param_file, mdl, "MIN_RATIO_SRESTORE", CS%min_ratio_srestore, &
+                 "Turn off MAX_DELTA_SRESTORE where the ratio of SSS to restoring salinity "//&
+                 "is less than this value.", units="nondim", default=0.0) 
     call get_param(param_file, mdl, "MASK_SRESTORE_UNDER_ICE", CS%mask_srestore_under_ice, &
                  "If true, disables SSS restoring under sea-ice based on a frazil "//&
                  "criteria (SST<=Tf). Only used when RESTORE_SALINITY is True.",      &
