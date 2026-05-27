@@ -568,9 +568,8 @@ subroutine apply_oda_incupd(h, tv, u, v, dt, G, GV, US, CS)
   isB = G%iscB ; ieB = G%iecB ; jsB = G%jscB ; jeB = G%jecB
   if (.not.associated(CS)) return
 
-  ! no assimilation after CS%step_incupd
+  ! no assimilation after CS%nstep_incupd
   if (CS%ncount >= CS%nstep_incupd) then
-    if (is_root_pe()) call MOM_error(NOTE,"ended updating fields with increments. ")
     return
   endif !ncount>CS%nstep_incupd
 
