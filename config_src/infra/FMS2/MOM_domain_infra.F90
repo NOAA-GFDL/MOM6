@@ -1815,8 +1815,8 @@ subroutine get_domain_extent_MD(Domain, isc, iec, jsc, jec, isd, ied, jsd, jed, 
   integer, optional, intent(in)  :: index_offset   !< A fixed additional offset to all indices. This
                                            !! can be useful for some types of debugging with
                                            !! dynamic memory allocation.  The default is 0.
-  integer, optional, intent(in)  :: coarsen !< A factor by which the grid is coarsened.
-                                           !!  The default is 1, for no coarsening.
+  integer, optional, intent(in)  :: coarsen !< The index of the factor by which the grid is coarsened.
+                                           !!  The default is 0, for no coarsening.
 
   ! Local variables
   integer :: isg_, ieg_, jsg_, jeg_

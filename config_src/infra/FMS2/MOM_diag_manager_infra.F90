@@ -97,12 +97,12 @@ integer function MOM_diag_axis_init(name, data, units, cart_name, long_name, MOM
                                               !! describes the edges of this axis
   character(len=*), &
             optional, intent(in) :: set_name  !< A name to use for this set of axes.
-  integer,  optional, intent(in) :: coarsen   !< An optional degree of coarsening for the grid, 1
-                                              !! by default.
+  integer,  optional, intent(in) :: coarsen   !< An optional degree of coarsening for the grid, 0
+                                              !! by default. This is the index of the coarsening level.
   logical,  optional, intent(in) :: null_axis !< If present and true, return the special null axis
                                               !! id for use with scalars.
 
-  integer :: coarsening ! The degree of grid coarsening
+  integer :: coarsening ! The degree of grid coarsening, this is the index of an array of coarsening levels
 
   if (present(null_axis)) then ; if (null_axis) then
     ! Return the special null axis id for scalars

@@ -3474,6 +3474,7 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
 # include "version_variable.h"
   character(len=40) :: mdl = "MOM_diag_mediator" ! This module's name.
   character(len=32) :: filename_appendix = '' ! FMS appendix to filename for ensemble runs
+  character(len=16) :: dsamp_domain_name
 
   id_clock_diag_mediator = cpu_clock_id('(Ocean diagnostics framework)', grain=CLOCK_MODULE)
   id_clock_diag_remap = cpu_clock_id('(Ocean diagnostics remapping)', grain=CLOCK_ROUTINE)
@@ -3606,8 +3607,9 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
       dlfac = diag_cs%diag_dsamp_levels(dl)
       !Create the auxiliary mpp_domain for this level of downsampled diagnostics
       !Downsample diagnostics calculations do not need halos.
+      write(dsamp_domain_name, '(a,i0)') trim("MOM_domain_d"),dlfac
       call clone_MOM_domain(G%Domain, G%Domain%mpp_domain_d(dl), coarsen=dlfac, & !halo_size=0, &
-                            domain_name="MOM_domain_d" // char(48+dlfac))
+                            domain_name=dsamp_domain_name)
 
       !Set the grid extents for this level of downsampling.
       call get_domain_extent(G%Domain, G%HId(dl)%isc, G%HId(dl)%iec, G%HId(dl)%jsc, G%HId(dl)%jec, &
