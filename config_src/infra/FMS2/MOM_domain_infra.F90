@@ -1453,6 +1453,7 @@ subroutine deallocate_MOM_domain(MOM_domain, cursory)
   logical,  optional, intent(in) :: cursory    !< If true do not deallocate fields associated
                                                !! with the underlying infrastructure
   logical :: invasive  ! If true, deallocate fields associated with the underlying infrastructure
+  integer :: n
 
   invasive = .true. ; if (present(cursory)) invasive = .not.cursory
 
@@ -1462,6 +1463,9 @@ subroutine deallocate_MOM_domain(MOM_domain, cursory)
       deallocate(MOM_domain%mpp_domain)
     endif
     if (associated(MOM_domain%mpp_domain_d)) then
+      if (invasive) then ; do n=1,size(MOM_domain%mpp_domain_d)
+       call mpp_deallocate_domain(MOM_domain%mpp_domain_d(n))
+      enddo ; endif
       deallocate(MOM_domain%mpp_domain_d)
     endif
     if (associated(MOM_domain%maskmap)) deallocate(MOM_domain%maskmap)
