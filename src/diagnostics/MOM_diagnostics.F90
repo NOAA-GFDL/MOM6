@@ -64,6 +64,7 @@ type, public :: diagnostics_CS ; private
                                        !! non-Boussinesq layer thicknesses as are used to find the free
                                        !! surface height, instead of using an approximate thickness
                                        !! based on division by the mid-layer density.
+  real :: rho_bsl                      !< Surface density for calculating the baroclinic sea level [R ~> kg m-3]
 
   type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
                                        !! regulate the timing of diagnostic output.
@@ -987,7 +988,7 @@ subroutine calculate_vertical_integrals(h, tv, p_surf, G, GV, US, CS)
   endif
 
   if (CS%id_bsl > 0) then
-    call find_bsl(h, tv, G, GV, US, bsl, dZref=G%Z_ref)
+    call find_bsl(h, tv, G, GV, US, CS%rho_bsl, bsl, dZref=G%Z_ref)
     call post_data(CS%id_bsl, bsl, CS%diag)
   endif
 
@@ -2305,6 +2306,9 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
   CS%id_bsl = register_diag_field('ocean_model', 'bsl', diag%axesT1, Time, &
       long_name='Baroclinic Sea Level', standard_name='baroclinic_sea_level', &
       units='m', conversion=US%Z_to_m)
+  call get_param(param_file, mdl, "RHO_BSL", CS%rho_bsl, &
+                 "Surface density for baroclinic sea level calculation.", &
+                 units='kg m-3', default=1025.0, scale=US%kg_m3_to_R, do_not_log=CS%id_bsl<=0)
 
   ! Register time derivatives and allocate memory for diagnostics that need
   ! access from across several modules.

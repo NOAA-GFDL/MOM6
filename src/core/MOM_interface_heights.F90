@@ -291,10 +291,11 @@ subroutine find_eta_2d(h, tv, G, GV, US, eta, eta_bt, halo_size, dZref)
 end subroutine find_eta_2d
 
 !> Calculates the baroclinic sea level, following Xu et al., to be submitted to JPO
-subroutine find_bsl(h, tv, G, GV, US, bsl, dZref)
+subroutine find_bsl(h, tv, G, GV, US, rho_s, bsl, dZref)
   type(ocean_grid_type),                      intent(in)  :: G   !< The ocean's grid structure
   type(verticalGrid_type),                    intent(in)  :: GV  !< The ocean's vertical grid structure
   type(unit_scale_type),                      intent(in)  :: US  !< A dimensional unit scaling type
+  real,                                       intent(in)  :: rho_s !< Surface density [R ~> kg m-3]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)  :: h   !< Layer thicknesses [H ~> m or kg m-2]
   type(thermo_var_ptrs),                      intent(in)  :: tv  !< A structure pointing to various
                                                                  !! thermodynamic variables
@@ -311,16 +312,15 @@ subroutine find_bsl(h, tv, G, GV, US, bsl, dZref)
     gz, &           ! Geopotential at the bottom of a layer [L2 T-2 ~> m2 s-2]
     dp, &           ! Pressure change across a layer in Boussinesq mode [R L2 T-2 ~> Pa]
     dg, &           ! Geopotential change across a layer in non-Boussinesq mode [L2 T-2 ~> m2 s-2]
-    dp_int, &       ! Layer-integrated pressure change in Boussinesq mode [R L T-2 ~> Pa m]
-    dg_int, &       ! Layer-integrated geopotential change in non-Boussinesq mode [L2 T-2 Z ~> m3 s-2]
-    p_int           ! Vertical integral of pressure at the bottom of a layer [R L2 T-2 Z ~> Pa m]
-                    ! or that scaled by GV%g_Earth in Boussinesq and EOS mode [R L4 T-4 ~> Pa m2 s-2]
+    dp_int, &       ! Layer-integrated pressure change in Boussinesq mode [R L2 Z T-2 ~> Pa m]
+    dg_int, &       ! Layer-integrated geopotential change in non-Boussinesq mode [R L4 T-4 ~> Pa m2 s-2]
+    p_int           ! Vertical integral of pressure at the bottom of a layer [R L2 Z T-2 ~> Pa m]
+                    ! or that scaled by GV%g_Earth in non-Boussinesq and EOS mode [R L4 T-4 ~> Pa m2 s-2]
                     ! or that normalized by GV%g_Earth in non-EOS mode [R Z2 ~> Pa s2]
   real :: dZ_ref    ! The difference in the reference height between G%bathyT and eta [Z ~> m]
                     ! dZ_ref is 0 unless the optional argument dZref is present
   real :: I_gEarth  ! The inverse of the gravitational acceleration [T2 Z L-2 ~> s2 m-1]
-  real :: Rho0      ! Reference density, which must be the surface density [R ~> kg m-3]
-  real :: SpV0      ! Reference specific volume, which must be the surface specific volume [R-1 ~> m3 kg-1]
+  real :: SpV_s     ! Specific volume of the surface layer [R-1 ~> m3 kg-1]
   logical, dimension(SZI_(G),SZJ_(G)) :: maskT ! Mask at T points for skipping land points in calculations
   integer :: i, j, k, is, ie, js, je, nz
 
@@ -328,9 +328,7 @@ subroutine find_bsl(h, tv, G, GV, US, bsl, dZref)
 
   dZ_ref = 0.0 ; if (present(dZref)) dZ_ref = dZref
 
-  I_gEarth = 1.0 / GV%g_Earth
-
-  Rho0 = GV%Rlay(1) ; SpV0 = 1.0 / GV%Rlay(1)
+  I_gEarth = 1.0 / GV%g_Earth; SpV_s = 1.0 / rho_s
 
   call find_eta(h, tv, G, GV, US, eta, halo_size=1, dZref=dZ_ref)
 
@@ -345,7 +343,7 @@ subroutine find_bsl(h, tv, G, GV, US, bsl, dZref)
   if (associated(tv%eqn_of_state)) then
     if (GV%Boussinesq) then
       do k=1,nz
-        call int_density_dz(tv%T(:,:,k), tv%S(:,:,k), eta(:,:,k), eta(:,:,k+1), Rho0, &
+        call int_density_dz(tv%T(:,:,k), tv%S(:,:,k), eta(:,:,k), eta(:,:,k+1), rho_s, &
                             GV%Rho0, GV%g_Earth, G%HI, tv%eqn_of_state, US, dp, dp_int)
         !$OMP do
         do j=js,je ; do i=is,ie ; if (maskT(i,j)) then
@@ -355,7 +353,7 @@ subroutine find_bsl(h, tv, G, GV, US, bsl, dZref)
       enddo
       !$OMP do
       do j=js,je ; do i=is,ie ; if (maskT(i,j)) then
-        bsl(i,j) = - (p_int(i,j) * I_gEarth) / (Rho0 * bathyT(i,j))
+        bsl(i,j) = - (p_int(i,j) * I_gEarth) / (rho_s * bathyT(i,j))
       endif ; enddo ; enddo
     else ! (.not. GV%Boussinesq)
       do k=1,nz
@@ -364,7 +362,7 @@ subroutine find_bsl(h, tv, G, GV, US, bsl, dZref)
           dp(i,j) = GV%g_Earth * (GV%H_to_RZ * h(i,j,k))
           pb(i,j) = pt(i,j) + dp(i,j)
         endif ; enddo ; enddo
-        call int_specific_vol_dp(tv%T(:,:,k), tv%S(:,:,k), pt, pb, SpV0, G%HI, &
+        call int_specific_vol_dp(tv%T(:,:,k), tv%S(:,:,k), pt, pb, SpV_s, G%HI, &
                                  tv%eqn_of_state, US, dg, dg_int)
         !$OMP do
         do j=js,je ; do i=is,ie ; if (maskT(i,j)) then
@@ -375,7 +373,7 @@ subroutine find_bsl(h, tv, G, GV, US, bsl, dZref)
       enddo
       !$OMP do
       do j=js,je ; do i=is,ie ; if (maskT(i,j)) then
-        bsl(i,j) = (p_int(i,j) * (I_gEarth * I_gEarth)) / (Rho0 * bathyT(i,j))
+        bsl(i,j) = (p_int(i,j) * (I_gEarth * I_gEarth)) / (rho_s * bathyT(i,j))
       endif ;enddo ; enddo
     endif ! (GV%Boussinesq)
   else ! (.not. associated(tv%eqn_of_state))
@@ -385,7 +383,7 @@ subroutine find_bsl(h, tv, G, GV, US, bsl, dZref)
         p_int(i,j) = p_int(i,j) + (GV%Rlay(k) - GV%Rlay(k-1)) * &
                                   ((eta(i,j,k) + bathyT(i,j)) * (eta(i,j,k) + bathyT(i,j)))
       enddo
-      bsl(i,j) = - 0.5 * (p_int(i,j) / (Rho0 * bathyT(i,j)))
+      bsl(i,j) = - 0.5 * (p_int(i,j) / (rho_s * bathyT(i,j)))
     endif ; enddo ; enddo
   endif ! (associated(tv%eqn_of_state))
   !$OMP end parallel

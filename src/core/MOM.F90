@@ -342,6 +342,7 @@ type, public :: MOM_control_struct ; private
                                          !! segment data with every call to update_OBC_tracer_data.
   type(time_type) :: dt_obc_seg_interval !< A time_time representation of dt_obc_seg_period.
   type(time_type) :: dt_obc_seg_time     !< The next time OBC segment update is applied to OBGC tracers.
+  real :: rho_bsl                      !< Surface density for calculating the baroclinic sea level [R ~> kg m-3]
 
   real, dimension(:,:), pointer :: frac_shelf_h => NULL() !< fraction of total area occupied
   !! by ice shelf [nondim]
@@ -1083,7 +1084,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
 
       call diag_copy_diag_to_storage(CS%diag_pre_sync, h, CS%diag)
       if (associated(CS%HA_CSp) .and. CS%HA_bsl) then
-        call find_bsl(h, CS%tv, G, GV, US, bsl, dZref=G%Z_ref)
+        call find_bsl(h, CS%tv, G, GV, US, CS%rho_bsl, bsl, dZref=G%Z_ref)
         call HA_accum('bsl', bsl, Time_local, G, CS%HA_CSp)
       endif
       if (showCallTree) call callTree_waypoint("finished calculate_diagnostic_fields (step_MOM)")
@@ -3728,6 +3729,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     call get_param(param_file, "MOM", "HA_BSL",CS%HA_bsl, &
                    "If true, perform harmonic analysis of baroclinic sea level.", &
                    default=.false., do_not_log=.true.)
+    call get_param(param_file, "MOM", "RHO_BSL", CS%rho_bsl, &
+                   "Surface density for baroclinic sea level calculation.", &
+                   units='kg m-3', default=1025.0, scale=US%kg_m3_to_R, do_not_log=.not.CS%HA_bsl)
   else
     CS%HA_bsl = .false.
   endif
