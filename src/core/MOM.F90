@@ -124,6 +124,7 @@ use MOM_open_boundary,         only : open_boundary_setup_vert, initialize_segme
 use MOM_open_boundary,         only : update_OBC_segment_data, rotate_OBC_config
 use MOM_open_boundary,         only : open_boundary_halo_update, write_OBC_info, chksum_OBC_segments
 use MOM_open_boundary,         only : segment_thickness_reservoir_init
+use MOM_open_boundary,         only : copy_OBC_radiation_coefs
 use MOM_open_boundary,         only : copy_OBC_tracer_reservoirs, copy_OBC_thickness_reservoirs
 use MOM_porous_barriers,       only : porous_widths_layer, porous_widths_interface, porous_barriers_init
 use MOM_porous_barriers,       only : porous_barrier_CS
@@ -3724,6 +3725,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     call setup_OBC_tracer_reservoirs(G, GV, CS%OBC, restart_CSp)
     call setup_OBC_thickness_reservoirs(G, GV, CS%OBC, restart_CSp)
     call open_boundary_halo_update(G, CS%OBC)
+    call copy_OBC_radiation_coefs(CS%OBC)
     if (.not. (CS%OBC%reservoir_init_bug .and. new_sim .and. CS%diabatic_first)) &
       ! The if-guard is needed to preserve old answers with OBC_RESERVOIR_INIT_BUG=True, in which case
       ! segment T/S reservoir %tres and global restart arrays OBC%tres_x/y have diverged at this point.
