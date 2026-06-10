@@ -448,12 +448,12 @@ subroutine set_grid_metrics_cartesian(G, param_file, US)
 
   if (units_temp(1:1) == 'k') then ! Axes are measured in km.
     G%grid_unit_to_L = 1000.0*US%m_to_L
-    dx_everywhere = 1000.0*US%m_to_L * G%len_lon / (REAL(niglobal))
-    dy_everywhere = 1000.0*US%m_to_L * G%len_lat / (REAL(njglobal))
+    dx_everywhere = 1000.0*US%m_to_L * abs(G%len_lon) / (REAL(niglobal))
+    dy_everywhere = 1000.0*US%m_to_L * abs(G%len_lat) / (REAL(njglobal))
   elseif (units_temp(1:1) == 'm') then ! Axes are measured in m.
     G%grid_unit_to_L = US%m_to_L
-    dx_everywhere = US%m_to_L*G%len_lon / (REAL(niglobal))
-    dy_everywhere = US%m_to_L*G%len_lat / (REAL(njglobal))
+    dx_everywhere = US%m_to_L*abs(G%len_lon) / (REAL(niglobal))
+    dy_everywhere = US%m_to_L*abs(G%len_lat) / (REAL(njglobal))
   else ! Axes are measured in degrees of latitude and longitude.
     dx_everywhere = G%Rad_Earth_L * G%len_lon * PI / (180.0 * niglobal)
     dy_everywhere = G%Rad_Earth_L * G%len_lat * PI / (180.0 * njglobal)
@@ -547,8 +547,8 @@ subroutine set_grid_metrics_spherical(G, param_file, US)
   call get_param(param_file, mdl, "RAD_EARTH", G%Rad_Earth_L, &
                  "The radius of the Earth.", units="m", default=6.378e6, scale=US%m_to_L)
 
-  dLon = G%len_lon/G%Domain%niglobal
-  dLat = G%len_lat/G%Domain%njglobal
+  dLon = abs(G%len_lon)/G%Domain%niglobal
+  dLat = abs(G%len_lat)/G%Domain%njglobal
 
   ! Note that the dynamic grid always uses symmetric memory for the global
   ! arrays G%gridLatB and G%gridLonB.
