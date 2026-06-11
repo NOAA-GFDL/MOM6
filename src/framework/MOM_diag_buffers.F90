@@ -30,7 +30,6 @@ type, abstract :: diag_buffer_base ; private
   integer :: ie !< The end slot of the array i-direction
   integer :: je !< The end slot of the array j-direction
   real :: fill_value = 0. !< Set the fill value to use when growing the buffer [arbitrary]
-
   integer, allocatable, dimension(:) :: ids  !< List of diagnostic ids whose slot corresponds to the row in the buffer
   integer :: length = 0 !< The number of slots in the buffer
 
@@ -54,6 +53,9 @@ type, extends(diag_buffer_base), public :: diag_buffer_2d ; private
   procedure, public :: grow => grow_2d !< Increase the size of the buffer
   procedure, public :: store => store_2d !< Store a field in the buffer, increasing as necessary
   procedure, public :: set_extents_from_array => set_extents_from_array_2d !< Set extents from array bounds
+
+  final :: finalize_diag_buffer_2d
+    !< Finalization stub to improve optimized build time
 end type diag_buffer_2d
 
 !> Dynamically growing buffer for 3D arrays.
@@ -68,6 +70,9 @@ type, extends(diag_buffer_base), public :: diag_buffer_3d ; private
   procedure, public :: grow => grow_3d !< Increase the size of the buffer
   procedure, public :: store => store_3d !< Store a field in the buffer, increasing as necessary
   procedure, public :: set_extents_from_array => set_extents_from_array_3d !< Set extents from array bounds
+
+  final :: finalize_diag_buffer_3d
+    !< Finalization stub to improve optimized build time
 end type diag_buffer_3d
 
 contains
@@ -162,8 +167,8 @@ end subroutine set_horizontal_extents
 !> Set the vertical extent of the buffer
 subroutine set_vertical_extent(this, ks, ke)
   class(diag_buffer_3d), intent(inout) :: this !< The diagnostic buffer
-  integer,               intent(in)    :: ks !< The start slot of the array i-direction
-  integer,               intent(in)    :: ke !< The end slot of the array i-direction
+  integer,               intent(in)    :: ks !< The start slot of the array k-direction
+  integer,               intent(in)    :: ke !< The end slot of the array k-direction
 
   this%ks = ks ; this%ke = ke
 end subroutine set_vertical_extent
@@ -266,6 +271,21 @@ subroutine store_3d(this, data, id)
   this%buffer(slot)%field(:,:,:) = data(:,:,:)
 end subroutine store_3d
 
+
+!> A dummy finalize method to resolve optimization overhead in GCC.
+subroutine finalize_diag_buffer_2d(this)
+  type(diag_buffer_2d) :: this
+    !< Diagnostic buffer
+end subroutine finalize_diag_buffer_2d
+
+
+!> A dummy finalize method to resolve optimization overhead in GCC.
+subroutine finalize_diag_buffer_3d(this)
+  type(diag_buffer_3d) :: this
+    !< Diagnostic buffer
+end subroutine finalize_diag_buffer_3d
+
+
 !> Unit tests for the 2d version of the diag buffer
 function diag_buffer_unit_tests_2d(verbose) result(fail)
   logical, intent(in) :: verbose !< If true, write results to stdout
@@ -322,14 +342,12 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
     logical :: local_fail !< True if any of the unit tests fail
     integer, parameter :: is=1, ie=2, js=3, je=6
     real, parameter :: fill_value = -123.456
-    integer :: i
 
 
     local_fail = .false.
 
     call buffer%set_horizontal_extents(is=is, ie=ie, js=js, je=je)
     call buffer%set_fill_value(fill_value)
-    ! Grow the buffer 3 times
     call buffer%grow()
     if (any(buffer%buffer(1)%field(:,:) /= fill_value)) local_fail = .true.
     if (verbose) write(stdout,*) "fill_value_2d: ", local_fail
@@ -459,16 +477,14 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
   function fill_value_3d() result(local_fail)
     type(diag_buffer_3d) :: buffer
     logical :: local_fail !< True if any of the unit tests fail
-    integer, parameter :: is=1, ie=2, js=3, je=6
+    integer, parameter :: is=1, ie=2, js=3, je=6, ks=1, ke=10
     real, parameter :: fill_value = -123.456
-    integer :: i
-
 
     local_fail = .false.
 
     call buffer%set_horizontal_extents(is=is, ie=ie, js=js, je=je)
+    call buffer%set_vertical_extent(ks=ks, ke=ke)
     call buffer%set_fill_value(fill_value)
-    ! Grow the buffer 3 times
     call buffer%grow()
     if (any(buffer%buffer(1)%field(:,:,:) /= fill_value)) local_fail = .true.
     if (verbose) write(stdout,*) "fill_value_3d: ", local_fail
@@ -548,4 +564,3 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
 end function diag_buffer_unit_tests_3d
 
 end module MOM_diag_buffers
-

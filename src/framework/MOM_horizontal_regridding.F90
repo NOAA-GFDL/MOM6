@@ -212,13 +212,6 @@ subroutine fill_miss_2d(aout, good, fill, prev, G, acrit, num_pass, relc, debug,
         aout(i,j) = prev(i,j)
         fill_pts(i,j) = 0.0
       endif ; enddo ; enddo
-    elseif (nfill == nfill_prev) then
-      call MOM_error(WARNING, &
-           'Unable to fill missing points using either data at the same vertical level from a connected basin '//&
-           'or using a point from a previous vertical level.  Make sure that the original data has some valid '//&
-           'data in all basins.', .true.)
-      write(mesg,*) 'nfill=',nfill
-      call MOM_error(WARNING, mesg, .true.)
     endif
 
     ! Determine the number of remaining points to fill globally.

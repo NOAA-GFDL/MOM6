@@ -2869,19 +2869,27 @@ subroutine set_visc_register_restarts(HI, G, GV, US, param_file, visc, restart_C
   if (MLE_use_PBL_MLD .or. MLE_use_Bodner) then
     call safe_alloc_ptr(visc%MLD, isd, ied, jsd, jed)
   endif
-  if ((hfreeze >= 0.0) .or. MLE_use_PBL_MLD .or. do_brine_plume .or. use_fpmix .or. &
+  if ((hfreeze >= 0.0) .or. MLE_use_PBL_MLD .or. use_fpmix .or. &
       use_neutral_diffusion .or. use_hor_bnd_diff .or. use_ideal_age) then
     call safe_alloc_ptr(visc%h_ML, isd, ied, jsd, jed)
+  endif
+  if (do_brine_plume) then
+    call safe_alloc_ptr(visc%h_ML_param, isd, ied, jsd, jed)
+    call safe_alloc_ptr(visc%MLD_param, isd, ied, jsd, jed)
   endif
 
   if (MLE_use_PBL_MLD) then
     call register_restart_field(visc%MLD, "MLD", .false., restart_CS, &
                   "Instantaneous active mixing layer depth", units="m", conversion=US%Z_to_m)
   endif
-  if (MLE_use_PBL_MLD .or. do_brine_plume .or. use_fpmix .or. &
-      use_neutral_diffusion .or. use_hor_bnd_diff) then
+  if (MLE_use_PBL_MLD .or. use_fpmix .or. use_neutral_diffusion .or. use_hor_bnd_diff) then
     call register_restart_field(visc%h_ML, "h_ML", .false., restart_CS, &
                   "Instantaneous active mixing layer thickness", &
+                  units=get_thickness_units(GV), conversion=GV%H_to_mks)
+  endif
+  if (do_brine_plume) then
+    call register_restart_field(visc%h_ML_param, "h_ML_param", .false., restart_CS, &
+                  "Instantaneous active mixed layer thickness", &
                   units=get_thickness_units(GV), conversion=GV%H_to_mks)
   endif
 

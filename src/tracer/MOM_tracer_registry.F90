@@ -247,12 +247,12 @@ subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, unit
   if (present(ad_y)) then ; if (associated(ad_y)) Tr%ad_y => ad_y ; endif
   if (present(df_x)) then ; if (associated(df_x)) Tr%df_x => df_x ; endif
   if (present(df_y)) then ; if (associated(df_y)) Tr%df_y => df_y ; endif
-! if (present(OBC_inflow)) Tr%OBC_inflow_conc = OBC_inflow
 ! if (present(OBC_in_u)) then ; if (associated(OBC_in_u)) Tr%OBC_in_u => OBC_in_u ; endif
 ! if (present(OBC_in_v)) then ; if (associated(OBC_in_v)) Tr%OBC_in_v => OBC_in_v ; endif
   if (present(ad_2d_x)) then ; if (associated(ad_2d_x)) Tr%ad2d_x => ad_2d_x ; endif
   if (present(ad_2d_y)) then ; if (associated(ad_2d_y)) Tr%ad2d_y => ad_2d_y ; endif
   if (present(df_2d_x)) then ; if (associated(df_2d_x)) Tr%df2d_x => df_2d_x ; endif
+  if (present(df_2d_y)) then ; if (associated(df_2d_y)) Tr%df2d_y => df_2d_y ; endif
 
   if (present(advection_xy)) then
     if (associated(advection_xy)) Tr%advection_xy => advection_xy
