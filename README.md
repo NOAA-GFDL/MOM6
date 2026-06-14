@@ -69,3 +69,8 @@ or activity by DOC or the United States Government.
 
 This project code is made available through GitHub but is managed by NOAA-GFDL
 at https://gitlab.gfdl.noaa.gov.
+
+## Community resources
+
+- Unofficial, community-maintained AI-agent skill for onboarding new users (not an official NOAA-GFDL resource): [earth-space-ai/mom6-skill](https://github.com/earth-space-ai/mom6-skill). It restructures the existing MOM6 documentation for AI coding agents and defers to this repository as the source of truth.
+
