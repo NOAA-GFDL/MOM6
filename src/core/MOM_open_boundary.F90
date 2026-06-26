@@ -154,7 +154,6 @@ end type OBC_segment_data_type
 
 !> Tracer on OBC segment data structure, for putting into a segment tracer registry.
 type, public :: OBC_segment_tracer_type
-  logical           :: is_initialized       !< Reservoir values have been set when True
   character(len=32) :: name                 !< Tracer name used for error messages
   integer           :: ntr_index = -1       !< Index of segment tracer in the global tracer registry
   real, allocatable :: t(:,:,:)             !< External tracer concentration array in rescaled
@@ -2605,11 +2604,6 @@ subroutine setup_OBC_tracer_reservoirs(G, GV, OBC, restart_CS)
         if (segment%is_E_or_W .and. set_tres_x) then
           I = segment%HI%IsdB
           do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
-            ! The only place OBC%tres_x/y = %t route was used was when OBC_RESERVOIR_INIT_BUG=True in a new run,
-            ! in which case is_initialized is not turned on in fill_temp_salt_segments, and this subroutine is
-            ! called immediately afterward. Now, as initialize_OBC_tracer_reservoirs in initialize_MOM is
-            ! not called when OBC_RESERVOIR_INIT_BUG=True, %tres is not modified and is_initialized is not set,
-            ! the call to setup_OBC_tracer_reservoirs can be safely postponed, the OBC%tres_x=%t route can be removed.
             OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,j,k)
           enddo ; enddo
         elseif (segment%is_N_or_S .and. set_tres_y) then
@@ -5002,12 +4996,9 @@ subroutine initialize_OBC_tracer_reservoirs(OBC)
       if ((.not. allocated(segment%field(m)%buffer_dst)) .or. &
           (segment%field(m)%bgc_tracer .and. (.not. OBC%update_OBC_seg_data))) cycle
       nt = segment%field(m)%tr_index
-      if (.not. segment%tr_Reg%Tr(nt)%is_initialized) then ! T/S may be initialized by fill_temp_salt_segments
-        do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
-          segment%tr_Reg%Tr(nt)%tres(i,j,k) = segment%tr_Reg%Tr(nt)%t(i,j,k)
-        enddo ; enddo ; enddo
-        segment%tr_Reg%Tr(nt)%is_initialized = .true.
-      endif
+      do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
+        segment%tr_Reg%Tr(nt)%tres(i,j,k) = segment%tr_Reg%Tr(nt)%t(i,j,k)
+      enddo ; enddo ; enddo
     enddo ! end tracer field loop
   enddo ! end segment loop
 end subroutine initialize_OBC_tracer_reservoirs
@@ -5224,12 +5215,10 @@ subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, O
 
   if (present(OBC_scalar)) then
     init_value = OBC_scalar
-    segment%tr_Reg%Tr(ntseg)%is_initialized = .true.
     segment%tr_Reg%Tr(ntseg)%resrv_lfac_in  = 0.0
     segment%tr_Reg%Tr(ntseg)%resrv_lfac_out = 0.0
   else
     init_value = 0.0
-    segment%tr_Reg%Tr(ntseg)%is_initialized = .false.
     ! Currently, resrv_lfac_in/out are for BGC tracers only.
     if (present(resrv_lfac_in))  segment%tr_Reg%Tr(ntseg)%resrv_lfac_in  = resrv_lfac_in
     if (present(resrv_lfac_out)) segment%tr_Reg%Tr(ntseg)%resrv_lfac_out = resrv_lfac_out
@@ -5510,8 +5499,6 @@ subroutine fill_temp_salt_segments(G, GV, US, OBC, tv)
       enddo ; enddo
     endif
 
-    ! fill_temp_salt_segments is only called before initialize_OBC_tracer_reservoirs, the only
-    ! place is_initialized can be set to .true. So the conditional assign is redundant.
     segment%tr_Reg%Tr(1)%tres(:,:,:) = segment%tr_Reg%Tr(1)%t(:,:,:)
     segment%tr_Reg%Tr(2)%tres(:,:,:) = segment%tr_Reg%Tr(2)%t(:,:,:)
   enddo
