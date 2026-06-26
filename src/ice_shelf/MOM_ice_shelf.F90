@@ -2663,11 +2663,12 @@ end subroutine update_shelf_mass
 
 !>Update ice smb
 subroutine update_ice_SMB(CS, G, SMB, Time)
-  type(ice_shelf_CS), pointer :: CS
+  type(ice_shelf_CS), pointer :: CS !< A pointer to the control structure returned
+                                    !! by a previous call to initialize_ice_shelf.
   type(ocean_grid_type), intent(in)    :: G    !< The ocean's grid structure
   real, dimension(SZDI_(G),SZDJ_(G)), &
        intent(inout) :: SMB !< Ice surface mass balance parameter, often in [R Z T-1 ~> kg m-2 s-1]
-  type(time_type), intent(in) :: Time
+  type(time_type), intent(in) :: Time !< Current model time
 
 
   if (CS%time_varying_smb) then
@@ -3078,7 +3079,8 @@ end subroutine process_and_post_scalar_data
 
 !> Initialize ice surface mass balance field that is held constant over time
 subroutine initialize_ice_SMB(CS, SMB, G, US, PF)
-  type(ice_shelf_CS), pointer  :: CS
+  type(ice_shelf_CS), pointer  :: CS !< A pointer to the control structure returned
+                                     !! by a previous call to initialize_ice_shelf.
   type(ocean_grid_type), intent(in)    :: G    !< The ocean's grid structure
   real, dimension(SZDI_(G),SZDJ_(G)), &
                          intent(inout) :: SMB !< Ice surface mass balance parameter, often in [R Z T-1 ~> kg m-2 s-1]
