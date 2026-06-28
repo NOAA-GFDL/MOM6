@@ -37,6 +37,8 @@ type, public :: VarMix_CS
                                   !! deformation radius is well resolved.
   logical :: Resoln_scaled_Kh     !< If true, scale away the Laplacian viscosity
                                   !! when the deformation radius is well resolved.
+  logical :: Resoln_scaled_div_damp !< If true, scale away the divergence damping viscosity
+                                  !! when the deformation radius is well resolved.
   logical :: Resoln_scaled_KhTh   !< If true, scale away the thickness diffusivity
                                   !! when the deformation radius is well resolved.
   logical :: Depth_scaled_KhTh    !< If true, KHTH is scaled away when the depth is
@@ -1552,6 +1554,7 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
   real :: wave_speed_tol      ! The fractional tolerance for finding the wave speeds [nondim]
   logical :: Resoln_scaled_MEKE_visc ! If true, the viscosity contribution from MEKE is
                                   ! scaled by the resolution function.
+  logical :: div_damp         ! If true, divergence damping is used in MOM_hor_visc.
   logical :: better_speed_est ! If true, use a more robust estimate of the first
                               ! mode wave speed as the starting point for iterations.
   real :: Stanley_coeff    ! Coefficient relating the temperature gradient and sub-gridscale
@@ -1618,6 +1621,13 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
                  "If true, the viscosity contribution from MEKE is scaled by "//&
                  "the resolution function.", default=.false., do_not_log=.true.) ! Logged elsewhere.
   if (.not.use_MEKE) Resoln_scaled_MEKE_visc = .false.
+  call get_param(param_file, mdl, "DIV_DAMP", div_damp, &
+                 default=.false., do_not_log=.true.) ! Logged in MOM_hor_visc.
+  call get_param(param_file, mdl, "RESOLN_SCALED_DIV_DAMP", CS%Resoln_scaled_div_damp, &
+                 "If true, the divergence damping viscosity is scaled away when the first "//&
+                 "baroclinic deformation radius is well resolved.", &
+                 default=CS%Resoln_scaled_Kh, do_not_log=.not.div_damp)
+  if (.not.div_damp) CS%Resoln_scaled_div_damp = .false.
   call get_param(param_file, mdl, "RESOLN_USE_EBT", CS%Resoln_use_ebt, &
                  "If true, uses the equivalent barotropic wave speed instead "//&
                  "of first baroclinic wave for calculating the resolution function.",&
@@ -1913,7 +1923,8 @@ subroutine VarMix_init(Time, G, GV, US, param_file, diag, CS)
 
   oneOrTwo = 1.0
   CS%Resoln_scaling_used = CS%Resoln_scaled_Kh .or. CS%Resoln_scaled_KhTh .or. &
-                           CS%Resoln_scaled_KhTr .or. Resoln_scaled_MEKE_visc
+                           CS%Resoln_scaled_KhTr .or. Resoln_scaled_MEKE_visc .or. &
+                           CS%Resoln_scaled_div_damp
   if (CS%Resoln_scaling_used) then
     CS%calculate_Rd_dx = .true.
     CS%calculate_res_fns = .true.
