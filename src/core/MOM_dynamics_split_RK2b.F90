@@ -37,7 +37,7 @@ use MOM_restart,           only : register_restart_field, register_restart_pair
 use MOM_restart,           only : query_initialized, set_initialized, save_restart
 use MOM_restart,           only : only_read_from_restarts
 use MOM_restart,           only : restart_init, is_new_run, MOM_restart_CS
-use MOM_time_manager,      only : time_type, operator(+)
+use MOM_time_manager,      only : time_type, real_to_time, operator(+)
 use MOM_time_manager,      only : operator(-), operator(>), operator(*), operator(/)
 
 use MOM_ALE,                   only : ALE_CS, ALE_remap_velocities
@@ -61,7 +61,6 @@ use MOM_MEKE_types,            only : MEKE_type
 use MOM_open_boundary,         only : ocean_OBC_type, radiation_open_bdry_conds
 use MOM_open_boundary,         only : open_boundary_zero_normal_flow, open_boundary_query
 use MOM_open_boundary,         only : open_boundary_test_extern_h, update_OBC_ramp
-use MOM_open_boundary,         only : copy_thickness_reservoirs
 use MOM_open_boundary,         only : update_segment_thickness_reservoirs
 use MOM_PressureForce,         only : PressureForce, PressureForce_CS
 use MOM_PressureForce,         only : PressureForce_init
@@ -671,9 +670,6 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   call cpu_clock_end(id_clock_mom_update)
   call do_group_pass(CS%pass_uv_inst, G%Domain, clock=id_clock_pass)
 
-  if (associated(CS%OBC)) &
-    call copy_thickness_reservoirs(CS%OBC, G, GV)
-
 ! u_accel_bt = layer accelerations due to barotropic solver
   call cpu_clock_begin(id_clock_continuity)
   call continuity(u_inst, v_inst, h, hp, uh_in, vh_in, dt, G, GV, US, CS%continuity_CSp, CS%OBC, pbv, &
@@ -690,11 +686,13 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   call cpu_clock_begin(id_clock_btstep)
   if (calc_dtbt) then
     if (CS%dtbt_use_bt_cont .and. associated(CS%BT_cont)) then
-      call set_dtbt(G, GV, US, CS%barotropic_CSp, CS%pbce, BT_cont=CS%BT_cont)
+      call set_dtbt(G, GV, US, CS%barotropic_CSp, CS%pbce, BT_cont=CS%BT_cont, &
+                    Time=Time_local - real_to_time(dt, unscale=US%T_to_s))
     else
       ! In the following call, eta is only used when NONLINEAR_BT_CONTINUITY is True. Otherwise, dtbt is effectively
       ! calculated with eta=0. Note that NONLINEAR_BT_CONTINUITY is False if BT_CONT is used, which is the default.
-      call set_dtbt(G, GV, US, CS%barotropic_CSp, CS%pbce, eta=eta)
+      call set_dtbt(G, GV, US, CS%barotropic_CSp, CS%pbce, eta=eta, &
+                    Time=Time_local - real_to_time(dt, unscale=US%T_to_s))
     endif
   endif
   if (showCallTree) call callTree_enter("btstep(), MOM_barotropic.F90")

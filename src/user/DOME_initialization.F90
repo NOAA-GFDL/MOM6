@@ -488,7 +488,7 @@ subroutine DOME_set_OBC_data(OBC, tv, G, GV, US, PF, tr_Reg)
     enddo ; enddo ; enddo
     name = 'temp'
     call tracer_name_lookup(tr_Reg, ntr_id, tr_ptr, name)
-    call register_segment_tracer(tr_ptr, ntr_id, PF, GV, segment, OBC_array=.true., scale=US%degC_to_C)
+    call register_segment_tracer(tr_ptr, ntr_id, PF, GV, segment, scale=US%degC_to_C)
   endif
 
   ! Set up dye tracers
@@ -501,7 +501,7 @@ subroutine DOME_set_OBC_data(OBC, tv, G, GV, US, PF, tr_Reg)
   enddo ; enddo ; enddo
   name = 'tr_D1'
   call tracer_name_lookup(tr_Reg, ntr_id, tr_ptr, name)
-  call register_segment_tracer(tr_ptr, ntr_id, PF, GV, OBC%segment(1), OBC_array=.true.)
+  call register_segment_tracer(tr_ptr, ntr_id, PF, GV, OBC%segment(1))
 
   ! All tracers but the first have 0 concentration in their inflows. As 0 is the
   ! default value for the inflow concentrations, the following calls are unnecessary.

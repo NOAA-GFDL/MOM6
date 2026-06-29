@@ -482,18 +482,10 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
             I = segment%HI%IsdB
             do m = 1,segment%tr_Reg%ntseg ! replace tracers with OBC values
               ntr_id = segment%tr_reg%Tr(m)%ntr_index
-              if (allocated(segment%tr_Reg%Tr(m)%tres)) then
-                if (segment%direction == OBC_DIRECTION_W) then
-                  T_tmp(i,ntr_id) = segment%tr_Reg%Tr(m)%tres(i,j,k)
-                else
-                  T_tmp(i+1,ntr_id) = segment%tr_Reg%Tr(m)%tres(i,j,k)
-                endif
+              if (segment%direction == OBC_DIRECTION_W) then
+                T_tmp(i,ntr_id) = segment%tr_Reg%Tr(m)%tres(i,j,k)
               else
-                if (segment%direction == OBC_DIRECTION_W) then
-                  T_tmp(i,ntr_id) = segment%tr_Reg%Tr(m)%OBC_inflow_conc
-                else
-                  T_tmp(i+1,ntr_id) = segment%tr_Reg%Tr(m)%OBC_inflow_conc
-                endif
+                T_tmp(i+1,ntr_id) = segment%tr_Reg%Tr(m)%tres(i,j,k)
               endif
             enddo
             do m = 1,ntr ! Apply update tracer values for slope calculation
@@ -629,9 +621,7 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
               ! should the reservoir evolve for this case Kate ?? - Nope
                 do m=1,segment%tr_Reg%ntseg
                   ntr_id = segment%tr_reg%Tr(m)%ntr_index
-                  if (allocated(segment%tr_Reg%Tr(m)%tres)) then
-                    flux_x(I,j,ntr_id) = uhh(I)*segment%tr_Reg%Tr(m)%tres(I,j,k)
-                  else ; flux_x(I,j,ntr_id) = uhh(I)*segment%tr_Reg%Tr(m)%OBC_inflow_conc ; endif
+                  flux_x(I,j,ntr_id) = uhh(I)*segment%tr_Reg%Tr(m)%tres(I,j,k)
                 enddo
               endif
             endif
@@ -653,9 +643,7 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
               uhh(I) = uhr(I,j,k)
               do m=1,segment%tr_Reg%ntseg
                 ntr_id = segment%tr_reg%Tr(m)%ntr_index
-                if (allocated(segment%tr_Reg%Tr(m)%tres)) then
-                  flux_x(I,j,ntr_id) = uhh(I)*segment%tr_Reg%Tr(m)%tres(I,j,k)
-                else; flux_x(I,j,ntr_id) = uhh(I)*segment%tr_Reg%Tr(m)%OBC_inflow_conc; endif
+                flux_x(I,j,ntr_id) = uhh(I)*segment%tr_Reg%Tr(m)%tres(I,j,k)
               enddo
             endif
           endif
@@ -895,18 +883,10 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
             J = segment%HI%JsdB
             do m = 1,segment%tr_Reg%ntseg ! replace tracers with OBC values
               ntr_id = segment%tr_reg%Tr(m)%ntr_index
-              if (allocated(segment%tr_Reg%Tr(m)%tres)) then
-                if (segment%direction == OBC_DIRECTION_S) then
-                  T_tmp(i,ntr_id,j) = segment%tr_Reg%Tr(m)%tres(i,j,k)
-                else
-                  T_tmp(i,ntr_id,j+1) = segment%tr_Reg%Tr(m)%tres(i,j,k)
-                endif
+              if (segment%direction == OBC_DIRECTION_S) then
+                T_tmp(i,ntr_id,j) = segment%tr_Reg%Tr(m)%tres(i,j,k)
               else
-                if (segment%direction == OBC_DIRECTION_S) then
-                  T_tmp(i,ntr_id,j) = segment%tr_Reg%Tr(m)%OBC_inflow_conc
-                else
-                  T_tmp(i,ntr_id,j+1) = segment%tr_Reg%Tr(m)%OBC_inflow_conc
-                endif
+                T_tmp(i,ntr_id,j+1) = segment%tr_Reg%Tr(m)%tres(i,j,k)
               endif
             enddo
             do m = 1,ntr ! Apply update tracer values for slope calculation
@@ -1044,11 +1024,7 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
                   vhh(i,J) = vhr(i,J,k)
                   do m=1,segment%tr_Reg%ntseg
                     ntr_id = segment%tr_reg%Tr(m)%ntr_index
-                    if (allocated(segment%tr_Reg%Tr(m)%tres)) then
-                      flux_y(i,ntr_id,J) = vhh(i,J)*OBC%segment(n)%tr_Reg%Tr(m)%tres(i,J,k)
-                    else
-                      flux_y(i,ntr_id,J) = vhh(i,J)*OBC%segment(n)%tr_Reg%Tr(m)%OBC_inflow_conc
-                    endif
+                    flux_y(i,ntr_id,J) = vhh(i,J)*OBC%segment(n)%tr_Reg%Tr(m)%tres(i,J,k)
                   enddo
                 endif
               enddo
@@ -1070,9 +1046,7 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
                 vhh(i,J) = vhr(i,J,k)
                 do m=1,segment%tr_Reg%ntseg
                   ntr_id = segment%tr_reg%Tr(m)%ntr_index
-                  if (allocated(segment%tr_Reg%Tr(m)%tres)) then
-                    flux_y(i,ntr_id,J) = vhh(i,J)*segment%tr_Reg%Tr(m)%tres(i,J,k)
-                  else ; flux_y(i,ntr_id,J) = vhh(i,J)*segment%tr_Reg%Tr(m)%OBC_inflow_conc ; endif
+                  flux_y(i,ntr_id,J) = vhh(i,J)*segment%tr_Reg%Tr(m)%tres(i,J,k)
                 enddo
               endif
             enddo

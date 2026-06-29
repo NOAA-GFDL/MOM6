@@ -30,7 +30,7 @@ use MOM_restart, only : query_initialized, MOM_restart_CS
 use MOM_self_attr_load, only : scalar_SAL_sensitivity
 use MOM_self_attr_load, only : SAL_CS
 use MOM_streaming_filter, only : Filt_register, Filt_init, Filt_accum, Filter_CS
-use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
+use MOM_time_manager, only : time_type, real_to_time, get_date, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : BT_cont_type, alloc_bt_cont_type
 use MOM_verticalGrid, only : verticalGrid_type
@@ -3682,7 +3682,7 @@ end subroutine btstep_layer_accel
 !> This subroutine automatically determines an optimal value for dtbt based on some state of the ocean. Either pbce or
 !! gtot_est is required to calculate gravitational acceleration. Column thickness can be estimated using BT_cont, eta,
 !! and SSH_add (default=0), with priority given in that order. The subroutine sets CS%dtbt_max and CS%dtbt.
-subroutine set_dtbt(G, GV, US, CS, pbce, gtot_est, BT_cont, eta, SSH_add)
+subroutine set_dtbt(G, GV, US, CS, pbce, gtot_est, BT_cont, eta, SSH_add, Time)
   type(ocean_grid_type),        intent(inout) :: G    !< The ocean's grid structure.
   type(verticalGrid_type),      intent(in)    :: GV   !< The ocean's vertical grid structure.
   type(unit_scale_type),        intent(in)    :: US   !< A dimensional unit scaling type
@@ -3699,6 +3699,7 @@ subroutine set_dtbt(G, GV, US, CS, pbce, gtot_est, BT_cont, eta, SSH_add)
                                                       !! anomaly [H ~> m or kg m-2].
   real,               optional, intent(in)    :: SSH_add !< An additional contribution to SSH to provide a margin of
                                                       !! error when calculating the external wave speed [Z ~> m].
+  type(time_type),    optional, intent(in)    :: Time !< Model time at the beginning of the baroclinic time step.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
@@ -3730,7 +3731,8 @@ subroutine set_dtbt(G, GV, US, CS, pbce, gtot_est, BT_cont, eta, SSH_add)
                       ! barotropic time step [T-2 ~> s-2].
   logical :: use_BT_cont
   type(memory_size_type) :: MS
-
+  character(len=200) :: mesg
+  integer :: yr, mon, day, hr, minute, sec
   integer :: i, j, k, is, ie, js, je, nz
 
   if (.not.CS%module_is_initialized) call MOM_error(FATAL, &
@@ -3800,6 +3802,14 @@ subroutine set_dtbt(G, GV, US, CS, pbce, gtot_est, BT_cont, eta, SSH_add)
 
   CS%dtbt = CS%dtbt_fraction * dtbt_max
   CS%dtbt_max = dtbt_max
+
+  if (is_root_PE() .and. present(Time)) then
+    call get_date(Time, yr, mon, day, hr, minute, sec)
+    write(mesg, '("DTBT reset by set_dtbt at ",i4.4,"-",i2.2,"-",i2.2," ",i2.2,":",i2.2,":",i2.2, &
+                & ", dtbt = ",ES12.6," s, dtbt_max = ",ES12.6," s")') &
+          yr, mon, day, hr, minute, sec, (US%T_to_s*CS%dtbt), (US%T_to_s*dtbt_max)
+    call MOM_mesg(mesg, 3)
+  endif
 
   if (CS%debug) then
     call chksum0(CS%dtbt, "End set_dtbt dtbt", unscale=US%T_to_s)
@@ -5552,6 +5562,7 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
                           ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: visc_rem_bug ! Stores the value of runtime paramter VISC_REM_BUG.
+  logical :: dtbt_restart_bug ! Stores the value of runtime parameter DTBT_RESTART_BUG.
   character(len=48) :: thickness_units, flux_units
   character*(40) :: hvel_str
   integer :: is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
@@ -5735,7 +5746,10 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                  "answers for some configurations that use OBCs.", &
                  default=enable_bugs, do_not_log=.true.)
   CS%interior_OBC_PV = .not.OBC_projection_bug
-
+  call get_param(param_file, mdl, "DTBT_RESTART_BUG", dtbt_restart_bug, &
+                 "If true, recover a bug where the barotropic timestep DTBT read from a "//&
+                 "restart file is immediately overridden by a recalculation on the "//&
+                 "first dynamics step.", default=.true.)
   call get_param(param_file, mdl, "TIDES", use_tides, &
                  "If true, apply tidal momentum forcing.", default=.false.)
   if (use_tides .and. present(HA_CSp)) CS%HA_CSp => HA_CSp
@@ -6238,7 +6252,7 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   endif
 
   ! CS%dtbt calculated here by set_dtbt is only used when dtbt is not reset during the run, i.e. DTBT_RESET_PERIOD<0.
-  call set_dtbt(G, GV, US, CS, gtot_est=gtot_estimate, SSH_add=SSH_extra)
+  call set_dtbt(G, GV, US, CS, gtot_est=gtot_estimate, SSH_add=SSH_extra, Time=Time)
 
   if (dtbt_input > 0.0) then
     CS%dtbt = US%s_to_T * dtbt_input
@@ -6246,7 +6260,11 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
     CS%dtbt = dtbt_restart
   endif
 
-  calc_dtbt = .true. ; if ((dtbt_restart > 0.0) .and. (dtbt_input > 0.0)) calc_dtbt = .false.
+  if (dtbt_restart_bug) then
+    calc_dtbt = .true. ; if ((dtbt_restart > 0.0) .and. (dtbt_input > 0.0)) calc_dtbt = .false.
+  else
+    calc_dtbt = (dtbt_restart <= 0.0)
+  endif
 
   call log_param(param_file, mdl, "DTBT as used", CS%dtbt, units="s", unscale=US%T_to_s)
   call log_param(param_file, mdl, "estimated maximum DTBT", CS%dtbt_max, units="s", unscale=US%T_to_s)

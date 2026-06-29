@@ -3385,7 +3385,8 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
 
         !Stress (Neumann) boundary conditions
         if (CS%ground_frac(i,j) == 1) then
-          neumann_val = ((.5 * grav) * (rho * max(ISS%h_shelf(i,j),CS%min_h_shelf)**2 - rhow * CS%bed_elev(i,j)**2))
+          neumann_val = ((.5 * grav) * (rho * max(ISS%h_shelf(i,j),CS%min_h_shelf)**2 - &
+                                        rhow * max(0.0, CS%bed_elev(i,j))**2))
         else
           neumann_val = (.5 * grav) * ((1-CS%rhoi_rhow) * (rho * max(ISS%h_shelf(i,j),CS%min_h_shelf)**2))
         endif
@@ -3400,29 +3401,29 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
           !     is not above the base of the ice in the current cell
 
           ! Note the negative sign due to the direction of the normal vector
-          taudx(I-1,J-1) = taudx(I-1,J-1) - .5 * G%dyT(i,j) * neumann_val
-          taudx(I-1,J) = taudx(I-1,J) - .5 * G%dyT(i,j) * neumann_val
+          taudx(I-1,J-1) = taudx(I-1,J-1) - .5 * G%dyCu(I-1,j) * neumann_val
+          taudx(I-1,J) = taudx(I-1,J) - .5 * G%dyCu(I-1,j) * neumann_val
         endif
 
         if ((CS%u_face_mask_bdry(I,j) == 2) .OR. &
           ((ISS%hmask(i+1,j) == 0 .OR. ISS%hmask(i+1,j) == 2) .and. (CS%reentrant_x .OR. (i+i_off /= giec)))) then
           ! east face of the cell is at a stress boundary
-          taudx(I,J-1) = taudx(I,J-1) + .5 * G%dyT(i,j) * neumann_val
-          taudx(I,J) = taudx(I,J) + .5 * G%dyT(i,j) * neumann_val
+          taudx(I,J-1) = taudx(I,J-1) + .5 * G%dyCu(I,j) * neumann_val
+          taudx(I,J) = taudx(I,J) + .5 * G%dyCu(I,j) * neumann_val
         endif
 
         if ((CS%v_face_mask_bdry(i,J-1) == 2) .OR. &
           ((ISS%hmask(i,j-1) == 0 .OR. ISS%hmask(i,j-1) == 2) .and. (CS%reentrant_y .OR. (j+j_off /= gjsc)))) then
           ! south face of the cell is at a stress boundary
-          taudy(I-1,J-1) = taudy(I-1,J-1) - .5 * G%dxT(i,j) * neumann_val
-          taudy(I,J-1) = taudy(I,J-1) - .5 * G%dxT(i,j) * neumann_val
+          taudy(I-1,J-1) = taudy(I-1,J-1) - .5 * G%dxCv(i,J-1) * neumann_val
+          taudy(I,J-1) = taudy(I,J-1) - .5 * G%dxCv(i,J-1) * neumann_val
         endif
 
         if ((CS%v_face_mask_bdry(i,J) == 2) .OR. &
           ((ISS%hmask(i,j+1) == 0 .OR. ISS%hmask(i,j+1) == 2) .and. (CS%reentrant_y .OR. (j+j_off /= gjec)))) then
           ! north face of the cell is at a stress boundary
-          taudy(I-1,J) = taudy(I-1,J) + .5 * G%dxT(i,j) * neumann_val
-          taudy(I,J) = taudy(I,J) + .5 * G%dxT(i,j) * neumann_val
+          taudy(I-1,J) = taudy(I-1,J) + .5 * G%dxCv(i,J) * neumann_val
+          taudy(I,J) = taudy(I,J) + .5 * G%dxCv(i,J) * neumann_val
         endif
       else ! This is not an ice-filled cell, so zero out the slopes here
         CS%sx_shelf(i,j) = 0.0 ; CS%sy_shelf(i,j) = 0.0
