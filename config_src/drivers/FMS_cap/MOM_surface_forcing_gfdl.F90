@@ -141,7 +141,7 @@ type, public :: surface_forcing_CS ; private
   real, pointer, dimension(:,:) :: max_delta_srestore_2d => NULL()
                                             !< Maximum delta salinity used for restoring [S ~> ppt]
   real    :: max_delta_srestore             !< Maximum delta salinity used for restoring [S ~> ppt]
-  real    :: min_ratio_srestore             !< Minimm fraction of restoring salinity to preserve [nondim]
+  real    :: min_ratio_srestore             !< Minimum fraction of restoring salinity to preserve [nondim]
   real    :: max_delta_trestore             !< Maximum delta sst used for restoring [C ~> degC]
   real, pointer, dimension(:,:) :: basin_mask => NULL() !< Mask for surface salinity restoring by basin [nondim]
   integer :: answer_date        !< The vintage of the order of arithmetic and expressions in the
@@ -1381,13 +1381,14 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
   logical :: explicit_bug, explicit_fix ! These indicate which parameters are set explicitly.
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   type(time_type)    :: Time_frc
-  type(directories)  :: dirs      ! A structure containing relevant directory paths and input filenames.
+ type(directories)  :: dirs      ! A structure containing relevant directory paths and input filenames.
   character(len=200) :: TideAmp_file, gust_file, salt_file, temp_file ! Input file names.
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_surface_forcing"  ! This module's name.
   character(len=48)  :: stagger
-  character(len=48)  :: flnam
+  character(len=80)  :: varnam
+  character(len=240) :: flnam
   character(len=240) :: basin_file
   integer :: i, j, isd, ied, jsd, jed
 
@@ -1543,19 +1544,25 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "If true, the restoring of salinity is applied as a salt "//&
                  "flux instead of as a freshwater flux.", default=.false.)
    call get_param(param_file, mdl, "MAX_DELTA_SRESTORE_FROM_FILE", CS%max_delta_srestore_file, &
-                 "If true, read a file (max_delta_srestore.nc) containing the field "//&
-                 "max_delta_srestore for the maximum salinity difference used in restoring terms. "//&
-                 "Where the field's value is negative turn off restoring when the salinity "//&
-                 "difference magnitude exceeds abs(value).", default=.false.)
+                 "If true, read a file MAX_DELTA_SRESTORE_FILE containing the field "//&
+                 "MAX_DELTA_SRESTORE_VARNAME for the maximum salinity difference used in "//&
+                 "restoring terms.  Where the field's value is negative turn off restoring when "//&
+                 "the salinity difference magnitude exceeds abs(value).", default=.false.)
     if (.not. CS%max_delta_srestore_file) then
       call get_param(param_file, mdl, "MAX_DELTA_SRESTORE", CS%max_delta_srestore, &
                    "The maximum salinity difference used in restoring terms.", &
                    units="PSU or g kg-1", default=999.0, scale=US%ppt_to_S)
     else
+      call get_param(param_file, mdl, "MAX_DELTA_SRESTORE_FILE", flnam, &
+                   "The path to the file containing the maximum salinity difference field.", &
+                   default="max_delta_srestore.nc")
+      flnam = trim(CS%inputdir) // trim(flnam)
+      call get_param(param_file, mdl, "MAX_DELTA_SRESTORE_VARNAME", varnam, &
+                   "The name of the maximum salinity difference variable in the input file.", &
+                   default="max_delta_srestore")
       CS%max_delta_srestore = 999.0
       call safe_alloc_ptr(CS%max_delta_srestore_2d,isd,ied,jsd,jed)
-      flnam = trim(CS%inputdir) // 'max_delta_srestore.nc'
-      call MOM_read_data(flnam,'max_delta_srestore', CS%max_delta_srestore_2d, G%domain, timelevel=1)
+      call MOM_read_data(flnam,varnam, CS%max_delta_srestore_2d, G%domain, timelevel=1)
     endif
     call get_param(param_file, mdl, "MIN_RATIO_SRESTORE", CS%min_ratio_srestore, &
                  "Turn off MAX_DELTA_SRESTORE where the ratio of SSS to restoring salinity "//&
