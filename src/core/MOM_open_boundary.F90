@@ -71,7 +71,9 @@ public set_obgc_segments_props
 public setup_OBC_tracer_reservoirs
 public setup_OBC_thickness_reservoirs
 public open_boundary_register_restarts
-public copy_thickness_reservoirs
+public copy_OBC_radiation_coefs
+public copy_OBC_tracer_reservoirs
+public copy_OBC_thickness_reservoirs
 public update_segment_tracer_reservoirs
 public update_segment_thickness_reservoirs
 public set_initialized_OBC_tracer_reservoirs
@@ -753,7 +755,7 @@ subroutine open_boundary_config(G, US, param_file, OBC)
                  "specified for the reservoir concentrations.", default=enable_bugs, do_not_log=.true.)
   call get_param(param_file, mdl, "OBC_TEMP_SALT_NEEDED_BUG", OBC%ts_needed_bug, &
                  "If true, recover a bug that OBC temperature and salinity can be ignored "//&
-                 "even if they are registered tracers in the rest of the model.", default=.true.)
+                 "even if they are registered tracers in the rest of the model.", default=enable_bugs)
   call get_param(param_file, mdl, "REENTRANT_X", reentrant_x, default=.true.)
   call get_param(param_file, mdl, "REENTRANT_Y", reentrant_y, default=.false.)
 
@@ -2731,8 +2733,88 @@ subroutine set_initialized_OBC_tracer_reservoirs(G, OBC, restart_CS)
 
 end subroutine set_initialized_OBC_tracer_reservoirs
 
+!> Copy radiation and oblique boundary condition coefficients (phase speeds and normalizing
+!! denominator) from the global restart arrays into the per-segment arrays.
+subroutine copy_OBC_radiation_coefs(OBC)
+  type(ocean_OBC_type), pointer :: OBC !< Open boundary control structure
+
+  ! Local variables
+  type(OBC_segment_type), pointer :: segment => NULL()
+  integer :: nz, i, j, k, n, is, ie, js, je
+
+  if (.not. associated(OBC)) return
+  if (OBC%gamma_uv >= 1.0) return
+
+  nz = OBC%ke
+  do n=1,OBC%number_of_segments
+    segment => OBC%segment(n)
+    if (.not. segment%on_pe) cycle
+    if (segment%is_E_or_W) then ! EW segment
+      I = segment%HI%IsdB ; js = segment%HI%jsd ; je = segment%HI%jed
+      if (segment%radiation) then
+        do k=1,nz ; do j=js,je
+          segment%rx_norm_rad(I,j,k) = OBC%rx_normal(I,j,k)
+        enddo ; enddo
+      endif
+      if (segment%oblique) then
+        do k=1,nz ; do j=js,je
+          segment%rx_norm_obl(I,j,k) = OBC%rx_oblique_u(I,j,k)
+          segment%ry_norm_obl(I,j,k) = OBC%ry_oblique_u(I,j,k)
+          segment%cff_normal(I,j,k)  = OBC%cff_normal_u(I,j,k)
+        enddo ; enddo
+      endif
+    elseif (segment%is_N_or_S) then ! NS segment
+      J = segment%HI%JsdB ; is = segment%HI%isd ; ie = segment%HI%ied
+      if (segment%radiation) then
+        do k=1,nz ; do i=is,ie
+          segment%ry_norm_rad(i,J,k) = OBC%ry_normal(i,J,k)
+        enddo ; enddo
+      endif
+      if (segment%oblique) then
+        do k=1,nz ; do i=is,ie
+          segment%rx_norm_obl(i,J,k) = OBC%rx_oblique_v(i,J,k)
+          segment%ry_norm_obl(i,J,k) = OBC%ry_oblique_v(i,J,k)
+          segment%cff_normal(i,J,k)  = OBC%cff_normal_v(i,J,k)
+        enddo ; enddo
+      endif
+    endif
+  enddo
+
+end subroutine copy_OBC_radiation_coefs
+
+!> Copy restart fields OBC%tres_x/y to per-segment tracer reservoir segment%tr_Reg%Tr(m)%tres.
+subroutine copy_OBC_tracer_reservoirs(OBC)
+  type(ocean_OBC_type), pointer :: OBC !< Open boundary control structure
+
+  ! Local variables
+  type(OBC_segment_type), pointer :: segment => NULL()
+  integer :: n, m, i, j, k, is, ie, js, je, nz
+
+  if (.not. associated(OBC)) return
+  ! The allocated checks are needed for some user cases (e.g. "dyed_obcs"), where per-segment
+  ! tracers are registered after global restart arrays OBC%tres_x/y are allocated (or not).
+  if (.not. (allocated(OBC%tres_x) .or. allocated(OBC%tres_y))) return
+
+  nz = OBC%ke
+  do n=1, OBC%number_of_segments
+    segment => OBC%segment(n)
+    if (.not. (segment%on_pe .and. associated(segment%tr_Reg))) cycle
+    if (segment%is_E_or_W .and. allocated(OBC%tres_x)) then ! EW segment
+      I = segment%HI%IsdB ; js = segment%HI%jsd ; je = segment%HI%jed
+      do m=1, segment%tr_Reg%ntseg ; do k=1,nz ; do j=js,je
+        segment%tr_Reg%Tr(m)%tres(I,j,k) = segment%tr_Reg%Tr(m)%scale * OBC%tres_x(I,j,k,m)
+      enddo ; enddo ; enddo
+    elseif (segment%is_N_or_S .and. allocated(OBC%tres_y)) then ! NS segment
+      J = segment%HI%JsdB ; is = segment%HI%isd ; ie = segment%HI%ied
+      do m=1, segment%tr_Reg%ntseg ; do k=1,nz ; do i=is,ie
+        segment%tr_Reg%Tr(m)%tres(i,J,k) = segment%tr_Reg%Tr(m)%scale * OBC%tres_y(i,J,k,m)
+      enddo ; enddo ; enddo
+    endif
+  enddo ! end segment loop
+end subroutine copy_OBC_tracer_reservoirs
+
 !> Fill segment%h_Reg from restart fields.
-subroutine copy_thickness_reservoirs(OBC, G, GV)
+subroutine copy_OBC_thickness_reservoirs(OBC, G, GV)
   type(ocean_grid_type),          intent(inout) :: G     !< Ocean grid structure
   type(verticalGrid_type),        intent(in)    :: GV    !< The ocean's vertical grid structure
   type(ocean_OBC_type),           pointer       :: OBC   !< Open boundary control structure
@@ -2780,7 +2862,7 @@ subroutine copy_thickness_reservoirs(OBC, G, GV)
     endif
   endif
 
-end subroutine copy_thickness_reservoirs
+end subroutine copy_OBC_thickness_reservoirs
 
 !> Apply radiation conditions to 3D u,v at open boundaries
 subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US, dt)
@@ -2835,80 +2917,6 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, GV, US,
   if (OBC%debug) call chksum_OBC_segments(OBC, G, GV, US, OBC%nk_OBC_debug)
 
   eps = 1.0e-20*US%m_s_to_L_T**2
-
-  !! Copy previously calculated phase velocity from global arrays into segments
-  !! This is terribly inefficient and temporary solution for continuity across restarts
-  !! and needs to be revisited in the future.
-  if (OBC%gamma_uv < 1.0) then
-    do n=1,OBC%number_of_segments
-      segment => OBC%segment(n)
-      if (.not. segment%on_pe) cycle
-      if (segment%is_E_or_W .and. segment%radiation) then
-        do k=1,GV%ke
-          I=segment%HI%IsdB
-          do j=segment%HI%jsd,segment%HI%jed
-            segment%rx_norm_rad(I,j,k) = OBC%rx_normal(I,j,k)
-          enddo
-        enddo
-      elseif (segment%is_N_or_S .and. segment%radiation) then
-        do k=1,GV%ke
-          J=segment%HI%JsdB
-          do i=segment%HI%isd,segment%HI%ied
-            segment%ry_norm_rad(i,J,k) = OBC%ry_normal(i,J,k)
-          enddo
-        enddo
-      endif
-      if (segment%is_E_or_W .and. segment%oblique) then
-        do k=1,GV%ke
-          I=segment%HI%IsdB
-          do j=segment%HI%jsd,segment%HI%jed
-            segment%rx_norm_obl(I,j,k) = OBC%rx_oblique_u(I,j,k)
-            segment%ry_norm_obl(I,j,k) = OBC%ry_oblique_u(I,j,k)
-            segment%cff_normal(I,j,k) = OBC%cff_normal_u(I,j,k)
-          enddo
-        enddo
-      elseif (segment%is_N_or_S .and. segment%oblique) then
-        do k=1,GV%ke
-          J=segment%HI%JsdB
-          do i=segment%HI%isd,segment%HI%ied
-            segment%rx_norm_obl(i,J,k) = OBC%rx_oblique_v(i,J,k)
-            segment%ry_norm_obl(i,J,k) = OBC%ry_oblique_v(i,J,k)
-            segment%cff_normal(i,J,k) = OBC%cff_normal_v(i,J,k)
-          enddo
-        enddo
-      endif
-    enddo
-  endif
-
-  ! Now tracers (if any)
-  do n=1,OBC%number_of_segments
-    segment => OBC%segment(n)
-    if (segment%on_pe .and. associated(segment%tr_Reg)) then
-      if (segment%is_E_or_W) then
-        I = segment%HI%IsdB
-        do m=1,segment%tr_Reg%ntseg
-          if (allocated(OBC%tres_x)) then
-            do k=1,GV%ke
-              do j=segment%HI%jsd,segment%HI%jed
-                segment%tr_Reg%Tr(m)%tres(I,j,k) = segment%tr_Reg%Tr(m)%scale * OBC%tres_x(I,j,k,m)
-              enddo
-            enddo
-          endif
-        enddo
-      else
-        J = segment%HI%JsdB
-        do m=1,segment%tr_Reg%ntseg
-          if (allocated(OBC%tres_y)) then
-            do k=1,GV%ke
-              do i=segment%HI%isd,segment%HI%ied
-                segment%tr_Reg%Tr(m)%tres(i,J,k) = segment%tr_Reg%Tr(m)%scale * OBC%tres_y(i,J,k,m)
-              enddo
-            enddo
-          endif
-        enddo
-      endif
-    endif
-  enddo
 
   gamma_u = OBC%gamma_uv
   rx_max = OBC%rx_max ; ry_max = OBC%rx_max
