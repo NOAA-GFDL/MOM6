@@ -2661,7 +2661,7 @@ subroutine update_shelf_mass(G, US, CS, ISS, Time)
 
 end subroutine update_shelf_mass
 
-!>Update ice smb
+!> Update the ice-shelf surface mass balance (SMB) field
 subroutine update_ice_SMB(CS, G, SMB, Time)
   type(ice_shelf_CS), pointer :: CS !< A pointer to the control structure returned
                                     !! by a previous call to initialize_ice_shelf.
@@ -2673,10 +2673,9 @@ subroutine update_ice_SMB(CS, G, SMB, Time)
 
   if (CS%time_varying_smb) then
      call time_interp_external(CS%smb_file, Time, SMB)
-     if (CS%debug) call hchksum(SMB, "updatte_ice_SMB", CS%Grid_in%HI, haloshift=0)
+     if (CS%debug) call hchksum(SMB, "update_ice_SMB", CS%Grid_in%HI, haloshift=0)
   endif
 
-  return
 
 end subroutine update_ice_SMB
 
