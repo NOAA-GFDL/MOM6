@@ -664,11 +664,11 @@ subroutine int_spec_vol_dp_linear(T, S, p_t, p_b, alpha_ref, HI, Rho_T0_S0, &
     if (hWght <= 0.0) then
       dpL = p_b(i,j) - p_t(i,j) ; dpR = p_b(i,j+1) - p_t(i,j+1)
 
-      p_ave = 0.5 * (p_b(i,j) + p_t(i,j)) + dRho_dp * p_ave
+      p_ave = 0.5 * (p_b(i,j) + p_t(i,j))
       drho = (dRho_dT*T(i,j) + dRho_dS*S(i,j)) + dRho_dp * p_ave
       aaL = ((1.0 - Rho_T0_S0*alpha_ref) - drho*alpha_ref) / (Rho_T0_S0 + drho)
 
-      p_ave = 0.5 * (p_b(i,j+1) + p_t(i,j+1)) + dRho_dp * p_ave
+      p_ave = 0.5 * (p_b(i,j+1) + p_t(i,j+1))
       drho = (dRho_dT*T(i,j+1) + dRho_dS*S(i,j+1)) + dRho_dp * p_ave
       aaR = ((1.0 - Rho_T0_S0*alpha_ref) - drho*alpha_ref) / (Rho_T0_S0 + drho)
 
