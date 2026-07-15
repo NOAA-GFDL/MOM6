@@ -103,7 +103,7 @@ subroutine diagnoseMLDbyDensityDifference(id_MLD, h, tv, densityDiff, G, GV, US,
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
   hRef_MLD(:) = ref_h_mld
-  pRef_MLD(:) = GV%H_to_RZ*GV%g_Earth*ref_h_mld
+  pRef_MLD(:) = (GV%H_to_RZ*GV%g_Earth)*(GV%Z_to_H*ref_h_mld)
   z_ref_diag(:,:) = 0.
 
   EOSdom(:) = EOS_domain(G%HI)
