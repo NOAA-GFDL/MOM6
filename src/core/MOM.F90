@@ -3730,7 +3730,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                    "If true, perform harmonic analysis of baroclinic sea level.", &
                    default=.false., do_not_log=.true.)
     call get_param(param_file, "MOM", "RHO_BSL", CS%rho_bsl, &
-                   "Surface density for baroclinic sea level calculation.", &
+                   "Reference density for calculating the baroclinic sea level based on "//&
+                   "integrals of the differences between the actual layer density and this "//&
+                   "value. By defulat, it should be the surface density.", &
                    units='kg m-3', default=1025.0, scale=US%kg_m3_to_R, do_not_log=.not.CS%HA_bsl)
   else
     CS%HA_bsl = .false.

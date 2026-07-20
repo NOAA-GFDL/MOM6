@@ -2306,8 +2306,10 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
   CS%id_bsl = register_diag_field('ocean_model', 'bsl', diag%axesT1, Time, &
       long_name='Baroclinic Sea Level', standard_name='baroclinic_sea_level', &
       units='m', conversion=US%Z_to_m)
-  call get_param(param_file, mdl, "RHO_BSL", CS%rho_bsl, &
-                 "Surface density for baroclinic sea level calculation.", &
+  call get_param(param_file, "MOM", "RHO_BSL", CS%rho_bsl, &
+                 "Reference density for calculating the baroclinic sea level based on "//&
+                 "integrals of the differences between the actual layer density and this "//&
+                 "value. By defulat, it should be the surface density.", &
                  units='kg m-3', default=1025.0, scale=US%kg_m3_to_R, do_not_log=CS%id_bsl<=0)
 
   ! Register time derivatives and allocate memory for diagnostics that need

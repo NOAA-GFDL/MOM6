@@ -290,12 +290,13 @@ subroutine find_eta_2d(h, tv, G, GV, US, eta, eta_bt, halo_size, dZref)
 
 end subroutine find_eta_2d
 
-!> Calculates the baroclinic sea level, following Xu et al., to be submitted to JPO
+!> Calculates the baroclinic sea level, following Xu et al., submitted to JPO
 subroutine find_bsl(h, tv, G, GV, US, rho_s, bsl, dZref)
   type(ocean_grid_type),                      intent(in)  :: G   !< The ocean's grid structure
   type(verticalGrid_type),                    intent(in)  :: GV  !< The ocean's vertical grid structure
   type(unit_scale_type),                      intent(in)  :: US  !< A dimensional unit scaling type
   real,                                       intent(in)  :: rho_s !< Surface density [R ~> kg m-3]
+                    !! which is the reference density for all anomalies defined below
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)  :: h   !< Layer thicknesses [H ~> m or kg m-2]
   type(thermo_var_ptrs),                      intent(in)  :: tv  !< A structure pointing to various
                                                                  !! thermodynamic variables
@@ -307,14 +308,16 @@ subroutine find_bsl(h, tv, G, GV, US, rho_s, bsl, dZref)
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: eta             ! layer interface heights [Z ~> m]
   real, dimension(SZI_(G),SZJ_(G)) :: &
     bathyT, &       ! Bathymetry at T points plus dZ_ref [Z ~> m]
-    pt, &           ! Pressure at the top of a layer [R L2 T-2 ~> Pa]
-    pb, &           ! Pressure at the bottom of a layer [R L2 T-2 ~> Pa]
-    gz, &           ! Geopotential at the bottom of a layer [L2 T-2 ~> m2 s-2]
-    dp, &           ! Pressure change across a layer in Boussinesq mode [R L2 T-2 ~> Pa]
-    dg, &           ! Geopotential change across a layer in non-Boussinesq mode [L2 T-2 ~> m2 s-2]
-    dp_int, &       ! Layer-integrated pressure change in Boussinesq mode [R L2 Z T-2 ~> Pa m]
-    dg_int, &       ! Layer-integrated geopotential change in non-Boussinesq mode [R L4 T-4 ~> Pa m2 s-2]
-    p_int           ! Vertical integral of pressure at the bottom of a layer [R L2 Z T-2 ~> Pa m]
+    pt, &           ! Pressure anomaly at the top of a layer in Boussinesq mode [R L2 T-2 ~> Pa]
+                    ! Or pressure at the top of a layer in non-Boussinesq mode [R L2 T-2 ~> Pa]
+    pb, &           ! Pressure at the bottom of a layer in non-Boussinesq mode[R L2 T-2 ~> Pa]
+    gz, &           ! Geopotential anomaly at the bottom of a layer [L2 T-2 ~> m2 s-2]
+    dp, &           ! Pressure anomaly change across a layer in Boussinesq mode [R L2 T-2 ~> Pa]
+                    ! Or pressure change across a layer in non-Boussinesq mode [R L2 T-2 ~> Pa]
+    dg, &           ! Geopotential anomaly change across a layer in non-Boussinesq mode [L2 T-2 ~> m2 s-2]
+    dp_int, &       ! Layer-integrated pressure anomaly change in Boussinesq mode [R L2 Z T-2 ~> Pa m]
+    dg_int, &       ! Layer-integrated geopotential anomaly change in non-Boussinesq mode [R L4 T-4 ~> Pa m2 s-2]
+    p_int           ! Vertical integral of pressure anomaly at the bottom of a layer [R L2 Z T-2 ~> Pa m]
                     ! or that scaled by GV%g_Earth in non-Boussinesq and EOS mode [R L4 T-4 ~> Pa m2 s-2]
                     ! or that normalized by GV%g_Earth in non-EOS mode [R Z2 ~> Pa s2]
   real :: dZ_ref    ! The difference in the reference height between G%bathyT and eta [Z ~> m]
@@ -330,8 +333,6 @@ subroutine find_bsl(h, tv, G, GV, US, rho_s, bsl, dZref)
 
   I_gEarth = 1.0 / GV%g_Earth; SpV_s = 1.0 / rho_s
 
-  call find_eta(h, tv, G, GV, US, eta, halo_size=1, dZref=dZ_ref)
-
   !$OMP parallel default(shared)
   !$OMP do
   do j=js,je ; do i=is,ie
@@ -342,6 +343,7 @@ subroutine find_bsl(h, tv, G, GV, US, rho_s, bsl, dZref)
 
   if (associated(tv%eqn_of_state)) then
     if (GV%Boussinesq) then
+      call find_eta(h, tv, G, GV, US, eta, halo_size=1, dZref=dZ_ref)
       do k=1,nz
         call int_density_dz(tv%T(:,:,k), tv%S(:,:,k), eta(:,:,k), eta(:,:,k+1), rho_s, &
                             GV%Rho0, GV%g_Earth, G%HI, tv%eqn_of_state, US, dp, dp_int)
@@ -374,9 +376,10 @@ subroutine find_bsl(h, tv, G, GV, US, rho_s, bsl, dZref)
       !$OMP do
       do j=js,je ; do i=is,ie ; if (maskT(i,j)) then
         bsl(i,j) = (p_int(i,j) * (I_gEarth * I_gEarth)) / (rho_s * bathyT(i,j))
-      endif ;enddo ; enddo
+      endif ; enddo ; enddo
     endif ! (GV%Boussinesq)
   else ! (.not. associated(tv%eqn_of_state))
+    call find_eta(h, tv, G, GV, US, eta, halo_size=1, dZref=dZ_ref)
     !$OMP do
     do j=js,je ; do i=is,ie ; if (maskT(i,j)) then
       do k=2,nz
