@@ -26,6 +26,7 @@ use MOM_time_manager, only : time_type, get_time, set_time, time_type_to_real, o
 use MOM_time_manager,  only : operator(+), operator(-), operator(*), operator(/)
 use MOM_time_manager,  only : operator(/=), operator(<=), operator(>=), operator(<)
 use MOM_unit_scaling, only : unit_scale_type, unit_scaling_init
+use MOM_checksums, only : is_NaN
 !MJH use MOM_ice_shelf_initialize, only : initialize_ice_shelf_boundary
 use MOM_ice_shelf_state, only : ice_shelf_state
 use MOM_coms, only : reproducing_sum, max_across_PEs, min_across_PEs
@@ -1949,7 +1950,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
       ! pre-Newton iterate, revert to Picard with a fresh outer-iteration budget,
       ! and lower the working switch threshold tenfold.
       if (rescue_enabled .and. CS%doing_newton .and. newton_armed) then
-        diverging = (err_max /= err_max) .or. &
+        diverging = (is_NaN(err_max)) .or. &
                     (err_max > CS%newton_divergence_factor * err_newton_enter)
         if (diverging) then
           n_rescue = n_rescue + 1
