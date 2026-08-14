@@ -654,8 +654,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   real, dimension(SZI_(G),SZJB_(G)) :: Drag_v
                   ! The meridional acceleration due to frequency-dependent drag [L T-2 ~> m s-2]
   real, target, dimension(SZIW_(CS),SZJW_(CS)) :: &
-    eta           ! The barotropic free surface height anomaly or column mass
-                  ! anomaly [H ~> m or kg m-2]
+    eta           ! The barotropic free surface height anomaly or column mass [H ~> m or kg m-2]
   real, dimension(SZIW_(CS),SZJW_(CS)) :: &
     eta_sum, &    ! eta summed across the timesteps [H ~> m or kg m-2].
     eta_wtd, &    ! A weighted estimate used to calculate eta_out [H ~> m or kg m-2].
@@ -2278,7 +2277,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
   type(memory_size_type), intent(in)    :: MS    !< A type that describes the memory sizes of
                                                  !! the argument arrays.
   real, dimension(SZIW_(CS),SZJW_(CS)), target, intent(inout) :: &
-    eta           !< The barotropic free surface height anomaly or column mass anomaly [H ~> m or kg m-2]
+    eta           !< The barotropic free surface height anomaly or total column mass [H ~> m or kg m-2]
   real, dimension(SZIBW_(CS),SZJW_(CS)), intent(inout) :: &
     ubt           !< The zonal barotropic velocity [L T-1 ~> m s-1]
   real, dimension(SZIW_(CS),SZJBW_(CS)), intent(inout) :: &
@@ -2362,7 +2361,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
                   !! that introduced directly into the barotropic solver rather than coming
                   !! in via the visc_rem_v arrays from the layered equations [T-1 ~> s-1]
   real, dimension(SZIW_(CS),SZJW_(CS)), intent(inout) :: &
-    eta_PF        !< The 2-D eta field (either SSH anomaly or column mass anomaly) that was used to
+    eta_PF        !< The 2-D eta field (either SSH anomaly or column mass) that was used to
                   !! calculate the input pressure gradient accelerations [H ~> m or kg m-2]
   real, dimension(SZIW_(CS),SZJW_(CS)), intent(in) :: &
     gtot_E        !< The effective total reduced gravity used to relate free surface height
@@ -2868,16 +2867,18 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
         eta_acc = abs( CS%IareaT_OBCmask(i,j) * &
                    ((uhbt_int(I-1,j) - uhbt_int(I,j)) + (vhbt_int(i,J-1) - vhbt_int(i,J))) )
         eta_acc = max( eta_acc, abs( eta_cor_multiplier*eta_src(i,j) ), abs( eta_IC(i,j) ) )
-        if ( G%mask2dT(i,j) * ( eta(i,j) + GV%Z_to_H*G%bathyT(i,j) ) > &
-             -G%mask2dT(i,j) * eta_acc * epsilon(eta_acc) * 2. ) &
-          eta(i,j) = max( eta(i,j), -GV%Z_to_H*G%bathyT(i,j) )
-        eta_wtd(i,j) = eta_wtd(i,j) + eta(i,j) * wt_eta(n)
-        if ((eta(i,j) < -GV%Z_to_H*G%bathyT(i,j)) .and. (G%mask2dT(i,j) > 0.0)) then
-          write(mesg,'(ES24.16," vs. ",ES24.16, " at ", ES12.4, ES12.4, i7, i7)') GV%H_to_m*eta(i,j), &
-               -US%Z_to_m*G%bathyT(i,j), G%geoLonT(i,j), G%geoLatT(i,j), i + G%HI%idg_offset, j + G%HI%jdg_offset
-          if (CS%bt_limit_integral_transport) &
-            call MOM_error(FATAL, "btstep: eta has dropped below bathyT: "//trim(mesg))
+        ! These blocks correct the sitution when the sea-surface drops below the seafloor by a
+        ! tiny amount that could be attributable to floating-point round-off.
+        if (GV%Boussinesq) then
+          if ( G%mask2dT(i,j) * ( eta(i,j) + GV%Z_to_H*G%bathyT(i,j) ) > &
+               -G%mask2dT(i,j) * eta_acc * epsilon(eta_acc) * 2. ) &
+            eta(i,j) = max( eta(i,j), -GV%Z_to_H*G%bathyT(i,j) )
+        else
+          if (G%mask2dT(i,j) * eta(i,j) < 0.0) then
+            if (abs(eta(i,j)) < 2.*epsilon(eta_acc) * eta_acc) eta(i,j) = 0.0
+          endif
         endif
+        eta_wtd(i,j) = eta_wtd(i,j) + eta(i,j) * wt_eta(n)
       enddo ; enddo
     else
       !$OMP do
@@ -3143,8 +3144,7 @@ subroutine btloop_eta_predictor(n, dtbt, ubt, vbt, eta, ubt_int, vbt_int, uhbt, 
   real, dimension(SZIW_(CS),SZJBW_(CS)), intent(in) :: &
     vbt           !< The zonal barotropic velocity [L T-1 ~> m s-1].
   real, target, dimension(SZIW_(CS),SZJW_(CS)), intent(in) :: &
-    eta           !< The barotropic free surface height anomaly or column mass
-                  !! anomaly [H ~> m or kg m-2]
+    eta           !< The barotropic free surface height anomaly or column mass [H ~> m or kg m-2]
   real, dimension(SZIBW_(CS),SZJW_(CS)), intent(in) :: &
     ubt_int       !< The running time integral of ubt over the time steps [L ~> m].
   real, dimension(SZIW_(CS),SZJBW_(CS)), intent(in) :: &
@@ -3251,10 +3251,10 @@ subroutine btloop_find_PF(PFu, PFv, isv, iev, jsv, jev, eta_PF_BT, eta_PF, &
   integer, intent(in)  :: jsv         !< The starting j-index of eta_pred being set in ths loop
   integer, intent(in)  :: jev         !< The ending j-index of eta_pred being set in ths loop
   real, dimension(SZIW_(CS),SZJW_(CS)), intent(in) :: &
-    eta_PF_BT     !< The eta array (either the SSH anomaly or column mass anomaly) that
+    eta_PF_BT     !< The eta array (either the SSH anomaly or column mass) that
                   !! determines the barotropic pressure force [H ~> m or kg m-2]
   real, dimension(SZIW_(CS),SZJW_(CS)), intent(in) :: &
-    eta_PF        !< The input 2-D eta field (either SSH anomaly or column mass anomaly)
+    eta_PF        !< The input 2-D eta field (either SSH anomaly or column mass)
                   !! that was used to calculate the input pressure gradient
                   !! accelerations [H ~> m or kg m-2].
   real, dimension(SZIW_(CS),SZJW_(CS)), intent(in) :: &
@@ -3339,7 +3339,7 @@ subroutine btloop_add_dyn_PF(PFu, PFv, eta_pred, eta, dyn_coef_eta, p_surf_dyn, 
     eta_pred      !< The updated eta field (either SSH anomaly or column mass anomaly) that is
                   !! used to estimate the divergence that is to be damped [H ~> m or kg m-2].
   real, dimension(SZIW_(CS),SZJW_(CS)), intent(in) :: &
-    eta           !< The previous eta field (either SSH anomaly or column mass anomaly) that is
+    eta           !< The previous eta field (either SSH anomaly or column mass) that is
                   !! used to estimate the divergence that is to be damped [H ~> m or kg m-2].
   real, dimension(SZIW_(CS),SZJW_(CS)), intent(in) :: &
     dyn_coef_eta  !< The coefficient relating the changes in eta to the dynamic surface pressure
