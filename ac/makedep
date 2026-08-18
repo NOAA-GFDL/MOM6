@@ -27,13 +27,19 @@ re_cpp_endif = re.compile(r"^ *# *endif")
 re_cpp_include = re.compile(r"^ *# *include *[<\"']([a-zA-Z_0-9\.]+)[>\"']")
 re_f90_include = re.compile(r"^ *include +[\"']([a-zA-Z_0-9\.]+)[\"']")
 re_program = re.compile(r"^ *program +([a-z_0-9]+)", re.IGNORECASE)
-re_end = re.compile(r"^ *end *(module|procedure) ", re.IGNORECASE)
-# NOTE: This excludes comments and tokens with substrings containing `function`
-# or `subroutine`, but will fail if the keywords appear in other contexts.
+
+re_end = re.compile(r"^ *end *(module|submodule|program) ", re.IGNORECASE)
+# NOTE: `end procedure` is intentionally excluded from re_end.  it should
+# not reset external namespace since we remain inside the containing
+# submodule or module.
+
 re_procedure = re.compile(
     r"^[^!]*(?<![a-z_])(function|subroutine)(?![a-z_])",
     re.IGNORECASE
 )
+# NOTE: re_procedure excludes comments and tokens with substrings
+# containing `function` or `subroutine`, but will fail if the keywords
+# appear in other contexts.
 
 
 # Preprocessor expression tokenization
@@ -366,16 +372,11 @@ def link_obj(obj, o2uses, mod2o, all_modules, parent2subobjs, o2mods):
                 if m in parent2subobjs:
                     for subobj in parent2subobjs[m]:
                         recur(subobj, depth=depth+1)
-        else:
-            return
-        uses = [m for m in o2uses[obj] if m in all_modules]
-        if len(uses) > 0:
-            ouses = [mod2o[m] for m in uses]
+            # Follow the modules used by this object (including submodules)
+            uses = [m for m in o2uses.get(obj, []) if m in all_modules]
             for m in uses:
                 o = mod2o[m]
                 recur(o, depth=depth+1)
-            return
-        return
     olst = []
     recur(obj)
     return sorted(set(olst))
