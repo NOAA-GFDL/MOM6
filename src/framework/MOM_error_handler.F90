@@ -27,7 +27,7 @@ public :: callTree_showQuery, callTree_enter, callTree_leave, callTree_waypoint
 public :: is_root_pe, stdlog, stdout
 !> Integer parameters encoding the severity of an error message
 public :: NOTE, WARNING, FATAL
-public :: disable_fatal_errors, enable_fatal_errors, set_skip_mpi
+public :: disable_fatal_errors, enable_fatal_errors, set_skip_mpi, query_skip_mpi
 
 integer :: verbosity = 6
 !< Verbosity level:
@@ -146,6 +146,14 @@ subroutine set_skip_mpi(skip)
   skip_mpi_dep = skip
 
 end subroutine set_skip_mpi
+
+!> Query whether MPI-dependent behaviors should be skipped
+function query_skip_mpi() result(skip)
+  logical :: skip !< True if MPI should be skipped
+
+  skip = skip_mpi_dep
+
+end function query_skip_mpi
 
 !> This provides a convenient interface for writing an error message
 !! with run-time filter based on a verbosity and the severity of the error.

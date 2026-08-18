@@ -12,6 +12,7 @@ use MOM_coms, only : num_PEs, sync_PEs
 use MOM_error_handler, only : is_root_pe
 use MOM_error_handler, only : disable_fatal_errors
 use MOM_error_handler, only : enable_fatal_errors
+use MOM_error_handler, only : query_skip_mpi
 
 implicit none ; private
 
@@ -144,11 +145,13 @@ subroutine run_unit_test(test)
   type(sigjmp_buf) :: env
   integer :: rc
 
-  call sync_PEs
+  if (.not. query_skip_mpi()) then
+    call sync_PEs
 
-  ! FIXME: Some FATAL tests under MPI are unable to recover after jumpback, so
-  !   we disable these tests for now.
-  if (test%is_fatal .and. num_PEs() > 1) return
+    ! FIXME: Some FATAL tests under MPI are unable to recover after jumpback, so
+    !   we disable these tests for now.
+    if (test%is_fatal .and. num_PEs() > 1) return
+  endif
 
   if (test%is_fatal) then
     rc = sigsetjmp(env, 1)
@@ -284,7 +287,7 @@ subroutine create_test_file(filename, lines, mode)
     close(param_unit)
     if (present(mode)) rc = chmod(filename, mode)
   endif
-  call sync_PEs
+  if (.not. query_skip_mpi()) call sync_PEs
 end subroutine create_test_file
 
 
@@ -304,7 +307,7 @@ subroutine delete_test_file(filename)
       close(io_unit, status='delete')
     endif
   endif
-  call sync_PEs
+  if (.not. query_skip_mpi()) call sync_PEs
 end subroutine delete_test_file
 
 end module MOM_unit_testing
