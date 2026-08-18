@@ -7,12 +7,25 @@
 module MOM_intrinsic_functions
 
 use iso_fortran_env, only : stdout => output_unit, stderr => error_unit
-use iso_fortran_env, only : int64, real64
+use iso_fortran_env, only : int64
 
 implicit none ; private
 
-public :: invcosh, cuberoot
+public :: invcosh, cuberoot, exp_repro
 public :: intrinsic_functions_unit_tests
+
+interface
+  !> Reproducible exponential function
+  !!
+  !! Compute exp(x) with bitwise reproducibility across platforms.
+  !! Implemented in submodule MOM_exp
+  elemental module function exp_repro(x) result(a)
+    real, intent(in) :: x
+      !< Input value
+    real :: a
+      !< exp(x)
+  end function exp_repro
+end interface
 
 ! Floating point model, if bit layout from high to low is (sign, exp, frac)
 
