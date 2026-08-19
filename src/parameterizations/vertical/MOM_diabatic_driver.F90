@@ -1912,6 +1912,8 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
   ! For all other diabatic subroutines, the averaging window should be the entire diabatic timestep
   call enable_averages(dt, Time_end, CS%diag)
 
+  if (CS%Use_KdWork_diag) call Allocate_VBF_CS(G, GV, CS%VBF)
+
   if ((CS%ML_mix_first > 0.0) .or. CS%use_geothermal) then
     halo = CS%halo_TS_diff
     !$OMP parallel do default(shared)
@@ -2160,17 +2162,6 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
     call cpu_clock_end(id_clock_differential_diff)
     if (showCallTree) call callTree_waypoint("done with differential_diffuse_T_S (diabatic)")
     if (CS%debugConservation) call MOM_state_stats('differential_diffuse_T_S', u, v, h, tv%T, tv%S, G, GV, US)
-
-    ! increment heat and salt diffusivity.
-    ! CS%useKPP==.true. already has extra_T and extra_S included
-    if (.not. CS%useKPP) then
-      !$OMP parallel do default(shared)
-      do K=2,nz ; do j=js,je ; do i=is,ie
-        Kd_heat(i,j,K) = Kd_heat(i,j,K) + Kd_extra_T(i,j,K)
-        Kd_salt(i,j,K) = Kd_salt(i,j,K) + Kd_extra_S(i,j,K)
-      enddo ; enddo ; enddo
-    endif
-
   endif
 
   ! Calculate layer entrainments and detrainments from diffusivities and differences between
@@ -2483,15 +2474,45 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
     enddo ; enddo ; enddo
   endif
 
-  ! mixing of passive tracers from massless boundary layers to interior
-  call cpu_clock_begin(id_clock_tracers)
+  if ((.not. CS%useKPP) .and. associated(tv%T)) then
+    if ((CS%id_Kd_heat > 0) .or. (CS%id_Kd_salt > 0) .or. CS%Use_KdWork_diag) then
+      ! In layered mode without KPP, Kd_heat and Kd_salt are only used for diagnostics.
+      ! CS%useKPP==.true. already has set Kd_heat and Kd_salt, including extra_T and extra_S.
+      if (CS%double_diffuse) then
+        !$OMP parallel do default(shared)
+        do K=1,nz+1 ; do j=js,je ; do i=is,ie
+          Kd_heat(i,j,K) = Kd_int(i,j,K) + Kd_extra_T(i,j,K)
+          Kd_salt(i,j,K) = Kd_int(i,j,K) + Kd_extra_S(i,j,K)
+        enddo ; enddo ; enddo
+      else
+        !$OMP parallel do default(shared)
+        do K=1,nz+1 ; do j=js,je ; do i=is,ie
+          Kd_salt(i,j,K) = Kd_int(i,j,K)
+          Kd_heat(i,j,K) = Kd_int(i,j,K)
+        enddo ; enddo ; enddo
+      endif
+    endif
+  endif
+
+  if (CS%Use_KdWork_diag) then
+    if (associated(CS%VBF%Kd_temp)) CS%VBF%Kd_temp(:,:,:) = Kd_heat(:,:,:)
+    if (associated(CS%VBF%Kd_salt)) CS%VBF%Kd_salt(:,:,:) = Kd_salt(:,:,:)
+  endif
 
   ! Find the vertical distances across layers.
-  if (CS%mix_boundary_tracers .or. CS%double_diffuse) &
+  if (CS%mix_boundary_tracers .or. CS%double_diffuse .or. CS%Use_KdWork_diag) &
     call thickness_to_dz(h, tv, dz, G, GV, US)
   if (CS%double_diffuse) &
     call thickness_to_dz(hold, tv, dz_old, G, GV, US)
 
+  if (CS%Use_KdWork_diag .or. CS%Use_N2_diag) then
+    ! Diagnose contributions to stratification and the work done by diapycnal mixing.
+    call diagnose_strat_Kd_work(tv, h, dz, dt, G, GV, US, CS)
+  endif
+
+  call cpu_clock_begin(id_clock_tracers)
+
+  ! mixing of passive tracers from massless boundary layers to interior
   if (CS%mix_boundary_tracers) then
     Tr_ea_BBL = sqrt(dt * CS%Kd_BBL_tr)
     !$OMP parallel do default(shared) private(htot,in_boundary,add_ent)
@@ -3257,7 +3278,9 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
 
   ! Local variables
   real    :: Kd  ! A diffusivity used in the default for other tracer diffusivities [Z2 T-1 ~> m2 s-1]
-  logical :: use_temperature, use_MARBL_tracers
+  logical :: use_temperature ! If true, temperature and salinity are used as state variables.
+  logical :: use_EOS         ! If true, density is calculated from T & S using an equation of state.
+  logical :: use_MARBL_tracers
   character(len=20) :: EN1, EN2, EN3
 
   ! This "include" declares and sets the variable "version".
@@ -3413,7 +3436,7 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
 
   call get_param(param_file, mdl, "DO_BRINE_PLUME", do_brine_plume, &
                  "If true, enables a brine plume parameterizations (not logged here)", &
-                 do_not_log=.true.,default=.false.)
+                 do_not_log=.true., default=.false.)
   if (do_brine_plume) then
     call get_param(param_file, mdl, "BRINE_PLUME_MLD_DEF", brine_plume_mld_def, &
                    "A string that determines which mixed/mixing depth is used in setting "//&
@@ -3572,11 +3595,13 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
     endif
   endif
 
-  call KdWork_init(Time, G,GV,US,diag,CS%VBF,CS%Use_KdWork_diag)
-  if (CS%Use_KdWork_diag.and.(.not.useALEalgorithm)) &
-    call MOM_error(WARNING,"The KdWork diagnostics are not fully implemented for use in layer mode.")
-  if (CS%Use_KdWork_diag.and.(CS%use_legacy_diabatic)) &
-    call MOM_error(WARNING,"The KdWork diagnostics are only approximate with the legacy diabatic driver.")
+  call get_param(param_file, mdl, "USE_EOS", use_EOS, &
+                 default=use_temperature, do_not_log=.true.)
+  call KdWork_init(Time, G, GV, US, use_EOS, diag, CS%VBF, CS%Use_KdWork_diag)
+  if (CS%Use_KdWork_diag .and. (.not.useALEalgorithm)) &
+    call MOM_error(WARNING, "The KdWork diagnostics are only approximate in layer mode.")
+  if (CS%Use_KdWork_diag .and. (CS%use_legacy_diabatic)) &
+    call MOM_error(WARNING, "The KdWork diagnostics are only approximate with the legacy diabatic driver.")
 
   call get_param(param_file, mdl, "DIAG_MLD_DENSITY_DIFF", CS%MLDdensityDifference, &
                  "The density difference used to determine a diagnostic mixed "//&
@@ -3613,16 +3638,16 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
         'ePBL diapycnal diffusivity at interfaces', 'm2 s-1', conversion=GV%HZ_T_to_m2_s)
   endif
 
-  CS%id_Kd_heat = register_diag_field('ocean_model', 'Kd_heat', diag%axesTi, Time, &
-      'Total diapycnal diffusivity for heat at interfaces', 'm2 s-1', conversion=GV%HZ_T_to_m2_s, &
-       cmor_field_name='difvho',                                                   &
-       cmor_standard_name='ocean_vertical_heat_diffusivity',                       &
-       cmor_long_name='Ocean vertical heat diffusivity')
-  CS%id_Kd_salt = register_diag_field('ocean_model', 'Kd_salt', diag%axesTi, Time, &
-      'Total diapycnal diffusivity for salt at interfaces', 'm2 s-1', conversion=GV%HZ_T_to_m2_s, &
-       cmor_field_name='difvso',                                                   &
-       cmor_standard_name='ocean_vertical_salt_diffusivity',                       &
-       cmor_long_name='Ocean vertical salt diffusivity')
+  if (use_temperature) then
+    CS%id_Kd_heat = register_diag_field('ocean_model', 'Kd_heat', diag%axesTi, Time, &
+        'Total diapycnal diffusivity for heat at interfaces', 'm2 s-1', conversion=GV%HZ_T_to_m2_s, &
+         cmor_field_name='difvho', cmor_standard_name='ocean_vertical_heat_diffusivity', &
+         cmor_long_name='Ocean vertical heat diffusivity')
+    CS%id_Kd_salt = register_diag_field('ocean_model', 'Kd_salt', diag%axesTi, Time, &
+        'Total diapycnal diffusivity for salt at interfaces', 'm2 s-1', conversion=GV%HZ_T_to_m2_s, &
+         cmor_field_name='difvso', cmor_standard_name='ocean_vertical_salt_diffusivity', &
+         cmor_long_name='Ocean vertical salt diffusivity')
+  endif
 
   ! CS%useKPP is set to True if KPP-scheme is to be used, False otherwise.
   ! KPP_init() allocated CS%KPP_Csp and also sets CS%KPPisPassive

@@ -871,11 +871,13 @@ subroutine Deallocate_VBF_CS(VBF)
 end subroutine Deallocate_VBF_CS
 
 !> Handles all KdWork diagnostics and flags which calculations should be done.
-subroutine KdWork_init(Time, G,GV,US,diag,VBF,Use_KdWork_diag)
-  type(time_type), target                :: Time             !< model time
+subroutine KdWork_init(Time, G, GV, US, use_EOS, diag, VBF, Use_KdWork_diag)
+  type(time_type), target                :: Time     !< model time
   type(ocean_grid_type),   intent(in)    :: G        !< ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV       !< ocean vertical grid structure
   type(unit_scale_type),   intent(in)    :: US       !< A dimensional unit scaling type
+  logical,                 intent(in)    :: use_EOS  !< If true, density is calculated from temperature
+                                                     !! and salinity using an equation of state.
   type(diag_ctrl), target, intent(inout) :: diag     !< regulates diagnostic output
   type (vbf_CS), pointer,  intent(inout) :: VBF      !< Vertical buoyancy flux structure
   logical,                 intent(out)   :: Use_KdWork_diag !< Flag if any output was turned on
@@ -886,6 +888,13 @@ subroutine KdWork_init(Time, G,GV,US,diag,VBF,Use_KdWork_diag)
   VBF%do_bflx_salt_dz = .false.
   VBF%do_bflx_temp = .false.
   VBF%do_bflx_temp_dz = .false.
+
+  if (.not.use_EOS) then
+    ! None of the diagnostics currently offered here make sense without temperature and salinity
+    ! as state variables and an equation of state.
+    Use_KdWork_diag = .false.
+    return
+  endif
 
   VBF%id_Bdif = register_diag_field('ocean_model',"Bflx_dia_diff", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces", &
