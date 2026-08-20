@@ -3107,76 +3107,47 @@ subroutine diagnose_strat_Kd_work(tv, h, dz, dt, G, GV, US, CS)
 
   real :: I_dzval      ! The inverse of the thicknesses averaged to interfaces [Z-1 ~> m-1]
   real :: I_h          ! The inverse of the thicknesses averaged to interfaces [H-1 ~> m-1 or m2 kg-1]
-  real :: g_Rho0       ! G_Earth/Rho0 [H T-2 R-1 ~> m4 s-2 kg-1 or m s-2]
+  real :: g_Rho        ! G_Earth/Rho0 when Boussinesq, or just G_Earth times dimensional rescaling
+                       ! factors in non-Boussinesq mode [H T-2 R-1 ~> m4 s-2 kg-1 or m s-2]
   real :: H_to_pres    ! A conversion factor from thicknesses to pressure [R L2 T-2 H-1 ~> Pa m-1 or Pa m2 kg-1]
-  real :: alt_H_to_pres! A conversion factor from thicknesses to pressure w/ alternative scaling [R Z T-2 ~> Pa m-1]
   real :: h_neglect    ! A thickness that is so small it is usually lost
                        ! in roundoff and can be neglected [H ~> m or kg m-2]
-  real :: dz_neglect   ! A vertical distance that is so small it is usually lost
-                       ! in roundoff and can be neglected [Z ~> m]
-  logical :: nonBous   ! True if not using the Boussinesq approximation
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   integer :: i, j, k, is, ie, js, je, nz
 
   is   = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec ; nz = GV%ke
-  dz_neglect = GV%dZ_subroundoff
   h_neglect = GV%H_subroundoff
 
-  nonBous = .not.(GV%Boussinesq .or. GV%semi_Boussinesq)
-  g_Rho0  = GV%g_Earth_Z_T2 / GV%H_to_RZ
+  g_Rho = GV%g_Earth_Z_T2 / GV%H_to_RZ
   H_to_pres = GV%H_to_RZ * GV%g_Earth
-  alt_H_to_pres = H_to_pres * US%L_to_Z**2 * GV%Z_to_H
 
   N2_salt(:,:,:) = 0.0
   N2_temp(:,:,:) = 0.0
 
   ! Compute N2 and don't mask negatives here
   EOSdom(:) = EOS_domain(G%HI)
-  if (nonBous) then
-    !$OMP parallel do default(shared)
-    do j=js,je
-      if (associated(tv%p_surf)) then
-        do i=is,ie ; p_i(i) = tv%p_surf(i,j) ; enddo
-      else
-        do i=is,ie ; p_i(i) = 0.0 ; enddo
-      endif
-      do K=2,nz
-        do i=is,ie
-          p_i(i) = p_i(i) + H_to_pres * h(i,j,k-1)
-          T_i(i) = 0.5*(tv%T(i,j,k-1) + tv%T(i,j,k))
-          S_i(i) = 0.5*(tv%S(i,j,k-1) + tv%S(i,j,k))
-        enddo
-        call calculate_specific_vol_derivs(T_i, S_i, p_i, dSpV_dT, dSpV_dS, tv%eqn_of_state, EOSdom)
-        do i=is,ie
-          I_dzval = 1.0 / (dz_neglect + 0.5*(dz(i,j,k-1) + dz(i,j,k)))
-          N2_salt(i,j,K) = (tv%S(i,j,k-1) - tv%S(i,j,k)) * (dSpv_dS(i) * (alt_H_to_pres * I_dzval))
-          N2_temp(i,j,K) = (tv%T(i,j,k-1) - tv%T(i,j,k)) * (dSpV_dT(i) * (alt_H_to_pres * I_dzval))
-        enddo
+
+  !$OMP parallel do default(shared)
+  do j=js,je
+    if (associated(tv%p_surf)) then
+      do i=is,ie ; p_i(i) = tv%p_surf(i,j) ; enddo
+    else
+      do i=is,ie ; p_i(i) = 0.0 ; enddo
+    endif
+    do K=2,nz
+      do i=is,ie
+        p_i(i) = p_i(i) + H_to_pres * h(i,j,k-1)
+        T_i(i) = 0.5*(tv%T(i,j,k-1) + tv%T(i,j,k))
+        S_i(i) = 0.5*(tv%S(i,j,k-1) + tv%S(i,j,k))
+      enddo
+      call calculate_density_derivs(T_i, S_i, p_i, dRhodT, dRhodS, tv%eqn_of_state, EOSdom)
+      do i=is,ie
+        I_h = 1.0 / (h_neglect + 0.5*(h(i,j,k-1) + h(i,j,k)))
+        N2_salt(i,j,K) = -(tv%S(i,j,k-1) - tv%S(i,j,k)) * (dRhodS(i) * (g_rho * I_h))
+        N2_temp(i,j,K) = -(tv%T(i,j,k-1) - tv%T(i,j,k)) * (dRhodT(i) * (g_rho * I_h))
       enddo
     enddo
-  else
-    !$OMP parallel do default(shared)
-    do j=js,je
-      if (associated(tv%p_surf)) then
-        do i=is,ie ; p_i(i) = tv%p_surf(i,j) ; enddo
-      else
-        do i=is,ie ; p_i(i) = 0.0 ; enddo
-      endif
-      do K=2,nz
-        do i=is,ie
-          p_i(i) = p_i(i) + H_to_pres * h(i,j,k-1)
-          T_i(i) = 0.5*(tv%T(i,j,k-1) + tv%T(i,j,k))
-          S_i(i) = 0.5*(tv%S(i,j,k-1) + tv%S(i,j,k))
-        enddo
-        call calculate_density_derivs(T_i, S_i, p_i, dRhodT, dRhodS, tv%eqn_of_state, EOSdom)
-        do i=is,ie
-          I_h = 1.0 / (h_neglect + 0.5*(h(i,j,k-1) + h(i,j,k)))
-          N2_salt(i,j,K) = -(tv%S(i,j,k-1) - tv%S(i,j,k)) * (dRhodS(i) * (g_rho0 * I_h))
-          N2_temp(i,j,K) = -(tv%T(i,j,k-1) - tv%T(i,j,k)) * (dRhodT(i) * (g_rho0 * I_h))
-        enddo
-      enddo
-    enddo
-  endif
+  enddo
 
   if (CS%id_N2_dd>0) then
     do K=1,nz+1 ; do j=js,je ; do i=is,ie
