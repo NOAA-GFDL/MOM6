@@ -1061,9 +1061,6 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
 
   ! Set diffusivities for VBF diagnostics if enabled
   if (CS%use_energetic_PBL .and. associated(CS%VBF%Kd_ePBL)) CS%VBF%Kd_ePBL(:,:,:) = Kd_ePBL(:,:,:)
-  if (associated(CS%VBF%Kd_temp)) CS%VBF%Kd_temp(:,:,:) = Kd_heat(:,:,:)
-  if (associated(CS%VBF%Kd_salt)) CS%VBF%Kd_salt(:,:,:) = Kd_salt(:,:,:)
-
 
   ! Diagnose the diapycnal diffusivities and other related quantities.
   if (CS%id_Kd_int  > 0) call post_data(CS%id_Kd_int,  Kd_int,  CS%diag)
@@ -1101,7 +1098,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
 
   if (CS%Use_KdWork_diag .or. CS%Use_N2_diag) then
     ! Diagnose contributions to stratification and the work done by diapycnal mixing.
-    call diagnose_strat_Kd_work(tv, h, dz, dt, G, GV, US, CS)
+    call diagnose_strat_Kd_work(tv, h, dz, Kd_heat, Kd_salt, dt, G, GV, US, CS)
   endif
 
   ! mixing of passive tracers from massless boundary layers to interior
@@ -1649,8 +1646,6 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
 
   ! Set diffusivities for VBF diagnostics if enabled
   if (CS%use_energetic_PBL .and. associated(CS%VBF%Kd_ePBL)) CS%VBF%Kd_ePBL(:,:,:) = Kd_ePBL(:,:,:)
-  if (associated(CS%VBF%Kd_salt)) CS%VBF%Kd_salt(:,:,:) = Kd_salt(:,:,:)
-  if (associated(CS%VBF%Kd_temp)) CS%VBF%Kd_temp(:,:,:) = Kd_heat(:,:,:)
 
   ! Diagnose the diapycnal diffusivities and other related quantities.
   if (CS%id_Kd_heat > 0) call post_data(CS%id_Kd_heat, Kd_heat, CS%diag)
@@ -1695,7 +1690,7 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
 
   if (CS%Use_KdWork_diag .or. CS%Use_N2_diag) then
     ! Diagnose contributions to stratification and the work done by diapycnal mixing.
-    call diagnose_strat_Kd_work(tv, h, dz, dt, G, GV, US, CS)
+    call diagnose_strat_Kd_work(tv, h, dz, Kd_heat, Kd_salt, dt, G, GV, US, CS)
   endif
 
   ! mixing of passive tracers from massless boundary layers to interior
@@ -2494,11 +2489,6 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
     endif
   endif
 
-  if (CS%Use_KdWork_diag) then
-    if (associated(CS%VBF%Kd_temp)) CS%VBF%Kd_temp(:,:,:) = Kd_heat(:,:,:)
-    if (associated(CS%VBF%Kd_salt)) CS%VBF%Kd_salt(:,:,:) = Kd_salt(:,:,:)
-  endif
-
   ! Find the vertical distances across layers.
   if (CS%mix_boundary_tracers .or. CS%double_diffuse .or. CS%Use_KdWork_diag) &
     call thickness_to_dz(h, tv, dz, G, GV, US)
@@ -2507,7 +2497,7 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
 
   if (CS%Use_KdWork_diag .or. CS%Use_N2_diag) then
     ! Diagnose contributions to stratification and the work done by diapycnal mixing.
-    call diagnose_strat_Kd_work(tv, h, dz, dt, G, GV, US, CS)
+    call diagnose_strat_Kd_work(tv, h, dz, Kd_heat, Kd_salt, dt, G, GV, US, CS)
   endif
 
   call cpu_clock_begin(id_clock_tracers)
@@ -3081,12 +3071,16 @@ subroutine diagnose_frazil_tendency(tv, h, temp_old, dt, G, GV, US, CS)
 end subroutine diagnose_frazil_tendency
 
 !> This routine diagnoses contributions to stratification and the work done by diapyncal mixing.
-subroutine diagnose_strat_Kd_work(tv, h, dz, dt, G, GV, US, CS)
+subroutine diagnose_strat_Kd_work(tv, h, dz, Kd_heat, Kd_salt, dt, G, GV, US, CS)
   type(ocean_grid_type),                     intent(in) :: G        !< ocean grid structure
   type(verticalGrid_type),                   intent(in) :: GV       !< ocean vertical grid structure
   type(thermo_var_ptrs),                     intent(in) :: tv       !< points to updated thermodynamic fields
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(in) :: h        !< thickness [H ~> m or kg m-2]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(in) :: dz       !< thickness [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(in) :: Kd_heat !< diapycnal diffusivity of heat
+                                                                    !! [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(in) :: Kd_salt !< diapycnal diffusivity of salt and passive
+                                                                    !! tracers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
   real,                                      intent(in) :: dt       !< time step [T ~> s]
   type(unit_scale_type),                     intent(in) :: US       !< A dimensional unit scaling type
   type(diabatic_CS),                         pointer    :: CS       !< module control structure
@@ -3159,7 +3153,7 @@ subroutine diagnose_strat_Kd_work(tv, h, dz, dt, G, GV, US, CS)
   if (CS%id_N2_temp_dd>0) call post_data(CS%id_N2_temp_dd, N2_temp, CS%diag)
 
   if (CS%Use_KdWork_diag) then
-    call KdWork_diagnostics(G, GV, US, CS%diag, CS%VBF, N2_salt, N2_temp, dz)
+    call KdWork_diagnostics(G, GV, US, CS%diag, CS%VBF, Kd_salt, Kd_heat, N2_salt, N2_temp, dz)
   endif
 
   call deallocate_VBF_CS(CS%VBF)
