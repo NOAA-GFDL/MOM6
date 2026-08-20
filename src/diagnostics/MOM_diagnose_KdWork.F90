@@ -43,8 +43,6 @@ type vbf_CS
                               !! [H Z2 T-3 ~> m3 s-3 or W m-2]
     ! The following are all allocatable arrays that store copies of process driven Kd, so that
     ! the process driven buoyancy flux and work can be derived at the end of the time step.
-    Kd_salt => NULL(), &   !< total diapycnal diffusivity of salt at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
-    Kd_temp => NULL(), &   !< total diapycnal diffusivity of heat at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_BBL => NULL(), &    !< diapycnal diffusivity due to BBL at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_ePBL => NULL(), &   !< diapycnal diffusivity due to ePBL at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_KS => NULL(), &     !< diapycnal diffusivity due to Kappa Shear at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
@@ -104,16 +102,22 @@ end type vbf_CS
 contains
 
 !> Loop over all implemented diffusivities to diagnose and output Kd Work/buoyancy fluxes
-subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
+subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N2_Temp, dz)
   type(ocean_grid_type),      intent(in)    :: G       !< Grid type
   type(verticalGrid_type),    intent(in)    :: GV      !< ocean vertical grid structure
   type(unit_scale_type),      intent(in)    :: US      !< A dimensional unit scaling type
   type(diag_ctrl), target,    intent(inout) :: diag    !< regulates diagnostic output
   type (vbf_CS),              intent(inout) :: VBF     !< Vertical buoyancy flux structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
-                              intent(in)    :: N2_Salt !< Buoyancy frequency [T-2 ~> s-2]
+                              intent(in)    :: Kd_salt !< Total diapycnal diffusivity of salt and passive
+                                                       !! tracers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
-                              intent(in)    :: N2_Temp !< Buoyancy frequency [T-2 ~> s-2]
+                              intent(in)    :: Kd_temp !< Total diapycnal diffusivity of heat at interfaces
+                                                       !! [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
+                              intent(in)    :: N2_Salt !< Buoyancy frequency contribution from salinity [T-2 ~> s-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
+                              intent(in)    :: N2_Temp !< Buoyancy frequency contribution from temperature [T-2 ~> s-2]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                               intent(in)    :: dz      !< Grid spacing [Z ~> m]
 
@@ -136,11 +140,11 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
     ! Do Salt
     if (VBF%id_Bdif_salt_dz>0 .or. VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_salt>0 .or. VBF%id_Bdif>0 .or. &
         VBF%id_Bdif_idz>0 .or. VBF%id_Bdif_salt_idz>0 .or. VBF%id_Bdif_idV>0 .or. VBF%id_Bdif_salt_idV>0) &
-      call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_salt, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+      call diagnoseKdWork(G, GV, N2_salt, Kd_salt, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
     ! Do Temp
     if (VBF%id_Bdif_temp_dz>0 .or. VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_temp>0 .or. VBF%id_Bdif>0 .or. &
         VBF%id_Bdif_idz>0 .or. VBF%id_Bdif_temp_idz>0 .or. VBF%id_Bdif_idV>0 .or. VBF%id_Bdif_temp_idV>0) &
-       call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_temp, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+       call diagnoseKdWork(G, GV, N2_temp, Kd_temp, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
     if (VBF%id_Bdif_temp_idz>0 .or. VBF%id_Bdif_idz>0) then
       work2d_temp(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
@@ -174,9 +178,9 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
   elseif (VBF%id_Bdif>0 .or. VBF%id_Bdif_salt>0 .or. VBF%id_Bdif_temp>0) then ! Not doing vertical integrals
     ! Do Salt
     if (VBF%id_Bdif_salt>0 .or. VBF%id_Bdif>0) &
-      call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_salt, VBF%Bflx_salt)
+      call diagnoseKdWork(G, GV, N2_salt, Kd_salt, VBF%Bflx_salt)
     if (VBF%id_Bdif_temp>0 .or. VBF%id_Bdif>0) &
-      call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_temp, VBF%Bflx_temp)
+      call diagnoseKdWork(G, GV, N2_temp, Kd_temp, VBF%Bflx_temp)
   endif
   ! Post total fluxes
   if (VBF%id_Bdif_salt>0) call post_data(VBF%id_Bdif_salt, VBF%Bflx_salt, diag)
@@ -785,13 +789,6 @@ subroutine Allocate_VBF_CS(G, GV, VBF)
   if (VBF%do_bflx_temp_dz) &
      allocate(VBF%Bflx_temp_dz(isd:ied,jsd:jed,nz), source=0.0)
 
-  if (VBF%id_Bdif_salt_dz>0 .or. VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_salt>0 .or. VBF%id_Bdif>0 .or. &
-      VBF%id_Bdif_idz>0 .or. VBF%id_Bdif_salt_idz>0 .or. VBF%id_Bdif_idV>0 .or. VBF%id_Bdif_salt_idV>0) &
-    allocate(VBF%Kd_salt(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_temp_dz>0 .or. VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_temp>0 .or. VBF%id_Bdif>0 .or. &
-      VBF%id_Bdif_idz>0 .or. VBF%id_Bdif_temp_idz>0 .or. VBF%id_Bdif_idV>0 .or. VBF%id_Bdif_temp_idV>0) &
-    allocate(VBF%Kd_temp(isd:ied,jsd:jed,nz+1), source=0.0)
-
   if (VBF%id_Bdif_BBL>0 .or. VBF%id_Bdif_dz_BBL>0 .or. VBF%id_Bdif_idz_BBL>0 .or. VBF%id_Bdif_idV_BBL>0) &
     allocate(VBF%Kd_BBL(isd:ied,jsd:jed,nz+1), source=0.0)
   if (VBF%id_Bdif_ePBL>0 .or. VBF%id_Bdif_dz_ePBL>0 .or. VBF%id_Bdif_idz_ePBL>0 .or. VBF%id_Bdif_idV_ePBL>0) &
@@ -835,10 +832,6 @@ subroutine Deallocate_VBF_CS(VBF)
     deallocate(VBF%Bflx_salt_dz)
   if (associated(VBF%Bflx_temp_dz)) &
     deallocate(VBF%Bflx_temp_dz)
-  if (associated(VBF%Kd_salt)) &
-    deallocate(VBF%Kd_salt)
-  if (associated(VBF%Kd_temp)) &
-    deallocate(VBF%Kd_temp)
   if (associated(VBF%Kd_BBL)) &
     deallocate(VBF%Kd_BBL)
   if (associated(VBF%Kd_ePBL)) &
