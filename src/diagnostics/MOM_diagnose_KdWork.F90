@@ -32,17 +32,9 @@ public KdWork_end
 !! routine use.
 type vbf_CS
   ! 3d varying Kd contributions
+  ! The following are all allocatable arrays that store copies of process driven Kd, so that
+  ! the process driven buoyancy flux and work can be derived at the end of the time step.
   real, pointer, dimension(:,:,:) :: &
-    Bflx_salt => NULL(), & !< Salinity contribution to buoyancy flux at interfaces
-                           !! [H Z T-3 ~> m2 s-3 or W m-3]
-    Bflx_temp => NULL(), & !< Temperature contribution to buoyancy flux at interfaces
-                           !! [H Z T-3 ~> m2 s-3 or W m-3]
-    Bflx_salt_dz => NULL(), & !< Salinity contribution to integral of buoyancy flux over layer
-                              !! [H Z2 T-3 ~> m3 s-3 or W m-2]
-    Bflx_temp_dz => NULL(), & !< Temperature contribution to integral of buoyancy flux over layer
-                              !! [H Z2 T-3 ~> m3 s-3 or W m-2]
-    ! The following are all allocatable arrays that store copies of process driven Kd, so that
-    ! the process driven buoyancy flux and work can be derived at the end of the time step.
     Kd_BBL => NULL(), &    !< diapycnal diffusivity due to BBL at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_ePBL => NULL(), &   !< diapycnal diffusivity due to ePBL at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_KS => NULL(), &     !< diapycnal diffusivity due to Kappa Shear at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
@@ -50,7 +42,7 @@ type vbf_CS
     Kd_ddiff_S => NULL(), &!< diapycnal diffusivity due to double diffusion of salt at interfaces
                            !! [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_ddiff_T => NULL(), &!< diapycnal diffusivity due to double diffusion of heat at interfaces
-                           !![H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+                           !! [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_leak => NULL(), &   !< diapycnal diffusivity due to Kd_leak at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_quad => NULL(), &   !< diapycnal diffusivity due to Kd_quad at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
     Kd_itidal => NULL(), & !< diapycnal diffusivity due to Kd_itidal at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
@@ -122,16 +114,31 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
                               intent(in)    :: dz      !< Grid spacing [Z ~> m]
 
   ! Work arrays for computing buoyancy flux integrals
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: work3d_i
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: work3d_l
-  real, dimension(SZI_(G),SZJ_(G)) :: work2d, work2d_salt, work2d_temp
-  real :: work, work_salt, work_temp
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: &
+    Bflx_salt, & ! Salinity contribution to buoyancy flux at interfaces [H Z T-3 ~> m2 s-3 or W m-3]
+    Bflx_temp, & ! Temperature contribution to buoyancy flux at interfaces [H Z T-3 ~> m2 s-3 or W m-3]
+    work3d_i     ! A work array for sums of buoyancy fluxes at interfaces [H Z T-3 ~> m2 s-3 or W m-3]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: &
+    Bflx_salt_dz, & ! Salinity contribution to integral of buoyancy flux over layer
+                    ! [H Z2 T-3 ~> m3 s-3 or W m-2]
+    Bflx_temp_dz, & ! Temperature contribution to integral of buoyancy flux over layer
+                    ! [H Z2 T-3 ~> m3 s-3 or W m-2]
+    work3d_l        ! A work array for sums of buoyancy fluxes at layers [H Z2 T-3 ~> m3 s-3 or W m-2]
+  real, dimension(SZI_(G),SZJ_(G)) :: &
+    work2d, &       ! Vertically integrated buoyancy fluxes [H Z2 T-3 ~> m3 s-3 or W m-2]
+    work2d_salt, &  ! Vertically integrated buoyancy fluxes due to salt fluxes [H Z2 T-3 ~> m3 s-3 or W m-2]
+    work2d_temp     ! Vertically integrated buoyancy fluxes due to heat fluxes [H Z2 T-3 ~> m3 s-3 or W m-2]
+  real :: work      ! Global integrated buoyancy fluxes [H Z2 L2 T-3 ~> m5 s-3 or W]
+  real :: work_salt ! Global integrated buoyancy fluxes due to salt fluxes [H Z2 L2 T-3 ~> m5 s-3 or W]
+  real :: work_temp ! Global integrated buoyancy fluxes due to heat fluxes [H Z2 L2 T-3 ~> m5 s-3 or W]
+  real :: work_unscale ! The combination of dimensional scaling factors for vertically integrated
+                    ! buoyancy fluxes [H Z2 s3 m-3 T-3 or H Z2 m2 T-3 W-1 ~> 1]
 
   integer :: i, j, k, nz, isc, iec, jsc, jec
 
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
-
   nz = GV%ke
+  work_unscale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3
 
   ! Compute total fluxes
   if (VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_salt_dz>0 .or. VBF%id_Bdif_temp_dz>0 .or. &
@@ -140,35 +147,33 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
     ! Do Salt
     if (VBF%id_Bdif_salt_dz>0 .or. VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_salt>0 .or. VBF%id_Bdif>0 .or. &
         VBF%id_Bdif_idz>0 .or. VBF%id_Bdif_salt_idz>0 .or. VBF%id_Bdif_idV>0 .or. VBF%id_Bdif_salt_idV>0) &
-      call diagnoseKdWork(G, GV, N2_salt, Kd_salt, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+      call diagnoseKdWork(G, GV, N2_salt, Kd_salt, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
     ! Do Temp
     if (VBF%id_Bdif_temp_dz>0 .or. VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_temp>0 .or. VBF%id_Bdif>0 .or. &
         VBF%id_Bdif_idz>0 .or. VBF%id_Bdif_temp_idz>0 .or. VBF%id_Bdif_idV>0 .or. VBF%id_Bdif_temp_idV>0) &
-       call diagnoseKdWork(G, GV, N2_temp, Kd_temp, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+       call diagnoseKdWork(G, GV, N2_temp, Kd_temp, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_temp_idz>0 .or. VBF%id_Bdif_idz>0) then
       work2d_temp(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d_temp(i,j) = work2d_temp(i,j) + VBF%Bflx_temp_dz(i,j,k)
+        work2d_temp(i,j) = work2d_temp(i,j) + Bflx_temp_dz(i,j,k)
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_temp_idV>0 .or. VBF%id_Bdif_idV>0) then
       work_temp = 0.0
       do k = 1,nz
-        work_temp = work_temp + global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work_temp = work_temp + global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale)
       enddo
     endif
     if (VBF%id_Bdif_salt_idz>0 .or. VBF%id_Bdif_idz>0) then
       work2d_salt(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d_salt(i,j) = work2d_salt(i,j) + VBF%Bflx_salt_dz(i,j,k)
+        work2d_salt(i,j) = work2d_salt(i,j) + Bflx_salt_dz(i,j,k)
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_salt_idV>0 .or. VBF%id_Bdif_idV>0) then
       work_salt = 0.0
       do k = 1,nz
-        work_salt = work_salt + global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work_salt = work_salt + global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale)
       enddo
     endif
     work = work_temp + work_salt
@@ -178,26 +183,26 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
   elseif (VBF%id_Bdif>0 .or. VBF%id_Bdif_salt>0 .or. VBF%id_Bdif_temp>0) then ! Not doing vertical integrals
     ! Do Salt
     if (VBF%id_Bdif_salt>0 .or. VBF%id_Bdif>0) &
-      call diagnoseKdWork(G, GV, N2_salt, Kd_salt, VBF%Bflx_salt)
+      call diagnoseKdWork(G, GV, N2_salt, Kd_salt, Bflx_salt)
     if (VBF%id_Bdif_temp>0 .or. VBF%id_Bdif>0) &
-      call diagnoseKdWork(G, GV, N2_temp, Kd_temp, VBF%Bflx_temp)
+      call diagnoseKdWork(G, GV, N2_temp, Kd_temp, Bflx_temp)
   endif
   ! Post total fluxes
-  if (VBF%id_Bdif_salt>0) call post_data(VBF%id_Bdif_salt, VBF%Bflx_salt, diag)
-  if (VBF%id_Bdif_temp>0) call post_data(VBF%id_Bdif_temp, VBF%Bflx_temp, diag)
+  if (VBF%id_Bdif_salt>0) call post_data(VBF%id_Bdif_salt, Bflx_salt, diag)
+  if (VBF%id_Bdif_temp>0) call post_data(VBF%id_Bdif_temp, Bflx_temp, diag)
   if (VBF%id_Bdif>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif, work3d_i, diag)
   endif
-  if (VBF%id_Bdif_salt_dz>0) call post_data(VBF%id_Bdif_salt_dz, VBF%Bflx_salt_dz, diag)
-  if (VBF%id_Bdif_temp_dz>0) call post_data(VBF%id_Bdif_temp_dz, VBF%Bflx_temp_dz, diag)
+  if (VBF%id_Bdif_salt_dz>0) call post_data(VBF%id_Bdif_salt_dz, Bflx_salt_dz, diag)
+  if (VBF%id_Bdif_temp_dz>0) call post_data(VBF%id_Bdif_temp_dz, Bflx_temp_dz, diag)
   if (VBF%id_Bdif_dz>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz, work3d_l, diag)
   endif
@@ -210,38 +215,37 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute ePBL fluxes
   if (VBF%id_Bdif_dz_ePBL>0.or.VBF%id_Bdif_idz_ePBL>0.or.VBF%id_Bdif_idV_ePBL>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ePBL, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ePBL, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ePBL, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ePBL, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_ePBL>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_ePBL>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_ePBL>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ePBL, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ePBL, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ePBL, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ePBL, Bflx_temp)
   endif
   ! Post ePBL fluxes
   if (VBF%id_Bdif_ePBL>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_ePBL, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_ePBL>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_ePBL, work3d_l, diag)
   endif
@@ -250,38 +254,37 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute BBL fluxes
   if (VBF%id_Bdif_dz_BBL>0.or.VBF%id_Bdif_idz_BBL>0.or.VBF%id_Bdif_idV_BBL>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_BBL, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_BBL, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_BBL, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_BBL, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_BBL>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_BBL>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_BBL>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_BBL, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_BBL, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_BBL, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_BBL, Bflx_temp)
   endif
   ! Post BBL fluxes
   if (VBF%id_Bdif_BBL>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_BBL, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_BBL>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_BBL, work3d_l, diag)
   endif
@@ -290,38 +293,37 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute Kappa Shear fluxes
   if (VBF%id_Bdif_dz_KS>0.or.VBF%id_Bdif_idz_KS>0.or.VBF%id_Bdif_idV_KS>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_KS, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_KS, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_KS, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_KS, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_KS>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_KS>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_KS>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_KS, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_KS, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_KS, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_KS, Bflx_temp)
   endif
   ! Post Kappa Shear fluxes
   if (VBF%id_Bdif_KS>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_KS, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_KS>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_KS, work3d_l, diag)
   endif
@@ -330,38 +332,37 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute bkgnd fluxes
   if (VBF%id_Bdif_dz_bkgnd>0.or.VBF%id_Bdif_idz_bkgnd>0.or.VBF%id_Bdif_idV_bkgnd>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_bkgnd, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_bkgnd, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_bkgnd, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_bkgnd, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_bkgnd>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_bkgnd>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_bkgnd>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_bkgnd, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_bkgnd, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_bkgnd, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_bkgnd, Bflx_temp)
   endif
   ! Post bkgnd fluxes
   if (VBF%id_Bdif_bkgnd>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_bkgnd, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_bkgnd>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_bkgnd, work3d_l, diag)
   endif
@@ -370,85 +371,82 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute double diffusion fluxes
   if (VBF%id_Bdif_dz_ddiff_temp>0.or.VBF%id_Bdif_idz_ddiff_temp>0.or.VBF%id_Bdif_idV_ddiff_temp>0) then
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ddiff_T, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ddiff_T, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_ddiff_temp>0) then
       work2d_temp(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d_temp(i,j) = work2d_temp(i,j) + VBF%Bflx_temp_dz(i,j,k)
+        work2d_temp(i,j) = work2d_temp(i,j) + Bflx_temp_dz(i,j,k)
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_ddiff_temp>0) then
       work_temp = 0.0
       do k = 1,nz
-        work_temp = work_temp + global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work_temp = work_temp + global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale)
       enddo
     endif
   elseif (VBF%id_Bdif_ddiff_temp>0) then
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ddiff_T, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_ddiff_T, Bflx_temp)
   endif
   if (VBF%id_Bdif_dz_ddiff_salt>0.or.VBF%id_Bdif_idz_ddiff_salt>0.or.VBF%id_Bdif_idV_ddiff_salt>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ddiff_S, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ddiff_S, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
     if (VBF%id_Bdif_idz_ddiff_salt>0) then
       work2d_salt(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d_salt(i,j) = work2d_salt(i,j) + VBF%Bflx_salt_dz(i,j,k)
+        work2d_salt(i,j) = work2d_salt(i,j) + Bflx_salt_dz(i,j,k)
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_ddiff_salt>0) then
       work_salt = 0.0
       do k = 1,nz
-        work_salt = work_salt + global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, &
-                    tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
+        work_salt = work_salt + global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale)
       enddo
     endif
   elseif (VBF%id_Bdif_ddiff_salt>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ddiff_S, VBF%Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_ddiff_S, Bflx_salt)
   endif
   ! Post double diffusion fluxes
-  if (VBF%id_Bdif_ddiff_temp>0) call post_data(VBF%id_Bdif_ddiff_temp, VBF%Bflx_temp, diag)
-  if (VBF%id_Bdif_dz_ddiff_temp>0) call post_data(VBF%id_Bdif_dz_ddiff_temp, VBF%Bflx_temp_dz, diag)
+  if (VBF%id_Bdif_ddiff_temp>0) call post_data(VBF%id_Bdif_ddiff_temp, Bflx_temp, diag)
+  if (VBF%id_Bdif_dz_ddiff_temp>0) call post_data(VBF%id_Bdif_dz_ddiff_temp, Bflx_temp_dz, diag)
   if (VBF%id_Bdif_idz_ddiff_temp>0) call post_data(VBF%id_Bdif_idz_ddiff_temp, work2d_temp, diag)
   if (VBF%id_Bdif_idV_ddiff_temp>0) call post_data(VBF%id_Bdif_idV_ddiff_temp, work_temp, diag)
-  if (VBF%id_Bdif_ddiff_salt>0) call post_data(VBF%id_Bdif_ddiff_salt, VBF%Bflx_salt, diag)
-  if (VBF%id_Bdif_dz_ddiff_salt>0) call post_data(VBF%id_Bdif_dz_ddiff_salt, VBF%Bflx_salt_dz, diag)
+  if (VBF%id_Bdif_ddiff_salt>0) call post_data(VBF%id_Bdif_ddiff_salt, Bflx_salt, diag)
+  if (VBF%id_Bdif_dz_ddiff_salt>0) call post_data(VBF%id_Bdif_dz_ddiff_salt, Bflx_salt_dz, diag)
   if (VBF%id_Bdif_idz_ddiff_salt>0) call post_data(VBF%id_Bdif_idz_ddiff_salt, work2d_salt, diag)
   if (VBF%id_Bdif_idV_ddiff_salt>0) call post_data(VBF%id_Bdif_idV_ddiff_salt, work_salt, diag)
 
   ! Compute Kd_leak fluxes
   if (VBF%id_Bdif_dz_leak>0.or.VBF%id_Bdif_idz_leak>0.or.VBF%id_Bdif_idV_leak>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_leak, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_leak, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_leak, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_leak, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_leak>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_leak>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_leak>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_leak, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_leak, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_leak, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_leak, Bflx_temp)
   endif
   ! Post Kd_leak fluxes
   if (VBF%id_Bdif_leak>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_leak, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_leak>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_leak, work3d_l, diag)
   endif
@@ -457,38 +455,37 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute Kd_quad fluxes
   if (VBF%id_Bdif_dz_quad>0.or.VBF%id_Bdif_idz_quad>0.or.VBF%id_Bdif_idV_quad>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_quad, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_quad, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_quad, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_quad, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_quad>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_quad>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_quad>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_quad, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_quad, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_quad, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_quad, Bflx_temp)
   endif
   ! Post Kd_quad fluxes
   if (VBF%id_Bdif_quad>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_quad, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_quad>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_quad, work3d_l, diag)
   endif
@@ -497,38 +494,37 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute Kd_itidal fluxes
   if (VBF%id_Bdif_dz_itidal>0.or.VBF%id_Bdif_idz_itidal>0.or.VBF%id_Bdif_idV_itidal>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itidal, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itidal, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itidal, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itidal, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_itidal>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_itidal>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_itidal>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itidal, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itidal, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itidal, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itidal, Bflx_temp)
   endif
   ! Post Kd_itidal fluxes
   if (VBF%id_Bdif_itidal>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_itidal, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_itidal>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k)+VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k)+Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_itidal, work3d_l, diag)
   endif
@@ -537,38 +533,37 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute Kd_Froude fluxes
   if (VBF%id_Bdif_dz_Froude>0.or.VBF%id_Bdif_idz_Froude>0.or.VBF%id_Bdif_idV_Froude>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Froude, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Froude, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Froude, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Froude, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_Froude>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_Froude>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_Froude>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Froude, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Froude, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Froude, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Froude, Bflx_temp)
   endif
   ! Post Kd_Froude fluxes
   if (VBF%id_Bdif_Froude>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_Froude, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_Froude>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_Froude, work3d_l, diag)
   endif
@@ -577,38 +572,37 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute Kd_slope fluxes
   if (VBF%id_Bdif_dz_slope>0.or.VBF%id_Bdif_idz_slope>0.or.VBF%id_Bdif_idV_slope>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_slope, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_slope, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_slope, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_slope, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_slope>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_slope>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_slope>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_slope, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_slope, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_slope, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_slope, Bflx_temp)
   endif
   ! Post Kd_slope fluxes
   if (VBF%id_Bdif_slope>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_slope, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_slope>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_slope, work3d_l, diag)
   endif
@@ -617,38 +611,37 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute Kd_lowmode fluxes
   if (VBF%id_Bdif_dz_lowmode>0.or.VBF%id_Bdif_idz_lowmode>0.or.VBF%id_Bdif_idV_lowmode>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_lowmode, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_lowmode, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_lowmode, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_lowmode, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_lowmode>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_lowmode>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_lowmode>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_lowmode, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_lowmode, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_lowmode, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_lowmode, Bflx_temp)
   endif
   ! Post Kd_lowmode fluxes
   if (VBF%id_Bdif_lowmode>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_lowmode, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_lowmode>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_lowmode, work3d_l, diag)
   endif
@@ -657,38 +650,37 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute Kd_Niku fluxes
   if (VBF%id_Bdif_dz_Niku>0 .or. VBF%id_Bdif_idz_Niku>0 .or. VBF%id_Bdif_idV_Niku>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Niku, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Niku, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Niku, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Niku, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_Niku>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_Niku>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_Niku>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Niku, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Niku, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_Niku, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_Niku, Bflx_temp)
   endif
   ! Post Kd_Niku fluxes
   if (VBF%id_Bdif_Niku>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_lowmode, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_Niku>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_Niku, work3d_l, diag)
   endif
@@ -697,38 +689,37 @@ subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, Kd_salt, Kd_temp, N2_Salt, N
 
   ! Compute Kd_itides fluxes
   if (VBF%id_Bdif_dz_itides>0 .or. VBF%id_Bdif_idz_itides>0 .or. VBF%id_Bdif_idV_itides>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itides, VBF%Bflx_salt, dz=dz, Bdif_flx_dz=VBF%Bflx_salt_dz)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itides, VBF%Bflx_temp, dz=dz, Bdif_flx_dz=VBF%Bflx_temp_dz)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itides, Bflx_salt, dz=dz, Bdif_flx_dz=Bflx_salt_dz)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itides, Bflx_temp, dz=dz, Bdif_flx_dz=Bflx_temp_dz)
     if (VBF%id_Bdif_idz_itides>0) then
       work2d(:,:) = 0.0
       do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-        work2d(i,j) = work2d(i,j) + (VBF%Bflx_salt_dz(i,j,k) + VBF%Bflx_temp_dz(i,j,k))
+        work2d(i,j) = work2d(i,j) + (Bflx_salt_dz(i,j,k) + Bflx_temp_dz(i,j,k))
       enddo ; enddo ; enddo
     endif
     if (VBF%id_Bdif_idV_itides>0) then
       work = 0.0
       do k = 1,nz
-        work = work + &
-               (global_area_integral(VBF%Bflx_temp_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3) + &
-                global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
+        work = work + (global_area_integral(Bflx_temp_dz(:,:,k), G, tmp_scale=work_unscale) + &
+                       global_area_integral(Bflx_salt_dz(:,:,k), G, tmp_scale=work_unscale))
       enddo
     endif
   elseif (VBF%id_Bdif_itides>0) then
-    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itides, VBF%Bflx_salt)
-    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itides, VBF%Bflx_temp)
+    call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_itides, Bflx_salt)
+    call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_itides, Bflx_temp)
   endif
   ! Post Kd_itides fluxes
   if (VBF%id_Bdif_itides>0) then
     work3d_i(:,:,:) = 0.0
     do k = 1,nz+1 ; do j = jsc,jec ; do i = isc,iec
-      work3d_i(i,j,k) = VBF%Bflx_temp(i,j,k) + VBF%Bflx_salt(i,j,k)
+      work3d_i(i,j,k) = Bflx_temp(i,j,k) + Bflx_salt(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_itides, work3d_i, diag)
   endif
   if (VBF%id_Bdif_dz_itides>0) then
     work3d_l(:,:,:) = 0.0
     do k = 1,nz ; do j = jsc,jec ; do i = isc,iec
-      work3d_l(i,j,k) = VBF%Bflx_temp_dz(i,j,k) + VBF%Bflx_salt_dz(i,j,k)
+      work3d_l(i,j,k) = Bflx_temp_dz(i,j,k) + Bflx_salt_dz(i,j,k)
     enddo ; enddo ; enddo
     call post_data(VBF%id_Bdif_dz_itides, work3d_l, diag)
   endif
@@ -780,15 +771,6 @@ subroutine Allocate_VBF_CS(G, GV, VBF)
 
   isd  = G%isd  ; ied = G%ied  ; jsd = G%jsd  ; jed = G%jed ; nz = GV%ke
 
-  if (VBF%do_bflx_salt) &
-    allocate(VBF%Bflx_salt(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%do_bflx_salt_dz) &
-     allocate(VBF%Bflx_salt_dz(isd:ied,jsd:jed,nz), source=0.0)
-  if (VBF%do_bflx_temp) &
-     allocate(VBF%Bflx_temp(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%do_bflx_temp_dz) &
-     allocate(VBF%Bflx_temp_dz(isd:ied,jsd:jed,nz), source=0.0)
-
   if (VBF%id_Bdif_BBL>0 .or. VBF%id_Bdif_dz_BBL>0 .or. VBF%id_Bdif_idz_BBL>0 .or. VBF%id_Bdif_idV_BBL>0) &
     allocate(VBF%Kd_BBL(isd:ied,jsd:jed,nz+1), source=0.0)
   if (VBF%id_Bdif_ePBL>0 .or. VBF%id_Bdif_dz_ePBL>0 .or. VBF%id_Bdif_idz_ePBL>0 .or. VBF%id_Bdif_idV_ePBL>0) &
@@ -824,14 +806,6 @@ end subroutine Allocate_VBF_CS
 subroutine Deallocate_VBF_CS(VBF)
   type (vbf_CS), intent(inout) :: VBF !< Vertical buoyancy flux structure
 
-  if (associated(VBF%Bflx_salt)) &
-    deallocate(VBF%Bflx_salt)
-  if (associated(VBF%Bflx_temp)) &
-    deallocate(VBF%Bflx_temp)
-  if (associated(VBF%Bflx_salt_dz)) &
-    deallocate(VBF%Bflx_salt_dz)
-  if (associated(VBF%Bflx_temp_dz)) &
-    deallocate(VBF%Bflx_temp_dz)
   if (associated(VBF%Kd_BBL)) &
     deallocate(VBF%Kd_BBL)
   if (associated(VBF%Kd_ePBL)) &
@@ -875,7 +849,15 @@ subroutine KdWork_init(Time, G, GV, US, use_EOS, diag, VBF, Use_KdWork_diag)
   type (vbf_CS), pointer,  intent(inout) :: VBF      !< Vertical buoyancy flux structure
   logical,                 intent(out)   :: Use_KdWork_diag !< Flag if any output was turned on
 
+  real :: bflx_unscale ! The combination of dimensional scaling factors for buoyancy
+                       ! fluxes [H Z s3 m-2 T-3 or H Z m3 T-3 W-1 ~> 1]
+  real :: work_unscale ! The combination of dimensional scaling factors for vertically integrated
+                       ! buoyancy fluxes [H Z2 s3 m-3 T-3 or H Z2 m2 T-3 W-1 ~> 1]
+
   allocate(VBF)
+
+  bflx_unscale = GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3
+  work_unscale = GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3
 
   VBF%do_bflx_salt = .false.
   VBF%do_bflx_salt_dz = .false.
@@ -889,226 +871,226 @@ subroutine KdWork_init(Time, G, GV, US, use_EOS, diag, VBF, Use_KdWork_diag)
     return
   endif
 
-  VBF%id_Bdif = register_diag_field('ocean_model',"Bflx_dia_diff", diag%axesTi, &
+  VBF%id_Bdif = register_diag_field('ocean_model', "Bflx_dia_diff", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz = register_diag_field('ocean_model',"Bflx_dia_diff_dz", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz = register_diag_field('ocean_model', "Bflx_dia_diff_dz", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz = register_diag_field('ocean_model',"Bflx_dia_diff_idz", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz = register_diag_field('ocean_model', "Bflx_dia_diff_idz", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV = register_scalar_field('ocean_model',"Bflx_dia_diff_idV", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV = register_scalar_field('ocean_model', "Bflx_dia_diff_idV", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_salt = register_diag_field('ocean_model',"Bflx_salt_dia_diff", diag%axesTi, &
+  VBF%id_Bdif_salt = register_diag_field('ocean_model', "Bflx_salt_dia_diff", diag%axesTi, &
         Time, "Salinity contribution to diffusive diapycnal buoyancy flux across interfaces", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_salt_dz = register_diag_field('ocean_model',"Bflx_salt_dia_diff_dz", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_salt_dz = register_diag_field('ocean_model', "Bflx_salt_dia_diff_dz", diag%axesTl, &
         Time, "Salinity contribution to layer integral of diffusive diapycnal buoyancy flux.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_salt_idz = register_diag_field('ocean_model',"Bflx_salt_dia_diff_idz", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_salt_idz = register_diag_field('ocean_model', "Bflx_salt_dia_diff_idz", diag%axesT1, &
         Time, "Salinity contribution to layer integrated diffusive diapycnal buoyancy flux.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_salt_idV = register_scalar_field('ocean_model',"Bflx_salt_dia_diff_idV", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_salt_idV = register_scalar_field('ocean_model', "Bflx_salt_dia_diff_idV", Time, diag, &
         "Salinity contribution to global integrated diffusive diapycnal buoyancy flux.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_temp = register_diag_field('ocean_model',"Bflx_temp_dia_diff", diag%axesTi, &
+  VBF%id_Bdif_temp = register_diag_field('ocean_model', "Bflx_temp_dia_diff", diag%axesTi, &
         Time, "Temperature contribution to diffusive diapycnal buoyancy flux across interfaces", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_temp_dz = register_diag_field('ocean_model',"Bflx_temp_dia_diff_dz", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_temp_dz = register_diag_field('ocean_model', "Bflx_temp_dia_diff_dz", diag%axesTl, &
         Time, "Temperature contribution to layer integral of diffusive diapycnal buoyancy flux.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_temp_idz = register_diag_field('ocean_model',"Bflx_temp_dia_diff_idz", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_temp_idz = register_diag_field('ocean_model', "Bflx_temp_dia_diff_idz", diag%axesT1, &
         Time, "Temperature contribution to layer integrated diffusive diapycnal buoyancy flux.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_temp_idV = register_scalar_field('ocean_model',"Bflx_temp_dia_diff_idV", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_temp_idV = register_scalar_field('ocean_model', "Bflx_temp_dia_diff_idV", Time, diag, &
         "Temperature contribution to global integrated diffusive diapycnal buoyancy flux.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_BBL = register_diag_field('ocean_model',"Bflx_dia_diff_BBL", diag%axesTi, &
+  VBF%id_Bdif_BBL = register_diag_field('ocean_model', "Bflx_dia_diff_BBL", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to the BBL parameterization.", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_BBL = register_diag_field('ocean_model',"Bflx_dia_diff_dz_BBL", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_BBL = register_diag_field('ocean_model', "Bflx_dia_diff_dz_BBL", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to the BBL parameterization.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_BBL = register_diag_field('ocean_model',"Bflx_dia_diff_idz_BBL", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_BBL = register_diag_field('ocean_model', "Bflx_dia_diff_idz_BBL", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to the BBL parameterization.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_BBL = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_BBL", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_BBL = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_BBL", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to BBL.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_ePBL = register_diag_field('ocean_model',"Bflx_dia_diff_ePBL", diag%axesTi, &
+  VBF%id_Bdif_ePBL = register_diag_field('ocean_model', "Bflx_dia_diff_ePBL", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to ePBL", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_ePBL = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ePBL", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_ePBL = register_diag_field('ocean_model', "Bflx_dia_diff_dz_ePBL", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to ePBL.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_ePBL = register_diag_field('ocean_model',"Bflx_dia_diff_idz_ePBL", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_ePBL = register_diag_field('ocean_model', "Bflx_dia_diff_idz_ePBL", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to ePBL.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_ePBL = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_ePBL", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_ePBL = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_ePBL", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to ePBL.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_KS = register_diag_field('ocean_model',"Bflx_dia_diff_KS", diag%axesTi, &
+  VBF%id_Bdif_KS = register_diag_field('ocean_model', "Bflx_dia_diff_KS", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to Kappa Shear", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_KS = register_diag_field('ocean_model',"Bflx_dia_diff_dz_KS", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_KS = register_diag_field('ocean_model', "Bflx_dia_diff_dz_KS", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to Kappa Shear.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_KS = register_diag_field('ocean_model',"Bflx_dia_diff_idz_KS", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_KS = register_diag_field('ocean_model', "Bflx_dia_diff_idz_KS", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to Kappa Shear.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_KS = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_KS", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_KS = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_KS", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to Kappa Shear.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_bkgnd = register_diag_field('ocean_model',"Bflx_dia_diff_bkgnd", diag%axesTi, &
+  VBF%id_Bdif_bkgnd = register_diag_field('ocean_model', "Bflx_dia_diff_bkgnd", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to bkgnd mixing", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_bkgnd = register_diag_field('ocean_model',"Bflx_dia_diff_dz_bkgnd", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_bkgnd = register_diag_field('ocean_model', "Bflx_dia_diff_dz_bkgnd", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_bkgnd = register_diag_field('ocean_model',"Bflx_dia_diff_idz_bkgnd", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_bkgnd = register_diag_field('ocean_model', "Bflx_dia_diff_idz_bkgnd", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_bkgnd = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_bkgnd", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_bkgnd = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_bkgnd", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to Kd_bkgnd.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_ddiff_temp = register_diag_field('ocean_model',"Bflx_dia_diff_ddiff_heat", diag%axesTi, &
+  VBF%id_Bdif_ddiff_temp = register_diag_field('ocean_model', "Bflx_dia_diff_ddiff_heat", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to double diffusion of heat", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_ddiff_temp = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ddiff_heat", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_ddiff_temp = register_diag_field('ocean_model', "Bflx_dia_diff_dz_ddiff_heat", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to double diffusion of heat.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_ddiff_temp = register_diag_field('ocean_model',"Bflx_dia_diff_idz_ddiff_heat", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_ddiff_temp = register_diag_field('ocean_model', "Bflx_dia_diff_idz_ddiff_heat", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to double diffusion of heat.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_ddiff_temp = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_ddiff_heat", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_ddiff_temp = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_ddiff_heat", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to double diffusion of heat.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_ddiff_salt = register_diag_field('ocean_model',"Bflx_dia_diff_ddiff_salt", diag%axesTi, &
+  VBF%id_Bdif_ddiff_salt = register_diag_field('ocean_model', "Bflx_dia_diff_ddiff_salt", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to double diffusion of salt", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_ddiff_salt = register_diag_field('ocean_model',"Bflx_dia_diff_dz_ddiff_salt", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_ddiff_salt = register_diag_field('ocean_model', "Bflx_dia_diff_dz_ddiff_salt", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to double diffusion of salt.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_ddiff_salt = register_diag_field('ocean_model',"Bflx_dia_diff_idz_ddiff_salt", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_ddiff_salt = register_diag_field('ocean_model', "Bflx_dia_diff_idz_ddiff_salt", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to double diffusion of salt.", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_ddiff_salt = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_ddiff_salt", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_ddiff_salt = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_ddiff_salt", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to double diffusion of salt.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_leak = register_diag_field('ocean_model',"Bflx_dia_diff_leak", diag%axesTi, &
+  VBF%id_Bdif_leak = register_diag_field('ocean_model', "Bflx_dia_diff_leak", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to Kd_leak mixing", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_leak = register_diag_field('ocean_model',"Bflx_dia_diff_dz_leak", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_leak = register_diag_field('ocean_model', "Bflx_dia_diff_dz_leak", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_leak = register_diag_field('ocean_model',"Bflx_dia_diff_idz_leak", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_leak = register_diag_field('ocean_model', "Bflx_dia_diff_idz_leak", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_leak = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_leak", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_leak = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_leak", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to Kd_leak.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_quad = register_diag_field('ocean_model',"Bflx_dia_diff_quad", diag%axesTi, &
+  VBF%id_Bdif_quad = register_diag_field('ocean_model', "Bflx_dia_diff_quad", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to Kd_quad mixing", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_quad = register_diag_field('ocean_model',"Bflx_dia_diff_dz_quad", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_quad = register_diag_field('ocean_model', "Bflx_dia_diff_dz_quad", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_quad = register_diag_field('ocean_model',"Bflx_dia_diff_idz_quad", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_quad = register_diag_field('ocean_model', "Bflx_dia_diff_idz_quad", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_quad = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_quad", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_quad = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_quad", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to Kd_quad.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_itidal = register_diag_field('ocean_model',"Bflx_dia_diff_itidal", diag%axesTi, &
+  VBF%id_Bdif_itidal = register_diag_field('ocean_model', "Bflx_dia_diff_itidal", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to Kd_itidal mixing", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_itidal = register_diag_field('ocean_model',"Bflx_dia_diff_dz_itidal", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_itidal = register_diag_field('ocean_model', "Bflx_dia_diff_dz_itidal", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_itidal = register_diag_field('ocean_model',"Bflx_dia_diff_idz_itidal", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_itidal = register_diag_field('ocean_model', "Bflx_dia_diff_idz_itidal", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_itidal = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_itidal", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_itidal = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_itidal", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to Kd_itidal.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_Froude = register_diag_field('ocean_model',"Bflx_dia_diff_Froude", diag%axesTi, &
+  VBF%id_Bdif_Froude = register_diag_field('ocean_model', "Bflx_dia_diff_Froude", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to Kd_Froude mixing", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_Froude = register_diag_field('ocean_model',"Bflx_dia_diff_dz_Froude", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_Froude = register_diag_field('ocean_model', "Bflx_dia_diff_dz_Froude", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_Froude = register_diag_field('ocean_model',"Bflx_dia_diff_idz_Froude", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_Froude = register_diag_field('ocean_model', "Bflx_dia_diff_idz_Froude", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_Froude = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_Froude", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_Froude = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_Froude", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to Kd_Froude.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_slope = register_diag_field('ocean_model',"Bflx_dia_diff_slope", diag%axesTi, &
+  VBF%id_Bdif_slope = register_diag_field('ocean_model', "Bflx_dia_diff_slope", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to Kd_slope mixing", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_slope = register_diag_field('ocean_model',"Bflx_dia_diff_dz_slope", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_slope = register_diag_field('ocean_model', "Bflx_dia_diff_dz_slope", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_slope = register_diag_field('ocean_model',"Bflx_dia_diff_idz_slope", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_slope = register_diag_field('ocean_model', "Bflx_dia_diff_idz_slope", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_slope = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_slope", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_slope = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_slope", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to Kd_slope.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_lowmode = register_diag_field('ocean_model',"Bflx_dia_diff_lowmode", diag%axesTi, &
+  VBF%id_Bdif_lowmode = register_diag_field('ocean_model', "Bflx_dia_diff_lowmode", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to Kd_lowmode mixing", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_lowmode = register_diag_field('ocean_model',"Bflx_dia_diff_dz_lowmode", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_lowmode = register_diag_field('ocean_model', "Bflx_dia_diff_dz_lowmode", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_lowmode = register_diag_field('ocean_model',"Bflx_dia_diff_idz_lowmode", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_lowmode = register_diag_field('ocean_model', "Bflx_dia_diff_idz_lowmode", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_lowmode = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_lowmode", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_lowmode = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_lowmode", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to Kd_lowmode.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_Niku = register_diag_field('ocean_model',"Bflx_dia_diff_Niku", diag%axesTi, &
+  VBF%id_Bdif_Niku = register_diag_field('ocean_model', "Bflx_dia_diff_Niku", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to Kd_Niku mixing", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_Niku = register_diag_field('ocean_model',"Bflx_dia_diff_dz_Niku", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_Niku = register_diag_field('ocean_model', "Bflx_dia_diff_dz_Niku", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_Niku = register_diag_field('ocean_model',"Bflx_dia_diff_idz_Niku", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_Niku = register_diag_field('ocean_model', "Bflx_dia_diff_idz_Niku", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_Niku = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_Niku", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_Niku = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_Niku", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to Kd_Niku.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
-  VBF%id_Bdif_itides = register_diag_field('ocean_model',"Bflx_dia_diff_itides", diag%axesTi, &
+  VBF%id_Bdif_itides = register_diag_field('ocean_model', "Bflx_dia_diff_itides", diag%axesTi, &
         Time, "Diffusive diapycnal buoyancy flux across interfaces due to Kd_itides mixing", &
-        "W m-3", conversion=GV%H_to_kg_m2*US%Z_to_m*US%s_to_T**3)
-  VBF%id_Bdif_dz_itides = register_diag_field('ocean_model',"Bflx_dia_diff_dz_itides", diag%axesTl, &
+        units="W m-3", conversion=bflx_unscale)
+  VBF%id_Bdif_dz_itides = register_diag_field('ocean_model', "Bflx_dia_diff_dz_itides", diag%axesTl, &
         Time, "Layerwise integral of diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idz_itides = register_diag_field('ocean_model',"Bflx_dia_diff_idz_itides", diag%axesT1, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idz_itides = register_diag_field('ocean_model', "Bflx_dia_diff_idz_itides", diag%axesT1, &
         Time, "Layer integrated diffusive diapycnal buoyancy flux due to bkgnd mixing", &
-        "W m-2", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3)
-  VBF%id_Bdif_idV_itides = register_scalar_field('ocean_model',"Bflx_dia_diff_idV_itides", Time, diag, &
+        units="W m-2", conversion=work_unscale)
+  VBF%id_Bdif_idV_itides = register_scalar_field('ocean_model', "Bflx_dia_diff_idV_itides", Time, diag, &
         "Global integrated diffusive diapycnal buoyancy flux due to Kd_itides.", &
-        units="W", conversion=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3*US%L_to_m**2)
+        units="W", conversion=work_unscale*US%L_to_m**2)
 
   if (VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_salt_dz>0 .or. VBF%id_Bdif_dz_BBL>0 .or. &
       VBF%id_Bdif_dz_ePBL>0 .or. VBF%id_Bdif_dz_KS>0 .or. VBF%id_Bdif_dz_bkgnd>0 .or. &
