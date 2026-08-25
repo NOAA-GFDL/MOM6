@@ -199,6 +199,9 @@ subroutine SAL_init(h, tv, G, GV, US, param_file, CS, restart_CS)
   character(len=40)  :: mdl = "MOM_self_attr_load" ! This module's name.
   integer :: lmax ! Total modes of the real spherical harmonics [nondim]
   real :: rhoE    ! The average density of Earth [R ~> kg m-3].
+  real :: rho_ocean_SAL ! The mean ocean density used for converting between sea surface height
+                        ! and bottom pressure anomalies when calculating the self-attraction and
+                        ! loading with certain options [R ~> kg m-3]
   character(len=20)  :: bpa_config ! String for reference bottom pressure config option
   real :: tmp(G%isd:G%ied, G%jsd:G%jed) ! Temporary field storing mass returned by find_col_mass
                                         ! [R Z ~> kg m-2]
@@ -208,7 +211,7 @@ subroutine SAL_init(h, tv, G, GV, US, param_file, CS, restart_CS)
   type(MOM_infra_file) :: IO_handle   ! used to write ref_pbot file
   type(vardesc) :: vars(1)            ! used to write ref_pbot file
   type(MOM_field) :: fields(1)        ! used to write ref_pbot file
-  logical :: calculate_sal, tides, use_tidal_sal_file
+  logical :: calculate_sal, tides, use_tidal_sal_file, use_rho_ocean_SAL
   integer :: default_answer_date, tides_answer_date ! Recover old answers with tides
   real :: sal_scalar_value ! Scaling SAL factors [nondim]
   integer :: isd, ied, jsd, jed
@@ -305,8 +308,22 @@ subroutine SAL_init(h, tv, G, GV, US, param_file, CS, restart_CS)
                  default=0, do_not_log=(.not. CS%use_sal_sht))
   call get_param(param_file, mdl, "RHO_SOLID_EARTH", rhoE, &
                  "The mean solid earth density.  This is used for calculating the "// &
-                 "self-attraction and loading term.", units="kg m-3", &
-                 default=5517.0, scale=US%kg_m3_to_R, do_not_log=(.not. CS%use_sal_sht))
+                 "self-attraction and loading term.", &
+                 units="kg m-3", default=5517.0, scale=US%kg_m3_to_R, &
+                 do_not_log=(.not. CS%use_sal_sht))
+  ! rho_ocean_SAL is used in only two cases, neither of which is recommended.
+  ! (1) to convert the sea surface height (SSH) into a bottom pressure anomaly (BPA) when SAL_USE_BPA is true.
+  ! (2) to convert BPA into SSH for use with the spherical harmonics self-attraction and loading
+  !     when SAL_USE_BPA is false.
+  use_rho_ocean_SAL = ( (CS%use_bpa .and. (CS%use_sal_scalar .or. CS%use_tidal_sal_prev)) .or. &
+                        ((.not.CS%use_bpa) .and. CS%use_sal_sht) )
+  call get_param(param_file, mdl, "RHO_OCEAN_SAL", rho_ocean_SAL, &
+                 "The mean ocean density used to convert between bottom pressure anomalies "//&
+                 "and the equivalent sea surface height anomalies in the self-attraction and "//&
+                 "loading calculations.  This is only used with the scalar approximation when "//&
+                 "SAL_USE_BPA is true or with SAL_HARMONICS when SAL_USE_PBA is false.", &
+                 units="kg m-3", default=US%R_to_kg_m3*GV%Rho0, scale=US%kg_m3_to_R, &
+                 do_not_log=.not.use_rho_ocean_SAL)
 
   ! Set scaling coefficients for scalar approximation
   if (CS%use_sal_scalar .or. CS%use_tidal_sal_prev) then
@@ -316,7 +333,7 @@ subroutine SAL_init(h, tv, G, GV, US, param_file, CS, restart_CS)
       CS%eta_prop = sal_scalar_value
     endif
     if (CS%use_bpa) then
-      CS%linear_scaling = CS%eta_prop / (GV%Rho0 * GV%g_Earth)
+      CS%linear_scaling = CS%eta_prop / (rho_ocean_SAL * GV%g_Earth)
     else
       CS%linear_scaling = CS%eta_prop
     endif
@@ -331,7 +348,7 @@ subroutine SAL_init(h, tv, G, GV, US, param_file, CS, restart_CS)
     allocate(CS%Snm_Im(lmax), source=0.0)
 
     allocate(CS%Love_scaling(lmax), source=0.0)
-    call calc_love_scaling(GV%Rho0, rhoE, GV%g_Earth, CS)
+    call calc_love_scaling(rho_ocean_SAL, rhoE, GV%g_Earth, CS)
 
     allocate(CS%sht)
     call spherical_harmonics_init(G, param_file, CS%sht)
