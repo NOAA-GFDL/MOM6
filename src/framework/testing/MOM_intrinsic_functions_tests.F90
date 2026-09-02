@@ -30,41 +30,41 @@ integer, parameter :: realq = merge(realquad, kind(1.), realquad >= 0.)
   !< Placeholder real128 for declarations.  Unused if real128 is unavailable.
 
 real, parameter :: rmold = 0.
-  !< Mold value for default real
+  !< Mold value for default real [nondim]
 
 ! Mathematical constants
 real, parameter :: ln2 = 0.69314718055994531
-  !< ln(2)
+  !< ln(2) [nondim]
 real, parameter :: half_ln2 = 0.34657359027997265
-  !< ln(2)/2
+  !< ln(2)/2 [nondim]
 real, parameter :: sqrt2 = 1.4142135623730950
-  !< sqrt(2)
+  !< sqrt(2) [nondim]
 real, parameter :: exp1 = 2.7182818284590452
-  !< e
+  !< e [nondim]
 real, parameter :: inv_e = 0.36787944117144232
-  !< 1/e
+  !< 1/e [nondim]
 real, parameter :: exp_033 = 1.3909681284637803
-  !< exp(0.33)
+  !< exp(0.33) [nondim]
 real, parameter :: exp_tiny_pos = 1.0000000000000010
-  !< exp(1e-15)
+  !< exp(1e-15) [nondim]
 real, parameter :: exp_tiny_neg = 0.99999999999999900
-  !< exp(-1e-15)
+  !< exp(-1e-15) [nondim]
 real, parameter :: exp_709_78 = 1.7928227943945156e+308
-  !< exp(709.78)
+  !< exp(709.78) [nondim]
 real, parameter :: exp_neg_708_39 = 2.2394014988804678e-308
-  !< exp(-708.39)
+  !< exp(-708.39) [nondim]
 real, parameter :: exp_neg2 = 0.13533528323661269
-  !< exp(-2)
+  !< exp(-2) [nondim]
 real, parameter :: exp2 = 7.3890560989306502
-  !< exp(2)
+  !< exp(2) [nondim]
 real, parameter :: log_huge = 709.78271289338397
-  !< log(huge())
+  !< log(huge()) [nondim]
 real, parameter :: exp_log_huge = 1.7976931348622732e+308
-  !< exp(log_huge)
+  !< exp(log_huge) [nondim]
 real, parameter :: log_tiny = -708.39641853226408
-  !< log(tiny())
+  !< log(tiny()) [nondim]
 real, parameter :: exp_log_tiny = 2.2250738585072625e-308
-  !< exp(log_tiny)
+  !< exp(log_tiny) [nondim]
 
 ! Module-level flag to enable/disable IEEE exception tests
 logical :: ieee_flags_supported = .false.
@@ -992,8 +992,10 @@ subroutine run_intrinsic_functions_tests
   call suite%add(test_exp_neg_nan, "test_exp_neg_nan")
 
   ! Evaluate error if quad precision is available
-  if (realq >= 0) then
+  if (realquad >= 0) then
     call suite%add(test_exp_ulp_accuracy, "test_exp_ulp_accuracy")
+  else
+    print '(1x,a)', 'Skipping exp_repro ULP accuracy test: quad precision is unavailable.'
   endif
 
   ! Property tests

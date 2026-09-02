@@ -6,7 +6,9 @@
 
 module MOM_exp_data_n128
 
-implicit none
+implicit none ; private
+
+public ndiv, idiv_scale_lookup, idiv_residual_lookup
 
 !> Number of subdivisions of the range reduction interval.
 !! The domain [-ln2/2, ln2/2] is divided into ndiv subintervals.
