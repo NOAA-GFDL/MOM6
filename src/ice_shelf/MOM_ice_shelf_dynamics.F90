@@ -152,6 +152,8 @@ type, public :: ice_shelf_dyn_CS ; private
   real, pointer, dimension(:,:,:,:,:,:) :: Phisub => NULL() !< Quadrature structure weights at subgridscale
                                                 !!  locations for finite element calculations [nondim]
   integer :: OD_rt_counter = 0 !< A counter of the number of contributions to OD_rt.
+  real    :: OD_rt_counter_restart = -1.0 !< A real copy of CS%OD_rt_counter for use in restart files;
+                              !! -1.0 is a sentinel meaning the field was not present in the restart file [nondim].
 
   real :: velocity_update_time_step !< The time interval over which to update the ice shelf velocity
                     !! using the nonlinear elliptic equation, or 0 to update every timestep [T ~> s].
@@ -160,6 +162,9 @@ type, public :: ice_shelf_dyn_CS ; private
                     ! this time interval, and solving for the equilibrated flow will begin to lose
                     ! meaning if it is done too frequently.
   real :: elapsed_velocity_time  !< The elapsed time since the ice velocities were last updated [T ~> s].
+  real :: elapsed_vel_time_restart = -1.0 !< A copy of CS%elapsed_velocity_time for use in restart
+                              !! files [T ~> s]; -1.0 is a sentinel meaning the field was not present
+                              !! in the restart file.
 
   real :: g_Earth      !< The gravitational acceleration [L2 Z-1 T-2 ~> m s-2].
   real :: density_ice  !< A typical density of ice [R ~> kg m-3].
@@ -448,6 +453,11 @@ subroutine register_ice_shelf_dyn_restarts(G, US, param_file, CS, restart_CS)
     allocate(CS%v_face_mask_bdry(IsdB:iedB,JsdB:JedB), source=-2.0)
     allocate(CS%h_bdry_val(isd:ied,jsd:jed), source=0.0)
 
+    ! Allocate running-total arrays for OD_av/ground_frac averaging under coupled grounding.
+    ! OD_rt is initialized to a default open-ocean depth (10 m) for new runs.
+    allocate(CS%OD_rt(isd:ied,jsd:jed), source=10.0*US%m_to_Z)
+    allocate(CS%ground_frac_rt(isd:ied,jsd:jed), source=0.0)
+
     ! Create group pass handles
     call create_group_pass(CS%pass_visc_and_newton, CS%ice_visc, G%domain)
     call create_group_pass(CS%pass_visc_and_newton, CS%newton_str_sh, G%domain)
@@ -490,6 +500,16 @@ subroutine register_ice_shelf_dyn_restarts(G, US, param_file, CS, restart_CS)
                                 "bed elevation", "m", conversion=US%Z_to_m)
     call register_restart_field(CS%first_dir_restart_IS, "first_direction_IS", .false., restart_CS, &
                                 "Indicator of the first direction in split ice shelf calculations.", "nondim")
+    call register_restart_field(CS%elapsed_vel_time_restart, "elapsed_velocity_time", .false., restart_CS, &
+                                "Time elapsed since the last ice shelf velocity update.", &
+                                units="s", conversion=US%T_to_s)
+    call register_restart_field(CS%OD_rt, "OD_rt", .false., restart_CS, &
+                                "Running total of open ocean depth for OD_av averaging", &
+                                "m", conversion=US%Z_to_m)
+    call register_restart_field(CS%ground_frac_rt, "ground_frac_rt", .false., restart_CS, &
+                                "Running total for ground_frac averaging", "nondim")
+    call register_restart_field(CS%OD_rt_counter_restart, "OD_rt_counter", .false., restart_CS, &
+                                "Number of contributions accumulated in OD_rt and ground_frac_rt.", "nondim")
   endif
 
 end subroutine register_ice_shelf_dyn_restarts
@@ -833,8 +853,9 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
     allocate( CS%float_cond(isd:ied,jsd:jed))
 
     CS%OD_rt_counter = 0
-    allocate( CS%OD_rt(isd:ied,jsd:jed), source=0.0)
-    allocate( CS%ground_frac_rt(isd:ied,jsd:jed), source=0.0)
+    ! These arrays may contain values restored by register_ice_shelf_dyn_restarts.
+    if (CS%OD_rt_counter_restart >= 0.0) &
+      CS%OD_rt_counter = NINT(CS%OD_rt_counter_restart)
 
     if (CS%calve_to_mask) then
       allocate( CS%calve_mask(isd:ied,jsd:jed), source=0.0)
@@ -859,7 +880,12 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
       enddo ; enddo
     endif
 
-    CS%elapsed_velocity_time = 0.0
+    if (CS%elapsed_vel_time_restart >= 0.0) then
+      CS%elapsed_velocity_time = CS%elapsed_vel_time_restart
+    else
+      CS%elapsed_velocity_time = 0.0
+      CS%elapsed_vel_time_restart = 0.0
+    endif
 
     call update_velocity_masks(CS, G, ISS%hmask, CS%umask, CS%vmask, CS%u_face_mask, CS%v_face_mask)
   endif
@@ -1169,6 +1195,7 @@ subroutine update_ice_shelf(CS, ISS, G, US, time_step, Time, calve_ice_shelf_ber
     endif
   endif
   CS%elapsed_velocity_time = CS%elapsed_velocity_time + time_step
+  CS%elapsed_vel_time_restart = CS%elapsed_velocity_time
   if (CS%elapsed_velocity_time >= CS%velocity_update_time_step) update_ice_vel = .true.
 
   if (coupled_GL) then
@@ -1181,6 +1208,7 @@ subroutine update_ice_shelf(CS, ISS, G, US, time_step, Time, calve_ice_shelf_ber
   if (update_ice_vel) then
     call ice_shelf_solve_outer(CS, ISS, G, US, CS%u_shelf, CS%v_shelf,CS%taudx_shelf,CS%taudy_shelf, iters, Time)
     CS%elapsed_velocity_time = 0.0
+    CS%elapsed_vel_time_restart = 0.0
   endif
 
 ! call ice_shelf_temp(CS, ISS, G, US, time_step, ISS%water_flux, Time)
@@ -4789,6 +4817,7 @@ subroutine update_OD_ffrac(CS, G, US, ocean_mass, find_avg)
     endif
   enddo ; enddo
   CS%OD_rt_counter = CS%OD_rt_counter + 1
+  CS%OD_rt_counter_restart = real(CS%OD_rt_counter)
 
   if (find_avg) then
     I_counter = 1.0 / real(CS%OD_rt_counter)
@@ -4796,8 +4825,9 @@ subroutine update_OD_ffrac(CS, G, US, ocean_mass, find_avg)
       CS%ground_frac(i,j) = 1.0 - (CS%ground_frac_rt(i,j) * I_counter)
       CS%OD_av(i,j) = CS%OD_rt(i,j) * I_counter
 
-      CS%OD_rt(i,j) = 0.0 ; CS%ground_frac_rt(i,j) = 0.0 ; CS%OD_rt_counter = 0
+      CS%OD_rt(i,j) = 0.0 ; CS%ground_frac_rt(i,j) = 0.0
     enddo ; enddo
+    CS%OD_rt_counter = 0 ; CS%OD_rt_counter_restart = 0.0
 
     call pass_var(CS%ground_frac, G%domain, complete=.false.)
     call pass_var(CS%OD_av, G%domain, complete=.true.)
