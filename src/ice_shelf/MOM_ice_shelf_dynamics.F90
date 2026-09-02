@@ -19,13 +19,14 @@ use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : read_param, get_param, log_param, log_version, param_file_type
 use MOM_grid, only : MOM_grid_init, ocean_grid_type
 use MOM_io, only : file_exists, slasher, MOM_read_data
-use MOM_io, only : open_ASCII_file, get_filename_appendix
+use MOM_io, only : open_ASCII_file, close_file, get_filename_appendix
 use MOM_io, only : APPEND_FILE, WRITEONLY_FILE
 use MOM_restart, only : register_restart_field, MOM_restart_CS
 use MOM_time_manager, only : time_type, get_time, set_time, time_type_to_real, operator(>)
 use MOM_time_manager,  only : operator(+), operator(-), operator(*), operator(/)
 use MOM_time_manager,  only : operator(/=), operator(<=), operator(>=), operator(<)
 use MOM_unit_scaling, only : unit_scale_type, unit_scaling_init
+use MOM_checksums, only : is_NaN
 !MJH use MOM_ice_shelf_initialize, only : initialize_ice_shelf_boundary
 use MOM_ice_shelf_state, only : ice_shelf_state
 use MOM_coms, only : reproducing_sum, max_across_PEs, min_across_PEs
@@ -128,7 +129,7 @@ type, public :: ice_shelf_dyn_CS ; private
   real, pointer, dimension(:,:) :: coef_prefactor => NULL() !< Pre-computed area*C_basal_friction*L_T_to_m_s for
                                !! basal friction quadrature evaluation [R L2 Z T-1 ~> kg s-1].
   real, pointer, dimension(:,:) :: fB_elem => NULL()        !< Pre-computed element-level Coulomb fB parameter
-                               !! [(T L-1)^CF_PostPeak]; 0 for Weertman.
+                               !! [(s m-1)^CF_PostPeak]; 0 for Weertman.
                                !! Updated each outer iteration by calc_shelf_basal_prefactors.
   real :: alpha_coulomb = 1.0  !< Coulomb prefactor (CF_PostPeak-1)^(CF_PostPeak-1)/CF_PostPeak^CF_PostPeak [nondim]
   real :: coulomb_pp_n         !< CF_PostPeak/n_basal_fric [nondim]
@@ -230,6 +231,18 @@ type, public :: ice_shelf_dyn_CS ; private
                                  !! If set to <= 0, no Picard [nondim]
   type(group_pass_type) :: pass_visc_and_newton !< Handle for Newton-and-viscosity-related group passes
   type(group_pass_type) :: pass_newton !< Handle for Newton-related group passes
+  logical :: newton_divergence_rescue !< If true, monitor the nonlinear residual while Newton is
+                                 !! active and, on divergence (residual NaN or exceeding
+                                 !! newton_divergence_factor times its value at the Picard-to-
+                                 !! Newton switch), restore the pre-Newton iterate, revert to
+                                 !! Picard with a fresh outer-iteration budget, and reduce the
+                                 !! switch threshold tenfold for the remainder of this solve.
+  real :: newton_divergence_factor !< Factor on the nonlinear residual at the Picard-to-Newton
+                                 !! switch above which the Newton iteration is declared
+                                 !! divergent and rescued [nondim].
+  integer :: newton_max_rescues  !< Maximum number of divergence rescues per velocity solve;
+                                 !! once reached, Newton is disabled and the remainder of the
+                                 !! solve runs pure Picard [nondim]
   logical :: newton_adapt_cg_tol !< Use an adaptive CG tolerance during Newton iterations
   real :: ew_gamma !< Gamma in Eisenstat-Walker adaptive Newton tolerance [nondim].
   real :: ew_alpha !< Alpha in Eisenstat-Walker adaptive Newton tolerance [nondim].
@@ -265,7 +278,8 @@ type, public :: ice_shelf_dyn_CS ; private
   type(time_type) :: Start_time !< The start time of the simulation.
                                 ! Start_time is set in MOM_initialization.F90
   integer :: prev_IS_energy_calls = 0 !< The number of times write_ice_shelf_energy has been called.
-  integer :: IS_fileenergy_ascii   !< The unit number of the ascii version of the energy file.
+  integer :: IS_fileenergy_ascii = -1
+    !< The unit number of the ascii version of the energy file.
   character(len=200) :: IS_energyfile  !< The name of the ice sheet energy file with path.
 
   ! ids for outputting intermediate thickness in advection subroutine (debugging)
@@ -504,7 +518,7 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
                           ! in through open boundaries [C ~> degC]
   !This include declares and sets the variable "version".
 # include "version_variable.h"
-  character(len=200) :: IC_file,filename,inputdir
+  character(len=200) :: IC_file, filename, inputdir
   character(len=40)  :: var_name
   character(len=40)  :: mdl = "MOM_ice_shelf_dyn"  ! This module's name.
   logical :: shelf_mass_is_dynamic, override_shelf_movement, active_shelf_dynamics
@@ -647,6 +661,26 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
                 "Switch from Picard to Newton iterations in the nonlinear ice velocity solve when "//&
                 "the fractional nonlinear residual falls below this tolerance. If <=0, no Picard.",&
                 units="none", default=CS%nonlinear_tolerance)
+    call get_param(param_file, mdl, "NEWTON_DIVERGENCE_RESCUE", CS%newton_divergence_rescue, &
+                "If true, monitor the nonlinear residual while Newton iterations are active "//&
+                "and, if it becomes NaN or exceeds NEWTON_DIVERGENCE_FACTOR times its value "//&
+                "at the Picard-to-Newton switch, restore the pre-Newton velocity iterate, "//&
+                "revert to Picard iterations with a fresh outer-iteration budget, and reduce "//&
+                "the Picard-to-Newton switch threshold by a factor of 10 for the remainder "//&
+                "of this velocity solve (the configured NEWTON_AFTER_TOLERANCE is restored "//&
+                "at the next solve). At most NEWTON_DIVERGENCE_MAX_RESCUES rescues are "//&
+                "attempted per solve, after which Newton is disabled and the solve "//&
+                "completes as pure Picard. No effect when NEWTON_AFTER_TOLERANCE <= 0.", &
+                default=.false.)
+    call get_param(param_file, mdl, "NEWTON_DIVERGENCE_FACTOR", CS%newton_divergence_factor, &
+                "Factor on the nonlinear residual at the Picard-to-Newton switch above "//&
+                "which the Newton iteration is declared divergent and rescued.", &
+                units="nondim", default=10.0, do_not_log=.not.CS%newton_divergence_rescue)
+    call get_param(param_file, mdl, "NEWTON_DIVERGENCE_MAX_RESCUES", CS%newton_max_rescues, &
+                "Maximum number of Newton divergence rescues per velocity solve. Once "//&
+                "reached, Newton is disabled (the working switch threshold is set to "//&
+                "zero) and the remainder of the solve runs pure Picard.", &
+                units="nondim", default=2, do_not_log=.not.CS%newton_divergence_rescue)
     call get_param(param_file, mdl, "NEWTON_ADAPT_CG_TOL", CS%newton_adapt_cg_tol, &
                 "Use an adaptive CG tolerance during Newton iterations.", default=.true.)
     call get_param(param_file, mdl, "NEWTON_EW_GAMMA", CS%ew_gamma, &
@@ -989,7 +1023,8 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
     CS%id_visc_shelf = register_diag_field('ice_shelf_model','ice_visc',CS%diag%axesT1, Time, &
        'vi-viscosity', 'Pa m s', conversion=US%RL2_T2_to_Pa*US%Z_to_m*US%T_to_s) !vertically integrated viscosity
     CS%id_taub = register_diag_field('ice_shelf_model','taub_beta',CS%diag%axesT1, Time, &
-       'taub', units='MPa yr m-1', conversion=1e-6*US%RLZ_T2_to_Pa/(365.0*86400.0*US%L_T_to_m_s))
+       'basal traction coefficient, taub/|u|', units='MPa yr m-1', &
+       conversion=1e-6*US%RLZ_T2_to_Pa/(365.0*86400.0*US%L_T_to_m_s))
     CS%id_OD_av = register_diag_field('ice_shelf_model','OD_av',CS%diag%axesT1, Time, &
        'intermediate ocean column thickness passed to ice model', 'm', conversion=US%Z_to_m)
 
@@ -1162,7 +1197,7 @@ subroutine volume_above_floatation(CS, G, ISS, vaf, hemisphere)
   integer :: IS_ID ! local copy of hemisphere
   real, dimension(SZI_(G),SZJ_(G))  :: vaf_cell !< cell-wise volume above floatation [Z L2 ~> m3]
   integer, dimension(SZI_(G),SZJ_(G))  :: mask ! a mask for active cells depending on hemisphere indicated
-  integer :: is,ie,js,je,i,j
+  integer :: is, ie, js, je, i, j
 
   if (CS%GL_couple) &
     call MOM_error(FATAL, "MOM_ice_shelf_dyn, volume above floatation calculation assumes GL_couple=.FALSE..")
@@ -1227,8 +1262,8 @@ subroutine IS_dynamics_post_data(time_step, Time, CS, ISS, G)
   real, dimension(SZDIB_(G),SZDJB_(G))  :: taud_x, taud_y, taud  ! area-averaged driving stress [R L2 T-2 ~> Pa]
   real, dimension(SZDI_(G),SZDJ_(G))  :: ice_visc ! area-averaged vertically integrated ice viscosity
                                                   !! [R L2 Z T-1 ~> Pa s m]
-  real, dimension(SZDI_(G),SZDJ_(G))  :: basal_tr ! area-averaged taub_beta field related to basal traction,
-                                                  !! [R L T-1 ~> Pa s m-1]
+  real, dimension(SZDI_(G),SZDJ_(G))  :: basal_tr ! taub_beta, the basal traction coefficient taub/|u|,
+                                                  !! [R Z T-1 ~> Pa s m-1]
   real, dimension(SZDI_(G),SZDJ_(G))   :: surf_slope ! the surface slope of the ice shelf/sheet [nondim]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: ice_speed ! ice sheet flow speed [L T-1 ~> m s-1]
 
@@ -1305,7 +1340,7 @@ subroutine ice_visc_diag(CS,G,ice_visc)
   type(ocean_grid_type),  intent(in) :: G  !< The grid structure used by the ice shelf.
   real, dimension(SZDI_(G),SZDJ_(G)), intent(out)  :: ice_visc !< area-averaged vertically integrated ice viscosity
                                                                !! [R L2 Z T-1 ~> Pa s m]
-  integer :: i,j
+  integer :: i, j
 
   ice_visc(:,:)=0.0
   if (CS%visc_qps==4) then
@@ -1341,6 +1376,8 @@ subroutine write_ice_shelf_energy(CS, G, US, mass, area, day, time_step)
   character(len=32)  :: mesg_intro, time_units, day_str, n_str, date_str
   integer :: start_of_day, num_days
   real    :: reday  ! Time in units given by CS%Timeunit, but often [days]
+  logical :: is_open
+    ! True if CS%fileenergy_ascii is open
 
   ! write_energy_time is the next integral multiple of energysavedays.
   if (present(time_step)) then
@@ -1405,7 +1442,11 @@ subroutine write_ice_shelf_energy(CS, G, US, mass, area, day, time_step)
 
   if (is_root_pe()) then  ! Only the root PE actually writes anything.
     if (day > CS%Start_time) then
-      call open_ASCII_file(CS%IS_fileenergy_ascii, trim(CS%IS_energyfile), action=APPEND_FILE)
+      is_open = .false.
+      if (CS%IS_fileenergy_ascii /= -1) &
+        inquire(unit=CS%IS_fileenergy_ascii, opened=is_open)
+      if (.not. is_open) &
+        call open_ASCII_file(CS%IS_fileenergy_ascii, trim(CS%IS_energyfile), action=APPEND_FILE)
     else
       call open_ASCII_file(CS%IS_fileenergy_ascii, trim(CS%IS_energyfile), action=WRITEONLY_FILE)
       if (abs(CS%timeunit - 86400.0) < 1.0) then
@@ -1585,6 +1626,9 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   !real, dimension(SZDIB_(G),SZDJB_(G)) :: v_bdry_cont ! Boundary v-stress contribution [R L3 Z T-2 ~> kg m s-2]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: Au, Av ! The retarding lateral stress contributions [R L3 Z T-2 ~> kg m s-2]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: u_last, v_last ! Previous velocities [L T-1 ~> m s-1]
+  real, dimension(SZDIB_(G),SZDJB_(G)) :: u_pre_newton, v_pre_newton ! Velocities saved at the
+                                              ! Picard-to-Newton switch, restored if Newton
+                                              ! diverges [L T-1 ~> m s-1]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: H_node ! Ice shelf thickness at corners [Z ~> m].
   real, dimension(SZDI_(G),SZDJ_(G)) :: float_cond ! If GL_regularize=true, indicates cells containing
                                                 ! the grounding line (float_cond=1) or not (float_cond=0)
@@ -1592,7 +1636,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   logical :: converged ! Indicates nonlinear convergence
   logical :: calc_Au_for_convergence ! Used for convergence criteria than need a CG_action
   character(len=160) :: mesg  ! The text of an error message
-  integer :: conv_flag, i, j, k,l, iter, nodefloat
+  integer :: conv_flag, i, j, k, l, iter, nodefloat
   integer :: Isdq, Iedq, Jsdq, Jedq, isd, ied, jsd, jed
   integer :: Iscq, Iecq, Jscq, Jecq, isc, iec, jsc, jec
   real    :: err_max, err_tempu, err_tempv, err_init ! Errors in [R L3 Z T-2 ~> kg m s-2] or [L T-1 ~> m s-1]
@@ -1605,6 +1649,15 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   real    :: max_vel  ! The maximum velocity magnitude [L T-1 ~> m s-1]
   real    :: tempu, tempv   ! Temporary variables with velocity magnitudes [L T-1 ~> m s-1]
   real    :: Norm, PrevNorm ! Velocities used to assess convergence [L T-1 ~> m s-1]
+  real    :: newton_after_tol_loc ! Working Picard-to-Newton switch threshold for this solve,
+                                  ! reduced tenfold on each divergence rescue [nondim]
+  real    :: err_newton_enter ! Nonlinear residual at the Picard-to-Newton switch, the
+                              ! reference for the divergence test [R L3 Z T-2 ~> kg m s-2] or [L T-1 ~> m s-1]
+  real    :: Norm_newton_enter ! Norm saved at the switch for restore (err mode 3) [L T-1 ~> m s-1]
+  logical :: rescue_enabled   ! Newton divergence rescue is configured and applicable
+  logical :: newton_armed     ! Pre-Newton state is saved; divergence rescue available
+  logical :: diverging        ! The current Newton residual triggers a rescue
+  integer :: n_rescue         ! Number of divergence rescues performed in this solve
   integer :: Is_sum, Js_sum, Ie_sum, Je_sum ! Loop bounds for global sums or arrays starting at 1.
   integer :: Iscq_sv, Jscq_sv ! Starting loop bound for sum_vec
 
@@ -1646,7 +1699,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   endif
 
   ! Warning: This turns off Picard entirely and may not converge.
-  if (CS%newton_after_tolerance<=0.0) CS%doing_newton=.true.
+  if (CS%newton_after_tolerance<0.0) CS%doing_newton=.true.
 
   ! Calculate RHS
   call calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, CS%OD_av)
@@ -1758,9 +1811,20 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   calc_Au_for_convergence = (CS%nonlin_solve_err_mode == 1 .or. CS%nonlin_solve_err_mode == 4 .or. &
                              CS%nonlin_solve_err_mode == 5 .or. CS%ssa_add_rel_resid)
 
+  ! Newton divergence rescue state. The working switch threshold is per-solve: rescues
+  ! reduce it tenfold, and the configured value is restored at the next solve.
+  rescue_enabled = CS%newton_divergence_rescue .and. (CS%newton_after_tolerance > 0.0)
+  newton_after_tol_loc = CS%newton_after_tolerance
+  newton_armed = .false.
+  err_newton_enter = 0.0 ; Norm_newton_enter = 0.0
+  n_rescue = 0
+
   !! begin loop
 
-  do iter=1,50
+  iter = 0
+  do
+    iter = iter + 1
+    if (iter > 50) exit
 
     ! The linear solve
     call ice_shelf_solve_inner(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, H_node, CS%float_cond, &
@@ -1881,8 +1945,49 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
         call MOM_mesg(mesg, 5)
       endif
 
+      ! Newton divergence rescue: if the residual has gone NaN or grown beyond
+      ! NEWTON_DIVERGENCE_FACTOR times its value at the Picard-to-Newton switch,
+      ! Newton was activated outside its basin of attraction. Restore the
+      ! pre-Newton iterate, revert to Picard with a fresh outer-iteration budget,
+      ! and lower the working switch threshold tenfold.
+      if (rescue_enabled .and. CS%doing_newton .and. newton_armed) then
+        diverging = (is_NaN(err_max)) .or. &
+                    (err_max > CS%newton_divergence_factor * err_newton_enter)
+        if (diverging) then
+          n_rescue = n_rescue + 1
+          u_shlf(:,:) = u_pre_newton(:,:) ; v_shlf(:,:) = v_pre_newton(:,:)
+          u_last(:,:) = u_shlf(:,:) ; v_last(:,:) = v_shlf(:,:)
+          if (CS%nonlin_solve_err_mode == 3) Norm = Norm_newton_enter
+          CS%doing_newton = .false. ; newton_armed = .false.
+          ew_prev_resid = 0.0
+          CS%cg_tol_current = CS%cg_tolerance
+          if (n_rescue >= CS%newton_max_rescues) then
+            ! Rescue budget exhausted: pure Picard for the remainder of this solve.
+            newton_after_tol_loc = 0.0
+          else
+            newton_after_tol_loc = 0.1 * newton_after_tol_loc
+          endif
+          iter = 0
+          ! Rebuild the (Picard) viscosity of the restored iterate so the next
+          ! inner solve does not reuse operators from the divergent state.
+          call calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
+          call pass_var(CS%ice_visc, G%domain, complete=.true.)
+          write(mesg,*) "ice_shelf_solve_outer: Newton diverged (rescue ", n_rescue, &
+              "); restored pre-Newton state, switch threshold now ", newton_after_tol_loc
+          call MOM_mesg(mesg, 5)
+          cycle
+        endif
+      endif
+
       ! Activate Newton
-      if (err_max <= CS%newton_after_tolerance * err_init .and. .not. CS%doing_newton) then
+      if (err_max <= newton_after_tol_loc * err_init .and. .not. CS%doing_newton) then
+        if (rescue_enabled) then
+          ! Save the switch state so a divergent Newton excursion can be undone.
+          u_pre_newton(:,:) = u_shlf(:,:) ; v_pre_newton(:,:) = v_shlf(:,:)
+          err_newton_enter = err_max
+          if (CS%nonlin_solve_err_mode == 3) Norm_newton_enter = Norm
+          newton_armed = .true.
+        endif
         CS%doing_newton = .true.
         write(mesg,*) "ice_shelf_solve_outer: switching to Newton iterations at iter = ", iter
         call MOM_mesg(mesg, 7)
@@ -3219,7 +3324,7 @@ subroutine calve_to_mask(G, h_shelf, area_shelf_h, hmask, calve_mask)
   real, dimension(SZDI_(G),SZDJ_(G)), intent(in)    :: calve_mask !< A mask that indicates where the ice
                                                              !! shelf can exist, and where it will calve.
 
-  integer                        :: i,j
+  integer :: i, j
 
   do j=G%jsc,G%jec ; do i=G%isc,G%iec
     if ((calve_mask(i,j) == 0.0) .and. (hmask(i,j) /= 0.0)) then
@@ -3525,7 +3630,7 @@ subroutine CG_action(CS, uret, vret, u_shlf, v_shlf, Phi, Phisub, umask, vmask, 
   real :: coef_prefactor_e  ! Pre-computed area * C_basal_friction * L_T_to_m_s [R L2 Z T-1 ~> kg s-1]
   real :: eps_vel2_e     ! Velocity regularization squared for current element [L2 T-2 ~> m2 s-2]
   real :: min_trac_e     ! min_basal_traction * areaT for current element [R L2 Z T-1 ~> kg s-1]
-  real :: fB_e           ! Pre-computed Coulomb fB for element; 0 for Weertman [(T L-1)^CF_PostPeak]
+  real :: fB_e           ! Pre-computed Coulomb fB for element; 0 for Weertman [(s m-1)^CF_PostPeak]
   real :: jac_wt  ! Per-quadrature-point metric correction |J_q|/areaT [nondim]
   integer :: iq, jq, iphi, jphi, i, j, ilq, jlq, Itgt, Jtgt, qp, qpv
   logical :: visc_qp4
@@ -3740,7 +3845,7 @@ subroutine CG_action_subgrid_basal(CS, G, US, Phisub, H, U_curr, V_curr, U_delta
   real,                   intent(in) :: dens_ratio !< Ice density / water density [nondim]
   integer,                intent(in) :: i_elem  !< Tracer-grid i-index of the element
   integer,                intent(in) :: j_elem  !< Tracer-grid j-index of the element
-  real,                   intent(in) :: fB_e    !< Element Coulomb parameter fB; 0 for Weertman [(T L-1)^CF_PostPeak]
+  real,                   intent(in) :: fB_e    !< Element Coulomb parameter fB; 0 for Weertman [(s m-1)^CF_PostPeak]
   logical,                intent(in) :: use_newton !< If true, include Newton basal drag correction
   real, dimension(2,2),   intent(out) :: Ucontr !< Nodal u-contributions with friction applied [R L3 Z T-2 ~> kg m s-2]
   real, dimension(2,2),   intent(out) :: Vcontr !< Nodal v-contributions with friction applied [R L3 Z T-2 ~> kg m s-2]
@@ -3853,7 +3958,7 @@ subroutine compute_basal_coef(unorm2_qp, coef_prefactor, min_trac_area, fB_e, &
   real,    intent(in)  :: unorm2_qp      !< Regularized |u^k|^2 > 0 at quadrature point [L2 T-2 ~> m2 s-2]
   real,    intent(in)  :: coef_prefactor !< Pre-computed area * C_basal_friction * L_T_to_m_s [R L2 Z T-1 ~> kg s-1]
   real,    intent(in)  :: min_trac_area  !< Pre-computed min_basal_traction * areaT floor [R L2 Z T-1 ~> kg s-1]
-  real,    intent(in)  :: fB_e           !< Element-level Coulomb fB; 0 for Weertman [(T L-1)^CF_PostPeak]
+  real,    intent(in)  :: fB_e           !< Element-level Coulomb fB; 0 for Weertman [(s m-1)^CF_PostPeak]
   real,    intent(in)  :: n_basal_fric   !< Friction sliding exponent m [nondim]
   logical, intent(in)  :: CoulombFriction !< True if using Coulomb friction
   real,    intent(in)  :: CF_PostPeak    !< Coulomb post-peak exponent q [nondim]
@@ -3997,7 +4102,7 @@ subroutine matrix_diagonal(CS, G, US, float_cond, H_node, ice_visc, u_curr, v_cu
   real :: coef_prefactor_e  ! Pre-computed area * C_basal_friction * L_T_to_m_s [R L2 Z T-1 ~> kg s-1]
   real :: eps_vel2_e     ! Velocity regularization squared for current element [L2 T-2 ~> m2 s-2]
   real :: min_trac_e     ! min_basal_traction * areaT for current element [R L2 Z T-1 ~> kg s-1]
-  real :: fB_e           ! Pre-computed Coulomb fB for element; 0 for Weertman [(T L-1)^CF_PostPeak]
+  real :: fB_e           ! Pre-computed Coulomb fB for element; 0 for Weertman [(s m-1)^CF_PostPeak]
   real, dimension(2)   :: xquad
   real, dimension(2,2) :: Hcell, u_diag_sub, v_diag_sub  ! Subgrid diagonal contributions [R L2 Z T-1 ~> kg s-1]
   real, dimension(2,2,4) :: u_diag_qp, v_diag_qp
@@ -4193,7 +4298,7 @@ subroutine CG_diagonal_subgrid_basal(CS, G, US, Phisub, H_node, U_curr, V_curr, 
   real,                   intent(in) :: dens_ratio !< Ice density / water density [nondim]
   integer,                intent(in) :: i_elem  !< Tracer-grid i-index of the element
   integer,                intent(in) :: j_elem  !< Tracer-grid j-index of the element
-  real,                   intent(in) :: fB_e    !< Element Coulomb parameter fB; 0 for Weertman [(T L-1)^CF_PostPeak]
+  real,                   intent(in) :: fB_e    !< Element Coulomb parameter fB; 0 for Weertman [(s m-1)^CF_PostPeak]
   real, dimension(2,2),   intent(out) :: u_diag !< Nodal u-diagonal entries [R L2 Z T-1 ~> kg s-1]
   real, dimension(2,2),   intent(out) :: v_diag !< Nodal v-diagonal entries [R L2 Z T-1 ~> kg s-1]
   real,                   intent(in)  :: dxCv_S !< The cell width at the southern (v-point) edge [L ~> m]
@@ -4303,7 +4408,7 @@ subroutine IS_dynamics_post_data_2(CS, ISS, G)
   real, dimension(SZDI_(G),SZDJ_(G),3) :: dev_stress ! deviatoric stress components xx,yy, and xy [R L Z T-2 ~> Pa]
   real, dimension(SZDI_(G),SZDJ_(G),2) :: p_dev_stress ! horizontal principal deviatoric stress [R L Z T-2 ~> Pa]
   real, dimension(SZDI_(G),SZDJ_(G))  :: ice_visc ! area-averaged ice viscosity [R L2 T-1 ~> Pa s]
-  real :: p1,p2 ! Used to calculate strain-rate principal components [T-1 ~> s-1]
+  real :: p1, p2 ! Used to calculate strain-rate principal components [T-1 ~> s-1]
   integer :: i, j
 
   !Allocate the gradient basis functions for 1 cell-centered quadrature point per cell
@@ -4600,40 +4705,34 @@ subroutine calc_shelf_basal_prefactors(CS, ISS, G, US)
 
 end subroutine calc_shelf_basal_prefactors
 
-!> Compute area-averaged basal shear stress [R L T-1 ~> Pa s m-1] and return it in basal_tr.
-!! Uses CS%u_shelf and CS%v_shelf for velocities and G%US for unit conversions.
+!> Compute basal traction coefficient beta = taub/|u| [R Z T-1 ~> Pa s m-1]
+!! Basal shear stress = beta * ice speed
 subroutine calc_shelf_taub(CS, ISS, G, basal_tr)
   type(ice_shelf_dyn_CS), intent(in)  :: CS  !< Ice shelf dynamics control structure
   type(ice_shelf_state),  intent(in)  :: ISS !< A structure with elements that describe
                                              !! the ice-shelf state
   type(ocean_grid_type),  intent(in)  :: G   !< The grid structure used by the ice shelf.
   real, dimension(SZDI_(G),SZDJ_(G)), &
-                          intent(out) :: basal_tr !< Area-averaged basal traction [R L T-1 ~> Pa s m-1]
+                          intent(out) :: basal_tr !< Basal traction coefficient, taub/|u|
+                                             !! [R Z T-1 ~> Pa s m-1]
 
   integer :: i, j
   real :: umid, vmid    ! Cell-center velocity averages [L T-1 ~> m s-1]
   real :: eps_min       ! Minimal strain rate [T-1 ~> s-1]
   real :: unorm         ! Velocity magnitude in mks units [m s-1]
-  real :: alpha         ! Coulomb coefficient [nondim]
   real :: Hf            ! Floatation thickness for Coulomb friction [Z ~> m]
   real :: fN            ! Effective pressure for Coulomb friction [R Z L T-2 ~> Pa]
-  real :: fB            ! Coulomb friction factor [(T L-1)^CS%CF_PostPeak]
+  real :: fB            ! Coulomb friction factor [(s m-1)^CS%CF_PostPeak]
   real :: fBuq          ! fB * unorm^CF_PostPeak [nondim]
   real :: unorm_code2   ! Squared velocity magnitude in code units [L2 T-2 ~> m2 s-2]
   real :: basal_trac    ! Area-integrated traction coefficient [R Z L2 T-1 ~> kg s-1]
 
   eps_min = CS%eps_glen_min
 
-  if (CS%CoulombFriction) then
-    if (CS%CF_PostPeak /= 1.0) then
-      alpha = CS%alpha_coulomb
-    else
-      alpha = 1.0
-    endif
-  endif
-
   basal_tr(:,:) = 0.0
 
+  ! For simplicity, the diagnostic is calculated here at cell center, so it will differ slightly from
+  ! the solver if the solver uses 4 quadrature points.
   do j=G%jsc,G%jec ; do i=G%isc,G%iec
     if ((ISS%hmask(i,j) == 1) .OR. (ISS%hmask(i,j) == 3)) then
       umid = ((CS%u_shelf(I,J) + CS%u_shelf(I-1,J-1)) + (CS%u_shelf(I,J-1) + CS%u_shelf(I-1,J))) * 0.25
@@ -4641,19 +4740,21 @@ subroutine calc_shelf_taub(CS, ISS, G, basal_tr)
       unorm_code2 = ((umid**2) + (vmid**2)) + (eps_min**2 * ((G%dxT(i,j)**2) + (G%dyT(i,j)**2)))
       unorm = G%US%L_T_to_m_s * sqrt(unorm_code2)
 
-      !Coulomb friction (Schoof 2005, Gagliardini et al 2007)
+      ! Recalculate fB and areaT * C_basal_friction here because CS%fB_elem and CS%coef_prefactor are not
+      ! updated before the first solve or on steps that skip the velocity update.
       if (CS%CoulombFriction) then
+        !(Schoof 2005, Gagliardini et al 2007)
         !Effective pressure
         Hf = max(CS%rhow_rhoi * CS%bed_elev(i,j), 0.0)
         fN = max((G%US%L_to_Z*(CS%density_ice * CS%g_Earth) * (max(ISS%h_shelf(i,j),CS%min_h_shelf) - Hf)), CS%CF_MinN)
-        fB = alpha * (CS%C_basal_friction(i,j) / (CS%CF_Max * fN))**(CS%coulomb_pp_n)
+        fB = CS%alpha_coulomb * (CS%C_basal_friction(i,j) / (CS%CF_Max * fN))**(CS%coulomb_pp_n)
         fBuq = fB * unorm**CS%CF_PostPeak
         basal_trac = ((G%areaT(i,j) * CS%C_basal_friction(i,j)) * &
             (unorm**(CS%n_basal_fric-1.0) / (1.0 + fBuq)**(CS%n_basal_fric))) * &
             G%US%L_T_to_m_s   ! Restore the scaling after the fractional power law.
       else
         !linear (CS%n_basal_fric = 1) or "Weertman"/power-law (CS%n_basal_fric /= 1)
-        basal_trac = ((G%areaT(i,j) * CS%C_basal_friction(i,j)) * (unorm**(CS%n_basal_fric-1))) * &
+        basal_trac = ((G%areaT(i,j) * CS%C_basal_friction(i,j)) * (unorm**(CS%n_basal_fric-1.0))) * &
                      G%US%L_T_to_m_s ! Rescale after the fractional power law.
       endif
 
@@ -4740,7 +4841,7 @@ subroutine change_in_draft(CS, G, h_shelf0, h_shelf1, ddraft)
                           intent(in)    :: h_shelf1 !< the current thickness of the ice shelf [Z ~> m].
   real, dimension(SZDI_(G),SZDJ_(G)), &
                           intent(inout)    :: ddraft !< the change in shelf draft thickness
-  real :: b0,b1
+  real :: b0, b1
   integer :: i, j, isc, iec, jsc, jec
   real    :: OD
 
@@ -4805,7 +4906,7 @@ subroutine bilinear_shape_functions (X, Y, Phi, area)
 ! ... will all cells have the same shape and dimension?
 
   real, dimension(4) :: xquad, yquad ! [nondim]
-  real :: a,b,c,d  ! Various lengths [L ~> m]
+  real :: a, b, c, d ! Various lengths [L ~> m]
   real :: xexp, yexp ! [nondim]
   integer :: node, qpoint, xnode, ynode
 
@@ -5222,7 +5323,11 @@ end subroutine interpolate_H_to_B
 
 !> Deallocates all memory associated with the ice shelf dynamics module
 subroutine ice_shelf_dyn_end(CS)
-  type(ice_shelf_dyn_CS), pointer   :: CS !< A pointer to the ice shelf dynamics control structure
+  type(ice_shelf_dyn_CS), pointer :: CS
+    !< A pointer to the ice shelf dynamics control structure
+
+  logical :: is_open
+    ! True if CS%fileenergy_ascii is open
 
   if (.not.associated(CS)) return
 
@@ -5250,6 +5355,11 @@ subroutine ice_shelf_dyn_end(CS)
   if (associated(CS%Phi)) deallocate(CS%Phi)
   if (associated(CS%Phisub)) deallocate(CS%Phisub)
   if (associated(CS%PhiC)) deallocate(CS%PhiC)
+
+  is_open = .false.
+  if (CS%IS_fileenergy_ascii /= -1) &
+    inquire(unit=CS%IS_fileenergy_ascii, opened=is_open)
+  if (is_open) call close_file(CS%IS_fileenergy_ascii)
 
   deallocate(CS)
 

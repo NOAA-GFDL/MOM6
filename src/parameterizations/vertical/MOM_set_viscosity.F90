@@ -119,10 +119,14 @@ type, public :: set_visc_CS ; private
                             !! non-commuting conversion of mean tideamp to mean ustar**3 [nondim]
   logical :: concave_trigonometric_L  !< If true, use trigonometric expressions to determine the
                             !! fractional open interface lengths for concave topography.
-  integer :: answer_date    !< The vintage of the order of arithmetic and expressions in the set
-                            !! viscosity calculations.  Values below 20190101 recover the answers
-                            !! from the end of 2018, while higher values use updated and more robust
-                            !! forms of the same expressions.
+  integer :: answer_date    !< The vintage of the order of arithmetic and expressions
+                            !! in the set viscosity calculations.  Values below
+                            !! 20190101 recover the answers from the end of 2018,
+                            !! while higher values use updated and more robust forms
+                            !! of the same expressions.  Values below 20260704 use
+                            !! the non-reproducible power operator in place of
+                            !! cuberoot() when finding the open distances with
+                            !! CHANNEL_DRAG.
   logical :: debug          !< If true, write verbose checksums for debugging purposes.
   logical :: BBL_use_tidal_bg !< If true, use a tidal background amplitude for the bottom velocity
                             !! when computing the bottom stress.
@@ -1795,11 +1799,11 @@ subroutine find_L_open_convex(vol_below, D_vel, Dp, Dm, L, GV, US, CS)
       L(K) = 1.0
     elseif (vol_below(K) <= Vol_direct) then
       ! Both edges of the cell are bounded by walls.
-      ! if (CS%answer_date < 20240101)) then
+      if (CS%answer_date < 20260704) then
         L(K) = (-0.25*C24_crv*vol_below(K))**C1_3
-      ! else
-      !   L(K) = cuberoot(-0.25*C24_crv*vol_below(K))
-      ! endif
+      else
+        L(K) = cuberoot(-0.25*C24_crv*vol_below(K))
+      endif
     else
       ! x_R is at 1/2 but x_L is in the interior & L is found by iteratively solving
       !   vol_below(K) = 0.5*L^2*(slope + crv/3*(3-4L))
@@ -2776,7 +2780,7 @@ subroutine set_visc_register_restarts(HI, G, GV, US, param_file, visc, restart_C
   ! Local variables
   logical :: use_kappa_shear, KS_at_vertex
   logical :: adiabatic, useKPP, useEPBL, use_ideal_age
-  logical :: do_brine_plume, use_hor_bnd_diff, use_neutral_diffusion, use_fpmix
+  logical :: do_brine_plume, use_hor_bnd_diff, use_neutral_diffusion, use_fpmix, use_StokesMOST
   logical :: use_CVMix_shear, MLE_use_PBL_MLD, MLE_use_Bodner, use_CVMix_conv
   integer :: isd, ied, jsd, jed, nz
   real :: hfreeze !< If hfreeze > 0 [Z ~> m], melt potential will be computed.
@@ -2859,6 +2863,10 @@ subroutine set_visc_register_restarts(HI, G, GV, US, param_file, visc, restart_C
                  default=.false., do_not_log=.true.)
   call get_param(param_file, mdl, "FPMIX", use_fpmix, &
                  default=.false., do_not_log=.true.)
+  call openParameterBlock(param_file, 'KPP', do_not_log=.true.)
+  call get_param(param_file, mdl, 'STOKES_MOST', use_StokesMOST, &
+                 default=.false., do_not_log=.true.)
+  call closeParameterBlock(param_file)
   call get_param(param_file, mdl, "USE_IDEAL_AGE_TRACER", use_ideal_age, &
                  default=.false., do_not_log=.true.)
   call openParameterBlock(param_file, 'MLE', do_not_log=.true.)
@@ -2869,7 +2877,10 @@ subroutine set_visc_register_restarts(HI, G, GV, US, param_file, visc, restart_C
   if (MLE_use_PBL_MLD .or. MLE_use_Bodner) then
     call safe_alloc_ptr(visc%MLD, isd, ied, jsd, jed)
   endif
-  if ((hfreeze >= 0.0) .or. MLE_use_PBL_MLD .or. use_fpmix .or. &
+  if (use_StokesMOST .and. MLE_use_Bodner) then
+    call safe_alloc_ptr(visc%Lam2, isd, ied, jsd, jed)
+  endif
+  if ((hfreeze >= 0.0) .or. MLE_use_PBL_MLD .or. do_brine_plume .or. use_fpmix .or. &
       use_neutral_diffusion .or. use_hor_bnd_diff .or. use_ideal_age) then
     call safe_alloc_ptr(visc%h_ML, isd, ied, jsd, jed)
   endif
@@ -2878,11 +2889,16 @@ subroutine set_visc_register_restarts(HI, G, GV, US, param_file, visc, restart_C
     call safe_alloc_ptr(visc%MLD_param, isd, ied, jsd, jed)
   endif
 
-  if (MLE_use_PBL_MLD) then
+  if (MLE_use_PBL_MLD .or. MLE_use_Bodner) then
     call register_restart_field(visc%MLD, "MLD", .false., restart_CS, &
                   "Instantaneous active mixing layer depth", units="m", conversion=US%Z_to_m)
   endif
-  if (MLE_use_PBL_MLD .or. use_fpmix .or. use_neutral_diffusion .or. use_hor_bnd_diff) then
+  if (use_StokesMOST .and. MLE_use_Bodner) then
+    call register_restart_field(visc%Lam2, "Lam2", .false., restart_CS, &
+                  "(Langmuir Number)^-2",  units="" )
+  endif
+  if (MLE_use_PBL_MLD .or. do_brine_plume .or. use_fpmix .or. &
+      use_neutral_diffusion .or. use_hor_bnd_diff .or. MLE_use_Bodner) then
     call register_restart_field(visc%h_ML, "h_ML", .false., restart_CS, &
                   "Instantaneous active mixing layer thickness", &
                   units=get_thickness_units(GV), conversion=GV%H_to_mks)
@@ -3012,10 +3028,16 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
   call get_param(param_file, mdl, "SET_VISC_ANSWER_DATE", CS%answer_date, &
-                 "The vintage of the order of arithmetic and expressions in the set viscosity "//&
-                 "calculations.  Values below 20190101 recover the answers from the end of 2018, "//&
-                 "while higher values use updated and more robust forms of the same expressions.", &
-                 default=default_answer_date, do_not_log=.not.GV%Boussinesq)
+                 "The vintage of the order of arithmetic and expressions " // &
+                 "in the set viscosity calculations.  Values below " // &
+                 "20190101 recover the answers from the end of 2018, " // &
+                 "while higher values use updated and more robust forms " // &
+                 "of the same expressions.  Values below 20260704 use " // &
+                 "the non-reproducible power operator in place of " // &
+                 "cuberoot() when finding the open distances with " // &
+                 "CHANNEL_DRAG.", &
+                 default=min(20260703,default_answer_date), &
+                 do_not_log=.not.GV%Boussinesq)
   if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
   call get_param(param_file, mdl, "BOTTOMDRAGLAW", CS%bottomdraglaw, &
                  "If true, the bottom stress is calculated with a drag "//&

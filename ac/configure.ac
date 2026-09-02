@@ -15,8 +15,22 @@ AC_INIT(
 )
 
 
-# Validate srdcir and configure input
+# Validate srcdir
 AC_CONFIG_SRCDIR([src/core/MOM.F90])
+
+# Prevent builds in the top directory ($srcdir)
+AS_IF([test "${srcdir}" = '.'], [
+  AC_MSG_ERROR([Build directory cannot be set to the top directory])
+])
+
+# Prevent builds in .testing/
+testdir=$(cd "${srcdir}/.testing" && pwd)
+AS_IF([test "$(pwd)" = "${testdir}"], [
+  AC_MSG_ERROR([Build directory cannot be set to .testing/])
+])
+
+
+# Macro configuration
 AC_CONFIG_MACRO_DIR([m4])
 
 
@@ -301,16 +315,18 @@ AS_IF([test "$with_cvmix" = yes], [
     -s ${srcdir}/src/parameterizations/CVmix"
 ])
 
-SRC_DIRS="\\
+MAKEDEP_FLAGS="${MAKEDEP_FLAGS}"
+
+MAKEDEP_FLAGS="${MAKEDEP_FLAGS# }"
+AC_SUBST([MAKEDEP_FLAGS])
+
+MAKEDEP_DIRS="\\
   ${srcdir}/src \\
   ${MODEL_FRAMEWORK} \\
   ${srcdir}/config_src/external \\
   ${DRIVER_DIR} \\
   ${MOM_MEMORY_DIR}"
-MAKEDEP_FLAGS="${MAKEDEP_FLAGS} ${SRC_DIRS}"
-
-MAKEDEP_FLAGS="${MAKEDEP_FLAGS# }"
-AC_SUBST([MAKEDEP_FLAGS])
+AC_SUBST([MAKEDEP_DIRS])
 
 # Add makedep to config.status
 AC_CONFIG_COMMANDS(Makefile.dep, [make depend])
@@ -353,7 +369,7 @@ AC_DEFINE_UNQUOTED([SIGSETJMP_NAME], ["${SIGSETJMP}"])
 
 # Validate the siglongjmp symbol
 AX_FC_CHECK_BIND_C([siglongjmp],
-  [SIGLONGJMP="siglongjmp"], [SETJMP="siglongjmp_missing"]
+  [SIGLONGJMP="siglongjmp"], [SIGLONGJMP="siglongjmp_missing"]
 )
 AC_DEFINE_UNQUOTED([SIGLONGJMP_NAME], ["${SIGLONGJMP}"])
 
@@ -373,5 +389,5 @@ AC_LANG_POP([C])
 
 # Prepare output
 AC_SUBST([CPPFLAGS])
-AC_CONFIG_FILES([Makefile:Makefile.in])
+AC_CONFIG_FILES([Makefile:ac/Makefile.in])
 AC_OUTPUT
