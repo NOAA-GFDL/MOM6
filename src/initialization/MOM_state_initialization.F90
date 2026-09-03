@@ -22,10 +22,8 @@ use MOM_grid, only : ocean_grid_type, isPointInCell
 use MOM_interface_heights, only : find_eta, dz_to_thickness, dz_to_thickness_simple
 use MOM_interface_heights, only : calc_derived_thermo
 use MOM_io, only : file_exists, field_size, MOM_read_data, MOM_read_vector, slasher
-use MOM_open_boundary, only : ocean_OBC_type, open_boundary_test_extern_h
-use MOM_open_boundary, only : fill_temp_salt_segments, setup_OBC_tracer_reservoirs
-use MOM_open_boundary, only : fill_thickness_segments
-use MOM_open_boundary, only : set_initialized_OBC_tracer_reservoirs
+use MOM_open_boundary, only : ocean_OBC_type
+use MOM_open_boundary, only : fill_temp_salt_segments
 use MOM_restart, only : restore_state, is_new_run, copy_restart_var, copy_restart_vector
 use MOM_restart, only : restart_registry_lock, MOM_restart_CS
 use MOM_sponge, only : set_up_sponge_field, set_up_sponge_ML_density
@@ -100,7 +98,7 @@ implicit none ; private
 
 #include <MOM_memory.h>
 
-public MOM_initialize_state, MOM_initialize_OBCs
+public MOM_initialize_state, initialize_user_OBCs
 
 ! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
 ! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
@@ -450,7 +448,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
     call get_param(PF, mdl, "OBC_TS_RESERVOIR_INIT_BUG", OBC_TS_reservoir_init_bug, &
                  "If true, set the OBC temperature and salinity reservoirs at the startup of a "//&
                  "new run from initial values that are set before remapping.", &
-                 default=enable_bugs, do_not_log=.true.)
+                 default=enable_bugs)
     if (OBC_TS_reservoir_init_bug) then
       ! These calls should be moved down to join the OBC code, but doing so changes answers because
       ! the temperatures and salinities can change due to the remapping and reading from the restarts.
@@ -653,112 +651,60 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
 
 end subroutine MOM_initialize_state
 
-subroutine MOM_initialize_OBCs(h, tv, OBC, Time, G, GV, US, PF, restart_CS, tracer_Reg)
+subroutine initialize_user_OBCs(tv, OBC, G, GV, US, PF, tracer_Reg)
   type(ocean_grid_type),      intent(inout) :: G    !< The ocean's grid structure.
   type(verticalGrid_type),    intent(in)    :: GV   !< The ocean's vertical grid structure.
   type(unit_scale_type),      intent(in)    :: US   !< A dimensional unit scaling type
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                              intent(inout) :: h    !< Layer thicknesses [H ~> m or kg m-2]
   type(thermo_var_ptrs),      intent(inout) :: tv   !< A structure pointing to various thermodynamic
                                                     !! variables
   type(ocean_OBC_type),       pointer       :: OBC   !< The open boundary condition control structure.
-  type(time_type),            intent(in)    :: Time !< Time at the start of the run segment.
   type(param_file_type),      intent(in)    :: PF   !< A structure indicating the open file to parse
                                                     !! for model parameter values.
-  type(MOM_restart_CS),       intent(inout) :: restart_CS !< MOM restart control structure
   type(tracer_registry_type), pointer       :: tracer_Reg !< A pointer to the tracer registry
 
   ! Local variables
   character(len=200) :: config
-  logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
-                          ! recreate the bugs, or if false bugs are only used if actively selected.
-  logical :: debug      ! If true, write debugging output.
-  logical :: debug_obc  ! If true, do additional calls resetting values to help debug the correctness
-                        ! of the open boundary condition code.
-  logical :: OBC_TS_reservoir_init_bug  ! If true, set the OBC temperature and salinity reservoirs
-                        ! at the startup of a new run from initial values that are set before remapping.
-  logical :: OBC_reservoir_init_bug  ! If true, set the OBC tracer reservoirs at the startup of a new
-                        ! run from the interior tracer concentrations regardless of properties that
-                        ! may be explicitly specified for the reservoir concentrations.
 
-  call callTree_enter('MOM_initialize_OBCs()')
-  if (associated(OBC)) then
-    call get_param(PF, mdl, "DEBUG", debug, default=.false.)
-    call get_param(PF, mdl, "OBC_DEBUGGING_TESTS", debug_obc, &
-                 "If true, do additional calls resetting values to help verify the correctness "//&
-                 "of the open boundary condition code.", default=.false.,  &
-                 do_not_log=.true., old_name="DEBUG_OBC", debuggingParam=.true.)
-    call get_param(PF, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
-                 default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
-    call get_param(PF, mdl, "OBC_TS_RESERVOIR_INIT_BUG", OBC_TS_reservoir_init_bug, &
-                 "If true, set the OBC temperature and salinity reservoirs at the startup of a "//&
-                 "new run from initial values that are set before remapping.", default=enable_bugs)
-    if (associated(tv%T) .and. (.not.OBC_TS_reservoir_init_bug)) then
-      ! Store the updated temperatures and salinities at the open boundaries, noting that they may
-      ! still be updated by the calls in the next 50 lines, so the code setting the tracer
-      ! reservoir values will come later in the calling routine.
-      call fill_temp_salt_segments(G, GV, US, OBC, tv)
-    endif
-    call get_param(PF, mdl, "OBC_RESERVOIR_INIT_BUG", OBC_reservoir_init_bug, &
-                 "If true, set the OBC tracer reservoirs at the startup of a new run from the "//&
-                 "interior tracer concentrations regardless of properties that may be explicitly "//&
-                 "specified for the reservoir concentrations.", default=enable_bugs)
-    if (OBC_reservoir_init_bug .and. associated(tv%T) .and. is_new_run(restart_CS)) then
-      ! Set up OBC%trex_x and OBC%tres_y as they have not been read from a restart file.
-      ! When OBC_RESERVOIR_INIT_BUG is false, setup_OBC_tracer_reservoirs() is called from initialize_MOM
-      ! after all tracer package initialization is finished and grid rotation has been dealt with.
-      call setup_OBC_tracer_reservoirs(G, GV, OBC)
-      ! Ensure that the values of the tracer reservoirs that have just been set will not be revised.
-      call set_initialized_OBC_tracer_reservoirs(G, OBC, restart_CS)
-    endif
+  if (.not. associated(OBC)) return
 
-    ! This controls user code for setting open boundary data
-    call get_param(PF, mdl, "OBC_USER_CONFIG", config, &
+  call callTree_enter('initialize_user_OBCs()')
+
+  ! This controls user code for setting open boundary data
+  call get_param(PF, mdl, "OBC_USER_CONFIG", config, &
                  "A string that sets how the user code is invoked to set open boundary data: \n"//&
-                 "   DOME - specified inflow on northern boundary\n"//&
-                 "   dyed_channel - supercritical with dye on the inflow boundary\n"//&
-                 "   dyed_obcs - circle_obcs with dyes on the open boundaries\n"//&
-                 "   Kelvin - barotropic Kelvin wave forcing on the western boundary\n"//&
-                 "   shelfwave - Flather with shelf wave forcing on western boundary\n"//&
-                 "   supercritical - now only needed here for the allocations\n"//&
-                 "   tidal_bay - Flather with tidal forcing on eastern boundary\n"//&
-                 "   USER - user specified", default="none")
-    if (trim(config) == "DOME") then
-      call DOME_set_OBC_data(OBC, tv, G, GV, US, PF, tracer_Reg)
-    elseif (trim(config) == "dyed_channel") then
-      call dyed_channel_set_OBC_tracer_data(OBC, G, GV, PF, tracer_Reg)
-      OBC%update_OBC = .true.
-    elseif (trim(config) == "dyed_obcs") then
-      call dyed_obcs_set_OBC_data(OBC, G, GV, PF, tracer_Reg)
-    elseif (trim(config) == "Kelvin") then
-      OBC%update_OBC = .true.
-    elseif (trim(config) == "shelfwave") then
-      OBC%update_OBC = .true.
-    elseif (lowercase(trim(config)) == "supercritical") then
-      call supercritical_set_OBC_data(OBC, G, GV, US, PF)
-    elseif (trim(config) == "tidal_bay") then
-      OBC%update_OBC = .true.
-    elseif (trim(config) == "USER") then
-      call user_set_OBC_data(OBC, tv, G, GV, PF, tracer_Reg)
-    elseif (.not. trim(config) == "none") then
-      call MOM_error(FATAL, "The open boundary conditions specified by "//&
-              "OBC_USER_CONFIG = "//trim(config)//" have not been fully implemented.")
-    endif
-
-    if (debug) then
-      call hchksum(G%mask2dT, 'MOM_initialize_OBCs: mask2dT ', G%HI)
-      call uvchksum('MOM_initialize_OBCs: mask2dC[uv]', G%mask2dCu, G%mask2dCv, G%HI)
-      call qchksum(G%mask2dBu, 'MOM_initialize_OBCs: mask2dBu ', G%HI)
-    endif
-    if (debug_OBC) call open_boundary_test_extern_h(G, GV, OBC, h)
-
-    if (OBC%use_h_res) &
-      call fill_thickness_segments(G, GV, US, OBC, h)
+                 " \t DOME          - specified inflow on northern boundary\n"//&
+                 " \t dyed_channel  - supercritical with dye on the inflow boundary\n"//&
+                 " \t dyed_obcs     - circle_obcs with dyes on the open boundaries\n"//&
+                 " \t Kelvin        - barotropic Kelvin wave forcing on the western boundary\n"//&
+                 " \t shelfwave     - Flather with shelf wave forcing on western boundary\n"//&
+                 " \t supercritical - now only needed here for the allocations\n"//&
+                 " \t tidal_bay     - Flather with tidal forcing on eastern boundary\n"//&
+                 " \t USER          - user specified", default="none")
+  if (trim(config) == "DOME") then
+    call DOME_set_OBC_data(OBC, tv, G, GV, US, PF, tracer_Reg)
+  elseif (trim(config) == "dyed_channel") then
+    call dyed_channel_set_OBC_tracer_data(OBC, G, GV, PF, tracer_Reg)
+    OBC%update_OBC = .true.
+  elseif (trim(config) == "dyed_obcs") then
+    call dyed_obcs_set_OBC_data(OBC, G, GV, PF, tracer_Reg)
+  elseif (trim(config) == "Kelvin") then
+    OBC%update_OBC = .true.
+  elseif (trim(config) == "shelfwave") then
+    OBC%update_OBC = .true.
+  elseif (lowercase(trim(config)) == "supercritical") then
+    call supercritical_set_OBC_data(OBC, G, GV, US, PF)
+  elseif (trim(config) == "tidal_bay") then
+    OBC%update_OBC = .true.
+  elseif (trim(config) == "USER") then
+    call user_set_OBC_data(OBC, tv, G, GV, PF, tracer_Reg)
+  elseif (.not. trim(config) == "none") then
+    call MOM_error(FATAL, "The open boundary conditions specified by "//&
+            "OBC_USER_CONFIG = "//trim(config)//" have not been fully implemented.")
   endif
 
-  call callTree_leave('MOM_initialize_OBCs()')
+  call callTree_leave('initialize_user_OBCs()')
 
-end subroutine MOM_initialize_OBCs
+end subroutine initialize_user_OBCs
 
 !> Reads the layer thicknesses or interface heights from a file.
 subroutine initialize_thickness_from_file(h, depth_tot, G, GV, US, param_file, file_has_thickness, &
