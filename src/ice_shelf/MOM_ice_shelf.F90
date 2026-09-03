@@ -250,6 +250,11 @@ type, public :: ice_shelf_CS ; private
 
   logical :: debug                !< If true, write verbose checksums for debugging purposes
                                   !! and use reproducible sums
+
+  logical :: just_restarted = .false. !< True from reading this run's ice-shelf state from a restart
+                                  !! until the next call to adjust_ice_sheet_frazil, used to avoid removing
+                                  !! the ice-sheet's share of frazil from sfc_state%frazil twice for the
+                                  !! same instant in time.
 end type ice_shelf_CS
 
 !>@{ CPU time clock IDs
@@ -397,7 +402,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; ied = G%ied ; jed = G%jed
   if (CS%data_override_shelf_fluxes .and. CS%active_shelf_dynamics) then
-    call data_override(G%Domain, 'shelf_sfc_mass_flux', fluxes_in%shelf_sfc_mass_flux(is:ie,js:je), CS%Time, &
+    call data_override(G%Domain, 'shelf_sfc_mass_flux', fluxes_in%shelf_sfc_mass_flux(is:ie,js:je), Time, &
                        scale=US%kg_m2s_to_RZ_T)
     call pass_var(fluxes_in%shelf_sfc_mass_flux, G%domain, complete=.true.)
   endif
@@ -1020,7 +1025,14 @@ subroutine adjust_ice_sheet_frazil(sfc_state_in, fluxes_in, CS)
                                                  !! the ice-shelf state
   type(surface), pointer :: sfc_state => NULL()
   type(forcing), pointer :: fluxes => NULL()
+  logical :: reduce_sfc_frazil ! If true, remove the ice-sheet's share of frazil from
+                               ! sfc_state%frazil before it is sent onward to the sea-ice model.
   integer :: i, j, is, ie, js, je
+
+  ! After a restart, ISS%frazil is reconstructed from the restored frazil state.
+  ! Do not remove the ice-sheet contribution from it a second time.
+  reduce_sfc_frazil = .not.CS%just_restarted
+  CS%just_restarted = .false.
 
   G => CS%grid ; ISS => CS%ISS
 
@@ -1044,7 +1056,8 @@ subroutine adjust_ice_sheet_frazil(sfc_state_in, fluxes_in, CS)
     if (fluxes%frac_shelf_h(i,j)>0.0) ISS%frazil(i,j) = sfc_state%frazil(i,j)
     !Remove the frazil that is used by the ice sheet from sfc_state%frazil
     !The sfc_state%frazil is sent to the sea-ice module
-    sfc_state%frazil(i,j) = sfc_state%frazil(i,j) * (1.0-fluxes%frac_shelf_h(i,j))
+    if (reduce_sfc_frazil) &
+      sfc_state%frazil(i,j) = sfc_state%frazil(i,j) * (1.0-fluxes%frac_shelf_h(i,j))
   enddo ; enddo
 
   if (CS%rotate_index) then
@@ -1530,7 +1543,8 @@ end subroutine add_shelf_flux
 
 !> Initializes shelf model data, parameters and diagnostics
 subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init, directory, forces_in, &
-                                fluxes_in, sfc_state_in, solo_ice_sheet_in, calve_ice_shelf_bergs)
+                                fluxes_in, sfc_state_in, solo_ice_sheet_in, calve_ice_shelf_bergs, &
+                                defer_flux_initialization)
   type(param_file_type),        intent(in)    :: param_file !< A structure to parse for run-time parameters
   type(ocean_grid_type),        pointer       :: ocn_grid   !< The calling ocean model's horizontal grid structure
   type(time_type),              intent(inout) :: Time !< The clock that that will indicate the model time
@@ -1550,6 +1564,8 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
                                                    !! a solo ice-sheet driver.
   logical, optional :: calve_ice_shelf_bergs !< If true, will add point iceberg calving variables to the ice
                                              !! shelf restart
+  logical, optional, intent(in) :: defer_flux_initialization !< If true, allocate fluxes without initializing
+                                                               !! state-dependent flux fields.
 
   type(ocean_grid_type), pointer :: G  => NULL(), OG  => NULL() ! Pointers to grids for convenience.
   type(unit_scale_type), pointer :: US => NULL() ! Pointer to a structure containing
@@ -1575,6 +1591,7 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
   logical :: showCallTree
   logical :: read_TideAmp, debug
   logical :: global_indexing
+  logical :: initialize_fluxes
   logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
                           ! recreate the bugs, or if false bugs are only used if actively selected.
   character(len=240) :: Tideamp_file  ! Input file names
@@ -1704,6 +1721,8 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
   ! model solo_ice_sheet_in is not preset.
   CS%solo_ice_sheet = .false.
   if (present(solo_ice_sheet_in)) CS%solo_ice_sheet = solo_ice_sheet_in
+  initialize_fluxes = .true.
+  if (present(defer_flux_initialization)) initialize_fluxes = .not.defer_flux_initialization
 
   !if (present(Time_in)) Time = Time_in
 
@@ -2082,10 +2101,19 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
   CS%restart_output_dir = dirs%restart_output_dir
 
   if (present(fluxes_in)) then
-     call initialize_ice_shelf_fluxes(CS, ocn_grid, US, fluxes_in)
-     call register_restart_field(fluxes_in%shelf_sfc_mass_flux, "sfc_mass_flux", .true., CS%restart_CSp, &
-        "ice shelf surface mass flux deposition from atmosphere", &
-        'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s)
+    if (initialize_fluxes) then
+      call initialize_ice_shelf_fluxes(CS, ocn_grid, US, fluxes_in)
+    elseif (CS%active_shelf_dynamics) then
+      call allocate_forcing_type(CS%Grid_in, fluxes_in, shelf=.true., &
+                                 shelf_sfc_accumulation=.true.)
+    endif
+    if (CS%active_shelf_dynamics) then
+      if (associated(fluxes_in%shelf_sfc_mass_flux)) then
+        ! Preserve the internal value because the field is consumed immediately after a restart.
+        call register_restart_field(fluxes_in%shelf_sfc_mass_flux, "sfc_mass_flux", .true., CS%restart_CSp, &
+            "ice shelf surface mass flux accumulation (adot)", 'R Z T-1')
+      endif
+    endif
   endif
 
   if (new_sim .and. (.not. (CS%override_shelf_movement .and. CS%mass_from_file))) then
@@ -2109,6 +2137,8 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
     ! This line calls a subroutine that reads the initial conditions from a restart file.
     call MOM_mesg("MOM_ice_shelf.F90, initialize_ice_shelf: Restoring ice shelf from file.")
     call restore_state(dirs%input_filename, dirs%restart_input_dir, Time, G, CS%restart_CSp)
+    ! ISS%frazil is reconstructed from sfc_state%frazil, not restored directly.
+    CS%just_restarted = .true.
 
   endif ! .not. new_sim
 
@@ -2124,6 +2154,10 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
   call pass_var(ISS%h_shelf, G%domain, complete=.false.)
   call pass_var(ISS%mass_shelf, G%domain, complete=.false.)
   call pass_var(ISS%hmask, G%domain, complete=.false.)
+  if (present(fluxes_in)) then
+    if (associated(fluxes_in%shelf_sfc_mass_flux)) &
+      call pass_var(fluxes_in%shelf_sfc_mass_flux, G%domain, complete=.false.)
+  endif
   call pass_var(G%bathyT, G%domain)
   call cpu_clock_end(id_clock_pass)
 
@@ -2434,9 +2468,13 @@ subroutine initialize_ice_shelf_fluxes(CS, ocn_grid, US, fluxes_in)
   endif
 
   do j=jsd,jed ; do i=isd,ied
-    if (G%areaT(i,j)>0.) fluxes%frac_shelf_h(i,j) = CS%ISS%area_shelf_h(i,j) / G%areaT(i,j)
+    fluxes%frac_shelf_h(i,j) = 0.0
+    if (G%areaT(i,j)>0.) &
+      fluxes%frac_shelf_h(i,j) = min(1.0, CS%ISS%area_shelf_h(i,j) * G%IareaT(i,j))
   enddo ; enddo
   if (CS%debug) call hchksum(fluxes%frac_shelf_h, "IS init: frac_shelf_h", G%HI, haloshift=0)
+  if (CS%debug) call hchksum(CS%ISS%mass_shelf, "IS init: mass_shelf (fluxes)", G%HI, haloshift=0, &
+                             unscale=US%RZ_to_kg_m2)
   call add_shelf_pressure(ocn_grid, US, CS, fluxes)
 
   if (CS%rotate_index) then
@@ -2698,7 +2736,8 @@ subroutine ice_shelf_query(CS, G, frac_shelf_h, mass_shelf, data_override_shelf_
   if (present(frac_shelf_h)) then
     do j=G%jsd,G%jed ; do i=G%isd,G%ied
       frac_shelf_h(i,j) = 0.0
-      if (G%areaT(i,j)>0.) frac_shelf_h(i,j) = CS%ISS%area_shelf_h(i,j) / G%areaT(i,j)
+      if (G%areaT(i,j)>0.) &
+        frac_shelf_h(i,j) = min(1.0, CS%ISS%area_shelf_h(i,j) * G%IareaT(i,j))
     enddo ; enddo
   endif
 
