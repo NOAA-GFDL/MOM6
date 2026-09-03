@@ -183,6 +183,13 @@ AS_IF(
 )
 
 
+# Detect if parentheses are honored in floating point arithmetic
+MOM6_FC_FAST_RINT
+AS_IF([test -n "$FAST_RINT_FCFLAGS"],
+  [FCFLAGS="$FCFLAGS $FAST_RINT_FCFLAGS"]
+)
+
+
 # OpenMP configuration
 
 # NOTE: AC_OPENMP fails on `Fortran` for Autoconf <2.69 due to a m4 bug.

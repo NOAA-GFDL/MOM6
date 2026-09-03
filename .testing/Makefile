@@ -113,6 +113,7 @@ FCFLAGS_FMS ?= $(FCFLAGS)
 # - These flags can be configured outside of the Makefile, either with
 #   config.mk or as environment variables.
 
+LDFLAGS_OPT ?=
 LDFLAGS_COVERAGE ?= --coverage
 LDFLAGS_USER ?=
 
@@ -248,6 +249,7 @@ COV_FCFLAGS := FCFLAGS="$(FCFLAGS_COVERAGE) $(FCFLAGS_DEPS)"
 
 # Linker flags
 MOM_LDFLAGS := LDFLAGS="$(LDFLAGS_DEPS) $(LDFLAGS_USER)"
+OPT_LDFLAGS := LDFLAGS="$(LDFLAGS_OPT) $(LDFLAGS_DEPS) $(LDFLAGS_USER)"
 COV_LDFLAGS := LDFLAGS="$(LDFLAGS_COVERAGE) $(LDFLAGS_DEPS) $(LDFLAGS_USER)"
 
 # Environment variable configuration
@@ -258,13 +260,13 @@ $(BUILD)/asymmetric/Makefile: MOM_ENV += $(ASYMMETRIC_FCFLAGS) $(MOM_LDFLAGS) \
 $(BUILD)/repro/Makefile: MOM_ENV += $(REPRO_FCFLAGS) $(MOM_LDFLAGS)
 $(BUILD)/openmp/Makefile: MOM_ENV += $(OPENMP_FCFLAGS) $(MOM_LDFLAGS)
 $(BUILD)/target/Makefile: MOM_ENV += $(TARGET_FCFLAGS) $(MOM_LDFLAGS)
-$(BUILD)/opt/Makefile: MOM_ENV += $(OPT_FCFLAGS) $(MOM_LDFLAGS)
+$(BUILD)/opt/Makefile: MOM_ENV += $(OPT_FCFLAGS) $(OPT_LDFLAGS)
 $(BUILD)/opt_target/Makefile: MOM_ENV += $(OPT_FCFLAGS) $(MOM_LDFLAGS)
 $(BUILD)/coupled/Makefile: MOM_ENV += $(SYMMETRIC_FCFLAGS) $(MOM_LDFLAGS)
 $(BUILD)/nuopc/Makefile: MOM_ENV += $(SYMMETRIC_FCFLAGS) $(MOM_LDFLAGS)
 $(BUILD)/cov/Makefile: MOM_ENV += $(COV_FCFLAGS) $(COV_LDFLAGS)
 $(BUILD)/unit/Makefile: MOM_ENV += $(COV_FCFLAGS) $(COV_LDFLAGS)
-$(BUILD)/timing/Makefile: MOM_ENV += $(OPT_FCFLAGS) $(MOM_LDFLAGS)
+$(BUILD)/timing/Makefile: MOM_ENV += $(OPT_FCFLAGS) $(OPT_LDFLAGS)
 
 # Configure script flags
 MOM_ACFLAGS := --with-gsw --with-cvmix
@@ -326,7 +328,7 @@ $(BUILD)/%/config.status: \
 	cd $(@D) && $(MOM_ENV) ../../../configure -n $(MOM_ACFLAGS) \
 	 || (cat config.log && false)
 
-../configure:
+../configure: FORCE
 	$(MAKE) -C ../ configure
 
 ALL_EXECS = symmetric asymmetric repro openmp opt opt_target coupled nuopc \

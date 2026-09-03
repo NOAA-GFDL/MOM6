@@ -7,25 +7,39 @@
 module MOM_intrinsic_functions
 
 use iso_fortran_env, only : stdout => output_unit, stderr => error_unit
-use iso_fortran_env, only : int64, real64
+use iso_fortran_env, only : int64
 
 implicit none ; private
 
-public :: invcosh, cuberoot
+public :: invcosh, cuberoot, exp_repro
 public :: intrinsic_functions_unit_tests
 
-! Floating point model, if bit layout from high to low is (sign, exp, frac)
+interface
+  !> Reproducible exponential function
+  !!
+  !! Compute exp(x) with bitwise reproducibility across platforms.
+  !! Implemented in submodule MOM_exp
+  elemental module function exp_repro(x) result(a)
+    real, intent(in) :: x
+      !< Input value
+    real :: a
+      !< exp(x)
+  end function exp_repro
+end interface
 
-integer, parameter :: bias = maxexponent(1.) - 1
-  !< The double precision exponent offset
-integer, parameter :: signbit = storage_size(1.) - 1
-  !< Position of sign bit
-integer, parameter :: explen = 1 + ceiling(log(real(bias))/log(2.))
-  !< Bit size of exponent
-integer, parameter :: expbit = signbit - explen
+real, parameter :: real_mold = 0.
+  !< Real mold for numerical format queries [nondim]
+
+! Floating point layout
+integer, parameter :: expbit = digits(real_mold) - 1
   !< Position of lowest exponent bit
-integer, parameter :: fraclen = expbit
-  !< Length of fractional part
+  ! NOTE: digits() includes the implicit leading digit
+integer, parameter :: signbit = storage_size(real_mold) - 1
+  !< Position of sign bit
+integer, parameter :: expwidth = signbit - expbit
+  !< Number of exponent bits
+integer, parameter :: expbias = maxexponent(real_mold) - 1
+  !< Exponent bias
 
 contains
 
@@ -141,7 +155,7 @@ pure subroutine rescale_cbrt(a, x, e_r, s_a)
   ! Pack bits of a into xb and extract its exponent and sign.
   xb = transfer(a, 1_int64)
   s_a = ibits(xb, signbit, 1)
-  e_a = ibits(xb, expbit, explen) - bias
+  e_a = ibits(xb, expbit, expwidth) - expbias
 
   ! The floating-point form of `a` with exponent `e` is
   !
@@ -179,7 +193,7 @@ pure subroutine rescale_cbrt(a, x, e_r, s_a)
 
   ! Insert the new 11-bit exponent into xb and write to x and extend the
   ! bitcount to 12, so that the sign bit is zero and x is always positive.
-  call mvbits(e_x + bias, 0, explen + 1, xb, fraclen)
+  call mvbits(e_x + expbias, 0, expwidth + 1, xb, expbit)
   x = transfer(xb, 1.)
 end subroutine rescale_cbrt
 
@@ -202,8 +216,8 @@ pure function descale(x, e_a, s_a) result(a)
 
   ! Apply the corrected exponent and sign to x.
   xb = transfer(x, 1_int64)
-  e_x = ibits(xb, expbit, explen)
-  call mvbits(e_a + e_x, 0, explen, xb, expbit)
+  e_x = ibits(xb, expbit, expwidth)
+  call mvbits(e_a + e_x, 0, expwidth, xb, expbit)
   call mvbits(s_a, 0, 1, xb, signbit)
   a = transfer(xb, 1.)
 end function descale
