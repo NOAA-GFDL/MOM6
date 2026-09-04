@@ -19,7 +19,7 @@ implicit none ; private
 
 #include <MOM_memory.h>
 
-public find_eta, find_dz_for_eta, dz_to_thickness, thickness_to_dz, dz_to_thickness_simple
+public find_eta, find_bsl, find_dz_for_eta, dz_to_thickness, thickness_to_dz, dz_to_thickness_simple
 public calc_derived_thermo
 public convert_MLD_to_ML_thickness
 public find_rho_bottom, find_col_avg_SpV, find_col_mass
@@ -290,6 +290,193 @@ subroutine find_eta_2d(h, tv, G, GV, US, eta, eta_bt, halo_size, dZref)
 
 end subroutine find_eta_2d
 
+!> Baroclinic sea level calculation, following Xu et al., submitted to JPO
+!! This subroutine calculates the baroclinic sea level if an equation of state is not used,
+!! and calls bsl_boussinesq or bsl_non_boussinesq otherwise.
+!! Note: 1) The barotropic-baroclinic sea level decomposition is useful only in the deep ocean,
+!! where baroclinic waves are "large", yielding sea level fluctuations of a few centimeters.
+!! 2) The baroclinic sea level represents the temporal anomaly to a mean state around which the
+!! dynamics are linearzed. Thus, it must always be interpreted with its temporal average removed,
+!! and the "raw" baroclinic sea level calculated from this subroutine is not a useful quantity.
+!! 3) The baroclinic sea level calculated in this subroutine is based on the linear decomposition.
+!! It should thus not be used to interprete sea level fluctuations where nonlinearity dominates,
+!! such as in shallow waters or over steep bottom topography.
+subroutine find_bsl(h, tv, G, GV, US, rho_s, bsl, dZref)
+  type(ocean_grid_type),                      intent(in)  :: G   !< The ocean's grid structure
+  type(verticalGrid_type),                    intent(in)  :: GV  !< The ocean's vertical grid structure
+  type(unit_scale_type),                      intent(in)  :: US  !< A dimensional unit scaling type
+  real,                                       intent(in)  :: rho_s !< Surface density [R ~> kg m-3]
+                    !! which is the reference density for all anomalies defined below
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)  :: h   !< Layer thicknesses [H ~> m or kg m-2]
+  type(thermo_var_ptrs),                      intent(in)  :: tv  !< A structure pointing to various
+                                                                 !! thermodynamic variables
+  real, dimension(SZI_(G),SZJ_(G)),           intent(out) :: bsl !< Baroclinic sea level [Z ~> m]
+  real,                             optional, intent(in)  :: dZref !< The difference in the
+                    !! reference height between G%bathyT and eta [Z ~> m]. The default is 0
+
+  ! Local variables
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: eta             ! layer interface heights [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)) :: &
+    bathyT, &       ! Bathymetry at T points plus dZ_ref [Z ~> m]
+    p_int           ! Vertical integral of pressure anomaly at the bottom of a layer,
+                    ! normalized by GV%g_Earth [R Z2 ~> Pa s2]
+  real :: dZ_ref    ! The difference in the reference height between G%bathyT and eta [Z ~> m]
+                    ! dZ_ref is 0 unless the optional argument dZref is present
+  logical, dimension(SZI_(G),SZJ_(G)) :: maskT ! Mask at T points for skipping land points in calculations
+  integer :: i, j, k, is, ie, js, je, nz
+
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+
+  dZ_ref = 0.0 ; if (present(dZref)) dZ_ref = dZref
+
+  if (associated(tv%eqn_of_state)) then
+    if (GV%Boussinesq) then
+      call bsl_boussinesq(h, tv, G, GV, US, rho_s, bsl, dZ_ref)
+    else ! (.not. GV%Boussinesq)
+      call bsl_non_boussinesq(h, tv, G, GV, US, rho_s, bsl, dZ_ref)
+    endif ! (GV%Boussinesq)
+  else ! (.not. associated(tv%eqn_of_state))
+    call find_eta(h, tv, G, GV, US, eta, halo_size=1, dZref=dZ_ref)
+    !$OMP parallel default(shared)
+    !$OMP do
+    do j=js,je ; do i=is,ie
+      p_int(i,j) = 0.0 ; bsl(i,j) = 0.0
+      bathyT(i,j) = G%bathyT(i,j) + dZ_ref
+      maskT(i,j) = G%mask2dT(i,j) > 0.0 .and. bathyT(i,j) > 0.0
+      if (maskT(i,j)) then
+        do k=2,nz
+          p_int(i,j) = p_int(i,j) + (GV%Rlay(k) - GV%Rlay(k-1)) * &
+                                    ((eta(i,j,k) + bathyT(i,j)) * (eta(i,j,k) + bathyT(i,j)))
+        enddo
+        bsl(i,j) = - 0.5 * (p_int(i,j) / (rho_s * bathyT(i,j)))
+      endif
+    enddo ; enddo
+    !$OMP end parallel
+  endif ! (associated(tv%eqn_of_state))
+
+end subroutine find_bsl
+
+!> BSL calculation when an EOS is used and the Boussinesq approximation is used
+subroutine bsl_boussinesq(h, tv, G, GV, US, rho_s, bsl, dZ_ref)
+  type(ocean_grid_type),                      intent(in)  :: G   !< The ocean's grid structure
+  type(verticalGrid_type),                    intent(in)  :: GV  !< The ocean's vertical grid structure
+  type(unit_scale_type),                      intent(in)  :: US  !< A dimensional unit scaling type
+  real,                                       intent(in)  :: rho_s !< Surface density [R ~> kg m-3]
+                    !! which is the reference density for all anomalies defined below
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)  :: h   !< Layer thicknesses [H ~> m or kg m-2]
+  type(thermo_var_ptrs),                      intent(in)  :: tv  !< A structure pointing to various
+                                                                 !! thermodynamic variables
+  real, dimension(SZI_(G),SZJ_(G)),           intent(out) :: bsl !< Baroclinic sea level [Z ~> m]
+  real,                                       intent(in)  :: dZ_ref !< The difference in the
+                    !! reference height between G%bathyT and eta [Z ~> m]. The default is 0
+
+  ! Local variables
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: eta             ! layer interface heights [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)) :: &
+    bathyT, &       ! Bathymetry at T points plus dZ_ref [Z ~> m]
+    pt, &           ! Pressure anomaly at the top of a layer [R L2 T-2 ~> Pa]
+    dp, &           ! Pressure anomaly change across a layer [R L2 T-2 ~> Pa]
+    dp_int, &       ! Layer-integrated pressure anomaly change [R L2 Z T-2 ~> Pa m]
+    p_int           ! Vertical integral of pressure anomaly at the bottom of a layer [R L2 Z T-2 ~> Pa m]
+  real :: I_gEarth  ! The inverse of the gravitational acceleration [T2 Z L-2 ~> s2 m-1]
+  logical, dimension(SZI_(G),SZJ_(G)) :: maskT ! Mask at T points for skipping land points in calculations
+  integer :: i, j, k, is, ie, js, je, nz
+
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+
+  I_gEarth = 1.0 / GV%g_Earth;
+
+  call find_eta(h, tv, G, GV, US, eta, halo_size=1, dZref=dZ_ref)
+
+  !$OMP parallel default(shared)
+  !$OMP do
+  do j=js,je ; do i=is,ie
+    pt(i,j) = 0.0 ; p_int(i,j) = 0.0 ; bsl(i,j) = 0.0
+    bathyT(i,j) = G%bathyT(i,j) + dZ_ref
+    maskT(i,j) = G%mask2dT(i,j) > 0.0 .and. bathyT(i,j) > 0.0
+  enddo ; enddo
+
+  do k=1,nz
+    call int_density_dz(tv%T(:,:,k), tv%S(:,:,k), eta(:,:,k), eta(:,:,k+1), rho_s, &
+                        GV%Rho0, GV%g_Earth, G%HI, tv%eqn_of_state, US, dp, dp_int)
+    !$OMP do
+    do j=js,je ; do i=is,ie ; if (maskT(i,j)) then
+      p_int(i,j) = p_int(i,j) + (pt(i,j) * (GV%H_to_Z * h(i,j,k)) + dp_int(i,j))
+      pt(i,j) = pt(i,j) + dp(i,j)
+    endif ; enddo ; enddo
+  enddo
+  !$OMP do
+  do j=js,je ; do i=is,ie ; if (maskT(i,j)) then
+    bsl(i,j) = - (p_int(i,j) * I_gEarth) / (rho_s * bathyT(i,j))
+  endif ; enddo ; enddo
+  !$OMP end parallel
+
+end subroutine bsl_boussinesq
+
+!> BSL calculation when an EOS is used and the Boussinesq approximation is not used
+subroutine bsl_non_boussinesq(h, tv, G, GV, US, rho_s, bsl, dZ_ref)
+  type(ocean_grid_type),                      intent(in)  :: G   !< The ocean's grid structure
+  type(verticalGrid_type),                    intent(in)  :: GV  !< The ocean's vertical grid structure
+  type(unit_scale_type),                      intent(in)  :: US  !< A dimensional unit scaling type
+  real,                                       intent(in)  :: rho_s !< Surface density [R ~> kg m-3]
+                    !! which is the reference density for all anomalies defined below
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)  :: h   !< Layer thicknesses [H ~> m or kg m-2]
+  type(thermo_var_ptrs),                      intent(in)  :: tv  !< A structure pointing to various
+                                                                 !! thermodynamic variables
+  real, dimension(SZI_(G),SZJ_(G)),           intent(out) :: bsl !< Baroclinic sea level [Z ~> m]
+  real,                                       intent(in)  :: dZ_ref !< The difference in the
+                    !! reference height between G%bathyT and eta [Z ~> m]. The default is 0
+
+  ! Local variables
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: eta             ! layer interface heights [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)) :: &
+    bathyT, &       ! Bathymetry at T points plus dZ_ref [Z ~> m]
+    pt, &           ! Pressure at the top of a layer [R L2 T-2 ~> Pa]
+    pb, &           ! Pressure at the bottom of a layer [R L2 T-2 ~> Pa]
+    gz, &           ! Geopotential anomaly at the bottom of a layer [L2 T-2 ~> m2 s-2]
+    dp, &           ! Pressure change across a layer [R L2 T-2 ~> Pa]
+    dg, &           ! Geopotential anomaly change across a layer [L2 T-2 ~> m2 s-2]
+    dg_int, &       ! Layer-integrated geopotential anomaly change [R L4 T-4 ~> Pa m2 s-2]
+    g_int           ! Vertically-integrated geopotential anomaly at the bottom of a layer [R L4 T-4 ~> Pa m2 s-2]
+  real :: I_gEarth  ! The inverse of the gravitational acceleration [T2 Z L-2 ~> s2 m-1]
+  real :: SpV_s     ! Specific volume of the surface layer [R-1 ~> m3 kg-1]
+  logical, dimension(SZI_(G),SZJ_(G)) :: maskT ! Mask at T points for skipping land points in calculations
+  integer :: i, j, k, is, ie, js, je, nz
+
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+
+  I_gEarth = 1.0 / GV%g_Earth; SpV_s = 1.0 / rho_s
+
+  !$OMP parallel default(shared)
+  !$OMP do
+  do j=js,je ; do i=is,ie
+    pt(i,j) = 0.0 ; pb(i,j) = 0.0 ; gz(i,j) = 0.0 ; g_int(i,j) = 0.0 ; bsl(i,j) = 0.0
+    bathyT(i,j) = G%bathyT(i,j) + dZ_ref
+    maskT(i,j) = G%mask2dT(i,j) > 0.0 .and. bathyT(i,j) > 0.0
+  enddo ; enddo
+
+  do k=1,nz
+    !$OMP do
+    do j=js,je ; do i=is,ie ; if (maskT(i,j)) then
+      dp(i,j) = GV%g_Earth * (GV%H_to_RZ * h(i,j,k))
+      pb(i,j) = pt(i,j) + dp(i,j)
+    endif ; enddo ; enddo
+    call int_specific_vol_dp(tv%T(:,:,k), tv%S(:,:,k), pt, pb, SpV_s, G%HI, &
+                             tv%eqn_of_state, US, dg, dg_int)
+    !$OMP do
+    do j=js,je ; do i=is,ie ; if (maskT(i,j)) then
+      gz(i,j) = gz(i,j) + dg(i,j)
+      g_int(i,j) = g_int(i,j) + (gz(i,j) * dp(i,j) + dg_int(i,j))
+      pt(i,j) = pb(i,j)
+    endif ; enddo ; enddo
+  enddo
+  !$OMP do
+  do j=js,je ; do i=is,ie ; if (maskT(i,j)) then
+    bsl(i,j) = (g_int(i,j) * (I_gEarth * I_gEarth)) / (rho_s * bathyT(i,j))
+  endif ; enddo ; enddo
+  !$OMP end parallel
+
+end subroutine bsl_non_boussinesq
 
 !> Calculate derived thermodynamic quantities for re-use later.
 subroutine calc_derived_thermo(tv, h, G, GV, US, halo, debug)
