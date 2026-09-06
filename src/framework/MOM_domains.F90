@@ -534,7 +534,7 @@ subroutine gen_auto_mask_table(n_global, reentrant, tripolar_N, npes, param_file
   real :: ar             ! layout aspect ratio to check if it is too extreme        [nondim]
   real :: m_to_Z         ! A conversion factor from m to height units           [Z m-1 ~> 1]
   integer :: nx, ny      ! global domain sizes
-  integer, parameter :: ibuf=2, jbuf=2
+  integer, parameter :: ibuf = 2, jbuf = 2
   real, parameter :: r_extreme = 4.0 ! aspect ratio limit (>1) for a layout to be considered [nondim]
   integer :: num_masked_blocks
   integer, allocatable :: mask_table(:,:)
@@ -742,7 +742,7 @@ subroutine write_auto_mask_file(mask_table, layout, npes, filename)
   integer, intent(in) :: npes                 !> Number of divisions (incl. eliminated ones)
   character(len=:), allocatable, intent(in) :: filename !> file name for the mask_table to be written
   ! local
-  integer :: file_ascii= -1  !< The unit number of the auto-generated mask_file file.
+  integer :: file_ascii = -1  !< The unit number of the auto-generated mask_file file.
   integer :: true_num_masked_blocks
   integer :: p
 

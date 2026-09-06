@@ -260,7 +260,7 @@ subroutine dumbbell_surface_forcing_init(Time, G, US, param_file, diag, CS)
         else
           x = ( G%geoLonT(i,j) - G%west_lon ) / G%len_lon - 0.5
         endif
-        CS%forcing_mask(i,j)=0
+        CS%forcing_mask(i,j) = 0
         CS%S_restore(i,j) = S_surf
         if ((x>0.25)) then
           CS%forcing_mask(i,j) = 1

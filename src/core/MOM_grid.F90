@@ -493,7 +493,7 @@ logical function isPointInCell(G, i, j, x, y)
   p3 = sign(1., l3) ; if (l3 == 0.) p3=0.
 
   if ( (abs(p0)+abs(p2)) + (abs(p1)+abs(p3)) == abs((p0+p2) + (p1+p3)) ) then
-    isPointInCell=.true.
+    isPointInCell = .true.
   endif
 end function isPointInCell
 

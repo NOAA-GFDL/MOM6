@@ -1836,8 +1836,8 @@ subroutine Stokes_PGF(G, GV, US, dz, u, v, PFu_Stokes, PFv_Stokes, CS )
         dP_Stokes_r_dz = 0.0
         dP_Stokes_l = 0.0
         dP_Stokes_r = 0.0
-        dP_lay_Stokes_l=0.0
-        dP_lay_Stokes_r=0.0
+        dP_lay_Stokes_l = 0.0
+        dP_lay_Stokes_r = 0.0
 
         do l = 1, CS%numbands
 
@@ -1962,8 +1962,8 @@ subroutine Stokes_PGF(G, GV, US, dz, u, v, PFu_Stokes, PFv_Stokes, CS )
         dP_Stokes_r_dz = 0.0
         dP_Stokes_l = 0.0
         dP_Stokes_r = 0.0
-        dP_lay_Stokes_l=0.0
-        dP_lay_Stokes_r=0.0
+        dP_lay_Stokes_l = 0.0
+        dP_lay_Stokes_r = 0.0
 
         do l = 1, CS%numbands
 
@@ -2093,9 +2093,9 @@ subroutine ust_2_u10_coare3p5(USTair, U10, GV, US, CS)
   if (CS%answer_date < 20230103) then
     u10 = US%Z_to_L*USTair / sqrt(0.001)  ! Guess for u10
     ten_m_scale = 10.0*US%m_to_Z
-    CT=0
+    CT = 0
     do while (abs(u10a/u10 - 1.) > 0.001)
-      CT=CT+1
+      CT = CT+1
       u10a = u10
       alpha = min(CS%Charnock_min, CS%Charnock_slope_U10 * u10 + CS%Charnock_intercept)
       z0rough = alpha * (US%Z_to_L*USTair)**2 / GV%g_Earth ! Compute z0rough from ustar guess

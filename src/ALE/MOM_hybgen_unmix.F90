@@ -344,7 +344,7 @@ subroutine hybgen_column_unmix(CS, nk, Rcv_tgt, temp, saln, Rcv, eqn_of_state, &
   real :: swap_T      ! A swap variable for temperature [C ~> degC]
   real :: swap_S      ! A swap variable for salinity [S ~> ppt]
   real :: swap_tr     ! A temporary swap variable for the tracers [conc]
-  logical, parameter :: lunmix=.true.     ! unmix a too light deepest layer
+  logical, parameter :: lunmix = .true.   ! unmix a too light deepest layer
   integer :: k, ka, kp, kt, m
 
   ! --- identify the deepest layer kp with significant thickness (> h_thin)

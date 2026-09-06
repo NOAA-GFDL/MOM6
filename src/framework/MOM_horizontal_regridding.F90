@@ -143,8 +143,8 @@ subroutine fill_miss_2d(aout, good, fill, prev, G, acrit, num_pass, relc, debug,
   real    :: ares   ! The maximum magnitude change in aout [A]
   logical :: debug_it, ans_2018
 
-  debug_it=.false.
-  if (PRESENT(debug)) debug_it=debug
+  debug_it = .false.
+  if (PRESENT(debug)) debug_it = debug
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
 
@@ -177,9 +177,9 @@ subroutine fill_miss_2d(aout, good, fill, prev, G, acrit, num_pass, relc, debug,
 
       if (good_(i,j) == 1.0 .or. fill(i,j) == 0.) cycle
 
-      ge=good_(i+1,j) ; gw=good_(i-1,j)
-      gn=good_(i,j+1) ; gs=good_(i,j-1)
-      east=0.0 ; west=0.0 ; north=0.0 ; south=0.0
+      ge = good_(i+1,j) ; gw = good_(i-1,j)
+      gn = good_(i,j+1) ; gs = good_(i,j-1)
+      east = 0.0 ; west = 0.0 ; north = 0.0 ; south = 0.0
       if (ge == 1.0) east = aout(i+1,j)*ge
       if (gw == 1.0) west = aout(i-1,j)*gw
       if (gn == 1.0) north = aout(i,j+1)*gn
@@ -351,7 +351,7 @@ subroutine horiz_interp_and_extrap_tracer_record(filename, varnam, recnum, G, tr
   integer :: isg, ieg, jsg, jeg ! global extent
   integer :: isd, ied, jsd, jed ! data domain indices
   integer :: id_clock_read
-  logical :: debug=.false.
+  logical :: debug = .false.
   real :: I_scale               ! The inverse of the scale factor for diagnostic output [a A-1 ~> 1]
   real :: dtr_iter_stop         ! The tolerance for changes in tracer concentrations between smoothing
                                 ! iterations that determines when to stop iterating [A ~> a]
@@ -697,7 +697,7 @@ subroutine horiz_interp_and_extrap_tracer_fms_id(field, Time, G, tr_z, mask_z, &
   integer :: isd, ied, jsd, jed ! data domain indices
   integer :: id_clock_read
   integer, dimension(4) :: fld_sz
-  logical :: debug=.false.
+  logical :: debug = .false.
   logical :: is_ongrid
   integer :: ans_date           ! The vintage of the expressions and order of arithmetic to use
   real :: I_scale               ! The inverse of the scale factor for diagnostic output [a A-1 ~> 1]

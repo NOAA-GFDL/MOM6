@@ -164,7 +164,7 @@ subroutine limit_mass_flux_3d(G, GV, uh, vh, ea, eb, h_pre)
     bottom_flux(i,j,k) = -(eb(i,j,k)-ea(i,j,k+1))
   enddo ; enddo ; enddo
 
-  k=nz
+  k = nz
   do j=js-1,je+1 ; do i=is-1,ie+1
     top_flux(i,j,k) = -(ea(i,j,k)-eb(i,j,k-1))
     bottom_flux(i,j,k) = -eb(i,j,k)

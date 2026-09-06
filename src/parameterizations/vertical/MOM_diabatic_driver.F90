@@ -3944,7 +3944,7 @@ subroutine register_diabatic_restarts(G, GV, US, param_file, int_tide_CSp, resta
     allocate(CS)
   endif
 
-  use_int_tides=.false.
+  use_int_tides = .false.
 
   call read_param(param_file, "INTERNAL_TIDES", use_int_tides)
 
