@@ -366,7 +366,7 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
                  do_not_log=.not.use_waves)
   if (CS%LagrangianMixing) then
     ! Force Code Intervention
-    call MOM_error(FATAL,"Should you be enabling Lagrangian Mixing? Code not ready.")
+    call MOM_error(FATAL, "Should you be enabling Lagrangian Mixing? Code not ready.")
   endif
   call get_param(param_file, mdl, "STOKES_MIXING", CS%StokesMixing, &
                  "Flag to use Stokes Mixing of momentum", default=.false., &
@@ -508,12 +508,12 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
            "Y-direction surface Stokes drift for bands.", &
            units='m/s', default=0.0, scale=US%m_s_to_L_T)
     case default! No method provided
-      call MOM_error(FATAL,'Check WAVE_METHOD.')
+      call MOM_error(FATAL, 'Check WAVE_METHOD.')
     end select
 
   case (DHH85_STRING) !Donelan et al., 1985 spectrum
     CS%WaveMethod = DHH85
-    call MOM_error(WARNING,"DHH85 only ever set-up for uniform cases w/ "//&
+    call MOM_error(WARNING, "DHH85 only ever set-up for uniform cases w/ "//&
                            "Stokes drift in x-direction.")
     call get_param(param_file, mdl, "DHH85_AGE_FP", CS%WaveAgePeakFreq, &
          "Choose true to use waveage in peak frequency.", default=.false.)
@@ -537,7 +537,7 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
   case (EFACTOR_STRING) !Li and Fox-Kemper 16
     CS%WaveMethod = EFACTOR
   case default
-    call MOM_error(FATAL,'Check WAVE_METHOD.')
+    call MOM_error(FATAL, 'Check WAVE_METHOD.')
   end select
 
   ! Langmuir number Options  (Note that CS%LA_FracHBL is set above.)
@@ -709,7 +709,7 @@ subroutine Update_Surface_Waves(G, GV, US, Time_present, dt, CS, forces)
       call Surface_Bands_by_data_override(Stokes_Time, G, GV, US, CS)
     elseif (CS%DataSource == COUPLER) then
       if (.not.present(FORCES)) then
-        call MOM_error(FATAL,"The option SURFBAND = COUPLER can not be used with "//&
+        call MOM_error(FATAL, "The option SURFBAND = COUPLER can not be used with "//&
              "this driver. If you are using a coupled driver with a wave model then "//&
              "check the arguments in the subroutine call to Update_Surface_Waves, "//&
              "otherwise select another option for SURFBAND_SOURCE.")

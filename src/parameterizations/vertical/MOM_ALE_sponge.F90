@@ -734,7 +734,7 @@ subroutine set_up_ALE_sponge_field_fixed(sp_val, G, GV, f_ptr, CS,  &
     write(mesg,'("Increase MAX_FIELDS_ to at least ",I0," in MOM_memory.h or decrease &
            &the number of fields to be damped in the call to &
            &initialize_ALE_sponge." )') CS%fldno
-    call MOM_error(FATAL,"set_up_ALE_sponge_field: "//mesg)
+    call MOM_error(FATAL, "set_up_ALE_sponge_field: "//mesg)
   endif
 
   ! stores the reference profile
@@ -799,7 +799,7 @@ subroutine set_up_ALE_sponge_field_varying(filename, fieldname, Time, G, GV, US,
   if (CS%fldno > MAX_FIELDS_) then
     write(mesg, '("Increase MAX_FIELDS_ to at least ",I0," in MOM_memory.h or decrease "//&
         &"the number of fields to be damped in the call to initialize_ALE_sponge." )') CS%fldno
-    call MOM_error(FATAL,"set_up_ALE_sponge_field: "//mesg)
+    call MOM_error(FATAL, "set_up_ALE_sponge_field: "//mesg)
   endif
   ! get a unique time interp id for this field. If sponge data is on-grid, then setup
   ! to only read on the computational domain

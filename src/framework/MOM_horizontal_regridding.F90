@@ -260,7 +260,7 @@ subroutine fill_miss_2d(aout, good, fill, prev, G, acrit, num_pass, relc, debug,
     if (good_(i,j) == 0.0 .and. fill_pts(i,j) == 1.0) then
       write(mesg,*) 'In fill_miss, fill, good,i,j= ',fill_pts(i,j),good_(i,j),i,j
       call MOM_error(WARNING, mesg, .true.)
-      call MOM_error(FATAL,"MOM_initialize: "// &
+      call MOM_error(FATAL, "MOM_initialize: "// &
            "fill is true and good is false after fill_miss, how did this happen? ")
     endif
   enddo ; enddo
