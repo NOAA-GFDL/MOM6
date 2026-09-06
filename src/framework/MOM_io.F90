@@ -728,14 +728,14 @@ subroutine reopen_MOM_file(IO_handle, filename, vars, novars, fields, &
     if (nvar == -1) then
       write (mesg,*) "Reopening file ",trim(filename)," apparently had ",nvar,&
                      " variables. Clobbering and creating file with ",novars," instead."
-      call MOM_error(WARNING,"MOM_io: "//mesg)
+      call MOM_error(WARNING, "MOM_io: "//mesg)
       call create_MOM_file(IO_handle, filename, vars, novars, fields, &
           threading, timeunit, G=G, dG=dG, GV=GV, extra_axes=extra_axes, &
           global_atts=global_atts)
     elseif (nvar /= novars) then
       write (mesg,*) "Reopening file ",trim(filename)," with ",novars,&
                      " variables instead of ",nvar,"."
-      call MOM_error(FATAL,"MOM_io: "//mesg)
+      call MOM_error(FATAL, "MOM_io: "//mesg)
     endif
 
     if (nvar > 0) call IO_handle%get_file_fields(fields(1:nvar))
@@ -3217,45 +3217,45 @@ subroutine get_var_axes_info(filename, fieldname, axes_info)
   call open_file_to_read(filename, ncid, success=success)
 
   rcode = NF90_INQ_VARID(ncid, trim(fieldname), varid)
-  if (rcode /= 0) call MOM_error(FATAL,"error finding variable "//trim(fieldname)//&
+  if (rcode /= 0) call MOM_error(FATAL, "error finding variable "//trim(fieldname)//&
                                  " in file "//trim(filename)//" in hinterp_extrap")
 
   rcode = NF90_INQUIRE_VARIABLE(ncid, varid, ndims=ndims, dimids=dims)
   if (rcode /= 0) call MOM_error(FATAL, "Error inquiring about the dimensions of "//trim(fieldname)//&
                                  " in file "//trim(filename)//" in hinterp_extrap")
-  if (ndims < 3) call MOM_error(FATAL,"Variable "//trim(fieldname)//" in file "//trim(filename)// &
+  if (ndims < 3) call MOM_error(FATAL, "Variable "//trim(fieldname)//" in file "//trim(filename)// &
                                 " has too few dimensions to be read as a 3-d array.")
   rcode = NF90_INQUIRE_DIMENSION(ncid, dims(1), dim_name(1), len=id)
-  if (rcode /= 0) call MOM_error(FATAL,"error reading dimension 1 data for "// &
+  if (rcode /= 0) call MOM_error(FATAL, "error reading dimension 1 data for "// &
                 trim(fieldname)//" in file "// trim(filename)//" in hinterp_extrap")
   rcode = NF90_INQ_VARID(ncid, dim_name(1), dim_id(1))
-  if (rcode /= 0) call MOM_error(FATAL,"error finding variable "//trim(dim_name(1))//&
+  if (rcode /= 0) call MOM_error(FATAL, "error finding variable "//trim(dim_name(1))//&
                                  " in file "//trim(filename)//" in hinterp_extrap")
   rcode = NF90_INQUIRE_DIMENSION(ncid, dims(2), dim_name(2), len=jd)
-  if (rcode /= 0) call MOM_error(FATAL,"error reading dimension 2 data for "// &
+  if (rcode /= 0) call MOM_error(FATAL, "error reading dimension 2 data for "// &
                 trim(fieldname)//" in file "// trim(filename)//" in hinterp_extrap")
   rcode = NF90_INQ_VARID(ncid, dim_name(2), dim_id(2))
-  if (rcode /= 0) call MOM_error(FATAL,"error finding variable "//trim(dim_name(2))//&
+  if (rcode /= 0) call MOM_error(FATAL, "error finding variable "//trim(dim_name(2))//&
                                  " in file "//trim(filename)//" in hinterp_extrap")
   rcode = NF90_INQUIRE_DIMENSION(ncid, dims(3), dim_name(3), len=kd)
-  if (rcode /= 0) call MOM_error(FATAL,"error reading dimension 3 data for "// &
+  if (rcode /= 0) call MOM_error(FATAL, "error reading dimension 3 data for "// &
                 trim(fieldname)//" in file "// trim(filename)//" in hinterp_extrap")
   rcode = NF90_INQ_VARID(ncid, dim_name(3), dim_id(3))
-  if (rcode /= 0) call MOM_error(FATAL,"error finding variable "//trim(dim_name(3))//&
+  if (rcode /= 0) call MOM_error(FATAL, "error finding variable "//trim(dim_name(3))//&
                                  " in file "//trim(filename)//" in hinterp_extrap")
   allocate(x(id), y(jd), z(kd))
 
   start = 1 ; count = 1 ; count(1) = id
   rcode = NF90_GET_VAR(ncid, dim_id(1), x, start, count)
-  if (rcode /= 0) call MOM_error(FATAL,"error reading dimension 1 values for var_name "// &
+  if (rcode /= 0) call MOM_error(FATAL, "error reading dimension 1 values for var_name "// &
                 trim(fieldname)//",dim_name "//trim(dim_name(1))//" in file "// trim(filename)//" in hinterp_extrap")
   start = 1 ; count = 1 ; count(1) = jd
   rcode = NF90_GET_VAR(ncid, dim_id(2), y, start, count)
-  if (rcode /= 0) call MOM_error(FATAL,"error reading dimension 2 values for var_name "// &
+  if (rcode /= 0) call MOM_error(FATAL, "error reading dimension 2 values for var_name "// &
                 trim(fieldname)//",dim_name "//trim(dim_name(2))//" in file "// trim(filename)//" in  hinterp_extrap")
   start = 1 ; count = 1 ; count(1) = kd
   rcode = NF90_GET_VAR(ncid, dim_id(3), z, start, count)
-  if (rcode /= 0) call MOM_error(FATAL,"error reading dimension 3 values for var_name "// &
+  if (rcode /= 0) call MOM_error(FATAL, "error reading dimension 3 values for var_name "// &
                 trim(fieldname//",dim_name "//trim(dim_name(3)))//" in file "// trim(filename)//" in  hinterp_extrap")
 
   call set_axis_info(axes_info(1), name=trim(dim_name(1)), ax_size=id, ax_data=x,cartesian='X')

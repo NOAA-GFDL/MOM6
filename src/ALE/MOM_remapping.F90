@@ -1451,7 +1451,7 @@ real function average_value_ppoly( n0, u0, ppoly0_E, ppoly0_coefs, method, i0, x
           + ( ppoly0_coefs(i0,4) * 0.25* ( xa2pxb2 * xapxb )                             &
           +   ppoly0_coefs(i0,5) * 0.2 * ( ( xb*xb_2 + xa*xa_2 ) * xapxb + xa_2*xb_2 ) ) ) ) )
       case default
-        call MOM_error( FATAL,'The selected integration method is invalid' )
+        call MOM_error( FATAL, 'The selected integration method is invalid' )
     end select
   else ! dh == 0.
     select case ( method )
@@ -1490,7 +1490,7 @@ real function average_value_ppoly( n0, u0, ppoly0_E, ppoly0_coefs, method, i0, x
               + xa *   ppoly0_coefs(i0,5) ) ) )
       case default
         u_ave = 0.
-        call MOM_error( FATAL,'The selected integration method is invalid' )
+        call MOM_error( FATAL, 'The selected integration method is invalid' )
     end select
   endif
   average_value_ppoly = u_ave

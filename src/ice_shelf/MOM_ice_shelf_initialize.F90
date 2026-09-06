@@ -74,7 +74,7 @@ subroutine initialize_ice_thickness(h_shelf, area_shelf_h, hmask, melt_mask, G, 
       case ("CHANNEL") ; call initialize_ice_thickness_channel (tmp1_2d, tmp2_2d, tmp3_2d, G_in, US, PF)
       case ("FILE") ; call initialize_ice_thickness_from_file (tmp1_2d, tmp2_2d, tmp3_2d, tmp4_2d, G_in, US, PF)
       case ("USER") ; call USER_init_ice_thickness (tmp1_2d, tmp2_2d, tmp3_2d, G_in, US, PF)
-      case default  ; call MOM_error(FATAL,"MOM_initialize: Unrecognized ice profile setup "//trim(config))
+      case default  ; call MOM_error(FATAL, "MOM_initialize: Unrecognized ice profile setup "//trim(config))
     end select
     call rotate_array(tmp1_2d,turns, h_shelf)
     call rotate_array(tmp2_2d,turns, area_shelf_h)
@@ -86,7 +86,7 @@ subroutine initialize_ice_thickness(h_shelf, area_shelf_h, hmask, melt_mask, G, 
       case ("CHANNEL") ; call initialize_ice_thickness_channel (h_shelf, area_shelf_h, hmask, G, US, PF)
       case ("FILE") ; call initialize_ice_thickness_from_file (h_shelf, area_shelf_h, hmask, melt_mask, G, US, PF)
       case ("USER") ; call USER_init_ice_thickness (h_shelf, area_shelf_h, hmask, G, US, PF)
-      case default  ; call MOM_error(FATAL,"MOM_initialize: Unrecognized ice profile setup "//trim(config))
+      case default  ; call MOM_error(FATAL, "MOM_initialize: Unrecognized ice profile setup "//trim(config))
     end select
   endif
 
@@ -193,7 +193,7 @@ subroutine initialize_ice_thickness_from_file(h_shelf, area_shelf_h, hmask, melt
         elseif ((area_shelf_h(i,j) > 0) .and. (area_shelf_h(i,j) <= G%areaT(i,j))) then
           hmask(i,j) = 2.
         else
-          call MOM_error(FATAL,mdl// " AREA IN CELL OUT OF RANGE")
+          call MOM_error(FATAL, mdl// " AREA IN CELL OUT OF RANGE")
         endif
       enddo
     enddo

@@ -3472,7 +3472,7 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
     case ('H_ePBL')
       CS%MLD_param_ePBL = .true.
     case default
-      call MOM_error(FATAL,"Invalid choice for BRINE_PLUME_MLD_DEF.  Valid options are"//&
+      call MOM_error(FATAL, "Invalid choice for BRINE_PLUME_MLD_DEF.  Valid options are"//&
                      "MLD_003, MLD_EN1, or H_ePBL.")
     end select
 
@@ -3619,9 +3619,9 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
 
   call KdWork_init(Time, G,GV,US,diag,CS%VBF,CS%Use_KdWork_diag)
   if (CS%Use_KdWork_diag.and.(.not.useALEalgorithm)) &
-    call MOM_error(WARNING,"The KdWork diagnostics are not fully implemented for use in layer mode.")
+    call MOM_error(WARNING, "The KdWork diagnostics are not fully implemented for use in layer mode.")
   if (CS%Use_KdWork_diag.and.(CS%use_legacy_diabatic)) &
-    call MOM_error(WARNING,"The KdWork diagnostics are only approximate with the legacy diabatic driver.")
+    call MOM_error(WARNING, "The KdWork diagnostics are only approximate with the legacy diabatic driver.")
 
   call get_param(param_file, mdl, "DIAG_MLD_DENSITY_DIFF", CS%MLDdensityDifference, &
                  "The density difference used to determine a diagnostic mixed "//&

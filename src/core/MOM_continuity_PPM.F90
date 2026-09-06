@@ -2368,13 +2368,13 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
     write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_x called with a ", &
                & "x-halo that needs to be increased by ",I0,".")') &
                stencil + max(G%isd-isl,iel-G%ied)
-    call MOM_error(FATAL,mesg)
+    call MOM_error(FATAL, mesg)
   endif
   if ((jsl < G%jsd) .or. (jel > G%jed)) then
     write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_x called with a ", &
                & "y-halo that needs to be increased by ",I0,".")') &
                max(G%jsd-jsl,jel-G%jed)
-    call MOM_error(FATAL,mesg)
+    call MOM_error(FATAL, mesg)
   endif
 
   if (simple_2nd) then
@@ -2522,13 +2522,13 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_
     write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with a ", &
                & "x-halo that needs to be increased by ",I0,".")') &
                max(G%isd-isl,iel-G%ied)
-    call MOM_error(FATAL,mesg)
+    call MOM_error(FATAL, mesg)
   endif
   if ((jsl-stencil < G%jsd) .or. (jel+stencil > G%jed)) then
     write(mesg,'("In MOM_continuity_PPM, PPM_reconstruction_y called with a ", &
                  & "y-halo that needs to be increased by ",I0,".")') &
                  stencil + max(G%jsd-jsl,jel-G%jed)
-    call MOM_error(FATAL,mesg)
+    call MOM_error(FATAL, mesg)
   endif
 
   if (simple_2nd) then

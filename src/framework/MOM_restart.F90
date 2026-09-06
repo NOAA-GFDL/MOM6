@@ -1836,7 +1836,7 @@ subroutine restore_state(filename, directory, day, G, CS)
   if (num_file == 0) then
     write(mesg,'("Unable to find any restart files specified by  ",A,"  in directory ",A,".")') &
                   trim(filename), trim(directory)
-    call MOM_error(FATAL,"MOM_restart: "//mesg)
+    call MOM_error(FATAL, "MOM_restart: "//mesg)
   endif
 
   ! Get the time from the first file in the list that has one.
@@ -1984,7 +1984,7 @@ subroutine restore_state(filename, directory, day, G, CS)
     if (.not.(CS%restart_field(m)%initialized)) then
       CS%restart = .false.
       if (CS%restart_field(m)%mand_var) then
-        call MOM_error(FATAL,"MOM_restart: Unable to find mandatory variable " &
+        call MOM_error(FATAL, "MOM_restart: Unable to find mandatory variable " &
                        //trim(CS%restart_field(m)%var_name)//" in restart files.")
       endif
     endif
@@ -2388,10 +2388,10 @@ subroutine restart_error(CS)
 
   if (CS%novars > CS%max_fields) then
     write(num,'(I0)') CS%novars
-    call MOM_error(FATAL,"MOM_restart: Too many fields registered for " // &
+    call MOM_error(FATAL, "MOM_restart: Too many fields registered for " // &
            "restart.  Set MAX_FIELDS to be at least "//trim(num)//" in the MOM input file.")
   else
-    call MOM_error(FATAL,"MOM_restart: Unspecified fatal error.")
+    call MOM_error(FATAL, "MOM_restart: Unspecified fatal error.")
   endif
 end subroutine restart_error
 

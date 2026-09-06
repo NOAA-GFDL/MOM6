@@ -259,7 +259,7 @@ logical function neutral_diffusion_init(Time, G, GV, US, param_file, diag, EOS, 
                    "3. Full nonlinear equation of state, use regula falsi    \n"// &
                    "   for neutral position", default=3)
     if (CS%neutral_pos_method > 4 .or. CS%neutral_pos_method < 0) then
-      call MOM_error(FATAL,"Invalid option for NEUTRAL_POS_METHOD")
+      call MOM_error(FATAL, "Invalid option for NEUTRAL_POS_METHOD")
     endif
 
     call get_param(param_file, mdl, "DELTA_RHO_FORM", CS%delta_rho_form,           &
@@ -296,7 +296,7 @@ logical function neutral_diffusion_init(Time, G, GV, US, param_file, diag, EOS, 
     call extract_diabatic_member(diabatic_CSp, KPP_CSp=CS%KPP_CSp)
     call extract_diabatic_member(diabatic_CSp, energetic_PBL_CSp=CS%energetic_PBL_CSp)
     if ( .not. ASSOCIATED(CS%energetic_PBL_CSp) .and. .not. ASSOCIATED(CS%KPP_CSp) ) then
-      call MOM_error(FATAL,"NDIFF_INTERIOR_ONLY is true, but no valid boundary layer scheme was found")
+      call MOM_error(FATAL, "NDIFF_INTERIOR_ONLY is true, but no valid boundary layer scheme was found")
     endif
 
     if (CS%tapering) then
@@ -1831,7 +1831,7 @@ subroutine find_neutral_surface_positions_discontinuous(CS, nk, &
         hR = (PoR(k_surface) - PoR(k_surface-1))*hcol_r(KoR(k_surface))
         if (hL < 0. .or. hR < 0.) then
           if (fail_heff) then
-            call MOM_error(FATAL,"Negative thicknesses in neutral diffusion")
+            call MOM_error(FATAL, "Negative thicknesses in neutral diffusion")
           else
             if (searching_left_column) then
               PoL(k_surface) = PoL(k_surface-1)
@@ -1846,10 +1846,10 @@ subroutine find_neutral_surface_positions_discontinuous(CS, nk, &
         else
           hEff(k_surface-1) = 2. * ( (hL * hR) / ( hL + hR ) )! Harmonic mean
           if ( KoL(k_surface) /= KoL(k_surface-1) ) then
-            call MOM_error(FATAL,"Neutral sublayer spans multiple layers")
+            call MOM_error(FATAL, "Neutral sublayer spans multiple layers")
           endif
           if ( KoR(k_surface) /= KoR(k_surface-1) ) then
-            call MOM_error(FATAL,"Neutral sublayer spans multiple layers")
+            call MOM_error(FATAL, "Neutral sublayer spans multiple layers")
           endif
         endif
       else
@@ -1972,7 +1972,7 @@ subroutine increment_interface(nk, kl, ki, reached_bottom, searching_this_column
   elseif (ki==1) then ! At the top interface
     ki = 2 ! Next interface is same layer, but bottom interface
   else
-    call MOM_error(FATAL,"Unanticipated eventuality in increment_interface")
+    call MOM_error(FATAL, "Unanticipated eventuality in increment_interface")
   endif
 end subroutine increment_interface
 
@@ -3324,7 +3324,7 @@ logical function test_nsp(verbose, ns, KoL, KoR, pL, pR, hEff, KoL0, KoR0, pL0, 
       endif
     enddo
   endif
-  if (test_nsp) call MOM_error(FATAL,"test_nsp failed")
+  if (test_nsp) call MOM_error(FATAL, "test_nsp failed")
 
 10 format("ks=",i3," kL=",i3," pL=",f20.16," kR=",i3," pR=",f20.16,a)
 end function test_nsp

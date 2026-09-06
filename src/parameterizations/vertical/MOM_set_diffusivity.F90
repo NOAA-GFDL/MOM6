@@ -341,10 +341,10 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, Kd_i
   showCallTree = callTree_showQuery()
   if (showCallTree) call callTree_enter("set_diffusivity(), MOM_set_diffusivity.F90")
 
-  if (.not.associated(CS)) call MOM_error(FATAL,"set_diffusivity: "//&
+  if (.not.associated(CS)) call MOM_error(FATAL, "set_diffusivity: "//&
          "Module must be initialized before it is used.")
 
-  if (.not.CS%initialized) call MOM_error(FATAL,"set_diffusivity: "//&
+  if (.not.CS%initialized) call MOM_error(FATAL, "set_diffusivity: "//&
          "Module must be initialized before it is used.")
 
   if (CS%answer_date < 20190101) then
@@ -1998,10 +1998,10 @@ subroutine set_BBL_TKE(u, v, h, tv, fluxes, visc, G, GV, US, CS, OBC)
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
-  if (.not.associated(CS)) call MOM_error(FATAL,"set_BBL_TKE: "//&
+  if (.not.associated(CS)) call MOM_error(FATAL, "set_BBL_TKE: "//&
          "Module must be initialized before it is used.")
 
-  if (.not.CS%initialized) call MOM_error(FATAL,"set_BBL_TKE: "//&
+  if (.not.CS%initialized) call MOM_error(FATAL, "set_BBL_TKE: "//&
          "Module must be initialized before it is used.")
 
   if (.not.CS%bottomdraglaw .or. (CS%BBL_effic<=0.0 .and. CS%ePBL_BBL_effic<=0.0 .and. &
@@ -2648,7 +2648,7 @@ subroutine set_diffusivity_init(Time, G, GV, US, param_file, diag, CS, int_tide_
                  "profile of background diapycnal diffusivity with depth. "//&
                  "This is done via CVMix.", default=.false., do_not_log=.true.)
   if (CS%use_tidal_mixing .and. Bryan_Lewis_diffusivity) &
-    call MOM_error(FATAL,"MOM_Set_Diffusivity: "// &
+    call MOM_error(FATAL, "MOM_Set_Diffusivity: "// &
          "Bryan-Lewis and internal tidal dissipation are both enabled. Choose one.")
 
   CS%useKappaShear = kappa_shear_init(Time, G, GV, US, param_file, CS%diag, CS%kappaShear_CSp)

@@ -343,7 +343,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
   Rho0x400_G = 400.0*(GV%H_to_RZ / GV%g_Earth_Z_T2)
   tideampfac2_x_0p5 = CS%tideampfac2*0.5
 
-  if (.not.CS%initialized) call MOM_error(FATAL,"MOM_set_viscosity(BBL): "//&
+  if (.not.CS%initialized) call MOM_error(FATAL, "MOM_set_viscosity(BBL): "//&
          "Module must be initialized before it is used.")
 
   if (.not.CS%bottomdraglaw) return
@@ -2120,7 +2120,7 @@ subroutine set_viscous_ML(u, v, h, tv, forces, visc, dt, G, GV, US, CS)
   Isq = G%isc-1 ; Ieq = G%IecB ; Jsq = G%jsc-1 ; Jeq = G%JecB
   nkmb = GV%nk_rho_varies ; nkml = GV%nkml
 
-  if (.not.CS%initialized) call MOM_error(FATAL,"MOM_set_viscosity(visc_ML): "//&
+  if (.not.CS%initialized) call MOM_error(FATAL, "MOM_set_viscosity(visc_ML): "//&
          "Module must be initialized before it is used.")
 
   if (.not.(CS%dynamic_viscous_ML .or. associated(forces%frac_shelf_u) .or. &
@@ -3195,7 +3195,7 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
                  "The default of this parameter is the value of USE_EOS.", &
                  default=use_EOS, do_not_log=.not.use_temperature)
     if (use_regridding .and. (.not. CS%BBL_use_EOS)) &
-      call MOM_error(FATAL,"When using MOM6 in ALE mode it is required to set BBL_USE_EOS to True.")
+      call MOM_error(FATAL, "When using MOM6 in ALE mode it is required to set BBL_USE_EOS to True.")
   endif
   call get_param(param_file, mdl, "BBL_THICK_MIN", CS%BBL_thick_min, &
                  "The minimum bottom boundary layer thickness that can be "//&
@@ -3305,7 +3305,7 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
     endif
     if (CS%bottomdragmap) then
       if (len_trim(cdrag_file)==0 .or. len_trim(cdrag_var)==0) then
-        call MOM_error(FATAL,"CDRAG_FILE and CDRAG_VAR are required when using CDRAG_MAP.")
+        call MOM_error(FATAL, "CDRAG_FILE and CDRAG_VAR are required when using CDRAG_MAP.")
       endif
       allocate(cdrag_h(isd:ied,jsd:jed), source=0.0)
       allocate(CS%cdrag_u(IsdB:IedB,jsd:jed), source=0.0)

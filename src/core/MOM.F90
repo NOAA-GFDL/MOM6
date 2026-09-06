@@ -649,7 +649,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
   time_interval = time_int_in
   do_dyn = .true. ; if (present(do_dynamics)) do_dyn = do_dynamics
   do_thermo = .true. ; if (present(do_thermodynamics)) do_thermo = do_thermodynamics
-  if (.not.(do_dyn .or. do_thermo)) call MOM_error(FATAL,"Step_MOM: "//&
+  if (.not.(do_dyn .or. do_thermo)) call MOM_error(FATAL, "Step_MOM: "//&
     "Both do_dynamics and do_thermodynamics are false, which makes no sense.")
   cycle_start = .true. ; if (present(start_cycle)) cycle_start = start_cycle
   cycle_end = .true. ; if (present(end_cycle)) cycle_end = end_cycle
@@ -744,7 +744,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
         .not.(associated(CS%tv%p_surf) .and. associated(forces%p_surf) .and. &
               allocated(CS%tv%SpV_avg) .and. associated(CS%tv%T))
     if (.not.associated(forces%taux) .or. .not.associated(forces%tauy)) &
-         call MOM_error(FATAL,'step_MOM:forces%taux,tauy not associated')
+         call MOM_error(FATAL, 'step_MOM:forces%taux,tauy not associated')
     call create_group_pass(pass_tau_ustar_psurf, forces%taux, forces%tauy, G%Domain)
     if (associated(forces%ustar)) &
       call create_group_pass(pass_tau_ustar_psurf, forces%ustar, G%Domain)
@@ -1374,7 +1374,7 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
   endif
 
   if (CS%use_particles .and. CS%do_dynamics .and. (.not. CS%use_uh_particles)) then
-    if (CS%thickness_diffuse_first) call MOM_error(WARNING,"particles_run: "//&
+    if (CS%thickness_diffuse_first) call MOM_error(WARNING, "particles_run: "//&
       "Thickness_diffuse_first is true and use_uh_particles is false. "//&
       "This is usually a bad combination.")
     !Run particles using unweighted velocity
@@ -1456,7 +1456,7 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
         call mixedlayer_restrat(h, CS%uhtr, CS%vhtr, CS%tv, forces, dt, CS%visc%MLD, CS%visc%h_ML, &
                     CS%visc%sfc_buoy_flx, CS%VarMix, G, GV, US, CS%mixedlayer_restrat_CSp, CS%visc%Lam2)
       else
-        call MOM_error(FATAL,'step_MOM_dynamics:CS%visc%Lam2 not associated')
+        call MOM_error(FATAL, 'step_MOM_dynamics:CS%visc%Lam2 not associated')
       endif
     else
       call mixedlayer_restrat(h, CS%uhtr, CS%vhtr, CS%tv, forces, dt, CS%visc%MLD, CS%visc%h_ML, &
@@ -2666,7 +2666,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "timestep that is less than or equal to DT_TRACER_ADVECT.", &
                  default=CS%thermo_spans_coupling)
   if ( CS%diabatic_first .and. (CS%dt_tr_adv /= CS%dt_therm) ) then
-    call MOM_error(FATAL,"MOM: If using DIABATIC_FIRST, DT_TRACER_ADVECT must equal DT_THERM.")
+    call MOM_error(FATAL, "MOM: If using DIABATIC_FIRST, DT_TRACER_ADVECT must equal DT_THERM.")
   endif
   call get_param(param_file, "MOM", "THICKNESSDIFFUSE", CS%thickness_diffuse, &
                  "If true, isopycnal surfaces are diffused with a Laplacian "//&
@@ -2841,7 +2841,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "If =1, write the geometry and vertical grid files only for "//&
                  "a new simulation. If =2, always write the geometry and "//&
                  "vertical grid files. Other values are invalid.", default=1)
-  if (write_geom<0 .or. write_geom>2) call MOM_error(FATAL,"MOM: "//&
+  if (write_geom<0 .or. write_geom>2) call MOM_error(FATAL, "MOM: "//&
          "WRITE_GEOM must be equal to 0, 1 or 2.")
   call get_param(param_file, "MOM", "GEOM_FILE", geom_file, &
                  "The file into which to write the ocean geometry.", &

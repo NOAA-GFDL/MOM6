@@ -1126,7 +1126,7 @@ subroutine allocate_segment_field_data(field, OBC, segment, US, inputdir, filena
     full_varname = trim(varname) // trim(suffix)
 
     if (.not.file_exists(full_filename)) &
-      call MOM_error(FATAL," Unable to open OBC file " // trim(full_filename))
+      call MOM_error(FATAL, " Unable to open OBC file " // trim(full_filename))
 
     call field_size(full_filename, full_varname, siz, no_domain=.true.)
     field%nk_src = siz(3)
@@ -1134,7 +1134,7 @@ subroutine allocate_segment_field_data(field, OBC, segment, US, inputdir, filena
     if (OBC%brushcutter_mode .and. (modulo(siz(1),2) == 0 .or. modulo(siz(2),2) == 0)) then
       write(mesg, '("Brushcutter mode sizes ",I0," ",I0)') siz(1), siz(2)
       call MOM_error(WARNING, mesg // " " // trim(full_filename) // " " // trim(full_varname))
-      call MOM_error(FATAL,'segment data are not on the supergrid')
+      call MOM_error(FATAL, 'segment data are not on the supergrid')
     endif
 
     ! Allocate src array
@@ -2194,8 +2194,8 @@ subroutine parse_segment_data_str(segment_str, idx, var, value, filename, fieldn
   endif
 
   return
-986 call MOM_error(FATAL,'End of record while parsing segment data specification! '//trim(segment_str))
-987 call MOM_error(FATAL,'Error while parsing segment data specification! '//trim(segment_str))
+986 call MOM_error(FATAL, 'End of record while parsing segment data specification! '//trim(segment_str))
+987 call MOM_error(FATAL, 'Error while parsing segment data specification! '//trim(segment_str))
 end subroutine parse_segment_data_str
 
 !> Parse all the OBC_SEGMENT_%%%_DATA strings again
@@ -5156,7 +5156,7 @@ subroutine segment_thickness_reservoir_init(GV, US, OBC, param_file)
     if (.not. segment%on_pe) cycle
 
     if (associated(segment%h_Reg)) &
-         call MOM_error(FATAL,"segment_thickness_reservoir_init: thickness array was previously allocated")
+         call MOM_error(FATAL, "segment_thickness_reservoir_init: thickness array was previously allocated")
     allocate(segment%h_Reg)
 
     isd = segment%HI%isd ; ied = segment%HI%ied
@@ -5232,7 +5232,7 @@ subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, O
   if (segment%tr_Reg%ntseg>=MAX_FIELDS_) then
     write(mesg,'("Increase MAX_FIELDS_ in MOM_memory.h to at least ",I0," to allow for &
         &all the tracers being registered via register_segment_tracer.")') segment%tr_Reg%ntseg+1
-    call MOM_error(FATAL,"MOM register_segment_tracer: "//mesg)
+    call MOM_error(FATAL, "MOM register_segment_tracer: "//mesg)
   endif
   segment%tr_Reg%ntseg = segment%tr_Reg%ntseg + 1
   ntseg     = segment%tr_Reg%ntseg
@@ -5358,7 +5358,7 @@ subroutine register_temp_salt_segments(GV, US, OBC, tr_Reg, param_file)
     if (.not. segment%on_pe) cycle
 
     if (associated(segment%tr_Reg)) &
-         call MOM_error(FATAL,"register_temp_salt_segments: tracer array was previously allocated")
+         call MOM_error(FATAL, "register_temp_salt_segments: tracer array was previously allocated")
 
     name = 'temp'
     call tracer_name_lookup(tr_Reg, ntr_id, tr_ptr, name)
@@ -5469,7 +5469,7 @@ subroutine fill_obgc_segments(G, GV, OBC, tr_ptr, tr_name)
     if (.not. segment%on_pe) cycle
     nt = get_tracer_index(segment, tr_name)
     if (nt < 0) then
-      call MOM_error(FATAL,"fill_obgc_segments: Did not find tracer "// tr_name)
+      call MOM_error(FATAL, "fill_obgc_segments: Did not find tracer "// tr_name)
     endif
     isd = segment%HI%isd ; ied = segment%HI%ied
     jsd = segment%HI%jsd ; jed = segment%HI%jed
@@ -5747,7 +5747,7 @@ subroutine mask_outside_OBCs(G, US, param_file, OBC)
       fatal_error = .True.
       write(mesg,'("MOM_open_boundary: problem with OBC segments specification at ",I0,",",I0," during\n", &
           &"the masking of the outside grid points.")') i, j
-      call MOM_error(WARNING,"MOM mask_outside_OBCs: "//mesg, all_print=.true.)
+      call MOM_error(WARNING, "MOM mask_outside_OBCs: "//mesg, all_print=.true.)
     endif
     if (color(i,j) == cout) G%bathyT(i,j) = Dmask
   enddo ; enddo

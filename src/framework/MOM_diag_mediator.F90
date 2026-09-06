@@ -1504,7 +1504,7 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
   else
     write (mesg,*) " peculiar size ",size(field,1)," in i-direction\n"//&
        "does not match one of ", cszi, cszi+1, dszi, dszi+1
-    call MOM_error(FATAL,"post_data_2d_low: "//trim(diag%debug_str)//trim(mesg))
+    call MOM_error(FATAL, "post_data_2d_low: "//trim(diag%debug_str)//trim(mesg))
   endif
 
   if ( size(field,2) == dszj ) then
@@ -1518,7 +1518,7 @@ subroutine post_data_2d_low(diag, field, diag_cs, is_static, mask)
   else
     write (mesg,*) " peculiar size ",size(field,2)," in j-direction\n"//&
        "does not match one of ", cszj, cszj+1, dszj, dszj+1
-    call MOM_error(FATAL,"post_data_2d_low: "//trim(diag%debug_str)//trim(mesg))
+    call MOM_error(FATAL, "post_data_2d_low: "//trim(diag%debug_str)//trim(mesg))
   endif
 
   if ((diag%conversion_factor /= 0.) .and. (diag%conversion_factor /= 1.)) then
@@ -1677,7 +1677,7 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
     if (diag%v_extensive .and. .not.diag%axes%is_native) then
       ! The field is vertically integrated and needs to be re-gridded
       if (present(mask)) then
-        call MOM_error(FATAL,"post_data_3d: no mask for regridded field.")
+        call MOM_error(FATAL, "post_data_3d: no mask for regridded field.")
       endif
 
       if (id_clock_diag_remap>0) call cpu_clock_begin(id_clock_diag_remap)
@@ -1708,7 +1708,7 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
     elseif (diag%axes%needs_remapping) then
       ! Remap this field to another vertical coordinate.
       if (present(mask)) then
-        call MOM_error(FATAL,"post_data_3d: no mask for regridded field.")
+        call MOM_error(FATAL, "post_data_3d: no mask for regridded field.")
       endif
 
       if (id_clock_diag_remap>0) call cpu_clock_begin(id_clock_diag_remap)
@@ -1737,7 +1737,7 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
     elseif (diag%axes%needs_interpolating) then
       ! Interpolate this field to another vertical coordinate.
       if (present(mask)) then
-        call MOM_error(FATAL,"post_data_3d: no mask for regridded field.")
+        call MOM_error(FATAL, "post_data_3d: no mask for regridded field.")
       endif
 
       if (id_clock_diag_remap>0) call cpu_clock_begin(id_clock_diag_remap)
@@ -1828,7 +1828,7 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
   else
     write (mesg,*) " peculiar size ",size(field,1)," in i-direction\n"//&
        "does not match one of ", cszi, cszi+1, dszi, dszi+1
-    call MOM_error(FATAL,"post_data_3d_low: "//trim(diag%debug_str)//trim(mesg))
+    call MOM_error(FATAL, "post_data_3d_low: "//trim(diag%debug_str)//trim(mesg))
   endif
 
   if ( size(field,2) == dszj ) then
@@ -1842,7 +1842,7 @@ subroutine post_data_3d_low(diag, field, diag_cs, is_static, mask)
   else
     write (mesg,*) " peculiar size ",size(field,2)," in j-direction\n"//&
        "does not match one of ", cszj, cszj+1, dszj, dszj+1
-    call MOM_error(FATAL,"post_data_3d_low: "//trim(diag%debug_str)//trim(mesg))
+    call MOM_error(FATAL, "post_data_3d_low: "//trim(diag%debug_str)//trim(mesg))
   endif
 
   ks = lbound(field,3) ; ke = ubound(field,3)
@@ -2462,7 +2462,7 @@ integer function register_diag_field(module_name, field_name, axes_in, init_time
         axes_d2 => diag_cs%dsamp(dl)%axesCv1
       else
         !Niki: Should we worry about these, e.g., diag_to_Z_CS?
-        call MOM_error(WARNING,"register_diag_field: Could not find a proper axes for " &
+        call MOM_error(WARNING, "register_diag_field: Could not find a proper axes for " &
               //trim(new_module_name)//"-"//trim(field_name))
       endif
     endif
@@ -4440,7 +4440,7 @@ subroutine downsample_diag_indices_get(fo1, fo2, dl, diag_cs, isv, iev, jsv, jev
              "Please choose a layout such that NIGLOBAL/Layout_X and NJGLOBAL/Layout_Y are both divisible by dL=", &
              dlfac,&
              " Current domain extents: ", diag_cs%is,diag_cs%ie, diag_cs%js,diag_cs%je
-      call MOM_error(FATAL,"downsample_diag_indices_get: "//trim(mesg))
+      call MOM_error(FATAL, "downsample_diag_indices_get: "//trim(mesg))
     endif
     first_check = .false.
   endif
@@ -4470,7 +4470,7 @@ subroutine downsample_diag_indices_get(fo1, fo2, dl, diag_cs, isv, iev, jsv, jev
   else
     write (mesg,*) " dl =",dl,",dL =",dlfac,",fo1 =",fo1," f1 =",f1," peculiar size for diag field in i-direction\n"//&
           "does not match one of ", cszi, cszi+1, dszi, dszi+1
-    call MOM_error(FATAL,"downsample_diag_indices_get: "//trim(mesg))
+    call MOM_error(FATAL, "downsample_diag_indices_get: "//trim(mesg))
   endif
   if ( f2 == dszj ) then
     jsv = diag_cs%dsamp(dl)%jsc ; jev = diag_cs%dsamp(dl)%jec     ! Data domain
@@ -4483,7 +4483,7 @@ subroutine downsample_diag_indices_get(fo1, fo2, dl, diag_cs, isv, iev, jsv, jev
   else
     write (mesg,*) " dl =",dl,",dL =",dlfac,",fo2 =",fo2," f2 =",f2," peculiar size for diag field in j-direction\n"//&
           "does not match one of ", cszj, cszj+1, dszj, dszj+1
-    call MOM_error(FATAL,"downsample_diag_indices_get: "//trim(mesg))
+    call MOM_error(FATAL, "downsample_diag_indices_get: "//trim(mesg))
   endif
 end subroutine downsample_diag_indices_get
 

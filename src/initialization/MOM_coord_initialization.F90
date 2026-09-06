@@ -96,7 +96,7 @@ subroutine MOM_initialize_coord(GV, US, PF, tv, max_depth)
       call BFB_set_coord(GV%Rlay, GV%g_prime, GV, US, PF)
     case ("none", "ALE")
       call set_coord_to_none(GV%Rlay, GV%g_prime, GV, US, PF)
-    case default ; call MOM_error(FATAL,"MOM_initialize_coord: "// &
+    case default ; call MOM_error(FATAL, "MOM_initialize_coord: "// &
       "Unrecognized coordinate setup"//trim(config))
   end select
   ! There are nz+1 values of g_prime because it is an interface field, but the value at the bottom

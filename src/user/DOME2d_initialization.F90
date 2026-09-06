@@ -217,7 +217,7 @@ subroutine DOME2d_initialize_thickness ( h, depth_tot, G, GV, US, param_file, ju
       enddo ; enddo
 
     case default
-      call MOM_error(FATAL,"dome2d_initialize: "// &
+      call MOM_error(FATAL, "dome2d_initialize: "// &
       "Unrecognized i.c. setup - set REGRIDDING_COORDINATE_MODE")
 
   end select
@@ -319,7 +319,7 @@ subroutine DOME2d_initialize_temperature_salinity ( T, S, h, G, GV, US, param_fi
       enddo
 
     case default
-      call MOM_error(FATAL,"dome2d_initialize: "// &
+      call MOM_error(FATAL, "dome2d_initialize: "// &
       "Unrecognized i.c. setup - set REGRIDDING_COORDINATE_MODE")
 
   end select

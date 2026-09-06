@@ -1187,7 +1187,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
               do k=1,nz
                 salt_before = salt_before + h2d(i,k)*tv%S(i,j,k)
               enddo
-              !DEBUG if (CS%check_salt_verbose) call MOM_error(NOTE,'Salt before brine plume: ',salt_before)
+              !DEBUG if (CS%check_salt_verbose) call MOM_error(NOTE, 'Salt before brine plume: ',salt_before)
             endif
 
             ! Set the plume strength based on the salt rejected
@@ -1225,7 +1225,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
               !DEBUG if (CS%check_salt_verbose) then
               !DEBUG   write(mesg, '(A, I0, A, ES24.16, A, ES24.16)') &
               !DEBUG        'Salt to layer ', k, ' and remaining deficit: ', salt_added, ', ', salt_removed-salt_added
-              !DEBUG   call MOM_error(NOTE,trim(mesg))
+              !DEBUG   call MOM_error(NOTE, trim(mesg))
               !DEBUG endif
 
               if (CS%id_brine_input > 0.) then
@@ -1267,12 +1267,12 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
 
                 ! Ideally this would be written to a single fatal error call,
                 !  but the long message seems to hit an FMS character limit?
-                call MOM_error(WARNING,'Salt change in brine plume scheme exceeds CHECK_SALT_BRINE_PLUME_THRESHOLD ')
+                call MOM_error(WARNING, 'Salt change in brine plume scheme exceeds CHECK_SALT_BRINE_PLUME_THRESHOLD ')
                 do ne=1,10
-                  call MOM_error(WARNING,salt_error_mesg(ne),all_print=.true.)
+                  call MOM_error(WARNING, salt_error_mesg(ne), all_print=.true.)
                 enddo
-                call MOM_error(FATAL,'Salt conservation failed check in brine plume parameterization')
-                !call MOM_error(FATAL,'Salt conservation failed check in brine plume parameterization'//&
+                call MOM_error(FATAL, 'Salt conservation failed check in brine plume parameterization')
+                !call MOM_error(FATAL, 'Salt conservation failed check in brine plume parameterization'//&
                 !               NEW_LINE('a')//salt_error_mesg(1)//NEW_LINE('a')//salt_error_mesg(2)//&
                 !               NEW_LINE('a')//salt_error_mesg(3)//NEW_LINE('a')//salt_error_mesg(4)//&
                 !               NEW_LINE('a')//salt_error_mesg(5)//NEW_LINE('a')//salt_error_mesg(6)//&
@@ -1566,7 +1566,7 @@ subroutine diabatic_aux_init(Time, G, GV, US, param_file, diag, CS, useALEalgori
   call get_param(param_file, mdl, "BRINE_PLUME_MLD_FAC", CS%plume_mld_fac, &
                  "Proportionality factor between plume scale and  MLD used in brine plume parameteterization.", &
                  units="nondim", default=1.0, do_not_log=.not.CS%do_brine_plume)
-  if (CS%plume_mld_fac<0.0) call MOM_error(FATAL,"BRINE_PLUME_MLD_FAC shouldn't be negative!")
+  if (CS%plume_mld_fac<0.0) call MOM_error(FATAL, "BRINE_PLUME_MLD_FAC shouldn't be negative!")
   call get_param(param_file, mdl, "CHECK_SALT_BRINE_PLUME", CS%check_salt_bp, &
                  "If true, check for conservation in the brine plume scheme.", default=.false., debuggingParam=.true.)
   if (CS%check_salt_bp) then

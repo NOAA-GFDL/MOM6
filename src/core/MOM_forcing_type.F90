@@ -801,7 +801,7 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
                     &" at ",1pg11.4,",E,",1pg11.4,"N.")') &
                US%C_to_degC*Pen_SW_tot(i), US%C_to_degC*I_Cp_Hconvert*scale*dt * fluxes%sw(i,j), &
                G%geoLonT(i,j), G%geoLatT(i,j)
-        call MOM_error(WARNING,mesg)
+        call MOM_error(WARNING, mesg)
       endif
     endif
 
@@ -3814,7 +3814,7 @@ subroutine allocate_mech_forcing_by_group(G, forces, stress, ustar, shelf, &
   !These fields should only be allocated when waves
   if (present(waves)) then ; if (waves) then
     if (.not. present(num_stk_bands)) then
-      call MOM_error(FATAL,"Requested to &
+      call MOM_error(FATAL, "Requested to &
       &initialize with waves, but no waves are present.")
     endif
     if (num_stk_bands > 0) then
