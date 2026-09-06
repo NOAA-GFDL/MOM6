@@ -1537,7 +1537,7 @@ subroutine register_time_deriv(lb, f_ptr, deriv_ptr, CS)
          "register_time_deriv: Module must be initialized before it is used.")
 
   if (CS%num_time_deriv >= MAX_FIELDS_) then
-    call MOM_error(WARNING,"MOM_diagnostics:  Attempted to register more than " // &
+    call MOM_error(WARNING, "MOM_diagnostics:  Attempted to register more than " // &
                    "MAX_FIELDS_ diagnostic time derivatives via register_time_deriv.")
     return
   endif

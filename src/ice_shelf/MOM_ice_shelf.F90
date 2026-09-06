@@ -782,7 +782,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
               if (dS_it < 0.0) then ! Sbdry is now the upper bound.
                 if (Sb_max_set) then
                   if (Sbdry(i,j) > Sb_max) &
-                    call MOM_error(FATAL,"shelf_calc_flux: Irregular iteration for Sbdry (max).")
+                    call MOM_error(FATAL, "shelf_calc_flux: Irregular iteration for Sbdry (max).")
                 endif
                 Sb_max = Sbdry(i,j) ; dS_max = dS_it ; Sb_max_set = .true.
               else ! Sbdry is now the lower bound.
@@ -1199,14 +1199,14 @@ subroutine add_shelf_forces(Ocn_grid, US, CS, forces_in, do_shelf_area, external
   if (CS%rotate_index .and. rotate) then
     if ((Ocn_grid%isc /= CS%Grid_in%isc) .or. (Ocn_grid%iec /= CS%Grid_in%iec) .or. &
         (Ocn_grid%jsc /= CS%Grid_in%jsc) .or. (Ocn_grid%jec /= CS%Grid_in%jec)) &
-      call MOM_error(FATAL,"add_shelf_forces: Incompatible Ocean and external Ice shelf grids.")
+      call MOM_error(FATAL, "add_shelf_forces: Incompatible Ocean and external Ice shelf grids.")
     allocate(forces)
     call allocate_mech_forcing(forces_in, CS%Grid, forces)
     call rotate_mech_forcing(forces_in, CS%turns, forces)
   else
     if ((Ocn_grid%isc /= CS%Grid%isc) .or. (Ocn_grid%iec /= CS%Grid%iec) .or. &
         (Ocn_grid%jsc /= CS%Grid%jsc) .or. (Ocn_grid%jec /= CS%Grid%jec)) &
-      call MOM_error(FATAL,"add_shelf_forces: Incompatible Ocean and internal Ice shelf grids.")
+      call MOM_error(FATAL, "add_shelf_forces: Incompatible Ocean and internal Ice shelf grids.")
 
     forces=>forces_in
   endif
@@ -1297,7 +1297,7 @@ subroutine add_shelf_pressure(Ocn_grid, US, CS, fluxes)
 
   if ((CS%grid%isc /= G%isc) .or. (CS%grid%iec /= G%iec) .or. &
       (CS%grid%jsc /= G%jsc) .or. (CS%grid%jec /= G%jec)) &
-    call MOM_error(FATAL,"add_shelf_pressure: Incompatible ocean and ice shelf grids.")
+    call MOM_error(FATAL, "add_shelf_pressure: Incompatible ocean and ice shelf grids.")
 
   do j=js,je ; do i=is,ie
     press_ice = (CS%ISS%area_shelf_h(i,j) * G%IareaT(i,j)) * (CS%g_Earth * CS%ISS%mass_shelf(i,j))
@@ -1353,7 +1353,7 @@ subroutine add_shelf_flux(G, US, CS, sfc_state, fluxes, time_step)
 
   if ((CS%grid%isc /= G%isc) .or. (CS%grid%iec /= G%iec) .or. &
       (CS%grid%jsc /= G%jsc) .or. (CS%grid%jec /= G%jec)) &
-    call MOM_error(FATAL,"add_shelf_flux: Incompatible ocean and ice shelf grids.")
+    call MOM_error(FATAL, "add_shelf_flux: Incompatible ocean and ice shelf grids.")
 
   ISS => CS%ISS
 
@@ -1756,7 +1756,7 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
                  "Depth above which the melt is set to zero (it must be >= 0) "//&
                  "Default value won't affect the solution.", units="m", default=0.0, scale=US%m_to_Z)
   if (CS%cutoff_depth < 0.) &
-    call MOM_error(WARNING,"Initialize_ice_shelf: MELTING_CUTOFF_DEPTH must be >= 0.")
+    call MOM_error(WARNING, "Initialize_ice_shelf: MELTING_CUTOFF_DEPTH must be >= 0.")
 
   call get_param(param_file, mdl, "CONST_SEA_LEVEL", CS%constant_sea_level, &
                  "If true, apply evaporative, heat and salt fluxes in "//&
@@ -2129,7 +2129,7 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
 
   do j=jsd,jed ; do i=isd,ied
     if (ISS%area_shelf_h(i,j) > G%areaT(i,j)) then
-      call MOM_error(WARNING,"Initialize_ice_shelf: area_shelf_h exceeds G%areaT.")
+      call MOM_error(WARNING, "Initialize_ice_shelf: area_shelf_h exceeds G%areaT.")
       ISS%area_shelf_h(i,j) = G%areaT(i,j)
     endif
   enddo ; enddo
@@ -2462,7 +2462,7 @@ subroutine initialize_ice_shelf_forces(CS, ocn_grid, US, forces_in)
 
   if ((Ocn_grid%isc /= CS%Grid_in%isc) .or. (Ocn_grid%iec /= CS%Grid_in%iec) .or. &
       (Ocn_grid%jsc /= CS%Grid_in%jsc) .or. (Ocn_grid%jec /= CS%Grid_in%jec)) &
-    call MOM_error(FATAL,"initialize_ice_shelf_forces: Incompatible ocean and external ice shelf grids.")
+    call MOM_error(FATAL, "initialize_ice_shelf_forces: Incompatible ocean and external ice shelf grids.")
 
   call allocate_mech_forcing(CS%Grid_in, forces_in, ustar=.true., shelf=.true., press=.true., tau_mag=.true.)
   if (CS%rotate_index) then
@@ -2558,7 +2558,7 @@ subroutine initialize_shelf_mass(G, param_file, CS, ISS, new_sim)
       call USER_initialize_shelf_mass(ISS%mass_shelf, ISS%area_shelf_h, &
                    ISS%h_shelf, ISS%hmask, G, CS%US, CS%user_CS, param_file, new_sim_2)
 
-    case default ;  call MOM_error(FATAL,"initialize_ice_shelf: "// &
+    case default ;  call MOM_error(FATAL, "initialize_ice_shelf: "// &
       "Unrecognized ice shelf setup "//trim(config))
   end select
 

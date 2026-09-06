@@ -298,9 +298,9 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
                  'The number of times the 1-1-4-1-1 Laplacian filter is applied on OBL depth.', &
                  default=0)
   if (CS%n_smooth > G%domain%nihalo) then
-    call MOM_error(FATAL,'KPP smoothing number (N_SMOOTH) cannot be greater than NIHALO.')
+    call MOM_error(FATAL, 'KPP smoothing number (N_SMOOTH) cannot be greater than NIHALO.')
   elseif (CS%n_smooth > G%domain%njhalo) then
-    call MOM_error(FATAL,'KPP smoothing number (N_SMOOTH) cannot be greater than NJHALO.')
+    call MOM_error(FATAL, 'KPP smoothing number (N_SMOOTH) cannot be greater than NJHALO.')
   endif
   if (CS%n_smooth > 0) then
     call get_param(paramFile, mdl, 'DEEPEN_ONLY_VIA_SMOOTHING', CS%deepen_only,  &
@@ -384,7 +384,7 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
     case ("PARABOLIC") ; CS%NLT_shape = NLT_SHAPE_PARABOLIC
     case ("CUBIC")     ; CS%NLT_shape = NLT_SHAPE_CUBIC
     case ("CUBIC_LMD") ; CS%NLT_shape = NLT_SHAPE_CUBIC_LMD
-    case default ; call MOM_error(FATAL,"KPP_init: "// &
+    case default ; call MOM_error(FATAL, "KPP_init: "// &
                    "Unrecognized NLT_SHAPE option"//trim(string))
   end select
   call get_param(paramFile, mdl, 'MATCH_TECHNIQUE', CS%MatchTechnique,                                    &
@@ -408,7 +408,7 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
   ! safety check to avoid negative diff/visc
   if (CS%MatchTechnique == 'MatchBoth' .and. (CS%interpType2 == 'cubic' .or. &
       CS%interpType2 == 'quadratic')) then
-    call MOM_error(FATAL,"If MATCH_TECHNIQUE=MatchBoth, INTERP_TYPE2 must be set to \n"//&
+    call MOM_error(FATAL, "If MATCH_TECHNIQUE=MatchBoth, INTERP_TYPE2 must be set to \n"//&
                "linear or LMD94 (recommended) to avoid negative viscosity and diffusivity.\n"//&
                "Please select one of these valid options." )
   endif
@@ -431,7 +431,7 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
     case ("ALL_SW") ; CS%SW_METHOD = SW_METHOD_ALL_SW
     case ("MXL_SW") ; CS%SW_METHOD = SW_METHOD_MXL_SW
     case ("LV1_SW") ; CS%SW_METHOD = SW_METHOD_LV1_SW
-    case default ; call MOM_error(FATAL,"KPP_init: "// &
+    case default ; call MOM_error(FATAL, "KPP_init: "// &
                    "Unrecognized KPP_SHORTWAVE_METHOD option"//trim(string))
   end select
   call get_param(paramFile, mdl, 'CVMix_ZERO_H_WORK_AROUND', CS%min_thickness,                           &
@@ -457,7 +457,7 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
     select case ( trim(string))
       case ("CONSTANT") ; CS%LT_K_SHAPE = LT_K_CONSTANT
       case ("SCALED")   ; CS%LT_K_SHAPE = LT_K_SCALED
-      case default ; call MOM_error(FATAL,"KPP_init: "//&
+      case default ; call MOM_error(FATAL, "KPP_init: "//&
                     "Unrecognized KPP_LT_K_SHAPE option: "//trim(string))
     end select
     call get_param(paramFile, mdl, "KPP_LT_K_METHOD", string ,                   &
@@ -481,7 +481,7 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
         CS%LT_K_METHOD = LT_K_MODE_RW16
         langmuir_mixing_opt = 'RWHGK16'
       case default
-        call MOM_error(FATAL,"KPP_init: "//&
+        call MOM_error(FATAL, "KPP_init: "//&
                     "Unrecognized KPP_LT_K_METHOD option: "//trim(string))
     end select
     if (CS%LT_K_METHOD==LT_K_MODE_CONSTANT) then
@@ -521,7 +521,7 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
         CS%LT_VT2_METHOD = LT_VT2_MODE_LF17
         langmuir_entrainment_opt = 'LF17'
       case default
-        call MOM_error(FATAL,"KPP_init: "//&
+        call MOM_error(FATAL, "KPP_init: "//&
           "Unrecognized KPP_LT_VT2_METHOD option: "//trim(string))
     end select
     if (CS%LT_VT2_METHOD==LT_VT2_MODE_CONSTANT) then
@@ -868,7 +868,7 @@ subroutine KPP_calculate(CS, G, GV, US, h, tv, uStar, buoyFlux, Kt, Ks, Kv, &
           LangEnhK = min(2.25, 1. + 1./CS%La_SL(i,j))
         else
            !This shouldn't be reached.
-           !call MOM_error(WARNING,"Unexpected behavior in MOM_CVMix_KPP, see error in LT_K_ENHANCEMENT")
+           !call MOM_error(WARNING, "Unexpected behavior in MOM_CVMix_KPP, see error in LT_K_ENHANCEMENT")
            LangEnhK = 1.0
         endif
 
@@ -942,7 +942,7 @@ subroutine KPP_calculate(CS, G, GV, US, h, tv, uStar, buoyFlux, Kt, Ks, Kv, &
           write(*,*) 'Kviscosity(:) =',Kviscosity(:)
           write(*,*) 'Kdiffusivity(:,1) =',Kdiffusivity(:,1)
 
-          call MOM_error(FATAL,"KPP_calculate, after CVMix_coeffs_kpp: "// &
+          call MOM_error(FATAL, "KPP_calculate, after CVMix_coeffs_kpp: "// &
                    "Negative vertical viscosity or diffusivity has been detected. " // &
                    "This is likely related to the choice of MATCH_TECHNIQUE and INTERP_TYPE2. " //&
                    "You might consider using the default options for these parameters." )

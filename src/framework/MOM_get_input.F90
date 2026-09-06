@@ -74,7 +74,7 @@ subroutine get_MOM_input(param_file, dirs, check_params, default_input_filename,
   if (file_exists('input.nml')) then
     unit = open_namelist_file(file='input.nml')
   else
-    call MOM_error(FATAL,'Required namelist file input.nml does not exist.')
+    call MOM_error(FATAL, 'Required namelist file input.nml does not exist.')
   endif
 
   ! Read namelist parameters

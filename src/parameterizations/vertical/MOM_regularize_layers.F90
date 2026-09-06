@@ -559,7 +559,7 @@ subroutine regularize_surface(h, tv, dt, ea, eb, G, GV, US, CS)
         Sh_tot1(i) = Sh_tot1(i) + h_2d_init(i,k) * S_2d_init(i,k)
         Sh_tot2(i) = Sh_tot2(i) + h(i,j,k) * tv%S(i,j,k)
         if (h(i,j,k) < 0.0) &
-          call MOM_error(FATAL,"regularize_surface: Negative thicknesses.")
+          call MOM_error(FATAL, "regularize_surface: Negative thicknesses.")
         if (k==1) then ; h_predicted = h_2d_init(i,k) + (d_eb(i,k) - d_ea(i,k+1))
         elseif (k==nz) then ; h_predicted = h_2d_init(i,k) + (d_ea(i,k) - d_eb(i,k-1))
         else
