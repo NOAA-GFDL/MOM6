@@ -628,15 +628,15 @@ function real_string(val)
 
   if ((abs(val) < 1.0e4) .and. (abs(val) >= 1.0e-3)) then
     write(real_string, '(F30.11)') val
-    if (.not.testFormattedFloatIsReal(real_string,val)) then
+    if (.not.testFormattedFloatIsReal(real_string, val)) then
       write(real_string, '(F30.12)') val
-      if (.not.testFormattedFloatIsReal(real_string,val)) then
+      if (.not.testFormattedFloatIsReal(real_string, val)) then
         write(real_string, '(F30.13)') val
-        if (.not.testFormattedFloatIsReal(real_string,val)) then
+        if (.not.testFormattedFloatIsReal(real_string, val)) then
           write(real_string, '(F30.14)') val
-          if (.not.testFormattedFloatIsReal(real_string,val)) then
+          if (.not.testFormattedFloatIsReal(real_string, val)) then
             write(real_string, '(F30.15)') val
-            if (.not.testFormattedFloatIsReal(real_string,val)) then
+            if (.not.testFormattedFloatIsReal(real_string, val)) then
               write(real_string, '(F30.16)') val
             endif
           endif
@@ -688,7 +688,7 @@ end function real_string
 !> Returns a character string of a comma-separated, compact formatted, reals
 !> e.g. "1., 2., 5*3., 5.E2", that give the list of values.
 function real_array_string(vals, sep)
-  character(len=:) ,allocatable :: real_array_string !< The output string listing vals
+  character(len=:), allocatable :: real_array_string !< The output string listing vals
   real,      intent(in)  :: vals(:) !< The array of values to record
   character(len=*), &
     optional, intent(in) :: sep     !< The separator between successive values,
@@ -1106,7 +1106,7 @@ end subroutine doc_end
 ! -----------------------------------------------------------------------------
 
 !> Returns true if documentation has already been written
-function mesgHasBeenDocumented(doc,varName,mesg)
+function mesgHasBeenDocumented(doc, varName, mesg)
   type(doc_type),   pointer     :: doc  !< A pointer to a structure that controls where the
                                         !! documentation occurs and its formatting
   character(len=*), intent(in)  :: varName !< The name of the parameter being documented

@@ -385,7 +385,7 @@ end subroutine ALE_set_OM4_remap_algorithm
 
 !> Initialize diagnostics for the ALE module.
 subroutine ALE_register_diags(Time, G, GV, US, diag, CS)
-  type(time_type),target,     intent(in)  :: Time  !< Time structure
+  type(time_type), target,    intent(in)  :: Time  !< Time structure
   type(ocean_grid_type),      intent(in)  :: G     !< Grid structure
   type(unit_scale_type),      intent(in)  :: US    !< A dimensional unit scaling type
   type(verticalGrid_type),    intent(in)  :: GV    !< Ocean vertical grid structure

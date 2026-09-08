@@ -283,7 +283,7 @@ logical function tidal_mixing_init(Time, G, GV, US, param_file, int_tide_CSp, di
   CS%use_CVmix_tidal = use_CVmix_tidal
   CS%int_tide_dissipation = int_tide_dissipation
 
-  call get_param(param_file, mdl, "INPUTDIR", CS%inputdir, default=".",do_not_log=.true.)
+  call get_param(param_file, mdl, "INPUTDIR", CS%inputdir, default=".", do_not_log=.true.)
   CS%inputdir = slasher(CS%inputdir)
 
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
@@ -581,7 +581,7 @@ logical function tidal_mixing_init(Time, G, GV, US, param_file, int_tide_CSp, di
                     units="nondim", default=1.0, do_not_log=.true.)
     call CVMix_put(CS%CVMix_glb_params, 'Prandtl', prandtl_tidal)
 
-    call get_param(param_file, mdl, "TIDAL_ENERGY_TYPE",tidal_energy_type, &
+    call get_param(param_file, mdl, "TIDAL_ENERGY_TYPE", tidal_energy_type, &
                  "The type of input tidal energy flux dataset. Valid values are"//&
                    "\t Jayne\n"//&
                    "\t ER03 \n",&
@@ -616,41 +616,41 @@ logical function tidal_mixing_init(Time, G, GV, US, param_file, int_tide_CSp, di
   if (CS%Int_tide_dissipation .or. CS%Lee_wave_dissipation .or. &
       CS%Lowmode_itidal_dissipation) then
 
-    CS%id_Kd_itidal = register_diag_field('ocean_model','Kd_itides',diag%axesTi,Time, &
+    CS%id_Kd_itidal = register_diag_field('ocean_model', 'Kd_itides', diag%axesTi, Time, &
          'Internal Tide Driven Diffusivity', 'm2 s-1', conversion=GV%HZ_T_to_m2_s)
 
     if (CS%use_CVMix_tidal) then
-      CS%id_N2_int = register_diag_field('ocean_model','N2_int',diag%axesTi,Time, &
+      CS%id_N2_int = register_diag_field('ocean_model','N2_int', diag%axesTi, Time, &
           'Bouyancy frequency squared, at interfaces', 's-2', conversion=US%s_to_T**2)
       !> TODO: add units
       if (CS%CVMix_tidal_scheme .eq. SIMMONS) then
-        CS%id_Simmons_coeff = register_diag_field('ocean_model','Simmons_coeff',diag%axesT1,Time, &
+        CS%id_Simmons_coeff = register_diag_field('ocean_model', 'Simmons_coeff', diag%axesT1, Time, &
              'time-invariant portion of the tidal mixing coefficient using the Simmons', '')
       else if (CS%CVMix_tidal_scheme .eq. SCHMITTNER) then
-        CS%id_Schmittner_coeff = register_diag_field('ocean_model','Schmittner_coeff',diag%axesTL,Time, &
+        CS%id_Schmittner_coeff = register_diag_field('ocean_model', 'Schmittner_coeff', diag%axesTL, Time, &
              'time-invariant portion of the tidal mixing coefficient using the Schmittner', '')
-        CS%id_tidal_qe_md = register_diag_field('ocean_model','tidal_qe_md',diag%axesTL,Time, &
+        CS%id_tidal_qe_md = register_diag_field('ocean_model', 'tidal_qe_md', diag%axesTL, Time, &
              'input tidal energy dissipated locally interpolated to model vertical coordinates', &
              'W m-2', conversion=US%RZ3_T3_to_W_m2)
       endif
-      CS%id_vert_dep = register_diag_field('ocean_model','vert_dep',diag%axesTi,Time, &
+      CS%id_vert_dep = register_diag_field('ocean_model', 'vert_dep', diag%axesTi, Time, &
            'vertical deposition function needed for Simmons et al tidal  mixing', '')
     else
-      CS%id_TKE_itidal = register_diag_field('ocean_model','TKE_itidal',diag%axesT1,Time, &
+      CS%id_TKE_itidal = register_diag_field('ocean_model', 'TKE_itidal', diag%axesT1, Time, &
           'Internal Tide Driven Turbulent Kinetic Energy', &
           'W m-2', conversion=US%RZ3_T3_to_W_m2)
-      CS%id_Nb = register_diag_field('ocean_model','Nb',diag%axesT1,Time, &
+      CS%id_Nb = register_diag_field('ocean_model', 'Nb', diag%axesT1, Time, &
            'Bottom Buoyancy Frequency', 's-1', conversion=US%s_to_T)
 
-      CS%id_Kd_lowmode = register_diag_field('ocean_model','Kd_lowmode',diag%axesTi,Time, &
+      CS%id_Kd_lowmode = register_diag_field('ocean_model', 'Kd_lowmode', diag%axesTi, Time, &
            'Internal Tide Driven Diffusivity (from propagating low modes)', &
            'm2 s-1', conversion=GV%HZ_T_to_m2_s)
 
-      CS%id_Fl_itidal = register_diag_field('ocean_model','Fl_itides',diag%axesTi,Time, &
+      CS%id_Fl_itidal = register_diag_field('ocean_model', 'Fl_itides', diag%axesTi, Time, &
           'Vertical flux of tidal turbulent dissipation', &
           'm3 s-3', conversion=(GV%H_to_m*US%Z_to_m**2*US%s_to_T**3))
 
-      CS%id_Fl_lowmode = register_diag_field('ocean_model','Fl_lowmode',diag%axesTi,Time, &
+      CS%id_Fl_lowmode = register_diag_field('ocean_model', 'Fl_lowmode', diag%axesTi, Time, &
            'Vertical flux of tidal turbulent dissipation (from propagating low modes)', &
            'm3 s-3', conversion=(GV%H_to_m*US%Z_to_m**2*US%s_to_T**3))
 
@@ -663,29 +663,29 @@ logical function tidal_mixing_init(Time, G, GV, US, param_file, int_tide_CSp, di
            'Vertical decay scale for the tidal turbulent dissipation with Polzin scheme, '// &
            'scaled by N2_bot/N2_meanz', units='m', conversion=US%Z_to_m)
 
-      CS%id_N2_bot = register_diag_field('ocean_model','N2_b',diag%axesT1,Time, &
+      CS%id_N2_bot = register_diag_field('ocean_model', 'N2_b', diag%axesT1, Time, &
            'Bottom Buoyancy frequency squared', 's-2', conversion=US%s_to_T**2)
 
       CS%id_N2_meanz = register_diag_field('ocean_model','N2_meanz', diag%axesT1, Time, &
            'Buoyancy frequency squared averaged over the water column', 's-2', conversion=US%s_to_T**2)
 
-      CS%id_Kd_Itidal_Work = register_diag_field('ocean_model','Kd_Itidal_Work',diag%axesTL,Time, &
+      CS%id_Kd_Itidal_Work = register_diag_field('ocean_model', 'Kd_Itidal_Work', diag%axesTL, Time, &
            'Work done by Internal Tide Diapycnal Mixing', &
            'W m-2', conversion=US%RZ3_T3_to_W_m2)
 
-      CS%id_Kd_Niku_Work = register_diag_field('ocean_model','Kd_Nikurashin_Work',diag%axesTL,Time, &
+      CS%id_Kd_Niku_Work = register_diag_field('ocean_model', 'Kd_Nikurashin_Work', diag%axesTL, Time, &
            'Work done by Nikurashin Lee Wave Drag Scheme', &
            'W m-2', conversion=US%RZ3_T3_to_W_m2)
 
-      CS%id_Kd_Lowmode_Work = register_diag_field('ocean_model','Kd_Lowmode_Work',diag%axesTL,Time, &
+      CS%id_Kd_Lowmode_Work = register_diag_field('ocean_model', 'Kd_Lowmode_Work', diag%axesTL, Time, &
            'Work done by Internal Tide Diapycnal Mixing (low modes)', &
            'W m-2', conversion=US%RZ3_T3_to_W_m2)
 
       if (CS%Lee_wave_dissipation) then
-        CS%id_TKE_leewave = register_diag_field('ocean_model','TKE_leewave',diag%axesT1,Time, &
+        CS%id_TKE_leewave = register_diag_field('ocean_model', 'TKE_leewave', diag%axesT1, Time, &
             'Lee wave Driven Turbulent Kinetic Energy', &
             'W m-2', conversion=US%RZ3_T3_to_W_m2)
-        CS%id_Kd_Niku = register_diag_field('ocean_model','Kd_Nikurashin',diag%axesTi,Time, &
+        CS%id_Kd_Niku = register_diag_field('ocean_model', 'Kd_Nikurashin', diag%axesTi, Time, &
             'Lee Wave Driven Diffusivity', 'm2 s-1', conversion=GV%HZ_T_to_m2_s)
       endif
     endif ! S%use_CVMix_tidal
@@ -1250,7 +1250,7 @@ subroutine add_int_tide_diffusivity(dz, j, N2_bot, Rho_bot, N2_lay, TKE_to_Kd, m
     TKE_lowmode_bot(i) = 0.0
     if (CS%Lowmode_itidal_dissipation) then
       ! get loss rate due to wave drag on low modes (already multiplied by q)
-      call get_lowmode_loss(i,j,G,CS%int_tide_CSp,"WaveDrag",TKE_lowmode_tot)
+      call get_lowmode_loss(i, j, G, CS%int_tide_CSp, "WaveDrag", TKE_lowmode_tot)
       TKE_lowmode_bot(i) = CS%Mu_itides * GV%RZ_to_H * TKE_lowmode_tot
     endif
     ! Vertical energy flux at bottom

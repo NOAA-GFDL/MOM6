@@ -420,7 +420,7 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
                  'If true, adds KPP diffusivity to diffusivity from other schemes.\n'//&
                  'If false, KPP is the only diffusivity wherever KPP is non-zero.',  &
                  default=.True.)
-  call get_param(paramFile, mdl, 'KPP_SHORTWAVE_METHOD',string,                      &
+  call get_param(paramFile, mdl, 'KPP_SHORTWAVE_METHOD', string, &
                  'Determines contribution of shortwave radiation to KPP surface '// &
                  'buoyancy flux.  Options include:\n'//                             &
                  '  ALL_SW: use total shortwave radiation\n'//                      &
@@ -495,7 +495,7 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
        'Flag for Langmuir turbulence enhancement of Vt2 '//&
        'in Bulk Richardson Number.', Default=.false.)
   if (CS%LT_Vt2_Enhancement) then
-    call get_param(paramFile, mdl, "KPP_LT_VT2_METHOD",string ,                  &
+    call get_param(paramFile, mdl, "KPP_LT_VT2_METHOD", string, &
                    'Method to enhance Vt2 in KPP. '//                            &
                    'Valid options are: \n'//                                     &
                    '\t CONSTANT = Constant value (KPP_VT2_ENH_FAC) \n'//         &

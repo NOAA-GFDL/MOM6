@@ -311,7 +311,7 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
 
   ! Check if using LA_LI2016
   call get_param(param_file, mdl, "USE_LA_LI2016", StatisticalWaves, &
-                 do_not_log=.true.,default=.false.)
+                 do_not_log=.true., default=.false.)
 
   if (.not.(use_waves .or. StatisticalWaves)) return
 
@@ -408,7 +408,7 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
        default=.false.)
 
   ! Get Wave Method and write to integer WaveMethod
-  call get_param(param_file,mdl,"WAVE_METHOD",TMPSTRING1,             &
+  call get_param(param_file, mdl, "WAVE_METHOD", TMPSTRING1,          &
        "Choice of wave method, valid options include: \n"//           &
        " TEST_PROFILE  - Prescribed from surface Stokes drift \n"//   &
        "                 and a decay wavelength.\n"//                 &
@@ -581,36 +581,36 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
   endif
 
   ! Initialize Wave related outputs
-  CS%id_surfacestokes_y = register_diag_field('ocean_model','surface_stokes_y', &
-       CS%diag%axesCv1,Time,'Surface Stokes drift (y)', 'm s-1', conversion=US%L_T_to_m_s)
-  CS%id_surfacestokes_x = register_diag_field('ocean_model','surface_stokes_x', &
-       CS%diag%axesCu1,Time,'Surface Stokes drift (x)', 'm s-1', conversion=US%L_T_to_m_s)
-  CS%id_3dstokes_y = register_diag_field('ocean_model','3d_stokes_y', &
-       CS%diag%axesCvL,Time,'3d Stokes drift (y)', 'm s-1', conversion=US%L_T_to_m_s)
-  CS%id_3dstokes_x = register_diag_field('ocean_model','3d_stokes_x', &
-       CS%diag%axesCuL,Time,'3d Stokes drift (x)', 'm s-1', conversion=US%L_T_to_m_s)
+  CS%id_surfacestokes_y = register_diag_field('ocean_model', 'surface_stokes_y', &
+       CS%diag%axesCv1, Time, 'Surface Stokes drift (y)', 'm s-1', conversion=US%L_T_to_m_s)
+  CS%id_surfacestokes_x = register_diag_field('ocean_model', 'surface_stokes_x', &
+       CS%diag%axesCu1, Time, 'Surface Stokes drift (x)', 'm s-1', conversion=US%L_T_to_m_s)
+  CS%id_3dstokes_y = register_diag_field('ocean_model', '3d_stokes_y', &
+       CS%diag%axesCvL, Time, '3d Stokes drift (y)', 'm s-1', conversion=US%L_T_to_m_s)
+  CS%id_3dstokes_x = register_diag_field('ocean_model', '3d_stokes_x', &
+       CS%diag%axesCuL, Time, '3d Stokes drift (x)', 'm s-1', conversion=US%L_T_to_m_s)
   if (CS%Stokes_DDT) then
-    CS%id_ddt_3dstokes_y = register_diag_field('ocean_model','dvdt_Stokes', &
-         CS%diag%axesCvL,Time,'d/dt Stokes drift (meridional)', 'm s-2', conversion=US%L_T2_to_m_s2)
-    CS%id_ddt_3dstokes_x = register_diag_field('ocean_model','dudt_Stokes', &
-         CS%diag%axesCuL,Time,'d/dt Stokes drift (zonal)', 'm s-2', conversion=US%L_T2_to_m_s2)
+    CS%id_ddt_3dstokes_y = register_diag_field('ocean_model', 'dvdt_Stokes', &
+         CS%diag%axesCvL, Time, 'd/dt Stokes drift (meridional)', 'm s-2', conversion=US%L_T2_to_m_s2)
+    CS%id_ddt_3dstokes_x = register_diag_field('ocean_model', 'dudt_Stokes', &
+         CS%diag%axesCuL, Time, 'd/dt Stokes drift (zonal)', 'm s-2', conversion=US%L_T2_to_m_s2)
     CS%id_3dstokes_y_from_ddt = register_diag_field('ocean_model','3d_stokes_y_from_ddt', &
-         CS%diag%axesCvL,Time,'3d Stokes drift from ddt (y)', 'm s-1', conversion=US%L_T_to_m_s)
+         CS%diag%axesCvL, Time, '3d Stokes drift from ddt (y)', 'm s-1', conversion=US%L_T_to_m_s)
     CS%id_3dstokes_x_from_ddt = register_diag_field('ocean_model','3d_stokes_x_from_ddt', &
-         CS%diag%axesCuL,Time,'3d Stokes drift from ddt (x)', 'm s-1', conversion=US%L_T_to_m_s)
+         CS%diag%axesCuL, Time, '3d Stokes drift from ddt (x)', 'm s-1', conversion=US%L_T_to_m_s)
   endif
-  CS%id_PFv_Stokes = register_diag_field('ocean_model','PFv_Stokes', &
-       CS%diag%axesCvL,Time,'PF from Stokes drift (meridional)','m s-2',conversion=US%L_T2_to_m_s2)
-  CS%id_PFu_Stokes = register_diag_field('ocean_model','PFu_Stokes', &
-       CS%diag%axesCuL,Time,'PF from Stokes drift (zonal)','m s-2',conversion=US%L_T2_to_m_s2)
-  CS%id_P_deltaStokes_i = register_diag_field('ocean_model','P_deltaStokes_i', &
-       CS%diag%axesTi,Time,'Interfacial pressure anomaly from Stokes drift used in PFu_Stokes',&
-       'm2 s-2',conversion=US%L_T_to_m_s**2)
-  CS%id_P_deltaStokes_L = register_diag_field('ocean_model','P_deltaStokes_L', &
-       CS%diag%axesTL,Time,'Layer averaged pressure anomaly from Stokes drift used in PFu_Stokes',&
-       'm2 s-2',conversion=US%L_T_to_m_s**2)
-  CS%id_La_turb = register_diag_field('ocean_model','La_turbulent', &
-       CS%diag%axesT1,Time,'Surface (turbulent) Langmuir number','nondim')
+  CS%id_PFv_Stokes = register_diag_field('ocean_model', 'PFv_Stokes', &
+       CS%diag%axesCvL, Time, 'PF from Stokes drift (meridional)', 'm s-2', conversion=US%L_T2_to_m_s2)
+  CS%id_PFu_Stokes = register_diag_field('ocean_model', 'PFu_Stokes', &
+       CS%diag%axesCuL, Time, 'PF from Stokes drift (zonal)', 'm s-2', conversion=US%L_T2_to_m_s2)
+  CS%id_P_deltaStokes_i = register_diag_field('ocean_model', 'P_deltaStokes_i', &
+       CS%diag%axesTi, Time, 'Interfacial pressure anomaly from Stokes drift used in PFu_Stokes', &
+       'm2 s-2', conversion=US%L_T_to_m_s**2)
+  CS%id_P_deltaStokes_L = register_diag_field('ocean_model', 'P_deltaStokes_L', &
+       CS%diag%axesTL, Time, 'Layer averaged pressure anomaly from Stokes drift used in PFu_Stokes', &
+       'm2 s-2', conversion=US%L_T_to_m_s**2)
+  CS%id_La_turb = register_diag_field('ocean_model', 'La_turbulent', &
+       CS%diag%axesT1, Time, 'Surface (turbulent) Langmuir number', 'nondim')
 
 end subroutine MOM_wave_interface_init
 
@@ -733,7 +733,7 @@ subroutine Update_Surface_Waves(G, GV, US, Time_present, dt, CS, forces)
             CS%STKY0(i,J,b) = 0.5*(forces%VStkb(i,j,b)+forces%VStkb(i,j+1,b))
           enddo
         enddo
-        call pass_vector(CS%STKx0(:,:,b),CS%STKy0(:,:,b), G%Domain)
+        call pass_vector(CS%STKx0(:,:,b), CS%STKy0(:,:,b), G%Domain)
       enddo
       do j=G%jsc,G%jec
         do i=G%isc,G%iec
@@ -2184,7 +2184,7 @@ subroutine waves_register_restarts(CS, HI, GV, US, param_file, restart_CSp)
 
   ! Check if using LA_LI2016
   call get_param(param_file,mdl,"USE_LA_LI2016",StatisticalWaves,     &
-                 do_not_log=.true.,default=.false.)
+                 do_not_log=.true., default=.false.)
 
   if (.not.(use_waves .or. StatisticalWaves)) return
 

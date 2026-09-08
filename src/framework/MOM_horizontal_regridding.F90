@@ -401,17 +401,17 @@ subroutine horiz_interp_and_extrap_tracer_record(filename, varnam, recnum, G, tr
   if (allocated(tr_z)) deallocate(tr_z)
   if (allocated(mask_z)) deallocate(mask_z)
 
-  call get_axis_info(axes_info(1),ax_size=id)
-  call get_axis_info(axes_info(2),ax_size=jd)
-  call get_axis_info(axes_info(3),ax_size=kd)
+  call get_axis_info(axes_info(1), ax_size=id)
+  call get_axis_info(axes_info(2), ax_size=jd)
+  call get_axis_info(axes_info(3), ax_size=kd)
 
   allocate(lon_in(id), lat_in(jd), z_in(kd), z_edges_in(kd+1))
   allocate(tr_z(isd:ied,jsd:jed,kd), source=0.0)
   allocate(mask_z(isd:ied,jsd:jed,kd), source=0.0)
 
-  call get_axis_info(axes_info(1),ax_data=lon_in)
-  call get_axis_info(axes_info(2),ax_data=lat_in)
-  call get_axis_info(axes_info(3),ax_data=z_in)
+  call get_axis_info(axes_info(1), ax_data=lon_in)
+  call get_axis_info(axes_info(2), ax_data=lat_in)
+  call get_axis_info(axes_info(3), ax_data=z_in)
 
   call cpu_clock_end(id_clock_read)
 

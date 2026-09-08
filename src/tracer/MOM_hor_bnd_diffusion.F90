@@ -421,7 +421,7 @@ end subroutine hbd_grid
 
 !> Calculate the harmonic mean of two quantities [arbitrary]
 !! See \ref section_harmonic_mean.
-real function harmonic_mean(h1,h2)
+real function harmonic_mean(h1, h2)
   real :: h1 !< Scalar quantity [arbitrary]
   real :: h2 !< Scalar quantity [arbitrary]
   if (h1 + h2 == 0.) then

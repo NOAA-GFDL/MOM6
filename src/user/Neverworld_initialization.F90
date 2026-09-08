@@ -144,7 +144,7 @@ real function cstprof(x, x0, L, lf, bf, sf, sh)
   real :: s ! A rescaled position [nondim]
 
   s = max( 0., min( 1.,( x - x0 ) / L ) )
-  cstprof = sh * scurve(s-lf,0.,bf) + (1.-sh) * scurve(s - (1.-sf),0.,sf)
+  cstprof = sh * scurve(s-lf, 0., bf) + (1.-sh) * scurve(s - (1.-sf), 0., sf)
 end function cstprof
 
 !> Distance between points x,y and a line segment (x0,y0) and (x0,y1) in arbitrary units [A].
