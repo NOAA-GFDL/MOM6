@@ -2305,7 +2305,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   type(time_type), optional, intent(in)    :: Time_in     !< time passed to MOM_initialize_state when
                                                           !! model is not being started from a restart file
   logical,         optional, intent(out)   :: offline_tracer_mode !< True is returned if tracers are being run offline
-  character(len=*),optional, intent(in)    :: input_restart_file !< If present, name of restart file to read
+  character(len=*), optional, intent(in)   :: input_restart_file !< If present, name of restart file to read
   type(diag_ctrl), optional, pointer       :: diag_ptr    !< A pointer set in this routine to the diagnostic
                                                           !! regulatory structure
   type(tracer_flow_control_CS), &
@@ -2352,7 +2352,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   type(ocean_OBC_type), pointer :: OBC_in => NULL()
   type(sponge_CS), pointer :: sponge_in_CSp => NULL()
   type(ALE_sponge_CS), pointer :: ALE_sponge_in_CSp => NULL()
-  type(oda_incupd_CS),pointer :: oda_incupd_in_CSp => NULL()
+  type(oda_incupd_CS), pointer :: oda_incupd_in_CSp => NULL()
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
 
@@ -3467,7 +3467,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   ! remainder of this subroutine is controlled by the parameters that have
   ! have already been set.
 
-  if (ALE_remap_init_conds(CS%ALE_CSp) .and. .not. query_initialized(CS%h,"h",restart_CSp)) then
+  if (ALE_remap_init_conds(CS%ALE_CSp) .and. .not. query_initialized(CS%h, "h", restart_CSp)) then
     ! This block is controlled by the ALE parameter REMAP_AFTER_INITIALIZATION.
     ! \todo This block exists for legacy reasons and we should phase it out of all examples. !###
     if (CS%debug) then

@@ -203,11 +203,11 @@ logical function neutral_diffusion_init(Time, G, GV, US, param_file, diag, EOS, 
   call get_param(param_file, mdl, "KHTR_USE_EBT_STRUCT", KhTh_use_ebt_struct, &
                  "If true, uses the equivalent barotropic structure "//&
                  "as the vertical structure of the tracer diffusivity.",&
-                 default=.false.,do_not_log=.true.)
+                 default=.false., do_not_log=.true.)
   call get_param(param_file, mdl, "KHTR_USE_SQG_STRUCT", KhTh_use_sqg_struct, &
                  "If true, uses the surface geostrophic structure "//&
                  "as the vertical structure of the tracer diffusivity.",&
-                 default=.false.,do_not_log=.true.)
+                 default=.false., do_not_log=.true.)
   call get_param(param_file, mdl, "NDIFF_USE_UNMASKED_TRANSPORT_BUG", CS%use_unmasked_transport_bug, &
                  "If true, use an older form for the accumulation of neutral-diffusion "//&
                  "transports that were unmasked, as used prior to Jan 2018. This is not "//&
@@ -1214,11 +1214,11 @@ end function ppm_ave
 
 !> A true signum function that returns either -abs(a), when x<0; or abs(a) when x>0; or 0 when x=0.
 !! The returned units are the same as those of a [arbitrary].
-real function signum(a,x)
+real function signum(a, x)
   real, intent(in) :: a !< The magnitude argument in arbitrary units [arbitrary]
   real, intent(in) :: x !< The sign (or zero) argument [arbitrary]
 
-  signum = sign(a,x)
+  signum = sign(a, x)
   if (x==0.) signum = 0.
 
 end function signum
@@ -1561,8 +1561,10 @@ subroutine find_neutral_surface_positions_continuous(nk, Pl, Tl, Sl, dRdTl, dRdS
     ! NOTE: This would be better expressed in terms of the layers thicknesses rather
     ! than as differences of position - AJA
     if (k_surface>1) then
-      hL = absolute_position(nk,ns,Pl,KoL,PoL,k_surface) - absolute_position(nk,ns,Pl,KoL,PoL,k_surface-1)
-      hR = absolute_position(nk,ns,Pr,KoR,PoR,k_surface) - absolute_position(nk,ns,Pr,KoR,PoR,k_surface-1)
+      hL = absolute_position(nk, ns, Pl, KoL, PoL, k_surface) - &
+           absolute_position(nk, ns, Pl, KoL, PoL, k_surface-1)
+      hR = absolute_position(nk, ns, Pr, KoR, PoR, k_surface) - &
+           absolute_position(nk, ns, Pr, KoR, PoR, k_surface-1)
       if ( hL + hR > 0.) then
         hEff(k_surface-1) = 2. * hL * hR / ( hL + hR ) ! Harmonic mean of layer thicknesses
       else
@@ -2278,7 +2280,7 @@ function delta_rho_from_derivs( T1, S1, P1, dRdT1, dRdS1, &
 end function delta_rho_from_derivs
 
 !> Converts non-dimensional position within a layer to absolute position (for debugging)
-function absolute_position(n,ns,Pint,Karr,NParr,k_surface)
+function absolute_position(n, ns, Pint, Karr, NParr, k_surface)
   integer, intent(in) :: n            !< Number of levels
   integer, intent(in) :: ns           !< Number of neutral surfaces
   real,    intent(in) :: Pint(n+1)    !< Position of interfaces [R L2 T-2 ~> Pa] or other units
@@ -2297,7 +2299,7 @@ function absolute_position(n,ns,Pint,Karr,NParr,k_surface)
 end function absolute_position
 
 !> Converts non-dimensional positions within layers to absolute positions (for debugging)
-function absolute_positions(n,ns,Pint,Karr,NParr)
+function absolute_positions(n, ns, Pint, Karr, NParr)
   integer, intent(in) :: n         !< Number of levels
   integer, intent(in) :: ns        !< Number of neutral surfaces
   real,    intent(in) :: Pint(n+1) !< Position of interface [R L2 T-2 ~> Pa] or other units
@@ -2311,7 +2313,7 @@ function absolute_positions(n,ns,Pint,Karr,NParr)
   integer :: k_surface
 
   do k_surface = 1, ns
-    absolute_positions(k_surface) = absolute_position(n,ns,Pint,Karr,NParr,k_surface)
+    absolute_positions(k_surface) = absolute_position(n, ns, Pint, Karr, NParr, k_surface)
   enddo
 
 end function absolute_positions

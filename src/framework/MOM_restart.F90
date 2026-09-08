@@ -797,7 +797,7 @@ function query_initialized_0d(f_ptr, CS) result(query_initialized)
   query_initialized = .false.
   n = CS%novars+1
   do m=1,CS%novars
-    if (associated(CS%var_ptr0d(m)%p,f_ptr)) then
+    if (associated(CS%var_ptr0d(m)%p, f_ptr)) then
       if (CS%restart_field(m)%initialized) query_initialized = .true.
       n = m ; exit
     endif
@@ -821,7 +821,7 @@ function query_initialized_1d(f_ptr, CS) result(query_initialized)
   query_initialized = .false.
   n = CS%novars+1
   do m=1,CS%novars
-    if (associated(CS%var_ptr1d(m)%p,f_ptr)) then
+    if (associated(CS%var_ptr1d(m)%p, f_ptr)) then
       if (CS%restart_field(m)%initialized) query_initialized = .true.
       n = m ; exit
     endif
@@ -846,7 +846,7 @@ function query_initialized_2d(f_ptr, CS) result(query_initialized)
   query_initialized = .false.
   n = CS%novars+1
   do m=1,CS%novars
-    if (associated(CS%var_ptr2d(m)%p,f_ptr)) then
+    if (associated(CS%var_ptr2d(m)%p, f_ptr)) then
       if (CS%restart_field(m)%initialized) query_initialized = .true.
       n = m ; exit
     endif
@@ -871,7 +871,7 @@ function query_initialized_3d(f_ptr, CS) result(query_initialized)
   query_initialized = .false.
   n = CS%novars+1
   do m=1,CS%novars
-    if (associated(CS%var_ptr3d(m)%p,f_ptr)) then
+    if (associated(CS%var_ptr3d(m)%p, f_ptr)) then
       if (CS%restart_field(m)%initialized) query_initialized = .true.
       n = m ; exit
     endif
@@ -896,7 +896,7 @@ function query_initialized_4d(f_ptr, CS) result(query_initialized)
   query_initialized = .false.
   n = CS%novars+1
   do m=1,CS%novars
-    if (associated(CS%var_ptr4d(m)%p,f_ptr)) then
+    if (associated(CS%var_ptr4d(m)%p, f_ptr)) then
       if (CS%restart_field(m)%initialized) query_initialized = .true.
       n = m ; exit
     endif
@@ -922,7 +922,7 @@ function query_initialized_0d_name(f_ptr, name, CS) result(query_initialized)
   query_initialized = .false.
   n = CS%novars+1
   do m=1,CS%novars
-    if (associated(CS%var_ptr0d(m)%p,f_ptr)) then
+    if (associated(CS%var_ptr0d(m)%p, f_ptr)) then
       if (CS%restart_field(m)%initialized) query_initialized = .true.
       n = m ; exit
     endif
@@ -955,7 +955,7 @@ function query_initialized_1d_name(f_ptr, name, CS) result(query_initialized)
   query_initialized = .false.
   n = CS%novars+1
   do m=1,CS%novars
-    if (associated(CS%var_ptr1d(m)%p,f_ptr)) then
+    if (associated(CS%var_ptr1d(m)%p, f_ptr)) then
       if (CS%restart_field(m)%initialized) query_initialized = .true.
       n = m ; exit
     endif
@@ -988,7 +988,7 @@ function query_initialized_2d_name(f_ptr, name, CS) result(query_initialized)
   query_initialized = .false.
   n = CS%novars+1
   do m=1,CS%novars
-    if (associated(CS%var_ptr2d(m)%p,f_ptr)) then
+    if (associated(CS%var_ptr2d(m)%p, f_ptr)) then
       if (CS%restart_field(m)%initialized) query_initialized = .true.
       n = m ; exit
     endif
@@ -1021,7 +1021,7 @@ function query_initialized_3d_name(f_ptr, name, CS) result(query_initialized)
   query_initialized = .false.
   n = CS%novars+1
   do m=1,CS%novars
-    if (associated(CS%var_ptr3d(m)%p,f_ptr)) then
+    if (associated(CS%var_ptr3d(m)%p, f_ptr)) then
       if (CS%restart_field(m)%initialized) query_initialized = .true.
       n = m ; exit
     endif
@@ -1054,7 +1054,7 @@ function query_initialized_4d_name(f_ptr, name, CS) result(query_initialized)
   query_initialized = .false.
   n = CS%novars+1
   do m=1,CS%novars
-    if (associated(CS%var_ptr4d(m)%p,f_ptr)) then
+    if (associated(CS%var_ptr4d(m)%p, f_ptr)) then
       if (CS%restart_field(m)%initialized) query_initialized = .true.
       n = m ; exit
     endif
@@ -1099,7 +1099,7 @@ subroutine set_initialized_0d_name(f_ptr, name, CS)
   if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
       "set_initialized: Module must be initialized before it is used.")
 
-  do m=1,CS%novars ; if (associated(CS%var_ptr0d(m)%p,f_ptr)) then
+  do m=1,CS%novars ; if (associated(CS%var_ptr0d(m)%p, f_ptr)) then
     CS%restart_field(m)%initialized = .true. ; exit
   endif ; enddo
 
@@ -1124,7 +1124,7 @@ subroutine set_initialized_1d_name(f_ptr, name, CS)
   if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
       "set_initialized: Module must be initialized before it is used.")
 
-  do m=1,CS%novars ; if (associated(CS%var_ptr1d(m)%p,f_ptr)) then
+  do m=1,CS%novars ; if (associated(CS%var_ptr1d(m)%p, f_ptr)) then
     CS%restart_field(m)%initialized = .true. ; exit
   endif ; enddo
 
@@ -1149,7 +1149,7 @@ subroutine set_initialized_2d_name(f_ptr, name, CS)
   if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
       "set_initialized: Module must be initialized before it is used.")
 
-  do m=1,CS%novars ; if (associated(CS%var_ptr2d(m)%p,f_ptr)) then
+  do m=1,CS%novars ; if (associated(CS%var_ptr2d(m)%p, f_ptr)) then
     CS%restart_field(m)%initialized = .true. ; exit
   endif ; enddo
 
@@ -1174,7 +1174,7 @@ subroutine set_initialized_3d_name(f_ptr, name, CS)
   if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
       "set_initialized: Module must be initialized before it is used.")
 
-  do m=1,CS%novars ; if (associated(CS%var_ptr3d(m)%p,f_ptr)) then
+  do m=1,CS%novars ; if (associated(CS%var_ptr3d(m)%p, f_ptr)) then
     CS%restart_field(m)%initialized = .true. ; exit
   endif ; enddo
 
@@ -1199,7 +1199,7 @@ subroutine set_initialized_4d_name(f_ptr, name, CS)
   if (.not.CS%initialized) call MOM_error(FATAL, "MOM_restart " // &
       "set_initialized: Module must be initialized before it is used.")
 
-  do m=1,CS%novars ; if (associated(CS%var_ptr4d(m)%p,f_ptr)) then
+  do m=1,CS%novars ; if (associated(CS%var_ptr4d(m)%p, f_ptr)) then
     CS%restart_field(m)%initialized = .true. ; exit
   endif ; enddo
 

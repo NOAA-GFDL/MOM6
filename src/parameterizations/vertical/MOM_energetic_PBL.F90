@@ -387,7 +387,7 @@ subroutine energetic_PBL(h_3d, u_3d, v_3d, tv, fluxes, visc, dt, Kd_int, G, GV, 
 !   The key parameters for the mixed layer are found in the control structure.
 !   To use the classic constant mstar mixed layers choose EPBL_MSTAR_SCHEME=CONSTANT.
 ! The key parameters then include mstar, nstar, TKE_decay, and conv_decay.
-! For the Oberhuber (1993) mixed layer,the values of these are:
+! For the Oberhuber (1993) mixed layer, the values of these are:
 !      mstar = 1.25,  nstar = 1, TKE_decay = 2.5, conv_decay = 0.5
 ! TKE_decay is 1/kappa in eq. 28 of Oberhuber (1993), while conv_decay is 1/mu.
 ! For a traditional Kraus-Turner mixed layer, the values are:
@@ -1332,9 +1332,9 @@ subroutine ePBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, TKE_forcing,
 
     v0_ML_turb_vel_scale = 0.0 ! a variable that gets passed on to get_eqdisc_v0 & get_eqdisc_v0h
     if (CS%eqdisc_v0) then
-      call get_eqdisc_v0(CS,absf,B_flux,u_star,v0_ML_turb_vel_scale)
+      call get_eqdisc_v0(CS, absf, B_flux, u_star, v0_ML_turb_vel_scale)
     elseif (CS%eqdisc_v0h) then
-      call get_eqdisc_v0h(CS,B_flux,u_star,MLD_guess,v0_ML_turb_vel_scale)
+      call get_eqdisc_v0h(CS, B_flux, u_star, MLD_guess, v0_ML_turb_vel_scale)
     endif
 
     Kd(1) = 0.0 ; Kddt_h(1) = 0.0

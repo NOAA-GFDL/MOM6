@@ -1840,7 +1840,7 @@ subroutine mechanical_entrainment(h, d_eb, htot, Ttot, Stot, uhtot, vhtot, &
 
         HpE = htot(i)+h_avail
         MKE_rate = 1.0/(1.0 + (cMKE(1,i)*HpE + cMKE(2,i)*HpE**2))
-        EF4_val = EF4(htot(i)+h_neglect,h_avail,Idecay_len_TKE(i))
+        EF4_val = EF4(htot(i)+h_neglect, h_avail, Idecay_len_TKE(i))
         TKE_full_ent = (exp_kh*TKE(i) - h_avail*(dRL*f1_kh + Pen_En_Contrib)) + &
             MKE_rate*dMKE*EF4_val
         if ((TKE_full_ent >= 0.0) .or. (h_avail+htot(i) <= Hmix_min)) then
@@ -1925,7 +1925,7 @@ subroutine mechanical_entrainment(h, d_eb, htot, Ttot, Stot, uhtot, vhtot, &
               endif ; enddo ! (Pen_SW_bnd(n,i) > 0.0)
 
               TKE_ent1 = exp_kh* TKE(i) - h_ent*(dRL*f1_kh + Pen_En_Contrib)
-              EF4_val = EF4(htot(i)+h_neglect,h_ent,Idecay_len_TKE(i),dEF4_dh)
+              EF4_val = EF4(htot(i)+h_neglect, h_ent, Idecay_len_TKE(i), dEF4_dh)
               HpE = htot(i)+h_ent
               MKE_rate = 1.0/(1.0 + (cMKE(1,i)*HpE + cMKE(2,i)*HpE**2))
               TKE_ent = TKE_ent1 + dMKE*EF4_val*MKE_rate
@@ -1962,7 +1962,7 @@ subroutine mechanical_entrainment(h, d_eb, htot, Ttot, Stot, uhtot, vhtot, &
           if (CS%TKE_diagnostics) then
             HpE = htot(i)+h_ent
             MKE_rate = 1.0/(1.0 + cMKE(1,i)*HpE + cMKE(2,i)*HpE**2)
-            EF4_val = EF4(htot(i)+h_neglect,h_ent,Idecay_len_TKE(i))
+            EF4_val = EF4(htot(i)+h_neglect, h_ent, Idecay_len_TKE(i))
 
             E_HxHpE = h_ent / ((htot(i)+h_neglect)*(HpE+h_neglect))
             CS%diag_TKE_mech_decay(i,j) = CS%diag_TKE_mech_decay(i,j) + &

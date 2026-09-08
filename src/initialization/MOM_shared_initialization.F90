@@ -907,7 +907,7 @@ subroutine reset_face_lengths_list(G, param_file, US)
 
     ! Find an unused unit number.
     do iounit=10,512
-      INQUIRE(iounit,OPENED=unit_in_use) ; if (.not.unit_in_use) exit
+      INQUIRE(iounit, OPENED=unit_in_use) ; if (.not.unit_in_use) exit
     enddo
     if (iounit >= 512) call MOM_error(FATAL, &
         "reset_face_lengths_list: No unused file unit could be found.")

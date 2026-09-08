@@ -1749,7 +1749,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       call hchksum(d_eta_PF, "BT d_eta_PF", CS%debug_BT_HI, haloshift=0, unscale=GV%H_to_MKS)
     else
       call hchksum(eta_PF, "BT eta_PF", CS%debug_BT_HI, haloshift=0, unscale=GV%H_to_MKS)
-      call hchksum(eta_PF_in, "BT eta_PF_in", G%HI,haloshift=0, unscale=GV%H_to_MKS)
+      call hchksum(eta_PF_in, "BT eta_PF_in", G%HI, haloshift=0, unscale=GV%H_to_MKS)
     endif
     if (CS%linearized_BT_PV) then
       call Bchksum(CS%q_D, "BT PV (q_D)", CS%debug_BT_HI, haloshift=0, symmetric=.true., unscale=US%s_to_T/GV%H_to_MKS)
@@ -5319,7 +5319,7 @@ subroutine BT_cont_to_face_areas(BT_cont, Datu, Datv, G, US, MS, halo)
 end subroutine BT_cont_to_face_areas
 
 !> Swap the values of two real variables
-subroutine swap(a,b)
+subroutine swap(a, b)
   real, intent(inout) :: a !< The first variable to be swapped [arbitrary units]
   real, intent(inout) :: b !< The second variable to be swapped [arbitrary units]
   real :: tmp ! A temporary variable [arbitrary units]
@@ -6424,8 +6424,8 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   if (CS%id_frhatu1 > 0) allocate(CS%frhatu1(IsdB:IedB,jsd:jed,nz), source=0.)
   if (CS%id_frhatv1 > 0) allocate(CS%frhatv1(isd:ied,JsdB:JedB,nz), source=0.)
 
-  if (.NOT.query_initialized(CS%ubtav,"ubtav",restart_CS) .or. &
-      .NOT.query_initialized(CS%vbtav,"vbtav",restart_CS)) then
+  if (.NOT.query_initialized(CS%ubtav, "ubtav", restart_CS) .or. &
+      .NOT.query_initialized(CS%vbtav, "vbtav", restart_CS)) then
     call btcalc(h, G, GV, CS, may_use_default=.true.)
     CS%ubtav(:,:) = 0.0 ; CS%vbtav(:,:) = 0.0
     do k=1,nz ; do j=js,je ; do I=is-1,ie
@@ -6437,8 +6437,8 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   endif
 
   if (CS%gradual_BT_ICs) then
-    if (.NOT.query_initialized(CS%ubt_IC,"ubt_IC",restart_CS) .or. &
-        .NOT.query_initialized(CS%vbt_IC,"vbt_IC",restart_CS)) then
+    if (.NOT.query_initialized(CS%ubt_IC, "ubt_IC", restart_CS) .or. &
+        .NOT.query_initialized(CS%vbt_IC, "vbt_IC", restart_CS)) then
       do j=js,je ; do I=is-1,ie ; CS%ubt_IC(I,j) = CS%ubtav(I,j) ; enddo ; enddo
       do J=js-1,je ; do i=is,ie ; CS%vbt_IC(i,J) = CS%vbtav(i,J) ; enddo ; enddo
     endif

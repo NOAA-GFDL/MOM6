@@ -1187,7 +1187,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
               do k=1,nz
                 salt_before = salt_before + h2d(i,k)*tv%S(i,j,k)
               enddo
-              !DEBUG if (CS%check_salt_verbose) call MOM_error(NOTE,'Salt before brine plume: ',salt_before)
+              !DEBUG if (CS%check_salt_verbose) call MOM_error(NOTE, 'Salt before brine plume: ',salt_before)
             endif
 
             ! Set the plume strength based on the salt rejected
@@ -1225,7 +1225,7 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
               !DEBUG if (CS%check_salt_verbose) then
               !DEBUG   write(mesg, '(A, I0, A, ES24.16, A, ES24.16)') &
               !DEBUG        'Salt to layer ', k, ' and remaining deficit: ', salt_added, ', ', salt_removed-salt_added
-              !DEBUG   call MOM_error(NOTE,trim(mesg))
+              !DEBUG   call MOM_error(NOTE, trim(mesg))
               !DEBUG endif
 
               if (CS%id_brine_input > 0.) then
@@ -1580,7 +1580,7 @@ subroutine diabatic_aux_init(Time, G, GV, US, param_file, diag, CS, useALEalgori
 
 
   if (useALEalgorithm) then
-    CS%id_createdH = register_diag_field('ocean_model',"created_H",diag%axesT1, &
+    CS%id_createdH = register_diag_field('ocean_model', "created_H", diag%axesT1, &
         Time, "The volume flux added to stop the ocean from drying out and becoming negative in depth", &
         "m s-1", conversion=GV%H_to_m*US%s_to_T)
     if (CS%id_createdH>0) allocate(CS%createdH(isd:ied,jsd:jed))

@@ -1458,7 +1458,7 @@ subroutine calc_sfc_displacement(PF, G, GV, US, mass_shelf, tv, h)
     endif
   enddo ; enddo
   call MOM_mesg("Calling depress_surface ")
-  call depress_surface(h, G, GV, US, PF, tv, just_read=.false.,z_top_shelf=z_top_shelf)
+  call depress_surface(h, G, GV, US, PF, tv, just_read=.false., z_top_shelf=z_top_shelf)
   call MOM_mesg("Finishing calling depress_surface ")
 end subroutine calc_sfc_displacement
 
@@ -2256,7 +2256,7 @@ subroutine initialize_sponges_file(G, GV, US, use_temperature, tv, u, v, depth_t
 
   if  (use_ALE) then ! ALE mode
     if (.not. time_space_interp_sponge) then
-      call field_size(filename,eta_var,siz,no_domain=.true.)
+      call field_size(filename, eta_var, siz, no_domain=.true.)
       if (siz(1) /= G%ieg-G%isg+1 .or. siz(2) /= G%jeg-G%jsg+1) &
         call MOM_error(FATAL,"initialize_sponge_file: Array size mismatch for sponge data.")
       nz_data = siz(3)-1
@@ -2456,7 +2456,7 @@ subroutine initialize_oda_incupd_file(G, GV, US, use_temperature, tv, h, u, v, p
   if (.not.file_exists(filename, G%Domain)) &
     call MOM_error(FATAL, " initialize_oda_incupd: Unable to open "//trim(filename))
 
-  call field_size(filename,h_var,siz,no_domain=.true.)
+  call field_size(filename, h_var, siz, no_domain=.true.)
   if (siz(1) /= G%ieg-G%isg+1 .or. siz(2) /= G%jeg-G%jsg+1) &
          call MOM_error(FATAL,"initialize_oda_incupd_file: Array size mismatch for oda data.")
   nz_data = siz(3)
@@ -2992,7 +2992,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
 
     ! Next find interface positions using local arrays
     ! nlevs contains the number of valid data points in each column
-    nlevs = int(sum(mask_z,dim=3))
+    nlevs = int(sum(mask_z, dim=3))
 
     ! Rb contains the layer interface densities
     allocate(Rb(nz+1))

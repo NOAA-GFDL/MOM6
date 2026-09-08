@@ -360,7 +360,7 @@ subroutine dumbbell_initialize_sponges(G, GV, US, tv, h_in, depth_tot, param_fil
   real :: T_surf         ! The surface temperature [C ~> degC]
   logical :: dbrotate    ! If true, rotate the domain.
 
-  call get_param(param_file, mdl,"DUMBBELL_LEN",dblen, &
+  call get_param(param_file, mdl, "DUMBBELL_LEN", dblen, &
                 'Lateral Length scale for dumbbell ', &
                  units='km', default=600., do_not_log=.true.)
   call get_param(param_file, mdl, "DUMBBELL_ROTATION", dbrotate, &

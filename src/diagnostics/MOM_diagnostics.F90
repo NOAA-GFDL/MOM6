@@ -1999,11 +1999,11 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
           Time, 'Salinity', 'psu', conversion=US%S_to_ppt, cmor_field_name='so')
     endif
 
-    CS%id_tob = register_diag_field('ocean_model','tob', diag%axesT1, Time, &
+    CS%id_tob = register_diag_field('ocean_model', 'tob', diag%axesT1, Time, &
         long_name='Sea Water Potential Temperature at Sea Floor', &
         standard_name='sea_water_potential_temperature_at_sea_floor', &
         units='degC', conversion=US%C_to_degC)
-    CS%id_sob = register_diag_field('ocean_model','sob',diag%axesT1, Time, &
+    CS%id_sob = register_diag_field('ocean_model', 'sob', diag%axesT1, Time, &
         long_name='Sea Water Salinity at Sea Floor', &
         standard_name='sea_water_salinity_at_sea_floor', &
         units='psu', conversion=US%S_to_ppt)
@@ -2424,10 +2424,10 @@ subroutine register_transport_diags(Time, G, GV, US, IDs, diag)
       diag%axesCv1, Time, 'Ocean Mass Y Transport Vertical Sum', &
       'kg s-1', conversion=US%RZ_T_to_kg_m2s*US%L_to_m**2, &
       standard_name='ocean_mass_y_transport_vertical_sum', x_cell_method='sum')
-  IDs%id_dynamics_h = register_diag_field('ocean_model','dynamics_h', &
+  IDs%id_dynamics_h = register_diag_field('ocean_model', 'dynamics_h', &
       diag%axesTl, Time, 'Layer thicknesses prior to horizontal dynamics', &
       thickness_units, conversion=GV%H_to_MKS, v_extensive=.true.)
-  IDs%id_dynamics_h_tendency = register_diag_field('ocean_model','dynamics_h_tendency', &
+  IDs%id_dynamics_h_tendency = register_diag_field('ocean_model', 'dynamics_h_tendency', &
       diag%axesTl, Time, 'Change in layer thicknesses due to horizontal dynamics', &
       trim(thickness_units)//" s-1", conversion=GV%H_to_MKS*US%s_to_T, v_extensive=.true.)
 
@@ -2592,7 +2592,7 @@ subroutine write_static_fields(G, GV, US, tv, diag)
   if (id > 0) call post_data(id, G%mask2dT, diag, .true.)
 
 
-  id = register_static_field('ocean_model','Rho_0', diag%axesNull, &
+  id = register_static_field('ocean_model', 'Rho_0', diag%axesNull, &
        'mean ocean density used with the Boussinesq approximation', &
        'kg m-3', conversion=US%R_to_kg_m3, cmor_field_name='rhozero', &
        cmor_standard_name='reference_sea_water_density_for_boussinesq_approximation', &
@@ -2601,7 +2601,7 @@ subroutine write_static_fields(G, GV, US, tv, diag)
 
   use_temperature = associated(tv%T)
   if (use_temperature) then
-    id = register_static_field('ocean_model','C_p', diag%axesNull, &
+    id = register_static_field('ocean_model', 'C_p', diag%axesNull, &
          'heat capacity of sea water', 'J kg-1 K-1', conversion=US%Q_to_J_kg*US%degC_to_C, &
          cmor_field_name='cpocean', &
          cmor_standard_name='specific_heat_capacity_of_sea_water', &

@@ -4133,7 +4133,7 @@ function lookup_seg_field(OBC_seg, field)
 end function lookup_seg_field
 
 !> Return the tracer index from its name
-function get_tracer_index(OBC_seg,tr_name)
+function get_tracer_index(OBC_seg, tr_name)
   type(OBC_segment_type), pointer :: OBC_seg !< OBC segment
   character(len=*), intent(in) :: tr_name   !< The field name
   integer :: get_tracer_index, it
@@ -5371,15 +5371,15 @@ subroutine register_temp_salt_segments(GV, US, OBC, tr_Reg, param_file)
 end subroutine register_temp_salt_segments
 
 !> Sets the OBC properties of external obgc tracers, such as their source file and field name
-subroutine set_obgc_segments_props(OBC,tr_name,obc_src_file_name,obc_src_field_name,lfac_in,lfac_out)
-  type(ocean_OBC_type),pointer  :: OBC                !< Open boundary structure
+subroutine set_obgc_segments_props(OBC, tr_name, obc_src_file_name, obc_src_field_name, lfac_in, lfac_out)
+  type(ocean_OBC_type), pointer :: OBC                !< Open boundary structure
   character(len=*),  intent(in) :: tr_name            !< Tracer name
   character(len=*),  intent(in) :: obc_src_file_name  !< OBC source file name
   character(len=*),  intent(in) :: obc_src_field_name !< name of the field in the source file
   real,              intent(in) :: lfac_in            !< factors for tracer reservoir inbound length scales [nondim]
   real,              intent(in) :: lfac_out           !< factors for tracer reservoir outbound length scales [nondim]
 
-  type(external_tracers_segments_props),pointer :: node_ptr => NULL() !pointer to type that keeps
+  type(external_tracers_segments_props), pointer :: node_ptr => NULL() ! pointer to type that keeps
                                                                     ! the tracer segment properties
   allocate(node_ptr)
   node_ptr%tracer_name = trim(tr_name)
@@ -5395,8 +5395,8 @@ end subroutine set_obgc_segments_props
 
 !> Get the OBC properties of external obgc tracers, such as their source file, field name,
 !! reservoir length scale factors
-subroutine get_obgc_segments_props(node, tr_name,obc_src_file_name,obc_src_field_name,lfac_in,lfac_out)
-  type(external_tracers_segments_props),pointer :: node !< pointer to tracer segment properties
+subroutine get_obgc_segments_props(node, tr_name, obc_src_file_name, obc_src_field_name, lfac_in, lfac_out)
+  type(external_tracers_segments_props), pointer :: node !< pointer to tracer segment properties
   character(len=*), intent(out) :: tr_name            !< Tracer name
   character(len=*), intent(out) :: obc_src_file_name  !< OBC source file name
   character(len=*), intent(out) :: obc_src_field_name !< name of the field in the source file

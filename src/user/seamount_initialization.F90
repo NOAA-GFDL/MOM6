@@ -109,10 +109,10 @@ subroutine seamount_initialize_thickness (h, depth_tot, G, GV, US, param_file, j
   if (.not.just_read) &
     call MOM_mesg("seamount_initialization.F90, seamount_initialize_thickness: setting thickness")
 
-  call get_param(param_file, mdl,"MIN_THICKNESS",min_thickness, &
+  call get_param(param_file, mdl, "MIN_THICKNESS", min_thickness, &
                 'Minimum thickness for layer', &
                  units='m', default=1.0e-3, do_not_log=just_read, scale=US%m_to_Z)
-  call get_param(param_file, mdl,"REGRIDDING_COORDINATE_MODE",verticalCoordinate, &
+  call get_param(param_file, mdl, "REGRIDDING_COORDINATE_MODE", verticalCoordinate, &
                  default=DEFAULT_COORDINATE_MODE, do_not_log=just_read)
 
   ! WARNING: this routine specifies the interface heights so that the last layer

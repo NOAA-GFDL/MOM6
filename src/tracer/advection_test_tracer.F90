@@ -163,7 +163,7 @@ function register_advection_test_tracer(G, GV, param_file, CS, tr_Reg, restart_C
 end function register_advection_test_tracer
 
 !>   Initializes the NTR tracer fields in tr(:,:,:,:) and it sets up the tracer output.
-subroutine initialize_advection_test_tracer(restart, day, G, GV, h,diag, OBC, CS, &
+subroutine initialize_advection_test_tracer(restart, day, G, GV, h, diag, OBC, CS, &
                                             sponge_CSp)
   logical,                            intent(in) :: restart !< .true. if the fields have already
                                                          !! been read from a restart file.

@@ -495,7 +495,7 @@ subroutine int_tide_input_init(Time, G, GV, US, param_file, diag, CS, itide)
 
     call read_param(param_file, "INTTIDE_AMP_VARNAMES", tidefile_varnames)
     do fr=1,num_freq
-      tideamp_var = extractWord(tidefile_varnames,fr)
+      tideamp_var = extractWord(tidefile_varnames, fr)
       call MOM_read_data(filename, tideamp_var, CS%tideamp(:,:,fr), G%domain, scale=US%m_s_to_L_T)
     enddo
 
@@ -573,14 +573,14 @@ subroutine int_tide_input_init(Time, G, GV, US, param_file, diag, CS, itide)
     write(var_name, '("TKE_itidal_itide_freq",i1)') fr
     write(var_descript, '("Internal Tide Driven Turbulent Kinetic Energy in frequency ",i1)') fr
 
-    CS%id_TKE_itidal_itide(fr) = register_diag_field('ocean_model',var_name,diag%axesT1,Time, &
+    CS%id_TKE_itidal_itide(fr) = register_diag_field('ocean_model', var_name, diag%axesT1, Time, &
                                                      var_descript, 'W m-2', conversion=HZ2_T3_to_W_m2)
   enddo
 
-  CS%id_Nb = register_diag_field('ocean_model','Nb_itide',diag%axesT1,Time, &
+  CS%id_Nb = register_diag_field('ocean_model', 'Nb_itide', diag%axesT1, Time, &
        'Bottom Buoyancy Frequency', 's-1', conversion=US%s_to_T)
 
-  CS%id_N2_bot = register_diag_field('ocean_model','N2_b_itide',diag%axesT1,Time, &
+  CS%id_N2_bot = register_diag_field('ocean_model', 'N2_b_itide', diag%axesT1, Time, &
        'Bottom Buoyancy frequency squared', 's-2', conversion=US%s_to_T**2)
 
 end subroutine int_tide_input_init

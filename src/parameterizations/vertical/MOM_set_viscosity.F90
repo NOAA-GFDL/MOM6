@@ -2923,9 +2923,9 @@ subroutine set_visc_register_restarts(HI, G, GV, US, param_file, visc, restart_C
     if (.not.allocated(visc%tauy_shelf)) &
       allocate(visc%tauy_shelf(G%isd:G%ied, G%JsdB:G%JedB), source=0.0)
     u_desc = var_desc("u_taux_shelf", "Pa", "the zonal stress on the ocean under ice shelves", &
-                      hor_grid='Cu',z_grid='1')
+                      hor_grid='Cu', z_grid='1')
     v_desc = var_desc("v_tauy_shelf", "Pa", "the meridional stress on the ocean under ice shelves", &
-                      hor_grid='Cv',z_grid='1')
+                      hor_grid='Cv', z_grid='1')
     call register_restart_pair(visc%taux_shelf, visc%tauy_shelf, u_desc, v_desc, &
                                .false., restart_CS, conversion=US%RZ_T_to_kg_m2s*US%L_T_to_m_s)
   endif

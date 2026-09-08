@@ -274,7 +274,7 @@ end subroutine calculate_density_second_derivs_elem_Wright_full
 
 !> Calculate the partial derivatives of specific volume with temperature and salinity
 !! using the full range equation of state, as fit by Wright, 1997
-elemental subroutine calculate_specvol_derivs_elem_Wright_full(this,T, S, pressure, dSV_dT, dSV_dS)
+elemental subroutine calculate_specvol_derivs_elem_Wright_full(this, T, S, pressure, dSV_dT, dSV_dS)
   class(Wright_full_EOS), intent(in) :: this     !< This EOS
   real,                intent(in)    :: T        !< Potential temperature [degC]
   real,                intent(in)    :: S        !< Salinity [PSU]

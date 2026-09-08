@@ -39,7 +39,7 @@ use MOM_entrain_diffusive,   only : entrainment_diffusive, entrain_diffusive_ini
 use MOM_entrain_diffusive,   only : entrain_diffusive_CS
 use MOM_EOS,                 only : calculate_density, calculate_density_derivs, calculate_TFreeze
 use MOM_EOS,                 only : calculate_specific_vol_derivs, EOS_domain
-use MOM_error_handler,       only : MOM_error, FATAL, WARNING, callTree_showQuery,MOM_mesg
+use MOM_error_handler,       only : MOM_error, FATAL, WARNING, callTree_showQuery, MOM_mesg
 use MOM_error_handler,       only : callTree_enter, callTree_leave, callTree_waypoint
 use MOM_file_parser,         only : get_param, log_version, param_file_type, read_param
 use MOM_forcing_type,        only : forcing, MOM_forcing_chksum, find_ustar
@@ -526,7 +526,7 @@ subroutine diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
     ! Surface Mixed Layer diagnostic
     if (CS%MLD_param_EN1) then
       call diagnoseMLDbyEnergy((/CS%id_MLD_EN1, CS%id_MLD_EN2, CS%id_MLD_EN3/), h, tv, G, GV, US, CS%MLD_En_vals, &
-                               (/1,nz/), CS%diag, OM4_iteration=CS%use_OM4_MLD_En_iter,MLD_out=visc%MLD_param)
+                               (/1,nz/), CS%diag, OM4_iteration=CS%use_OM4_MLD_En_iter, MLD_out=visc%MLD_param)
       call convert_MLD_to_ML_thickness(visc%MLD_param, h, visc%h_ML_param, tv, G, GV)
     else
       call diagnoseMLDbyEnergy((/CS%id_MLD_EN1, CS%id_MLD_EN2, CS%id_MLD_EN3/), h, tv, G, GV, US, CS%MLD_En_vals, &
@@ -1177,7 +1177,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     if (CS%id_N2_temp_dd>0) call post_data(CS%id_N2_temp_dd, N2_temp, CS%diag)
 
     if (CS%Use_KdWork_diag) then
-       call KdWork_diagnostics(G,GV,US,CS%diag,CS%VBF,N2_salt,N2_temp,dz)
+       call KdWork_diagnostics(G, GV, US, CS%diag, CS%VBF, N2_salt, N2_temp, dz)
     endif
 
     call deallocate_VBF_CS(CS%VBF)
@@ -1850,7 +1850,7 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     if (CS%id_N2_temp_dd>0) call post_data(CS%id_N2_temp_dd, N2_temp, CS%diag)
 
     if (CS%Use_KdWork_diag) then
-       call KdWork_diagnostics(G,GV,US,CS%diag,CS%VBF,N2_salt,N2_temp,dz)
+       call KdWork_diagnostics(G, GV, US, CS%diag, CS%VBF, N2_salt, N2_temp, dz)
     endif
 
     call deallocate_VBF_CS(CS%VBF)
@@ -3458,7 +3458,7 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
 
   call get_param(param_file, mdl, "DO_BRINE_PLUME", do_brine_plume, &
                  "If true, enables a brine plume parameterizations (not logged here)", &
-                 do_not_log=.true.,default=.false.)
+                 do_not_log=.true., default=.false.)
   if (do_brine_plume) then
     call get_param(param_file, mdl, "BRINE_PLUME_MLD_DEF", brine_plume_mld_def, &
                    "A string that determines which mixed/mixing depth is used in setting "//&
@@ -3617,7 +3617,7 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
     endif
   endif
 
-  call KdWork_init(Time, G,GV,US,diag,CS%VBF,CS%Use_KdWork_diag)
+  call KdWork_init(Time, G, GV, US, diag, CS%VBF, CS%Use_KdWork_diag)
   if (CS%Use_KdWork_diag.and.(.not.useALEalgorithm)) &
     call MOM_error(WARNING,"The KdWork diagnostics are not fully implemented for use in layer mode.")
   if (CS%Use_KdWork_diag.and.(CS%use_legacy_diabatic)) &

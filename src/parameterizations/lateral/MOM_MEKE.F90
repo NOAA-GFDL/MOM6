@@ -401,7 +401,7 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
       if (CS%visc_drag) &
         call uvchksum("MEKE drag_vel_[uv]", drag_vel_u, drag_vel_v, G%HI, &
                       unscale=GV%H_to_mks*US%s_to_T, scalar_pair=.true.)
-      call hchksum(mass, 'MEKE mass',G%HI,haloshift=1, unscale=US%RZ_to_kg_m2)
+      call hchksum(mass, 'MEKE mass', G%HI, haloshift=1, unscale=US%RZ_to_kg_m2)
       call hchksum(drag_rate_visc, 'MEKE drag_rate_visc', G%HI, unscale=GV%H_to_mks*US%s_to_T)
       call hchksum(bottomFac2, 'MEKE bottomFac2', G%HI)
       call hchksum(barotrFac2, 'MEKE barotrFac2', G%HI)
@@ -1679,15 +1679,15 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
      'MEKE energy available from thickness mixing', &
      'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
   if (.not. allocated(MEKE%GM_src)) CS%id_GM_src = -1
-  CS%id_mom_src = register_diag_field('ocean_model', 'MEKE_mom_src',diag%axesT1, Time, &
+  CS%id_mom_src = register_diag_field('ocean_model', 'MEKE_mom_src', diag%axesT1, Time, &
      'MEKE energy available from momentum', &
      'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
   if (.not. allocated(MEKE%mom_src)) CS%id_mom_src = -1
-  CS%id_mom_src_bh = register_diag_field('ocean_model', 'MEKE_mom_src_bh',diag%axesT1, Time, &
+  CS%id_mom_src_bh = register_diag_field('ocean_model', 'MEKE_mom_src_bh', diag%axesT1, Time, &
      'MEKE energy available from the biharmonic dissipation of momentum', &
      'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
   if (.not. allocated(MEKE%mom_src_bh)) CS%id_mom_src_bh = -1
-  CS%id_GME_snk = register_diag_field('ocean_model', 'MEKE_GME_snk',diag%axesT1, Time, &
+  CS%id_GME_snk = register_diag_field('ocean_model', 'MEKE_GME_snk', diag%axesT1, Time, &
      'MEKE energy lost to GME backscatter', &
      'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
   if (.not. allocated(MEKE%GME_snk)) CS%id_GME_snk = -1
@@ -1790,7 +1790,7 @@ subroutine ML_MEKE_init(diag, G, US, Time, param_file, dbcomms_CS, CS)
 
   ! Set the machine learning model
   if (dbcomms_CS%colocated) then
-    if (modulo(PE_here(),dbcomms_CS%colocated_stride) == 0) then
+    if (modulo(PE_here(), dbcomms_CS%colocated_stride) == 0) then
       db_return_code = CS%client%set_model_from_file(CS%model_key, trim(inputdir)//trim(model_filename), &
                                                   "TORCH", backend, batch_size=batch_size)
     endif
@@ -1933,10 +1933,10 @@ subroutine ML_MEKE_calculate_features(G, GV, US, CS, Rd_dx_h, u, v, tv, h, dt, f
 
 
   ! Construct the feature array
-  features_array(:,mke_idx) = pack(mke,.true.)
-  features_array(:,slope_z_idx) = pack(slope_z,.true.)
-  features_array(:,rd_dx_z_idx) = pack(Rd_dx_h,.true.)
-  features_array(:,rv_idx) = pack(rv_z_t,.true.)
+  features_array(:,mke_idx) = pack(mke, .true.)
+  features_array(:,slope_z_idx) = pack(slope_z, .true.)
+  features_array(:,rd_dx_z_idx) = pack(Rd_dx_h, .true.)
+  features_array(:,rv_idx) = pack(rv_z_t, .true.)
 
   if (CS%id_rv>0) call post_data(CS%id_rv, rv_z, CS%diag)
   if (CS%id_mke>0) call post_data(CS%id_mke, mke, CS%diag)
@@ -2054,18 +2054,18 @@ subroutine MEKE_alloc_register_restart(HI, US, param_file, MEKE, restart_CS)
   integer :: isd, ied, jsd, jed
 
 ! Determine whether this module will be used
-  useMEKE = .false. ; call read_param(param_file,"USE_MEKE",useMEKE)
+  useMEKE = .false. ; call read_param(param_file, "USE_MEKE", useMEKE)
 
 ! Read these parameters to determine what should be in the restarts
-  MEKE_GMcoeff = -1. ; call read_param(param_file,"MEKE_GMCOEFF",MEKE_GMcoeff)
-  MEKE_FrCoeff = -1. ; call read_param(param_file,"MEKE_FRCOEFF",MEKE_FrCoeff)
-  MEKE_bhFrCoeff = -1. ; call read_param(param_file,"MEKE_bhFRCOEFF",MEKE_bhFrCoeff)
-  MEKE_GMEcoeff = -1. ; call read_param(param_file,"MEKE_GMECOEFF",MEKE_GMEcoeff)
-  MEKE_KhCoeff = 1. ; call read_param(param_file,"MEKE_KHCOEFF",MEKE_KhCoeff)
-  MEKE_viscCoeff_Ku = 0. ; call read_param(param_file,"MEKE_VISCOSITY_COEFF_KU",MEKE_viscCoeff_Ku)
-  MEKE_viscCoeff_Au = 0. ; call read_param(param_file,"MEKE_VISCOSITY_COEFF_AU",MEKE_viscCoeff_Au)
-  Use_KH_in_MEKE = .false. ; call read_param(param_file,"USE_KH_IN_MEKE", Use_KH_in_MEKE)
-  sqg_use_MEKE = .false. ; call read_param(param_file,"SQG_USE_MEKE", sqg_use_MEKE)
+  MEKE_GMcoeff = -1. ; call read_param(param_file, "MEKE_GMCOEFF", MEKE_GMcoeff)
+  MEKE_FrCoeff = -1. ; call read_param(param_file, "MEKE_FRCOEFF", MEKE_FrCoeff)
+  MEKE_bhFrCoeff = -1. ; call read_param(param_file, "MEKE_bhFRCOEFF", MEKE_bhFrCoeff)
+  MEKE_GMEcoeff = -1. ; call read_param(param_file, "MEKE_GMECOEFF", MEKE_GMEcoeff)
+  MEKE_KhCoeff = 1. ; call read_param(param_file, "MEKE_KHCOEFF", MEKE_KhCoeff)
+  MEKE_viscCoeff_Ku = 0. ; call read_param(param_file, "MEKE_VISCOSITY_COEFF_KU", MEKE_viscCoeff_Ku)
+  MEKE_viscCoeff_Au = 0. ; call read_param(param_file, "MEKE_VISCOSITY_COEFF_AU", MEKE_viscCoeff_Au)
+  Use_KH_in_MEKE = .false. ; call read_param(param_file, "USE_KH_IN_MEKE", Use_KH_in_MEKE)
+  sqg_use_MEKE = .false. ; call read_param(param_file, "SQG_USE_MEKE", sqg_use_MEKE)
 
   if (.not. useMEKE) return
 

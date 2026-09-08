@@ -146,16 +146,16 @@ subroutine grid_metrics_chksum(parent, G, US)
 
   call Bchksum_pair(trim(parent)//': Id[xy]B[uv]', G%IdxBu, G%IdyBu, G%HI, haloshift=halo, unscale=US%m_to_L)
 
-  call hchksum(G%areaT, trim(parent)//': areaT',G%HI, haloshift=halo, unscale=US%L_to_m**2)
-  call Bchksum(G%areaBu, trim(parent)//': areaBu',G%HI, haloshift=halo, unscale=US%L_to_m**2)
+  call hchksum(G%areaT, trim(parent)//': areaT', G%HI, haloshift=halo, unscale=US%L_to_m**2)
+  call Bchksum(G%areaBu, trim(parent)//': areaBu', G%HI, haloshift=halo, unscale=US%L_to_m**2)
 
-  call hchksum(G%IareaT, trim(parent)//': IareaT',G%HI, haloshift=halo, unscale=US%m_to_L**2)
-  call Bchksum(G%IareaBu, trim(parent)//': IareaBu',G%HI, haloshift=halo, unscale=US%m_to_L**2)
+  call hchksum(G%IareaT, trim(parent)//': IareaT', G%HI, haloshift=halo, unscale=US%m_to_L**2)
+  call Bchksum(G%IareaBu, trim(parent)//': IareaBu', G%HI, haloshift=halo, unscale=US%m_to_L**2)
 
-  call hchksum(G%geoLonT,trim(parent)//': geoLonT',G%HI, haloshift=halo)
-  call hchksum(G%geoLatT,trim(parent)//': geoLatT',G%HI, haloshift=halo)
+  call hchksum(G%geoLonT, trim(parent)//': geoLonT', G%HI, haloshift=halo)
+  call hchksum(G%geoLatT, trim(parent)//': geoLatT', G%HI, haloshift=halo)
 
-  call Bchksum(G%geoLonBu, trim(parent)//': geoLonBu',G%HI, haloshift=halo)
+  call Bchksum(G%geoLonBu, trim(parent)//': geoLonBu', G%HI, haloshift=halo)
   call Bchksum(G%geoLatBu, trim(parent)//': geoLatBu',G%HI, haloshift=halo)
 
   call uvchksum(trim(parent)//': geoLonC[uv]', G%geoLonCu, G%geoLonCv, G%HI, haloshift=halo)

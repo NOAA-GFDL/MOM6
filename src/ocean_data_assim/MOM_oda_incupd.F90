@@ -21,7 +21,7 @@ use MOM_array_transform, only : rotate_array
 use MOM_coms,            only : sum_across_PEs
 use MOM_diag_mediator,   only : post_data, query_averaging_enabled, register_diag_field
 use MOM_diag_mediator,   only : diag_ctrl
-use MOM_domains,         only : pass_var,pass_vector
+use MOM_domains,         only : pass_var, pass_vector
 use MOM_error_handler,   only : MOM_error, FATAL, NOTE, WARNING, is_root_pe
 use MOM_file_parser,     only : get_param, log_param, log_version, param_file_type
 use MOM_get_input,       only : directories, Get_MOM_input
@@ -45,7 +45,7 @@ implicit none ; private
 !  Publicly available functions
 public set_up_oda_incupd_field, set_up_oda_incupd_vel_field
 public initialize_oda_incupd_fixed, initialize_oda_incupd, apply_oda_incupd, oda_incupd_end
-public init_oda_incupd_diags,calc_oda_increments,output_oda_incupd_inc
+public init_oda_incupd_diags, calc_oda_increments, output_oda_incupd_inc
 
 ! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
 ! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
@@ -731,7 +731,7 @@ subroutine apply_oda_incupd(h, tv, u, v, dt, G, GV, US, CS)
 
   call pass_var(tv%T, G%Domain)
   call pass_var(tv%S, G%Domain)
-  call pass_vector(u,v,G%Domain)
+  call pass_vector(u, v, G%Domain)
 
   ! Diagnostics of increments, mostly used for debugging.
   if (CS%uv_inc) then

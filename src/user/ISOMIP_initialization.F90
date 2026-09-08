@@ -305,7 +305,7 @@ subroutine ISOMIP_initialize_temperature_salinity ( T, S, h, depth_tot, G, GV, U
 
   call get_param(param_file, mdl, "REGRIDDING_COORDINATE_MODE", verticalCoordinate, &
                  default=DEFAULT_COORDINATE_MODE, do_not_log=just_read)
-  call get_param(param_file, mdl, "ISOMIP_T_SUR",t_sur, &
+  call get_param(param_file, mdl, "ISOMIP_T_SUR", t_sur, &
                  "Temperature at the surface (interface)", &
                  units="degC", default=-1.9, scale=US%degC_to_C, do_not_log=just_read)
   call get_param(param_file, mdl, "ISOMIP_S_SUR", s_sur, &
@@ -430,7 +430,7 @@ subroutine ISOMIP_initialize_temperature_salinity ( T, S, h, depth_tot, G, GV, U
   ! for debugging
   !i = G%iec ; j = G%jec
   !do k = 1,nz
-  !  call calculate_density(T(i,j,k), S(i,j,k),0.0,rho_tmp,eqn_of_state, scale=US%kg_m3_to_R)
+  !  call calculate_density(T(i,j,k), S(i,j,k), 0.0, rho_tmp, eqn_of_state, scale=US%kg_m3_to_R)
   !  write(mesg,*) 'k,h,T,S,rho,Rlay',k,US%Z_to_m*h(i,j,k),US%C_to_degC*T(i,j,k),US%S_to_ppt*S(i,j,k),rho_tmp,GV%Rlay(k)
   !  call MOM_mesg(mesg,5)
   !enddo
