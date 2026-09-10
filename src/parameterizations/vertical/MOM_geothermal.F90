@@ -33,6 +33,10 @@ type, public :: geothermal_CS ; private
   real, allocatable, dimension(:,:) :: geo_heat !< The geothermal heat flux [Q R Z T-1 ~> W m-2]
   real    :: geothermal_thick !< The thickness over which geothermal heating is
                               !! applied [H ~> m or kg m-2]
+  real    :: min_col_thick    !< The minimum total thickness of a column for geothermal heating
+                              !! to be applied to it [H ~> m or kg m-2].  Below this thickness
+                              !! the heating is omitted entirely rather than warming a
+                              !! near-vanished column at a thickness-independent rate.
   logical :: apply_geothermal !< If true, geothermal heating will be applied.  This is false if
                               !! GEOTHERMAL_SCALE is 0 and there is no heat to apply.
 
@@ -77,6 +81,7 @@ subroutine geothermal_entraining(h, tv, dt, ea, eb, G, GV, US, CS, halo)
   real, dimension(SZI_(G)) :: &
     heat_rem,  & ! remaining heat [H C ~> m degC or kg degC m-2]
     h_geo_rem, & ! remaining thickness to apply geothermal heating [H ~> m or kg m-2]
+    col_thick, & ! Total thickness of the water column [H ~> m or kg m-2]
     Rcv_BL,    & ! coordinate density in the deepest variable density layer [R ~> kg m-3]
     p_ref        ! coordinate densities reference pressure [R L2 T-2 ~> Pa]
 
@@ -160,7 +165,7 @@ subroutine geothermal_entraining(h, tv, dt, ea, eb, G, GV, US, CS, halo)
 !$OMP parallel do default(none) shared(is,ie,js,je,G,GV,US,CS,dt,Irho_cp,nkmb,tv, &
 !$OMP                                  p_Ref,h,Angstrom,nz,H_neglect,eb,          &
 !$OMP                                  h_old,T_old,work_3d,Idt)                   &
-!$OMP                          private(heat_rem,do_i,h_geo_rem,num_left,          &
+!$OMP                          private(heat_rem,do_i,h_geo_rem,num_left,col_thick,     &
 !$OMP                                  isj,iej,Rcv_BL,h_heated,heat_avail,k_tgt,  &
 !$OMP                                  Rcv_tgt,Rcv,dRcv_dT,T2,S2,dRcv_dT_,        &
 !$OMP                                  dRcv_dS_,heat_in_place,heat_trans,         &
@@ -183,9 +188,19 @@ subroutine geothermal_entraining(h, tv, dt, ea, eb, G, GV, US, CS, halo)
     !    from the ocean via the frazil field?
 
     num_left = 0
+    col_thick(:) = 0.0
+    do k=1,nz ; do i=is,ie
+      col_thick(i) = col_thick(i) + h(i,j,k)
+    enddo ; enddo
     do i=is,ie
       heat_rem(i) = G%mask2dT(i,j) * (CS%geo_heat(i,j) * (dt*Irho_cp))
-      do_i(i) = .true. ; if (heat_rem(i) <= 0.0) do_i(i) = .false.
+      ! Columns holding too little water are skipped entirely; heating them would raise their
+      ! temperature at a rate that is independent of how thin they are.  heat_rem is deliberately
+      ! left at its full value for these columns so that the unapplied heat is not accumulated
+      ! into tv%internal_heat below.
+      do_i(i) = .true.
+      if (heat_rem(i) <= 0.0) do_i(i) = .false.
+      if (col_thick(i) < CS%min_col_thick) do_i(i) = .false.
       if (do_i(i)) num_left = num_left + 1
       h_geo_rem(i) = CS%Geothermal_thick
     enddo
@@ -382,6 +397,7 @@ subroutine geothermal_in_place(h, tv, dt, G, GV, US, CS, BFlx_geothermal, halo)
     heat_rem,  & ! remaining heat [H C ~> m degC or kg degC m-2]
     h_geo_rem, & ! remaining thickness to apply geothermal heating [H ~> m or kg m-2]
     bottom_pressure, & ! Hydrostatic pressure in bottom layer [R L2 T-2 ~> Pa]
+    col_thick, & ! Total thickness of the water column [H ~> m or kg m-2]
     dRhodT, &    ! Partial derivative of density with temperature [R C-1 ~> kg m-3 degC-1]
     dRhodS, &    ! Partial derivative of density with salinity [R S-1 ~> kg m-3 ppt-1]
     dSpVdT, &    ! Partial derivative of specific volume with temperature [R-1 C-1 ~> m3 kg-1 degC-1]
@@ -401,6 +417,7 @@ subroutine geothermal_in_place(h, tv, dt, G, GV, US, CS, BFlx_geothermal, halo)
   real :: I_Cp          ! 1.0 / C_p [C Q-1 ~> kg degC J-1]
   real :: I_Rho0Squared ! 1.0 / rho_0^2 (Boussinesq only) [R-2 ~> m6 kg-2]
   logical :: do_any     ! True if there is more to be done on the current j-row.
+  logical :: do_i(SZI_(G)) ! True if geothermal heating is to be applied to this column.
   logical :: calc_diags ! True if diagnostic tendencies are needed.
   logical :: nonBous    ! If true, do not make the Boussinesq approximation.
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
@@ -438,11 +455,14 @@ subroutine geothermal_in_place(h, tv, dt, G, GV, US, CS, BFlx_geothermal, halo)
 
   if (calc_diags) dTdt_diag(:,:,:) = 0.0
 
-  !$OMP parallel do default(shared) private(heat_rem,do_any,h_geo_rem,isj,iej,heat_here,dTemp)
+  !$OMP parallel do default(shared) private(heat_rem,do_any,do_i,col_thick,h_geo_rem,isj,iej, &
+  !$OMP                                     heat_here,dTemp)
   do j=js,je
     bottom_pressure(:) = 0.0
+    col_thick(:) = 0.0
     do k=1,nz ; do i=is,ie
       bottom_pressure(i) = bottom_pressure(i) + H_to_pres * h(i,j,k)
+      col_thick(i) = col_thick(i) + h(i,j,k)
     enddo ; enddo
     if (nonBous) then
       dSpVdT(:) = 0.0
@@ -473,19 +493,25 @@ subroutine geothermal_in_place(h, tv, dt, G, GV, US, CS, BFlx_geothermal, halo)
     do_any = .false.
     do i=is,ie
       heat_rem(i) = G%mask2dT(i,j) * (CS%geo_heat(i,j) * (dt*Irho_cp))
-      if (heat_rem(i) > 0.0) do_any = .true.
+      ! A column that holds too little water is skipped entirely; heating it would raise its
+      ! temperature at a rate that is independent of how thin it is.  heat_rem is deliberately
+      ! left at its full value for these columns so that the unapplied heat is not accumulated
+      ! into tv%internal_heat below.
+      do_i(i) = (col_thick(i) >= CS%min_col_thick)
+      if (.not.do_i(i)) BFlx_geothermal(i,j) = 0.0
+      if (do_i(i) .and. (heat_rem(i) > 0.0)) do_any = .true.
       h_geo_rem(i) = CS%Geothermal_thick
     enddo
     if (.not.do_any) cycle
 
     ! Find the first and last columns that need to be worked on.
-    isj = ie+1 ; do i=is,ie ; if (heat_rem(i) > 0.0) then ; isj = i ; exit ; endif ; enddo
-    iej = is-1 ; do i=ie,is,-1 ; if (heat_rem(i) > 0.0) then ; iej = i ; exit ; endif ; enddo
+    isj = ie+1 ; do i=is,ie ; if (do_i(i) .and. (heat_rem(i) > 0.0)) then ; isj = i ; exit ; endif ; enddo
+    iej = is-1 ; do i=ie,is,-1 ; if (do_i(i) .and. (heat_rem(i) > 0.0)) then ; iej = i ; exit ; endif ; enddo
 
     do k=nz,1,-1
       do_any = .false.
       do i=isj,iej
-        if ((heat_rem(i) > 0.0) .and. (h(i,j,k) > Angstrom)) then
+        if (do_i(i) .and. (heat_rem(i) > 0.0) .and. (h(i,j,k) > Angstrom)) then
           ! Apply some or all of the remaining heat to this layer.
           ! Convective adjustment occurs outside of this module if necessary.
           if ((h(i,j,k)-Angstrom) >= h_geo_rem(i)) then
@@ -503,7 +529,7 @@ subroutine geothermal_in_place(h, tv, dt, G, GV, US, CS, BFlx_geothermal, halo)
           if (calc_diags) dTdt_diag(i,j,k) = dTemp * Idt
         endif
 
-        if (heat_rem(i) > 0.0) do_any= .true.
+        if (do_i(i) .and. (heat_rem(i) > 0.0)) do_any= .true.
       enddo
 
       if (.not.do_any) exit
@@ -582,6 +608,14 @@ subroutine geothermal_init(Time, G, GV, US, param_file, diag, CS, useALEalgorith
   call get_param(param_file, mdl, "GEOTHERMAL_THICKNESS", CS%geothermal_thick, &
                  "The thickness over which to apply geothermal heating.", &
                  units="m", default=0.1, scale=GV%m_to_H)
+  call get_param(param_file, mdl, "GEOTHERMAL_MIN_COLUMN_THICKNESS", CS%min_col_thick, &
+                 "The minimum total thickness of a water column for geothermal heating to be "//&
+                 "applied to it.  Where a column is thinner than GEOTHERMAL_THICKNESS the "//&
+                 "temperature increment from geothermal heating is independent of the column "//&
+                 "thickness, so a near-vanished column (such as one under grounded ice) warms "//&
+                 "without bound.  Setting this to a positive value omits the heating in such "//&
+                 "columns.  The default of 0 reproduces the previous behavior.", &
+                 units="m", default=0.0, scale=GV%m_to_H)
   call get_param(param_file, mdl, "GEOTHERMAL_DRHO_DT_INPLACE", CS%dRcv_dT_inplace, &
                  "The value of drho_dT above which geothermal heating "//&
                  "simply heats water in place instead of moving it between "//&
