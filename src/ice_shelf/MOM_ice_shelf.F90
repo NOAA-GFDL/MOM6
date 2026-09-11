@@ -137,6 +137,11 @@ type, public :: ice_shelf_CS ; private
                        !< This number should be specified by the user.
   real :: col_mass_melt_threshold !< An ocean column mass below the iceshelf below which melting
                        !! does not occur [R Z ~> kg m-2]
+  logical :: frazil_refreeze_bug !< If true, recover a bug that frazil is refrozen onto the
+                       !! ice shelf even in columns that can not supply the corresponding mass.
+  real :: frazil_col_mass_frac !< The maximum fraction of the ocean column mass in excess of
+                       !! COL_THICK_MELT_THRESHOLD that can be removed by frazil refreezing
+                       !! onto the base of an ice shelf in a single time step [nondim]
   logical :: mass_from_file !< Read the ice shelf mass from a file every dt
   logical :: ustar_shelf_from_vel !< If true, use the surface velocities, and not the previous
                        !! values of the stresses to set ustar.
@@ -296,7 +301,9 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
     exch_vel_t, &   !< Sub-shelf thermal exchange velocity [Z T-1 ~> m s-1]
     exch_vel_s, &   !< Sub-shelf salt exchange velocity [Z T-1 ~> m s-1]
     dh_bdott, & !< Basal melt/accumulation over a time step, used for diagnostics [Z ~> m]
-    dh_adott    !< Surface melt/accumulation over a time step, used for diagnostics [Z ~> m]
+    dh_adott, & !< Surface melt/accumulation over a time step, used for diagnostics [Z ~> m]
+    frazil_used !< The frazil heat that is actually converted into refreezing onto the base
+                !! of the ice shelf during this time step [Q R Z ~> J m-2]
   real, dimension(SZDI_(CS%grid),SZDJ_(CS%grid)) :: &
     mass_flux  !< Total mass flux of freshwater across the ice-ocean interface. [R Z L2 T-1 ~> kg s-1]
   real, dimension(SZDI_(CS%grid),SZDJ_(CS%grid)) :: &
@@ -312,6 +319,9 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   real :: I_2Zeta_N !< Half the inverse of Zeta_N [nondim].
   real :: I_LF     !< The inverse of the latent heat of fusion [Q-1 ~> kg J-1].
   real :: I_dt_LHF  ! The inverse of the timestep times the latent heat of fusion [Q-1 T-1 ~> kg J-1 s-1].
+  real :: frazil_avail ! The largest amount of frazil heat that can be converted into refreezing
+                   ! onto the ice shelf without removing more mass than the ocean column holds
+                   ! [Q R Z ~> J m-2].
   real :: I_VK     !< The inverse of the Von Karman constant [nondim].
   real :: PR, SC   !< The Prandtl number and Schmidt number [nondim].
 
@@ -837,6 +847,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   else
     add_frazil = .false.
   endif
+  frazil_used(:,:) = 0.0
 
   do j=js,je ; do i=is,ie
     ! ISS%water_flux = net liquid water into the ocean [R Z T-1 ~> kg m-2 s-1]
@@ -887,8 +898,25 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
     mass_flux(i,j) = ISS%water_flux(i,j) * ISS%area_shelf_h(i,j)
 
     !Add frazil formation
-    if (add_frazil .and. (ISS%hmask(i,j) == 1 .or. ISS%hmask(i,j) == 2)) &
-      ISS%water_flux(i,j) = ISS%water_flux(i,j) - ISS%frazil(i,j) * I_dt_LHF
+    if (add_frazil .and. (ISS%hmask(i,j) == 1 .or. ISS%hmask(i,j) == 2)) then
+      if (CS%frazil_refreeze_bug) then
+        ISS%water_flux(i,j) = ISS%water_flux(i,j) - ISS%frazil(i,j) * I_dt_LHF
+        frazil_used(i,j) = ISS%frazil(i,j)
+      else
+        ! Frazil refreezes onto the base of the ice shelf, so the corresponding mass has to be
+        ! taken out of the ocean column.  Only do this where there is an ocean column that can
+        ! actually give up that mass, and limit the amount that is taken to a fraction of the
+        ! mass that is available.  Any frazil that is not used here is retained in ISS%frazil
+        ! and is applied during a subsequent time step, so that neither mass nor heat is lost.
+        frazil_avail = 0.0
+        if ((sfc_state%ocean_mass(i,j) > CS%col_mass_melt_threshold) .and. &
+            (ISS%area_shelf_h(i,j) > 0.0) .and. (ISS%melt_mask(i,j) > 0.0) .and. (CS%isthermo)) &
+          frazil_avail = (CS%frazil_col_mass_frac * CS%Lat_fusion) * &
+                         (sfc_state%ocean_mass(i,j) - CS%col_mass_melt_threshold)
+        frazil_used(i,j) = min(ISS%frazil(i,j), frazil_avail)
+        ISS%water_flux(i,j) = ISS%water_flux(i,j) - frazil_used(i,j) * I_dt_LHF
+      endif
+    endif
     fluxes%iceshelf_melt(i,j) = ISS%water_flux(i,j)
   enddo ; enddo ! i- and j-loops
 
@@ -987,7 +1015,17 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   call disable_averaging(CS%diag)
 
   !reset used frazil
-  if (add_frazil) ISS%frazil(:,:) = 0.0
+  if (add_frazil) then
+    if (CS%frazil_refreeze_bug) then
+      ISS%frazil(:,:) = 0.0
+    else
+      ! Retain any frazil that could not be refrozen onto the ice shelf this time step so that
+      ! it can be applied later, rather than discarding it and losing heat and mass.
+      do j=js,je ; do i=is,ie
+        ISS%frazil(i,j) = max(ISS%frazil(i,j) - frazil_used(i,j), 0.0)
+      enddo ; enddo
+    endif
+  endif
 
   call cpu_clock_end(id_clock_shelf)
 
@@ -1041,7 +1079,15 @@ subroutine adjust_ice_sheet_frazil(sfc_state_in, fluxes_in, CS)
     !Copy frazil to the ice sheet module where ice sheet is present.
     !No scaling to account for partial ice-sheet cells is necessary here, as
     !this is taken care of when applied to the ice sheet.
-    if (fluxes%frac_shelf_h(i,j)>0.0) ISS%frazil(i,j) = sfc_state%frazil(i,j)
+    if (fluxes%frac_shelf_h(i,j)>0.0) then
+      if (CS%frazil_refreeze_bug) then
+        ISS%frazil(i,j) = sfc_state%frazil(i,j)
+      else
+        ! Accumulate the newly formed frazil onto any frazil that the ice shelf has not yet
+        ! been able to refreeze, so that none of it is discarded.
+        ISS%frazil(i,j) = ISS%frazil(i,j) + sfc_state%frazil(i,j)
+      endif
+    endif
     !Remove the frazil that is used by the ice sheet from sfc_state%frazil
     !The sfc_state%frazil is sent to the sea-ice module
     sfc_state%frazil(i,j) = sfc_state%frazil(i,j) * (1.0-fluxes%frac_shelf_h(i,j))
@@ -1890,6 +1936,18 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
   call get_param(param_file, mdl, "ICE_SHELF_USTAR_FROM_VEL_BUGFIX", CS%ustar_from_vel_bugfix, &
                  "Bug fix for ice-area weighting of squared ocean velocities "//&
                  "used to calculate friction velocity under ice shelves", default=.not.enable_bugs)
+  call get_param(param_file, mdl, "ICE_SHELF_FRAZIL_REFREEZE_BUG", CS%frazil_refreeze_bug, &
+                 "If true, recover a bug that frazil is refrozen onto the base of the ice "//&
+                 "shelf even in ocean columns that are too thin to supply the corresponding "//&
+                 "mass, and that any frazil that can not be refrozen is discarded.  This "//&
+                 "causes mass and heat to be created or destroyed spuriously.", &
+                 default=enable_bugs)
+  call get_param(param_file, mdl, "ICE_SHELF_FRAZIL_COL_MASS_FRAC", CS%frazil_col_mass_frac, &
+                 "The maximum fraction of the ocean column mass in excess of the mass "//&
+                 "corresponding to COL_THICK_MELT_THRESHOLD that can be removed by frazil "//&
+                 "refreezing onto the base of an ice shelf in a single time step.  Any "//&
+                 "remaining frazil is retained and applied during a subsequent time step.", &
+                 units="nondim", default=0.5, do_not_log=CS%frazil_refreeze_bug)
   call get_param(param_file, mdl, "ICE_SHELF_BUOYANCY_FLUX_ITT_BUGFIX", CS%buoy_flux_itt_bugfix, &
                  "Bug fix of buoyancy iteration", default=.true., old_name="ICE_SHELF_BUOYANCY_FLUX_ITT_BUG")
   call get_param(param_file, mdl, "ICE_SHELF_SALT_FLUX_ITT_BUGFIX", CS%salt_flux_itt_bugfix, &
