@@ -54,6 +54,9 @@ type, public :: continuity_PPM_CS ; private
   real :: h_marg_min         !< Negligible floor on h_marg, the marginal thickness
                              !! used to calculate the partial derivative of transports
                              !! with velocities [H ~> m or kg m-2]
+  real :: h_min              !< The minimum layer thickness that the continuity solver will
+                             !! leave behind after the thickness fluxes have been applied
+                             !! [H ~> m or kg m-2].  h_min could be 0.
   logical :: aggress_adjust  !< If true, allow the adjusted velocities to have a
                              !! relative CFL change up to 0.5.  False by default.
   logical :: vol_CFL         !< If true, use the ratio of the open face lengths
@@ -154,7 +157,7 @@ subroutine continuity_PPM(u, v, hin, h, uh, vh, dt, G, GV, US, CS, OBC, pbv, uhb
   type(cont_loop_bounds_type) :: LB ! A type indicating the loop range for a phase of the updates
   logical :: x_first
 
-  h_min = GV%Angstrom_H
+  h_min = CS%h_min
 
   if (.not.CS%initialized) call MOM_error(FATAL, &
          "MOM_continuity_PPM: Module must be initialized before it is used.")
@@ -2783,6 +2786,15 @@ subroutine continuity_PPM_init(Time, G, GV, US, param_file, diag, CS, OBC)
                  "is 0.5*NK*ANGSTROM, and this should not be set less "//&
                  "than about 10^-15*MAXIMUM_DEPTH.", units="m", scale=GV%m_to_H, &
                  default=0.5*GV%ke*GV%Angstrom_m)
+
+  call get_param(param_file, mdl, "CONTINUITY_MIN_THICKNESS", CS%h_min, &
+                 "The minimum layer thickness that the continuity solver leaves behind "//&
+                 "after applying the thickness fluxes.  The default of ANGSTROM reproduces "//&
+                 "the previous hard-coded behavior, but because this floor is applied to "//&
+                 "layers that a regridding step has set to zero thickness, it acts as a "//&
+                 "spurious source of mass in configurations with many vanished layers.  "//&
+                 "Setting this to 0 avoids that spurious mass source.", &
+                 units="m", scale=GV%m_to_H, default=GV%Angstrom_m)
 
   call get_param(param_file, mdl, "VELOCITY_TOLERANCE", CS%tol_vel, &
                  "The tolerance for barotropic velocity discrepancies "//&

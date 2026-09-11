@@ -54,6 +54,9 @@ type, public :: thickness_diffuse_CS ; private
   real    :: kappa_smooth        !< Vertical diffusivity used to interpolate more sensible values
                                  !! of T & S into thin layers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
   logical :: thickness_diffuse   !< If true, interfaces heights are diffused.
+  real    :: h_min               !< The minimum layer thickness that thickness diffusion will
+                                 !! leave behind after the diffusive transports have been applied
+                                 !! [H ~> m or kg m-2].  h_min could be 0.
   logical :: full_depth_khth_min !< If true, KHTH_MIN is enforced throughout the whole water column.
                                  !! Otherwise, KHTH_MIN is only enforced at the surface. This parameter
                                  !! is only available when KHTH_USE_EBT_STRUCT=True and KHTH_MIN>0.
@@ -635,7 +638,7 @@ subroutine thickness_diffuse(h, uhtr, vhtr, tv, dt, G, GV, US, MEKE, VarMix, CDp
     do j=js,je ; do i=is,ie
       h(i,j,k) = h(i,j,k) - dt * G%IareaT(i,j) * &
           ((uhD(I,j,k) - uhD(I-1,j,k)) + (vhD(i,J,k) - vhD(i,J-1,k)))
-      if (h(i,j,k) < GV%Angstrom_H) h(i,j,k) = GV%Angstrom_H
+      if (h(i,j,k) < CS%h_min) h(i,j,k) = CS%h_min
     enddo ; enddo
   enddo
 
@@ -2290,6 +2293,15 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
   call get_param(param_file, mdl, "THICKNESSDIFFUSE", CS%thickness_diffuse, &
                  "If true, interface heights are diffused with a "//&
                  "coefficient of KHTH.", default=.false.)
+  call get_param(param_file, mdl, "THICKNESS_DIFFUSE_MIN_THICKNESS", CS%h_min, &
+                 "The minimum layer thickness that thickness diffusion leaves behind after "//&
+                 "the diffusive transports have been applied.  The default of ANGSTROM "//&
+                 "reproduces the previous hard-coded behavior, but because this floor is "//&
+                 "applied to layers that a regridding step has set to zero thickness, it acts "//&
+                 "as a spurious source of mass in configurations with many vanished layers.  "//&
+                 "Setting this to 0 avoids that spurious mass source.", &
+                 units="m", scale=GV%m_to_H, default=GV%Angstrom_m, &
+                 do_not_log=.not.CS%thickness_diffuse)
   call get_param(param_file, mdl, "USE_THICKNESS_DIFFUSE_ANN", CS%use_meso_sfn_ANN, &
                  "If true, use the ANN to compute the mesoscale streamfunction "//&
                  "for thickness diffusivity.", default=.false.)

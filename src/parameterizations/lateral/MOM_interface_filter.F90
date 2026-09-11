@@ -36,6 +36,9 @@ type, public :: interface_filter_CS ; private
   integer :: filter_order        !< The even power of the interface height smoothing.
                                  !! At present valid values are 0, 2, or 4.
   logical :: interface_filter    !< If true, interfaces heights are diffused.
+  real    :: h_min               !< The minimum layer thickness that the interface filter will
+                                 !! leave behind after the filtering transports have been applied
+                                 !! [H ~> m or kg m-2].  h_min could be 0.
   logical :: isotropic_filter    !< If true, use the same filtering lengthscales in both directions,
                                  !! otherwise use filtering lengthscales in each direction that scale
                                  !! with the grid spacing in that direction.
@@ -212,7 +215,7 @@ subroutine interface_filter(h, uhtr, vhtr, tv, dt, G, GV, US, CDp, CS)
     do j=js,je ; do i=is,ie
       h(i,j,k) = h(i,j,k) - G%IareaT(i,j) * &
           ((uhD(I,j,k) - uhD(I-1,j,k)) + (vhD(i,J,k) - vhD(i,J-1,k)))
-      if (h(i,j,k) < GV%Angstrom_H) h(i,j,k) = GV%Angstrom_H
+      if (h(i,j,k) < CS%h_min) h(i,j,k) = CS%h_min
     enddo ; enddo
 
     ! Store the transports associated with the smoothing if they are needed for diagnostics.
@@ -399,6 +402,15 @@ subroutine interface_filter_init(Time, G, GV, US, param_file, diag, CDp, CS)
   CS%filter_rate = 0.0
   if (interface_filter_time > 0.0) CS%filter_rate = 1.0 / interface_filter_time
   CS%interface_filter  = (interface_filter_time > 0.0)
+  call get_param(param_file, mdl, "INTERFACE_FILTER_MIN_THICKNESS", CS%h_min, &
+                 "The minimum layer thickness that the interface height filter leaves behind "//&
+                 "after the filtering transports have been applied.  The default of ANGSTROM "//&
+                 "reproduces the previous hard-coded behavior, but because this floor is "//&
+                 "applied to layers that a regridding step has set to zero thickness, it acts "//&
+                 "as a spurious source of mass in configurations with many vanished layers.  "//&
+                 "Setting this to 0 avoids that spurious mass source.", &
+                 units="m", scale=GV%m_to_H, default=GV%Angstrom_m, &
+                 do_not_log=.not.CS%interface_filter)
   call get_param(param_file, mdl, "INTERFACE_FILTER_MAX_CFL", CS%max_smoothing_CFL, &
                  "The maximum value of the local CFL ratio that "//&
                  "is permitted for the interface height smoothing. 1.0 is the "//&
