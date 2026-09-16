@@ -131,6 +131,7 @@ subroutine MOM_domains_init(MOM_dom, param_file, symmetric, static_memory, &
   logical :: is_MOM_domain  ! True if this domain is being set for MOM, and not another component like SIS2.
   character(len=128) :: inputdir   ! The directory in which to find the diag table
   character(len=200) :: mask_table ! The file name and later the full path to the diag table
+  character(len=200) :: default_masktable ! Default filename for mask table
   character(len=64)  :: inc_nm     ! The name of the memory include file
   character(len=200) :: mesg       ! A string to use for error messages
 
@@ -141,7 +142,6 @@ subroutine MOM_domains_init(MOM_dom, param_file, symmetric, static_memory, &
   character(len=200) :: topo_config
   integer :: id_clock_auto_mask
   character(len=:), allocatable :: masktable_desc
-  character(len=:), allocatable :: auto_mask_table_fname ! Auto-generated mask table file name
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl ! This module's name.
@@ -324,9 +324,14 @@ subroutine MOM_domains_init(MOM_dom, param_file, symmetric, static_memory, &
       "example of mask_table masks out 2 processors, (1,2) and (3,6), out of the 24 "//&
       "in a 4x6 layout: \n 2\n 4,6\n 1,2\n 3,6\n"
 
+  default_masktable = "MOM_mask_table"
+  if (auto_mask_table) default_masktable = "MOM_auto_mask_table"
+
+  call get_param(param_file, mdl, trim(masktable_nm), mask_table, masktable_desc, &
+                 default=default_masktable, layoutParam=.true.)
+
   if (auto_mask_table) then
     id_clock_auto_mask = cpu_clock_id('(Ocean gen_auto_mask_table)', grain=CLOCK_ROUTINE)
-    auto_mask_table_fname = "MOM_auto_mask_table"
 
     call get_param(param_file, mdl, "TARGET_IO_PES", target_io_pes, &
             "When AUTO_MASKTABLE is enabled, target number of IO PEs. If the given target number "//&
@@ -340,18 +345,11 @@ subroutine MOM_domains_init(MOM_dom, param_file, symmetric, static_memory, &
     call cpu_clock_begin(id_clock_auto_mask)
     if (is_root_PE()) then
       call gen_auto_mask_table(n_global, reentrant, tripolar_N, PEs_used, param_file, inputdir, &
-                               auto_mask_table_fname, target_io_pes, auto_layout, auto_io_layout, US)
+                               mask_table, target_io_pes, auto_layout, auto_io_layout, US)
     endif
     call broadcast(auto_layout, length=2)
     call broadcast(auto_io_layout, length=2)
     call cpu_clock_end(id_clock_auto_mask)
-
-    mask_table = auto_mask_table_fname
-    call log_param(param_file, mdl, trim(masktable_nm), mask_table, masktable_desc, &
-                   default="MOM_mask_table", layoutParam=.true.)
-  else
-    call get_param(param_file, mdl, trim(masktable_nm), mask_table, masktable_desc, &
-                   default="MOM_mask_table", layoutParam=.true.)
   endif
 
   ! First, check the run directory for the mask_table input file.
