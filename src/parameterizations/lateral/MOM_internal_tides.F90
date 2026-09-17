@@ -72,8 +72,6 @@ type, public :: int_tide_CS ; private
   logical :: init_forcing_only !< if True, add TKE forcing only at first step (for debugging)
   logical :: force_posit_En    !< if True, remove subroundoff negative values (needs enhancement)
   logical :: add_tke_forcing = .true. !< Whether to add forcing, used by init_forcing_only
-  logical :: negative_Kd_bug   !< If True, use bug that adds Kd_max to every layer/interface diffusivity
-                               !! when Kd_max < 0.
 
   real, allocatable, dimension(:,:) :: fraction_tidal_input
                         !< how the energy from one tidal component is distributed
@@ -1515,7 +1513,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
 
   non_Bous = .not.(GV%Boussinesq .or. GV%semi_Boussinesq)
 
-  apply_Kd_max = ((Kd_max >= 0.0) .or. CS%negative_Kd_bug)
+  apply_Kd_max = (Kd_max >= 0.0)
 
   h_d = CS%Int_tide_decay_scale
   h_s = CS%Int_tide_decay_scale_slope
@@ -3631,10 +3629,6 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
                  default=.true.)
   call get_param(param_file, mdl, "INTERNAL_TIDES_FORCE_POS_EN", CS%force_posit_En, &
                  "If true, force energy to be positive by removing subroundoff negative values.", &
-                 default=.true.)
-  call get_param(param_file, mdl, "INTERNAL_TIDES_NEGATIVE_KD_BUG", CS%negative_Kd_bug, &
-                 "If true, use bug that results in negative diffusivities at top/bottom "//&
-                 "interfaces/layers and disregarding contributions from internal tides in interior.", &
                  default=.true.)
   call get_param(param_file, mdl, "KD_MIN", CS%Kd_min, &
                  "The minimum diapycnal diffusivity.", &
