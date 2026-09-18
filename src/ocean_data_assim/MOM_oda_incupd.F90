@@ -215,7 +215,7 @@ subroutine initialize_oda_incupd( G, GV, US, param_file, CS, data_h, nz_data, re
   CS%nz = GV%ke
 
   ! increments on horizontal grid
-  if (.not. CS%incupdDataOngrid) call MOM_error(FATAL,'initialize_oda_incupd: '// &
+  if (.not. CS%incupdDataOngrid) call MOM_error(FATAL, 'initialize_oda_incupd: '// &
            'The oda_incupd code only applies ODA increments on the same horizontal grid. ')
 
   ! get number of timestep for full update
@@ -284,7 +284,7 @@ subroutine set_up_oda_incupd_field(sp_val, G, GV, CS)
     write(mesg,'("Increase MAX_FIELDS_ to at least ",I0," in MOM_memory.h or decrease &
            &the number of fields increments in the call to &
            &initialize_oda_incupd." )') CS%fldno
-    call MOM_error(FATAL,"set_up_oda_incupd_field: "//mesg)
+    call MOM_error(FATAL, "set_up_oda_incupd_field: "//mesg)
   endif
 
   ! store the increment/full field tracer profiles
@@ -374,7 +374,7 @@ subroutine calc_oda_increments(h, tv, u, v, G, GV, US, CS)
 
 
   ! increments calculated on if CS%ncount = 0.0
-  if (CS%ncount /= 0.0) call MOM_error(FATAL,'calc_oda_increments: '// &
+  if (CS%ncount /= 0.0) call MOM_error(FATAL, 'calc_oda_increments: '// &
            'CS%ncount should be 0.0 to get accurate increments.')
 
   ! get h_obs

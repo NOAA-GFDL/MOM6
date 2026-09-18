@@ -442,7 +442,7 @@ subroutine distribute_residual_uh_upwards(G, GV, hvol, uh)
             uh2d(I,k+1) = uh2d(I,k+1) + uh_remain
           else
             uh2d(I,k) = uh2d(I,k) + uh_remain
-            call MOM_error(WARNING,"Water column cannot accommodate UH redistribution. Tracer may not be conserved")
+            call MOM_error(WARNING, "Water column cannot accommodate UH redistribution. Tracer may not be conserved")
           endif
         endif
       enddo ! k-loop
@@ -451,7 +451,7 @@ subroutine distribute_residual_uh_upwards(G, GV, hvol, uh)
       ! within the tolerance limit
       uh_neglect = GV%Angstrom_H * min(G%areaT(i,j), G%areaT(i+1,j))
       if (abs(uh_col - sum(uh2d(I,:))) > uh_neglect) then
-        call MOM_error(WARNING,"Column integral of uh does not match after upwards redistribution")
+        call MOM_error(WARNING, "Column integral of uh does not match after upwards redistribution")
       endif
 
     enddo ! i-loop
@@ -539,7 +539,7 @@ subroutine distribute_residual_vh_upwards(G, GV, hvol, vh)
             vh2d(J,k+1) = vh2d(J,k+1) + vh_remain
           else
             vh2d(J,k) = vh2d(J,k) + vh_remain
-            call MOM_error(WARNING,"Water column cannot accommodate VH redistribution. Tracer will not be conserved")
+            call MOM_error(WARNING, "Water column cannot accommodate VH redistribution. Tracer will not be conserved")
           endif
         endif ! k-loop
       enddo
@@ -548,7 +548,7 @@ subroutine distribute_residual_vh_upwards(G, GV, hvol, vh)
       ! within the tolerance limit
       vh_neglect = GV%Angstrom_H * min(G%areaT(i,j), G%areaT(i,j+1))
       if ( ABS(vh_col-SUM(vh2d(J,:))) > vh_neglect) then
-        call MOM_error(WARNING,"Column integral of vh does not match after "//&
+        call MOM_error(WARNING, "Column integral of vh does not match after "//&
                                "upwards redistribution")
       endif
     enddo

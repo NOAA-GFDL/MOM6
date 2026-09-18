@@ -472,7 +472,7 @@ subroutine chksum_h_2d(array_m, mesg, HI_m, haloshift, omit_corners, scale, logu
     write(0,*) 'chksum_h_2d: haloshift =',hshift
     write(0,*) 'chksum_h_2d: isd,isc,iec,ied=',HI%isd,HI%isc,HI%iec,HI%ied
     write(0,*) 'chksum_h_2d: jsd,jsc,jec,jed=',HI%jsd,HI%jsc,HI%jec,HI%jed
-    call chksum_error(FATAL,'Error in chksum_h_2d '//trim(mesg))
+    call chksum_error(FATAL, 'Error in chksum_h_2d '//trim(mesg))
   endif
 
   bc0 = subchk(array, HI, 0, 0, scaling)
@@ -779,7 +779,7 @@ subroutine chksum_B_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
     write(0,*) 'chksum_B_2d: haloshift =',hshift
     write(0,*) 'chksum_B_2d: isd,isc,iec,ied=',HI%isdB,HI%iscB,HI%iecB,HI%iedB
     write(0,*) 'chksum_B_2d: jsd,jsc,jec,jed=',HI%jsdB,HI%jscB,HI%jecB,HI%jedB
-    call chksum_error(FATAL,'Error in chksum_B_2d '//trim(mesg))
+    call chksum_error(FATAL, 'Error in chksum_B_2d '//trim(mesg))
   endif
 
   bc0 = subchk(array, HI, 0, 0, scaling)
@@ -1104,7 +1104,7 @@ subroutine chksum_u_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
     write(0,*) 'chksum_u_2d: haloshift =',hshift
     write(0,*) 'chksum_u_2d: isd,isc,iec,ied=',HI%isdB,HI%iscB,HI%iecB,HI%iedB
     write(0,*) 'chksum_u_2d: jsd,jsc,jec,jed=',HI%jsd,HI%jsc,HI%jec,HI%jed
-    call chksum_error(FATAL,'Error in chksum_u_2d '//trim(mesg))
+    call chksum_error(FATAL, 'Error in chksum_u_2d '//trim(mesg))
   endif
 
   bc0 = subchk(array, HI, 0, 0, scaling)
@@ -1308,7 +1308,7 @@ subroutine chksum_v_2d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
     write(0,*) 'chksum_v_2d: haloshift =',hshift
     write(0,*) 'chksum_v_2d: isd,isc,iec,ied=',HI%isd,HI%isc,HI%iec,HI%ied
     write(0,*) 'chksum_v_2d: jsd,jsc,jec,jed=',HI%jsdB,HI%jscB,HI%jecB,HI%jedB
-    call chksum_error(FATAL,'Error in chksum_v_2d '//trim(mesg))
+    call chksum_error(FATAL, 'Error in chksum_v_2d '//trim(mesg))
   endif
 
   bc0 = subchk(array, HI, 0, 0, scaling)
@@ -1499,7 +1499,7 @@ subroutine chksum_h_3d(array_m, mesg, HI_m, haloshift, omit_corners, scale, logu
     write(0,*) 'chksum_h_3d: haloshift =',hshift
     write(0,*) 'chksum_h_3d: isd,isc,iec,ied=',HI%isd,HI%isc,HI%iec,HI%ied
     write(0,*) 'chksum_h_3d: jsd,jsc,jec,jed=',HI%jsd,HI%jsc,HI%jec,HI%jed
-    call chksum_error(FATAL,'Error in chksum_h_3d '//trim(mesg))
+    call chksum_error(FATAL, 'Error in chksum_h_3d '//trim(mesg))
   endif
 
   bc0 = subchk(array, HI, 0, 0, scaling)
@@ -1678,7 +1678,7 @@ subroutine chksum_B_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
     write(0,*) 'chksum_B_3d: haloshift =',hshift
     write(0,*) 'chksum_B_3d: isd,isc,iec,ied=',HI%isd,HI%isc,HI%iec,HI%ied
     write(0,*) 'chksum_B_3d: jsd,jsc,jec,jed=',HI%jsd,HI%jsc,HI%jec,HI%jed
-    call chksum_error(FATAL,'Error in chksum_B_3d '//trim(mesg))
+    call chksum_error(FATAL, 'Error in chksum_B_3d '//trim(mesg))
   endif
 
   bc0 = subchk(array, HI, 0, 0, scaling)
@@ -1881,7 +1881,7 @@ subroutine chksum_u_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
     write(0,*) 'chksum_u_3d: haloshift =',hshift
     write(0,*) 'chksum_u_3d: isd,isc,iec,ied=',HI%isd,HI%isc,HI%iec,HI%ied
     write(0,*) 'chksum_u_3d: jsd,jsc,jec,jed=',HI%jsd,HI%jsc,HI%jec,HI%jed
-    call chksum_error(FATAL,'Error in chksum_u_3d '//trim(mesg))
+    call chksum_error(FATAL, 'Error in chksum_u_3d '//trim(mesg))
   endif
 
   bc0 = subchk(array, HI, 0, 0, scaling)
@@ -2085,7 +2085,7 @@ subroutine chksum_v_3d(array_m, mesg, HI_m, haloshift, symmetric, omit_corners, 
     write(0,*) 'chksum_v_3d: haloshift =',hshift
     write(0,*) 'chksum_v_3d: isd,isc,iec,ied=',HI%isd,HI%isc,HI%iec,HI%ied
     write(0,*) 'chksum_v_3d: jsd,jsc,jec,jed=',HI%jsd,HI%jsc,HI%jec,HI%jed
-    call chksum_error(FATAL,'Error in chksum_v_3d '//trim(mesg))
+    call chksum_error(FATAL, 'Error in chksum_v_3d '//trim(mesg))
   endif
 
   bc0 = subchk(array, HI, 0, 0, scaling)

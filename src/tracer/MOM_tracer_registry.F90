@@ -148,7 +148,7 @@ subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, unit
   if (Reg%ntr>=MAX_FIELDS_) then
     write(mesg,'("Increase MAX_FIELDS_ in MOM_memory.h to at least ",I0," to allow for &
         &all the tracers being registered via register_tracer.")') Reg%ntr+1
-    call MOM_error(FATAL,"MOM register_tracer: "//mesg)
+    call MOM_error(FATAL, "MOM register_tracer: "//mesg)
   endif
   Reg%ntr = Reg%ntr + 1
 
@@ -177,7 +177,7 @@ subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, unit
                        cmor_longname=Tr%cmor_longname, caller="register_tracer")
     Tr%cmor_units = Tr%units
   else
-    call MOM_error(FATAL,"MOM register_tracer: Either name or "//&
+    call MOM_error(FATAL, "MOM register_tracer: Either name or "//&
                    "tr_desc must be present when registering a tracer.")
   endif
 
@@ -1027,7 +1027,7 @@ subroutine tracer_name_lookup(Reg, n, tr_ptr, name)
     endif
   enddo
 
-  call MOM_error(FATAL,"MOM cannot find registered tracer: "//name)
+  call MOM_error(FATAL, "MOM cannot find registered tracer: "//name)
 
 end subroutine tracer_name_lookup
 
@@ -1053,7 +1053,7 @@ subroutine tracer_registry_init(param_file, Reg)
   if (init_calls > 1) then
     write(mesg,'("tracer_registry_init called ",I0, &
       &" times with different registry pointers.")') init_calls
-    if (is_root_pe()) call MOM_error(WARNING,"MOM_tracer "//mesg)
+    if (is_root_pe()) call MOM_error(WARNING, "MOM_tracer "//mesg)
   endif
 
 end subroutine tracer_registry_init

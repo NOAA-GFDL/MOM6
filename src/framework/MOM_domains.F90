@@ -242,9 +242,9 @@ subroutine MOM_domains_init(MOM_dom, param_file, symmetric, static_memory, &
                  "The total number of thickness grid points in the y-direction in the physical "//&
                  "domain. With STATIC_MEMORY_ this is set in "//trim(inc_nm)//" at compile time.", &
                  default=NJGLOBAL)
-    if (n_global(1) /= NIGLOBAL) call MOM_error(FATAL,"MOM_domains_init: " // &
+    if (n_global(1) /= NIGLOBAL) call MOM_error(FATAL, "MOM_domains_init: " // &
           "static mismatch for NIGLOBAL_ domain size. Header file does not match input namelist")
-    if (n_global(2) /= NJGLOBAL) call MOM_error(FATAL,"MOM_domains_init: " // &
+    if (n_global(2) /= NJGLOBAL) call MOM_error(FATAL, "MOM_domains_init: " // &
           "static mismatch for NJGLOBAL_ domain size. Header file does not match input namelist")
 
     ! Check the requirement of equal sized compute domains when STATIC_MEMORY_ is used.
@@ -256,7 +256,7 @@ subroutine MOM_domains_init(MOM_dom, param_file, symmetric, static_memory, &
       call MOM_error(WARNING, 'MOM_domains: Processor decomposition (NIPROC_,NJPROC_) = ('//&
               trim(char_xsiz)//','//trim(char_ysiz)//') does not evenly divide size '//&
               'set by preprocessor macro ('//trim(char_niglobal)//','//trim(char_njglobal)//').')
-      call MOM_error(FATAL,'MOM_domains:  #undef STATIC_MEMORY_ in '//trim(inc_nm)//' to use '//&
+      call MOM_error(FATAL, 'MOM_domains:  #undef STATIC_MEMORY_ in '//trim(inc_nm)//' to use '//&
               'dynamic allocation, or change processor decomposition to evenly divide the domain.')
     endif
   else
@@ -288,9 +288,9 @@ subroutine MOM_domains_init(MOM_dom, param_file, symmetric, static_memory, &
     call log_param(param_file, mdl, "!NJHALO min_halo", n_halo(2), layoutParam=.true.)
   endif
   if (is_static .and. .not.present(min_halo)) then
-    if (n_halo(1) /= NIHALO) call MOM_error(FATAL,"MOM_domains_init: " // &
+    if (n_halo(1) /= NIHALO) call MOM_error(FATAL, "MOM_domains_init: " // &
            "static mismatch for "//trim(nihalo_nm)//" domain size")
-    if (n_halo(2) /= NJHALO) call MOM_error(FATAL,"MOM_domains_init: " // &
+    if (n_halo(2) /= NJHALO) call MOM_error(FATAL, "MOM_domains_init: " // &
            "static mismatch for "//trim(njhalo_nm)//" domain size")
   endif
 

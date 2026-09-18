@@ -2730,10 +2730,10 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
     call get_param(param_file, mdl, "LEITHY_WIDTH", CS%leithy_width, &
                    "Leith+E backscatter is zero below LEITHY_DEPTH+LEITHY_WIDTH.", &
                    units="m", scale=US%m_to_Z, default=400.0)
-    if (CS%leithy_width <= 0.0) call MOM_error(FATAL,"ERROR: LEITHY_WIDTH must be positive ")
+    if (CS%leithy_width <= 0.0) call MOM_error(FATAL, "ERROR: LEITHY_WIDTH must be positive ")
   endif
 
-  if (CS%use_GME .and. .not.split) call MOM_error(FATAL,"ERROR: Currently, USE_GME = True "// &
+  if (CS%use_GME .and. .not.split) call MOM_error(FATAL, "ERROR: Currently, USE_GME = True "// &
                                            "cannot be used with SPLIT=False.")
 
   if (CS%use_GME) then
@@ -2764,7 +2764,7 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
                  default= dt ,  units="s", scale=US%s_to_T, do_not_log=.not.(CS%EY24_EBT_BS))
 
   if (CS%no_slip .and. CS%biharmonic) &
-    call MOM_error(FATAL,"ERROR: NOSLIP and BIHARMONIC cannot be defined "// &
+    call MOM_error(FATAL, "ERROR: NOSLIP and BIHARMONIC cannot be defined "// &
                          "at the same time in MOM.")
   if (.not.(CS%Laplacian .or. CS%biharmonic)) then
     ! Only issue inviscid warning if not in single column mode (usually 2x2 domain)

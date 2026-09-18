@@ -85,7 +85,7 @@ subroutine MOM_initialize_rotation(f, G, PF, US)
     case ("beta"); call set_rotation_beta_plane(f, G, PF, US)
     case ("betaplane"); call set_rotation_beta_plane(f, G, PF, US)
    !case ("nonrotating") ! Note from AJA: Missing case?
-    case default ; call MOM_error(FATAL,"MOM_initialize: "// &
+    case default ; call MOM_error(FATAL, "MOM_initialize: "// &
       "Unrecognized rotation setup "//trim(config))
   end select
   call callTree_leave(trim(mdl)//'()')
@@ -350,7 +350,7 @@ subroutine initialize_topography_named(D, G, param_file, topog_config, max_depth
 
   call get_param(param_file, mdl, "MINIMUM_DEPTH", min_depth, &
                  "The minimum depth of the ocean.", units="m", default=0.0, scale=US%m_to_Z)
-  if (max_depth<=0.) call MOM_error(FATAL,"initialize_topography_named: "// &
+  if (max_depth<=0.) call MOM_error(FATAL, "initialize_topography_named: "// &
       "MAXIMUM_DEPTH has a non-sensical value! Was it set?")
 
   if (trim(topog_config) /= "flat") then
@@ -400,7 +400,7 @@ subroutine initialize_topography_named(D, G, param_file, topog_config, max_depth
       D(i,j) =  Dedge + D0 * ABS(sin(PI*(G%geoLatT(i,j) - G%south_lat)/G%len_lat))
     enddo ; enddo
   else
-    call MOM_error(FATAL,"initialize_topography_named: "// &
+    call MOM_error(FATAL, "initialize_topography_named: "// &
       "Unrecognized topography name "//trim(topog_config))
   endif
 
@@ -744,7 +744,7 @@ subroutine reset_face_lengths_named(G, param_file, name, US)
                    &" by ",ES11.4," at lon/lat of ", ES11.4, ES11.4)') &
                    US%L_to_m*G%dy_Cu(I,j), US%L_to_m*G%dyCu(I,j), US%L_to_m*(G%dy_Cu(I,j)-G%dyCu(I,j)), &
                    G%geoLonCu(I,j), G%geoLatCu(I,j)
-      call MOM_error(FATAL,"reset_face_lengths_named "//mesg)
+      call MOM_error(FATAL, "reset_face_lengths_named "//mesg)
     endif
     G%areaCu(I,j) = G%dxCu(I,j) * G%dy_Cu(I,j)
     G%IareaCu(I,j) = 0.0
@@ -758,7 +758,7 @@ subroutine reset_face_lengths_named(G, param_file, name, US)
                    US%L_to_m*G%dx_Cv(i,J), US%L_to_m*G%dxCv(i,J), US%L_to_m*(G%dx_Cv(i,J)-G%dxCv(i,J)), &
                    G%geoLonCv(i,J), G%geoLatCv(i,J)
 
-      call MOM_error(FATAL,"reset_face_lengths_named "//mesg)
+      call MOM_error(FATAL, "reset_face_lengths_named "//mesg)
     endif
     G%areaCv(i,J) = G%dyCv(i,J) * G%dx_Cv(i,J)
     G%IareaCv(i,J) = 0.0
@@ -798,7 +798,7 @@ subroutine reset_face_lengths_file(G, param_file, US)
   call log_param(param_file, mdl, "INPUTDIR/CHANNEL_WIDTH_FILE", filename)
 
   if (is_root_pe()) then ; if (.not.file_exists(filename)) &
-    call MOM_error(FATAL," reset_face_lengths_file: Unable to open "//&
+    call MOM_error(FATAL, " reset_face_lengths_file: Unable to open "//&
                            trim(filename))
   endif
 
@@ -818,7 +818,7 @@ subroutine reset_face_lengths_file(G, param_file, US)
                    &" by ",ES11.4," at lon/lat of ", ES11.4, ES11.4)') &
                    US%L_to_m*G%dy_Cu(I,j), US%L_to_m*G%dyCu(I,j), US%L_to_m*(G%dy_Cu(I,j)-G%dyCu(I,j)), &
                    G%geoLonCu(I,j), G%geoLatCu(I,j)
-      call MOM_error(FATAL,"reset_face_lengths_file "//mesg)
+      call MOM_error(FATAL, "reset_face_lengths_file "//mesg)
     endif
     G%areaCu(I,j) = G%dxCu(I,j) * G%dy_Cu(I,j)
     G%IareaCu(I,j) = 0.0
@@ -832,7 +832,7 @@ subroutine reset_face_lengths_file(G, param_file, US)
                    US%L_to_m*G%dx_Cv(i,J), US%L_to_m*G%dxCv(i,J), US%L_to_m*(G%dx_Cv(i,J)-G%dxCv(i,J)), &
                    G%geoLonCv(i,J), G%geoLatCv(i,J)
 
-      call MOM_error(FATAL,"reset_face_lengths_file "//mesg)
+      call MOM_error(FATAL, "reset_face_lengths_file "//mesg)
     endif
     G%areaCv(i,J) = G%dyCv(i,J) * G%dx_Cv(i,J)
     G%IareaCv(i,J) = 0.0

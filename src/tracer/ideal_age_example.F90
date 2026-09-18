@@ -270,7 +270,7 @@ subroutine initialize_ideal_age_tracer(restart, day, G, GV, US, h, diag, OBC, CS
           if (.not.OK) then
             OK = tracer_Z_init(CS%tr(:,:,:,m), h, CS%IC_file, &
                      trim(name), G, GV, US, -1e34, 0.0) ! CS%land_val(m))
-            if (.not.OK) call MOM_error(FATAL,"initialize_ideal_age_tracer: "//&
+            if (.not.OK) call MOM_error(FATAL, "initialize_ideal_age_tracer: "//&
                     "Unable to read "//trim(name)//" from "//&
                     trim(CS%IC_file)//".")
           endif

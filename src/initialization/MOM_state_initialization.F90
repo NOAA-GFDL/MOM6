@@ -260,7 +260,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   convert = new_sim  ! Thicknesses are initialized in height units in most cases.
   if (from_Z_file) then
     ! Initialize thickness and T/S from z-coordinate data in a file.
-    if (.NOT.use_temperature) call MOM_error(FATAL,"MOM_initialize_state : "//&
+    if (.NOT.use_temperature) call MOM_error(FATAL, "MOM_initialize_state : "//&
        "use_temperature must be true if INIT_LAYERS_FROM_Z_FILE is true")
 
     call MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, &
@@ -1001,7 +1001,7 @@ subroutine initialize_thickness_uniform(h, depth_tot, G, GV, param_file, just_re
 
   call callTree_enter(trim(mdl)//"(), MOM_state_initialization.F90")
 
-  if (G%max_depth<=0.) call MOM_error(FATAL,"initialize_thickness_uniform: "// &
+  if (G%max_depth<=0.) call MOM_error(FATAL, "initialize_thickness_uniform: "// &
       "MAXIMUM_DEPTH has a nonsensical value! Was it set?")
 
   do k=1,nz
@@ -1168,7 +1168,7 @@ end subroutine initialize_thickness_param
 
 !> Search density space for location of layers (not implemented!)
 subroutine initialize_thickness_search
-  call MOM_error(FATAL,"  MOM_state_initialization.F90, initialize_thickness_search: NOT IMPLEMENTED")
+  call MOM_error(FATAL, "  MOM_state_initialization.F90, initialize_thickness_search: NOT IMPLEMENTED")
 end subroutine initialize_thickness_search
 
 !> Depress the sea-surface based on an initial condition file
@@ -2258,7 +2258,7 @@ subroutine initialize_sponges_file(G, GV, US, use_temperature, tv, u, v, depth_t
     if (.not. time_space_interp_sponge) then
       call field_size(filename,eta_var,siz,no_domain=.true.)
       if (siz(1) /= G%ieg-G%isg+1 .or. siz(2) /= G%jeg-G%jsg+1) &
-        call MOM_error(FATAL,"initialize_sponge_file: Array size mismatch for sponge data.")
+        call MOM_error(FATAL, "initialize_sponge_file: Array size mismatch for sponge data.")
       nz_data = siz(3)-1
       allocate(eta(isd:ied,jsd:jed,nz_data+1))
       allocate(dz(isd:ied,jsd:jed,nz_data))
@@ -2335,7 +2335,7 @@ subroutine initialize_sponges_file(G, GV, US, use_temperature, tv, u, v, depth_t
     endif
   endif
 
-  if (sponge_uv .and. .not. use_ALE) call MOM_error(FATAL,'initialize_sponges_file: '// &
+  if (sponge_uv .and. .not. use_ALE) call MOM_error(FATAL, 'initialize_sponges_file: '// &
                        'UV damping to target values only available in ALE mode')
 
 
@@ -2458,7 +2458,7 @@ subroutine initialize_oda_incupd_file(G, GV, US, use_temperature, tv, h, u, v, p
 
   call field_size(filename,h_var,siz,no_domain=.true.)
   if (siz(1) /= G%ieg-G%isg+1 .or. siz(2) /= G%jeg-G%jsg+1) &
-         call MOM_error(FATAL,"initialize_oda_incupd_file: Array size mismatch for oda data.")
+         call MOM_error(FATAL, "initialize_oda_incupd_file: Array size mismatch for oda data.")
   nz_data = siz(3)
   ! get h increments
   allocate(hoda(isd:ied,jsd:jed,nz_data))

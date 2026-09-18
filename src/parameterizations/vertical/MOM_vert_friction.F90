@@ -616,10 +616,10 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB ; nz = GV%ke
 
-  if (.not.associated(CS)) call MOM_error(FATAL,"MOM_vert_friction(visc): "// &
+  if (.not.associated(CS)) call MOM_error(FATAL, "MOM_vert_friction(visc): "// &
          "Module must be initialized before it is used.")
 
-  if (.not.CS%initialized) call MOM_error(FATAL,"MOM_vert_friction(visc): "// &
+  if (.not.CS%initialized) call MOM_error(FATAL, "MOM_vert_friction(visc): "// &
          "Module must be initialized before it is used.")
 
   if (CS%id_GLwork > 0) then
@@ -1194,10 +1194,10 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
   is = G%isc ; ie = G%iec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB ; nz = GV%ke
 
-  if (.not.associated(CS)) call MOM_error(FATAL,"MOM_vert_friction(visc): "// &
+  if (.not.associated(CS)) call MOM_error(FATAL, "MOM_vert_friction(visc): "// &
          "Module must be initialized before it is used.")
 
-  if (.not.CS%initialized) call MOM_error(FATAL,"MOM_vert_friction(remnant): "// &
+  if (.not.CS%initialized) call MOM_error(FATAL, "MOM_vert_friction(remnant): "// &
          "Module must be initialized before it is used.")
 
   ! Find the zonal viscous remnant using a modification of a standard tridagonal solver.
@@ -1371,7 +1371,7 @@ subroutine vertvisc_coef(u, v, h, dz, forces, visc, tv, dt, G, GV, US, CS, OBC, 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB ; nz = GV%ke
 
-  if (.not.CS%initialized) call MOM_error(FATAL,"MOM_vert_friction(coef): "// &
+  if (.not.CS%initialized) call MOM_error(FATAL, "MOM_vert_friction(coef): "// &
          "Module must be initialized before it is used.")
 
   h_neglect = GV%H_subroundoff

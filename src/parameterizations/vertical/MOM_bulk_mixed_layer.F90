@@ -3658,7 +3658,7 @@ subroutine mixedlayer_detrain_1(h, T, S, R0, SpV0, Rcv, RcvTgt, dt, dt_diag, d_e
 
   is = G%isc ; ie = G%iec ; nz = GV%ke
   nkmb = CS%nkml+CS%nkbl
-  if (CS%nkbl /= 1) call MOM_error(FATAL,"MOM_mixed_layer: "// &
+  if (CS%nkbl /= 1) call MOM_error(FATAL, "MOM_mixed_layer: "// &
                         "CS%nkbl must be 1 in mixedlayer_detrain_1.")
 
   dt_Time = dt / CS%BL_detrain_time

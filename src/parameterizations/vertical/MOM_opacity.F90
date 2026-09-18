@@ -1396,7 +1396,7 @@ subroutine init_ohlmann_table(optics)
        &   optics%a2_lut(nval_lut),optics%b2_lut(nval_lut),&
        &   stat=err)
   if ( err /= 0 ) then
-     call MOM_error(FATAL,"init_ohlmann: Cannot allocate lookup table")
+     call MOM_error(FATAL, "init_ohlmann: Cannot allocate lookup table")
   endif
 
   optics%chl_min = chl_tab1a(1)

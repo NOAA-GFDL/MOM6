@@ -411,7 +411,7 @@ subroutine init_oda(Time, G, GV, US, diag_CS, CS)
           correct_leap_year_inconsistency=.true.,verbose=.true.,domain=G%Domain%mpp_domain)
     call get_external_field_info(CS%INC_CS%T, size=fld_sz)
     CS%INC_CS%fldno = 2
-    if (CS%nk /= fld_sz(3)) call MOM_error(FATAL,'Increment levels /= ODA levels')
+    if (CS%nk /= fld_sz(3)) call MOM_error(FATAL, 'Increment levels /= ODA levels')
 
     allocate(CS%T_bc_tend(G%isd:G%ied,G%jsd:G%jed,CS%GV%ke), source=0.0)
     allocate(CS%S_bc_tend(G%isd:G%ied,G%jsd:G%jed,CS%GV%ke), source=0.0)
@@ -443,8 +443,8 @@ subroutine set_prior_tracer(Time, G, GV, h, tv, CS)
   ! return if not time for analysis
   if (Time < CS%Time) return
 
-  if (.not. associated(CS%Grid)) call MOM_ERROR(FATAL,'ODA_CS ensemble horizontal grid not associated')
-  if (.not. associated(CS%GV)) call MOM_ERROR(FATAL,'ODA_CS ensemble vertical grid not associated')
+  if (.not. associated(CS%Grid)) call MOM_ERROR(FATAL, 'ODA_CS ensemble horizontal grid not associated')
+  if (.not. associated(CS%GV)) call MOM_ERROR(FATAL, 'ODA_CS ensemble vertical grid not associated')
 
   !! switch to global pelist
   call set_PElist(CS%filter_pelist)
@@ -770,7 +770,7 @@ end subroutine apply_oda_tracer_increments
 
     !    get global grid information from ocean_model
     T_grid=>NULL()
-    !if (associated(T_grid)) call MOM_error(FATAL,'MOM_oda_driver:set_up_global_tgrid called with associated T_grid')
+    !if (associated(T_grid)) call MOM_error(FATAL, 'MOM_oda_driver:set_up_global_tgrid called with associated T_grid')
 
     allocate(T_grid)
     T_grid%ni = CS%ni

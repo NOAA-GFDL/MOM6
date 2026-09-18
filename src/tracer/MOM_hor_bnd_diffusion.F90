@@ -126,7 +126,7 @@ logical function hor_bnd_diffusion_init(Time, G, GV, US, param_file, diag, diaba
 
   CS%surface_boundary_scheme = -1
   if ( .not. ASSOCIATED(CS%energetic_PBL_CSp) .and. .not. ASSOCIATED(CS%KPP_CSp) ) then
-    call MOM_error(FATAL,"Horizontal boundary diffusion is true, but no valid boundary layer scheme was found")
+    call MOM_error(FATAL, "Horizontal boundary diffusion is true, but no valid boundary layer scheme was found")
   endif
 
   ! Read all relevant parameters and write them to the model log.
@@ -380,7 +380,7 @@ subroutine hbd_grid(boundary, G, GV, hbl, h, CS)
         nk = SIZE(dz_top)
         if (nk > CS%hbd_nk) then
           write(*,*)'nk, CS%hbd_nk', nk, CS%hbd_nk
-          call MOM_error(FATAL,"Houston, we've had a problem in hbd_grid, u-points (nk cannot be > CS%hbd_nk)")
+          call MOM_error(FATAL, "Houston, we've had a problem in hbd_grid, u-points (nk cannot be > CS%hbd_nk)")
         endif
 
         CS%hbd_u_kmax(I,j) = nk
@@ -403,7 +403,7 @@ subroutine hbd_grid(boundary, G, GV, hbl, h, CS)
         nk = SIZE(dz_top)
         if (nk > CS%hbd_nk) then
           write(*,*)'nk, CS%hbd_nk', nk, CS%hbd_nk
-          call MOM_error(FATAL,"Houston, we've had a problem in hbd_grid, v-points (nk cannot be > CS%hbd_nk)")
+          call MOM_error(FATAL, "Houston, we've had a problem in hbd_grid, v-points (nk cannot be > CS%hbd_nk)")
         endif
 
         CS%hbd_v_kmax(i,J) = nk
@@ -499,7 +499,7 @@ subroutine unique(val, n, val_unique, val_max)
     limit = .true.
     if (val_max > MAXVAL(val)) then
       if (is_root_pe()) write(*,*)'val_max, MAXVAL(val)',val_max, MAXVAL(val)
-      call MOM_error(FATAL,"Houston, we've had a problem in unique (val_max cannot be > MAXVAL(val))")
+      call MOM_error(FATAL, "Houston, we've had a problem in unique (val_max cannot be > MAXVAL(val))")
     endif
   endif
 
@@ -679,7 +679,7 @@ subroutine boundary_k_range(boundary, nk, h, hbl, k_top, zeta_top, k_bot, zeta_b
       endif
     enddo
   else
-    call MOM_error(FATAL,"Houston, we've had a problem in boundary_k_range")
+    call MOM_error(FATAL, "Houston, we've had a problem in boundary_k_range")
   endif
 
 end subroutine boundary_k_range
@@ -1162,7 +1162,7 @@ subroutine hbd_grid_test(boundary, hbl_L, hbl_R, h_L, h_R, CS)
   nk = SIZE(dz_top)
   if (nk > CS%hbd_nk) then
     write(*,*)'nk, CS%hbd_nk', nk, CS%hbd_nk
-    call MOM_error(FATAL,"Houston, we've had a problem in hbd_grid_test, (nk cannot be > CS%hbd_nk)")
+    call MOM_error(FATAL, "Houston, we've had a problem in hbd_grid_test, (nk cannot be > CS%hbd_nk)")
   endif
 
   CS%hbd_u_kmax(1,1) = nk

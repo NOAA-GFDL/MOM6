@@ -867,7 +867,7 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
     call ML_MEKE_calculate_features(G, GV, US, CS, MEKE%Rd_dx_h, u, v, tv, h, dt, features_array)
     call predict_MEKE(G, US, CS, SIZE(h), Time, features_array, MEKE%MEKE)
   case default
-    call MOM_error(FATAL,"Invalid method specified for calculating EKE")
+    call MOM_error(FATAL, "Invalid method specified for calculating EKE")
   end select
 
   if (CS%MEKE_positive) then

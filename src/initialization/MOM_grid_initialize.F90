@@ -201,7 +201,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
   filename = trim(adjustl(inputdir)) // trim(adjustl(grid_file))
   call log_param(param_file, mdl, "INPUTDIR/GRID_FILE", filename)
   if (.not.file_exists(filename)) &
-    call MOM_error(FATAL," set_grid_metrics_from_mosaic: Unable to open "//&
+    call MOM_error(FATAL, " set_grid_metrics_from_mosaic: Unable to open "//&
                            trim(filename))
 
   !<MISSING CODE TO READ REFINEMENT LEVEL>
@@ -969,7 +969,7 @@ function find_root( fn, dy_df, GP, fnval, y1, ymin, ymax, ittmax)
         &x = ",ES10.4,", xmax = ",ES10.4,", fn = ",ES10.4,", dfn_dx = ",ES10.4,&
         &", seeking fn = ",ES10.4," - fn = ",ES10.4,".")') &
           pe_here(),ybot,ymin,fn(ybot,GP),dy_df(ybot,GP),fnval, fnbot
-      call MOM_error(FATAL,warnmesg)
+      call MOM_error(FATAL, warnmesg)
     endif
   enddo
 
@@ -989,7 +989,7 @@ function find_root( fn, dy_df, GP, fnval, y1, ymin, ymax, ittmax)
         &x = ",ES10.4,", xmax = ",ES10.4,", fn = ",ES10.4,", dfn_dx = ",ES10.4, &
         &", seeking fn = ",ES10.4," - fn = ",ES10.4,".")') &
           pe_here(),ytop,ymax,fn(ytop,GP),dy_df(ytop,GP),fnval,fntop
-      call MOM_error(FATAL,warnmesg)
+      call MOM_error(FATAL, warnmesg)
     endif
   enddo
 
