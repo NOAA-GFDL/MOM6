@@ -434,7 +434,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
               line_is_empty = .false.
             endif
           enddo
-          if (line_is_empty) keep_going=.false.
+          if (line_is_empty) keep_going = .false.
         endif
       enddo
 
@@ -477,7 +477,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
               line_is_empty = .false.
             endif
           enddo
-          if (line_is_empty) keep_going=.false.
+          if (line_is_empty) keep_going = .false.
         endif
       enddo
 
@@ -1078,7 +1078,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
             line_is_empty = .false.
           endif
         enddo
-        if (line_is_empty) keep_going=.false.
+        if (line_is_empty) keep_going = .false.
       endif
     enddo
 

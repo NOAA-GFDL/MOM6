@@ -1266,9 +1266,9 @@ subroutine sum_En(G, GV, US, CS, En, label)
   CS%En_sum = En_sum
   !En_sum_diff = En_sum - CS%En_sum
   !if (CS%En_sum /= 0.0) then
-  !  En_sum_pdiff= (En_sum_diff/CS%En_sum)*100.0
+  !  En_sum_pdiff = (En_sum_diff/CS%En_sum)*100.0
   !else
-  !  En_sum_pdiff= 0.0
+  !  En_sum_pdiff = 0.0
   !endif
   !! Print to screen
   !if (is_root_pe()) then
@@ -1505,7 +1505,7 @@ subroutine get_lowmode_diffusivity(G, GV, h, tv, US, h_bot, k_bot, j, N2_lay, N2
   logical :: non_Bous ! fully Non-Boussinesq
   integer :: i, k, is, ie, nz
 
-  is=G%isc ; ie=G%iec ; nz=GV%ke
+  is = G%isc ; ie = G%iec ; nz = GV%ke
 
   non_Bous = .not.(GV%Boussinesq .or. GV%semi_Boussinesq)
 
@@ -2678,7 +2678,7 @@ subroutine turning_latitude(En, NAngle, freq2, CS, G, LB)
   ! init local arrays
   angle_c(:,:) = CS%nullangle
   angle_wall = 0
-  angle_wall0 =0
+  angle_wall0 = 0
   angle_r = 0
   angle_r0 = 0
   angle_to_wall = 0

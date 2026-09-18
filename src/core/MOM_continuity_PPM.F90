@@ -2404,7 +2404,7 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
         segment => OBC%segment(n)
         if (.not. segment%on_pe) cycle
         if (segment%is_E_or_W) then
-          I=segment%HI%IsdB
+          I = segment%HI%IsdB
           do j=segment%HI%jsd,segment%HI%jed
             slp(i+1,j) = 0.0
             slp(i,j) = 0.0
@@ -2431,7 +2431,7 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
       segment => OBC%segment(n)
       if (.not. segment%on_pe) cycle
       if (segment%direction == OBC_DIRECTION_E) then
-        I=segment%HI%IsdB
+        I = segment%HI%IsdB
         if (associated(segment%h_Reg)) then
           do j=segment%HI%jsd,segment%HI%jed
             h_W(i+1,j) = segment%h_Reg%h_res(i,j,k)
@@ -2448,7 +2448,7 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, LB, h_min, monotonic, simple_
           enddo
         endif
       elseif (segment%direction == OBC_DIRECTION_W) then
-        I=segment%HI%IsdB
+        I = segment%HI%IsdB
         if (associated(segment%h_Reg)) then
           do j=segment%HI%jsd,segment%HI%jed
             h_W(i,j) = segment%h_Reg%h_res(i,j,k)
@@ -2558,7 +2558,7 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_
         segment => OBC%segment(n)
         if (.not. segment%on_pe) cycle
         if (segment%is_N_or_S) then
-          J=segment%HI%JsdB
+          J = segment%HI%JsdB
           do i=segment%HI%isd,segment%HI%ied
             slp(i,j+1) = 0.0
             slp(i,j) = 0.0
@@ -2583,7 +2583,7 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_
       segment => OBC%segment(n)
       if (.not. segment%on_pe) cycle
       if (segment%direction == OBC_DIRECTION_N) then
-        J=segment%HI%JsdB
+        J = segment%HI%JsdB
         if (associated(segment%h_Reg)) then
           do i=segment%HI%isd,segment%HI%ied
             h_S(i,j+1) = segment%h_Reg%h_res(i,j,k)
@@ -2600,7 +2600,7 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, LB, h_min, monotonic, simple_
           enddo
         endif
       elseif (segment%direction == OBC_DIRECTION_S) then
-        J=segment%HI%JsdB
+        J = segment%HI%JsdB
         if (associated(segment%h_Reg)) then
           do i=segment%HI%isd,segment%HI%ied
             h_S(i,j) = segment%h_Reg%h_res(i,j,k)

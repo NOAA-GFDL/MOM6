@@ -90,7 +90,7 @@ type, public :: tracer_flow_control_CS ; private
   logical :: use_USER_tracer_example = .false.     !< If true, use the USER_tracer_example package
   logical :: use_DOME_tracer = .false.             !< If true, use the DOME_tracer package
   logical :: use_ISOMIP_tracer = .false.           !< If true, use the ISOMPE_tracer package
-  logical :: use_RGC_tracer =.false.               !< If true, use the RGC_tracer package
+  logical :: use_RGC_tracer = .false.              !< If true, use the RGC_tracer package
   logical :: use_ideal_age = .false.               !< If true, use the ideal age tracer package
   logical :: use_MARBL_tracers = .false.           !< If true, use the MARBL tracer package
   logical :: use_regional_dyes = .false.           !< If true, use the regional dyes tracer package
@@ -810,7 +810,7 @@ subroutine call_tracer_stocks(h, stock_values, G, GV, US, CS, stock_names, stock
                                    names, units, stock_index)
     call store_stocks("MOM_generic_tracer", ns, names, units, values_EFP, index, stock_val_EFP, &
                       set_pkg_name, max_ns, ns_tot, stock_names, stock_units)
-    nn=ns_tot-ns+1
+    nn = ns_tot - ns + 1
     if (present(got_min_max) .and. present(global_min) .and. present(global_max)) &
       nn = MOM_generic_tracer_min_max(nn, got_min_max, global_min, global_max, &
                                       G, CS%MOM_generic_tracer_CSp, names, units, &

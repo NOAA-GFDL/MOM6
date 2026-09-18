@@ -236,7 +236,7 @@ type, public :: energetic_PBL_CS ; private
                              !! calls occur.
 
   !/ Others
-  type(time_type), pointer :: Time=>NULL() !< A pointer to the ocean model's clock.
+  type(time_type), pointer :: Time => NULL() !< A pointer to the ocean model's clock.
 
   logical :: TKE_diagnostics = .false. !< If true, diagnostics of the TKE budget are being calculated.
   integer :: answer_date     !< The vintage of the order of arithmetic and expressions in the ePBL
@@ -251,7 +251,7 @@ type, public :: energetic_PBL_CS ; private
                              !! that can work with successive increments to the diffusivity in
                              !! upward or downward passes.
   logical :: debug           !< If true, write verbose checksums for debugging purposes.
-  type(diag_ctrl), pointer :: diag=>NULL() !< A structure that is used to regulate the
+  type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to regulate the
                              !! timing of diagnostic output.
 
   real, allocatable, dimension(:,:) :: &

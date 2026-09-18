@@ -63,7 +63,7 @@ subroutine initialize_ice_thickness(h_shelf, area_shelf_h, hmask, melt_mask, G, 
                  "Valid values are: CHANNEL, FILE, and USER.", &
                  fail_if_missing=.true.)
 
-  if (PRESENT(rotate_index)) rotate=rotate_index
+  if (PRESENT(rotate_index)) rotate = rotate_index
 
   if (rotate) then
     allocate(tmp1_2d(G_in%isd:G_in%ied,G_in%jsd:G_in%jed), source=0.0)
@@ -154,7 +154,7 @@ subroutine initialize_ice_thickness_from_file(h_shelf, area_shelf_h, hmask, melt
   if (field_exists(filename, trim(melt_mask_varname), MOM_domain=G%Domain)) then
     call MOM_read_data(filename, trim(melt_mask_varname), melt_mask, G%Domain)
   else
-    melt_mask(:,:)=1.0
+    melt_mask(:,:) = 1.0
   endif
 
   isc = G%isc ; jsc = G%jsc ; iec = G%iec ; jec = G%jec
@@ -187,7 +187,7 @@ subroutine initialize_ice_thickness_from_file(h_shelf, area_shelf_h, hmask, melt
 
         if (area_shelf_h(i,j) >= G%areaT(i,j)) then
           hmask(i,j) = 1.
-          area_shelf_h(i,j)=G%areaT(i,j)
+          area_shelf_h(i,j) = G%areaT(i,j)
         elseif (area_shelf_h(i,j) == 0.0) then
           hmask(i,j) = 0.
         elseif ((area_shelf_h(i,j) > 0) .and. (area_shelf_h(i,j) <= G%areaT(i,j))) then

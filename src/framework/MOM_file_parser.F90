@@ -579,7 +579,7 @@ function simplifyWhiteSpace(string)
   ! Local variables
   integer :: i, j
   logical :: nonBlank = .false., insideString = .false.
-  character(len=1) :: quoteChar=" "
+  character(len=1) :: quoteChar = " "
 
   nonBlank  = .false. ; insideString = .false. ! NOTE: For some reason this line is needed??
   i = 0
@@ -588,7 +588,7 @@ function simplifyWhiteSpace(string)
     if (insideString) then ! Do not change formatting inside strings
       i = i + 1
       simplifyWhiteSpace(i:i) = string(j:j)
-      if (string(j:j)==quoteChar) insideString=.false. ! End of string
+      if (string(j:j) == quoteChar) insideString = .false. ! End of string
     else ! The following is outside of string delimiters
       if (string(j:j)==" " .or. string(j:j)==achar(9)) then ! Space or tab
         if (nonBlank) then ! Only copy a blank if the preceding character was non-blank

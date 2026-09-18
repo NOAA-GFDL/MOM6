@@ -1768,7 +1768,7 @@ subroutine find_L_open_convex(vol_below, D_vel, Dp, Dm, L, GV, US, CS)
                            ! accuracy of a single L(:) Newton iteration [Z5 ~> m5]
   real, parameter :: C1_3 = 1.0/3.0, C1_6 = 1.0/6.0 ! Rational constants [nondim]
   logical :: use_L0, do_one_L_iter  ! Control flags for L(:) Newton iteration
-  integer :: K, nz, itt, maxitt=20
+  integer :: K, nz, itt, maxitt = 20
 
   nz = GV%ke
 

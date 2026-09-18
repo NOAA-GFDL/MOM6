@@ -722,7 +722,7 @@ function real_array_string(vals, sep)
       else
         real_array_string = real_array_string // trim(real_string(vals(j)))
       endif
-      n=1
+      n = 1
     endif
   enddo
 end function real_array_string
@@ -771,7 +771,7 @@ function int_array_string(vals, sep)
       else
         int_array_string = int_array_string // trim(int_string(vals(j)))
       endif
-      n=1
+      n = 1
     endif
   enddo
 end function int_array_string
@@ -786,9 +786,9 @@ function testFormattedFloatIsReal(str, val)
 
   read(str(1:),*) scannedVal
   if (scannedVal == val) then
-    testFormattedFloatIsReal=.true.
+    testFormattedFloatIsReal = .true.
   else
-    testFormattedFloatIsReal=.false.
+    testFormattedFloatIsReal = .false.
   endif
 end function testFormattedFloatIsReal
 

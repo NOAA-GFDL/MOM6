@@ -32,7 +32,7 @@ function lowercase(input_string)
 !   This function returns a string in which all uppercase letters have been
 ! replaced by their lowercase counterparts.  It is loosely based on the
 ! lowercase function in mpp_util.F90.
-  integer, parameter :: co=iachar('a')-iachar('A') ! case offset
+  integer, parameter :: co = iachar('a')-iachar('A') ! case offset
   integer :: k
 
   lowercase = input_string
@@ -50,7 +50,7 @@ function uppercase(input_string)
 !   This function returns a string in which all lowercase letters have been
 ! replaced by their uppercase counterparts.  It is loosely based on the
 ! uppercase function in mpp_util.F90.
-  integer, parameter :: co=iachar('A')-iachar('a') ! case offset
+  integer, parameter :: co = iachar('A')-iachar('a') ! case offset
   integer :: k
 
   uppercase = input_string
@@ -82,7 +82,7 @@ function left_ints(i)
   write(left_ints(1:1320),'(A)') trim(left_int(i(1)))
   if (size(i)>1) then
     do j=2,size(i)
-      tmp=left_ints
+      tmp = left_ints
       write(left_ints(1:1320),'(A,", ",A)') trim(tmp),trim(left_int(i(j)))
     enddo
   endif
@@ -152,18 +152,18 @@ function left_reals(r,sep)
   logical :: doWrite
   character(len=10) :: separator
 
-  n=1 ; doWrite=.true. ; left_reals=''
+  n = 1 ; doWrite = .true. ; left_reals = ''
   if (present(sep)) then
-    separator=sep ; ns=len(sep)
+    separator = sep ; ns = len(sep)
   else
-    separator=', ' ; ns=2
+    separator = ', ' ; ns = 2
   endif
   do j=1,size(r)
-    doWrite=.true.
+    doWrite = .true.
     if (j<size(r)) then
       if (r(j)==r(j+1)) then
-        n=n+1
-        doWrite=.false.
+        n = n+1
+        doWrite = .false.
       endif
     endif
     if (doWrite) then
@@ -175,7 +175,7 @@ function left_reals(r,sep)
       else
         left_reals = left_reals // trim(left_real(r(j)))
       endif
-      n=1
+      n = 1
     endif
   enddo
 end function left_reals
@@ -188,9 +188,9 @@ function isFormattedFloatEqualTo(str, val)
   ! Local variables
   real :: scannedVal ! The value extraced from str, in arbitrary units [A]
 
-  isFormattedFloatEqualTo=.false.
+  isFormattedFloatEqualTo = .false.
   read(str(1:),*,err=987) scannedVal
-  if (scannedVal == val) isFormattedFloatEqualTo=.true.
+  if (scannedVal == val) isFormattedFloatEqualTo = .true.
  987 return
 end function isFormattedFloatEqualTo
 
@@ -366,8 +366,8 @@ logical function localTestS(verbose,str1,str2)
   logical, intent(in) :: verbose !< If true, write results to stdout
   character(len=*), intent(in) :: str1 !< String
   character(len=*), intent(in) :: str2 !< String
-  localTestS=.false.
-  if (trim(str1)/=trim(str2)) localTestS=.true.
+  localTestS = .false.
+  if (trim(str1) /= trim(str2)) localTestS = .true.
   if (localTestS .or. verbose) then
     write(stdout,*) '>'//trim(str1)//'<'
     if (localTestS) then
@@ -382,8 +382,8 @@ logical function localTestI(verbose,i1,i2)
   logical, intent(in) :: verbose !< If true, write results to stdout
   integer, intent(in) :: i1 !< Integer
   integer, intent(in) :: i2 !< Integer
-  localTestI=.false.
-  if (i1/=i2) localTestI=.true.
+  localTestI = .false.
+  if (i1 /= i2) localTestI = .true.
   if (localTestI .or. verbose) then
     write(stdout,*) i1,i2
     if (localTestI) then
@@ -398,8 +398,8 @@ logical function localTestR(verbose,r1,r2)
   logical, intent(in) :: verbose !< If true, write results to stdout
   real, intent(in) :: r1 !< The first value to compare, in arbitrary units [A]
   real, intent(in) :: r2 !< The first value to compare, in arbitrary units [A]
-  localTestR=.false.
-  if (r1/=r2) localTestR=.true.
+  localTestR = .false.
+  if (r1 /= r2) localTestR = .true.
   if (localTestR .or. verbose) then
     write(stdout,*) r1,r2
     if (localTestR) then

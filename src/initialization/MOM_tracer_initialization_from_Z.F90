@@ -160,9 +160,9 @@ subroutine MOM_initialize_tracer_from_Z(h, tr, G, GV, US, PF, src_file, src_var_
                  default=default_answer_date, do_not_log=.not.GV%Boussinesq)
   if (.not.GV%Boussinesq) hor_regrid_answer_date = max(hor_regrid_answer_date, 20230701)
 
-  if (PRESENT(homogenize)) homog=homogenize
-  if (PRESENT(useALEremapping)) useALE=useALEremapping
-  if (PRESENT(remappingScheme)) remapScheme=remappingScheme
+  if (PRESENT(homogenize)) homog = homogenize
+  if (PRESENT(useALEremapping)) useALE = useALEremapping
+  if (PRESENT(remappingScheme)) remapScheme = remappingScheme
   recnum = 1
   if (PRESENT(src_var_record)) recnum = src_var_record
   convert = 1.0

@@ -461,7 +461,7 @@ subroutine int_tide_input_init(Time, G, GV, US, param_file, diag, CS, itide)
                units="m s-1", default=0.0, scale=US%m_s_to_L_T)
 
   call read_param(param_file, "INTERNAL_TIDE_FREQS", num_freq)
-  CS%nFreq= num_freq
+  CS%nFreq = num_freq
 
   allocate(itide%Nb(isd:ied,jsd:jed), source=0.0)
   allocate(itide%Rho_bot(isd:ied,jsd:jed), source=0.0)

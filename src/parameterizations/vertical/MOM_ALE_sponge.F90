@@ -897,7 +897,7 @@ subroutine set_up_ALE_sponge_vel_field_varying(filename_u, fieldname_u, filename
   integer, dimension(4) :: fld_sz
   if (.not.associated(CS)) return
 
-  override =.true.
+  override = .true.
 
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   isdB = G%isdB ; iedB = G%iedB ; jsdB = G%jsdB ; jedB = G%jedB

@@ -263,8 +263,8 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
   character(len=20) :: langmuir_entrainment_opt = 'NONE' !< Langmuir entrainment option to be
                                        !! passed to CVMix, e.g., LWF16
   integer :: default_answer_date       ! The default setting for the various ANSWER_DATE flags.
-  logical :: CS_IS_ONE=.false.         !< Logical for setting Cs based on Non-local
-  logical :: lnoDGat1=.false.          !< True => G'(1) = 0 (shape function)
+  logical :: CS_IS_ONE = .false.       !< Logical for setting Cs based on Non-local
+  logical :: lnoDGat1 = .false.        !< True => G'(1) = 0 (shape function)
                                        !! False => compute G'(1) as in LMD94
   ! Read parameters
   call get_param(paramFile, mdl, "USE_KPP", KPP_init, default=.false., do_not_log=.true.)
@@ -287,8 +287,8 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
                   default=.False.)
   !BGR: Note using PASSIVE for KPP creates warning for PASSIVE from Convection
   !     should we create a separate flag?
-  if (present(passive)) passive=CS%passiveMode ! This is passed back to the caller so
-                                               ! the caller knows to not use KPP output
+  if (present(passive)) passive = CS%passiveMode ! This is passed back to the caller so
+                                                 ! the caller knows to not use KPP output
   call get_param(paramFile, mdl, 'APPLY_NONLOCAL_TRANSPORT', CS%applyNonLocalTrans,  &
                  'If True, applies the non-local transport to all tracers. '//  &
                  'If False, calculates the non-local transport and tendencies but '//&
@@ -398,11 +398,11 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
   if (CS%MatchTechnique == 'ParabolicNonLocal') then
     ! This forces Cs2 (Cs in non-local computation) to equal 1 for parabolic non-local option.
     !  May be used during CVMix initialization.
-    Cs_is_one=.true.
+    Cs_is_one = .true.
   endif
   if (CS%MatchTechnique == 'ParabolicNonLocal' .or. CS%MatchTechnique == 'SimpleShapes') then
     ! if gradient won't be matched, lnoDGat1=.true.
-    lnoDGat1=.true.
+    lnoDGat1 = .true.
   endif
 
   ! safety check to avoid negative diff/visc

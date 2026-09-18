@@ -858,11 +858,11 @@ logical function near_boundary_unit_tests( verbose )
 
   allocate(CS)
   ! fill required fields in CS
-  CS%linear=.false.
+  CS%linear = .false.
   CS%H_subroundoff = 1.0E-20
-  CS%debug=.false.
-  CS%limiter=.false.
-  CS%limiter_remap=.false.
+  CS%debug = .false.
+  CS%limiter = .false.
+  CS%limiter_remap = .false.
   CS%hbd_nk = 2 + (2*2)
   call initialize_remapping( CS%remap_CS, 'PLM', boundary_extrapolation=.true., &
                              om4_remap_via_sub_cells=.true., & ! ### see fail below when using fixed remapping alg.

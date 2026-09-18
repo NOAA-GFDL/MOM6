@@ -148,7 +148,7 @@ type, public :: OBC_segment_data_type
   real              :: resrv_lfac_in = 1.   !< The reservoir inverse length scale factor for the inward
                                             !! direction per field [nondim].  The general 1/Lscale_in is
                                             !! multiplied by this factor for a specific tracer or thickness.
-  real              :: resrv_lfac_out= 1.   !< The reservoir inverse length scale factor for the outward
+  real              :: resrv_lfac_out = 1.  !< The reservoir inverse length scale factor for the outward
                                             !! direction per field [nondim].  The general 1/Lscale_out is
                                             !! multiplied by this factor for a specific tracer or thickness.
 end type OBC_segment_data_type
@@ -309,8 +309,8 @@ type, public :: OBC_segment_type
                                               !! discretized at the corner (PV) points.
   real, allocatable :: nudged_tangential_grad(:,:,:)  !< The layer dvdx or dudy towards which nudging
                                               !! can occur [T-1 ~> s-1].
-  type(OBC_segment_thickness_type), pointer  :: h_Reg=> NULL()!< A pointer to the thickness for the segment.
-  type(segment_tracer_registry_type), pointer  :: tr_Reg=> NULL()!< A pointer to the tracer registry for the segment.
+  type(OBC_segment_thickness_type), pointer :: h_Reg => NULL() !< A pointer to the thickness for the segment.
+  type(segment_tracer_registry_type), pointer :: tr_Reg => NULL() !< A pointer to the tracer registry for the segment.
   type(hor_index_type) :: HI !< Horizontal index ranges
   real :: Tr_InvLscale_out                                  !< An effective inverse length scale for restoring
                                                             !! the tracer concentration in a fictitious
@@ -1240,7 +1240,7 @@ subroutine initialize_segment_data(GV, US, OBC, PF, turns, use_temperature)
   integer, dimension(:), allocatable :: saved_pelist
   integer :: current_pe
   integer, dimension(1) :: single_pelist
-  type(external_tracers_segments_props), pointer :: obgc_segments_props_list =>NULL()
+  type(external_tracers_segments_props), pointer :: obgc_segments_props_list => NULL()
   logical :: check_ts_needed ! Check if temperature and salinity are explicitly specified.
   integer :: idx
   character(len=256) :: routine_name ! Name of this subroutine
@@ -2817,7 +2817,7 @@ subroutine copy_OBC_thickness_reservoirs(OBC, G, GV)
 
   ! Now thickness reservoirs
   do n=1,OBC%number_of_segments
-    segment=>OBC%segment(n)
+    segment => OBC%segment(n)
     if (associated(segment%h_Reg)) then
       if (segment%is_E_or_W) then
         I = segment%HI%IsdB
@@ -5152,7 +5152,7 @@ subroutine segment_thickness_reservoir_init(GV, US, OBC, param_file)
   if (.not. associated(OBC)) return
 
   do nseg=1, OBC%number_of_segments
-    segment=>OBC%segment(nseg)
+    segment => OBC%segment(nseg)
     if (.not. segment%on_pe) cycle
 
     if (associated(segment%h_Reg)) &
@@ -6166,7 +6166,7 @@ subroutine update_segment_thickness_reservoirs(G, GV, uhr, vhr, h, OBC)
   type(ocean_OBC_type),                       pointer    :: OBC !< Open boundary structure
 
   ! Local variable
-  type(OBC_segment_type), pointer :: segment=>NULL()
+  type(OBC_segment_type), pointer :: segment => NULL()
   real :: u_L_in, u_L_out ! The zonal distance moved in or out of a cell, normalized by the reservoir
                           ! length scale [nondim]
   real :: v_L_in, v_L_out ! The meridional distance moved in or out of a cell, normalized by the reservoir
@@ -6189,7 +6189,7 @@ subroutine update_segment_thickness_reservoirs(G, GV, uhr, vhr, h, OBC)
   nz = GV%ke
 
   if (associated(OBC)) then ; if (OBC%OBC_pe) then ; do n=1,OBC%number_of_segments
-    segment=>OBC%segment(n)
+    segment => OBC%segment(n)
     if (.not. associated(segment%h_Reg)) cycle
     b_in  = 0.0 ; if (segment%Tr_InvLscale_in  < 0.0) b_in  = 1.0
     b_out = 0.0 ; if (segment%Tr_InvLscale_out < 0.0) b_out = 1.0

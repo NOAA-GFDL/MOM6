@@ -39,7 +39,7 @@ integer, parameter :: NTR_MAX = 1
 
 !> The control structure for the boundary impulse tracer package
 type, public :: boundary_impulse_tracer_CS ; private
-  integer :: ntr=NTR_MAX    !< The number of tracers that are actually used.
+  integer :: ntr = NTR_MAX  !< The number of tracers that are actually used.
   logical :: coupled_tracers = .false. !< These tracers are not offered to the  coupler.
   type(time_type), pointer :: Time => NULL() !< A pointer to the ocean model's clock.
   type(tracer_registry_type), pointer :: tr_Reg => NULL() !< A pointer to the tracer registry
