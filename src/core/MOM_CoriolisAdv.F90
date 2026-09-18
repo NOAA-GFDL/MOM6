@@ -1397,7 +1397,7 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, G, GV, US, CS)
 end subroutine gradKE
 
 !> Reconstruct the scalar (e.g., pv, vorticity) onto point i-1/2 using a third-order upwind scheme
-subroutine UP3_reconstruction(q4,u,qr)
+subroutine UP3_reconstruction(q4, u, qr)
   real, intent(in)    :: q4(4)            !< Tracer values on points i-2, i-1, i, i+1 [A ~> a]
   real, intent(in)    :: u                !< Velocity or thickness flux on point i-1/2
                                           !! [l t-1 ~> m s-1] or [l2 t-1 ~> m2 s-1]
@@ -1415,7 +1415,7 @@ end subroutine UP3_reconstruction
 
 !> Reconstruct the scalar (e.g., PV, vorticity) onto point i-1/2
 !! using a third-order upwind scheme with the Koren flux limiter
-subroutine UP3_Koren_limiter_reconstruction(q4,u,qr)
+subroutine UP3_Koren_limiter_reconstruction(q4, u, qr)
   real, intent(in)    :: q4(4)            !< Tracer values on points i-2, i-1, i, i+1 [A ~> a]
   real, intent(in)    :: u                !< Velocity or thickness flux on point i-1/2
                                           !! [L T-1 ~> m s-1] or [L2 T-1 ~> m2 s-1]

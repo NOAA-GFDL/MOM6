@@ -413,7 +413,7 @@ subroutine opacity_from_chl(optics, sw_total, sw_vis_dir, sw_vis_dif, sw_nir_dir
           endif
 
           ! Bands 1-2 (Ohlmann factors A with coefficients for Table 1a)
-          optics%sw_pen_band(1:2,i,j)  = lookup_ohlmann_swpen(chl_data(i,j),optics)*SW_vis_tot
+          optics%sw_pen_band(1:2,i,j) = lookup_ohlmann_swpen(chl_data(i,j), optics)*SW_vis_tot
         endif
       enddo ; enddo
     case default
@@ -468,7 +468,7 @@ subroutine opacity_from_chl(optics, sw_total, sw_vis_dir, sw_vis_dif, sw_nir_dir
             optics%opacity_band(1:2,i,j,k) = CS%opacity_land_value
           else
             ! Bands 1-2 (Ohlmann factors B with coefficients for Table 1a
-            optics%opacity_band(1:2,i,j,k) = lookup_ohlmann_opacity(chl_data(i,j),optics) * US%Z_to_m
+            optics%opacity_band(1:2,i,j,k) = lookup_ohlmann_opacity(chl_data(i,j), optics) * US%Z_to_m
           endif
         enddo ; enddo
       case default
@@ -1392,8 +1392,8 @@ subroutine init_ohlmann_table(optics)
   real :: chl, log10chl_lut, w1, w2
   integer :: n, m, mm1, err
 
-  allocate(optics%a1_lut(nval_lut),optics%b1_lut(nval_lut),&
-       &   optics%a2_lut(nval_lut),optics%b2_lut(nval_lut),&
+  allocate(optics%a1_lut(nval_lut), optics%b1_lut(nval_lut), &
+       &   optics%a2_lut(nval_lut), optics%b2_lut(nval_lut), &
        &   stat=err)
   if ( err /= 0 ) then
      call MOM_error(FATAL,"init_ohlmann: Cannot allocate lookup table")
@@ -1432,7 +1432,7 @@ subroutine init_ohlmann_table(optics)
 end subroutine init_ohlmann_table
 
 !> Get the partion of total solar into bands from Ohlmann lookup table
-function lookup_ohlmann_swpen(chl,optics) result(A)
+function lookup_ohlmann_swpen(chl, optics) result(A)
 
   implicit none
 
@@ -1447,7 +1447,7 @@ function lookup_ohlmann_swpen(chl,optics) result(A)
 
   ! Make sure we are in the table
   if (chl > optics%chl_min) then
-    log10chl = min(log10(chl),optics%log10chl_max)
+    log10chl = min(log10(chl), optics%log10chl_max)
   else
     log10chl = optics%log10chl_min
   endif
@@ -1460,7 +1460,7 @@ function lookup_ohlmann_swpen(chl,optics) result(A)
 end function lookup_ohlmann_swpen
 
 !> Get the opacity (decay scale) from Ohlmann lookup table
-function lookup_ohlmann_opacity(chl,optics) result(B)
+function lookup_ohlmann_opacity(chl, optics) result(B)
 
   implicit none
   real, intent(in) :: chl

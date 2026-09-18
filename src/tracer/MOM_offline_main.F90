@@ -984,10 +984,10 @@ subroutine offline_advection_layer(fluxes, Time_start, time_interval, G, GV, US,
       vhtr(i,J,k) = vhtr(i,J,k) - vhtr_sub(i,J,k)
     enddo ; enddo ; enddo
 
-    call pass_var(eatr,G%Domain)
-    call pass_var(ebtr,G%Domain)
-    call pass_var(h_pre,G%Domain)
-    call pass_vector(uhtr,vhtr,G%Domain)
+    call pass_var(eatr, G%Domain)
+    call pass_var(ebtr, G%Domain)
+    call pass_var(h_pre, G%Domain)
+    call pass_vector(uhtr, vhtr, G%Domain)
 
     ! Calculate how close we are to converging by summing the remaining fluxes at each point
     rem_col_flux(:,:) = 0.0
@@ -1493,10 +1493,10 @@ subroutine offline_transport_init(param_file, CS, diabatic_CSp, G, GV, US)
   endif
 
   ! Initialize ids for clocks used in offline routines
-  CS%id_clock_read_fields =      cpu_clock_id('(Offline read fields)',grain=CLOCK_MODULE)
-  CS%id_clock_offline_diabatic = cpu_clock_id('(Offline diabatic)',grain=CLOCK_MODULE)
-  CS%id_clock_offline_adv =      cpu_clock_id('(Offline transport)',grain=CLOCK_MODULE)
-  CS%id_clock_redistribute =     cpu_clock_id('(Offline redistribute)',grain=CLOCK_MODULE)
+  CS%id_clock_read_fields =      cpu_clock_id('(Offline read fields)', grain=CLOCK_MODULE)
+  CS%id_clock_offline_diabatic = cpu_clock_id('(Offline diabatic)', grain=CLOCK_MODULE)
+  CS%id_clock_offline_adv =      cpu_clock_id('(Offline transport)', grain=CLOCK_MODULE)
+  CS%id_clock_redistribute =     cpu_clock_id('(Offline redistribute)', grain=CLOCK_MODULE)
 
   call callTree_leave("offline_transport_init")
 

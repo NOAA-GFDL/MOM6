@@ -713,9 +713,9 @@ subroutine update_offline_from_files(G, GV, US, nk_input, mean_file, sum_file, s
 
     fluxes%netMassOut(:,:) = 0.0
     fluxes%netMassIn(:,:) = 0.0
-    call MOM_read_data(surf_file,'massout_flux_sum',fluxes%netMassOut, G%Domain, &
+    call MOM_read_data(surf_file, 'massout_flux_sum', fluxes%netMassOut, G%Domain, &
                        timelevel=ridx_sum, scale=GV%kg_m2_to_H)
-    call MOM_read_data(surf_file,'massin_flux_sum', fluxes%netMassIn,  G%Domain, &
+    call MOM_read_data(surf_file, 'massin_flux_sum', fluxes%netMassIn, G%Domain, &
                        timelevel=ridx_sum, scale=GV%kg_m2_to_H)
 
     do j=js,je ; do i=is,ie

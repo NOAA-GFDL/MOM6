@@ -476,7 +476,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       endif
     endif
     ! This check fails when the variable is a dimension variable! -AJA
-   !if (.not. field_exists(fileName,trim(varName))) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
+   !if (.not. field_exists(fileName, trim(varName))) call MOM_error(FATAL, trim(mdl)//", initialize_regridding: "// &
    !             "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
     if (CS%regridding_scheme == REGRIDDING_SIGMA) then
       expected_units = 'nondim' ; alt_units = expected_units
@@ -542,7 +542,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
         trim(mdl)//", initialize_regridding: HYBRID "// &
         "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
     varName = trim( extractWord(trim(string(8:)), 2) )
-    if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
+    if (.not. field_exists(fileName, varName)) call MOM_error(FATAL, &
         trim(mdl)//", initialize_regridding: HYBRID "// &
         "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
     call MOM_read_data(trim(fileName), trim(varName), rho_target)
@@ -550,7 +550,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz
       call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz )
     else ! Read dz from file
-      if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
+      if (.not. field_exists(fileName, varName)) call MOM_error(FATAL, &
           trim(mdl)//", initialize_regridding: HYBRID "// &
           "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
       call MOM_read_data(trim(fileName), trim(varName), dz)
@@ -576,7 +576,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
         trim(mdl)//", initialize_regridding: HYBRID_3D "// &
         "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
     varName = trim( extractWord(trim(string(11:)), 2) )
-    if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
+    if (.not. field_exists(fileName, varName)) call MOM_error(FATAL, &
         trim(mdl)//", initialize_regridding: HYBRID_3D "// &
         "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
     call MOM_read_data(trim(fileName), trim(varName), rho_target_3d, G%Domain)
@@ -602,7 +602,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                 trim(message), units=coordinateUnits(coord_mode))
       endif
     else ! Read dz from file
-      if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
+      if (.not. field_exists(fileName, varName)) call MOM_error(FATAL, &
           trim(mdl)//", initialize_regridding: HYBRID_3D "// &
           "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
       call MOM_read_data(trim(fileName), trim(varName), dz_3d, G%Domain)
@@ -629,7 +629,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
         trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
         "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
     varName = trim( extractWord(trim(string(12:)), 2) )
-    if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
+    if (.not. field_exists(fileName, varName)) call MOM_error(FATAL, &
         trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
         "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
     call MOM_read_data(trim(fileName), trim(varName), index_map, G%Domain)
@@ -648,7 +648,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     allocate(dz_2d(ke,np))
     allocate(rho_target_2d(ke+1,np))
     varName = trim( extractWord(trim(string(12:)), 3) )
-    if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
+    if (.not. field_exists(fileName, varName)) call MOM_error(FATAL, &
         trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
         "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
     ! MOM_read_data can't handle this array
@@ -700,7 +700,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                 trim(message), units=coordinateUnits(coord_mode))
       endif
     else ! Read dz from file
-      if (.not. field_exists(fileName,varName)) call MOM_error(FATAL, &
+      if (.not. field_exists(fileName, varName)) call MOM_error(FATAL, &
           trim(mdl)//", initialize_regridding: HYBRID_MAP "// &
           "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
       ! MOM_read_data can't handle this array
@@ -1080,7 +1080,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
 
       do_sum = .false.
       varName = trim( extractWord(trim(longString(6:)), 2) )
-      if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)// &
+      if (.not. field_exists(fileName, varName)) call MOM_error(FATAL, trim(mdl)// &
           ", initialize_regridding: "// &
           "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(longString)//")")
       if (len_trim(varName)==0) then
@@ -1146,7 +1146,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
           "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(longString)//")")
 
       varName = trim( extractWord(trim(longString(6:)), 2) )
-      if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)// &
+      if (.not. field_exists(fileName, varName)) call MOM_error(FATAL, trim(mdl)// &
           ", initialize_regridding: "// &
           "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(longString)//")")
       if (len_trim(varName)==0) then

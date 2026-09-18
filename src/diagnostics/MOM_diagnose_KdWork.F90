@@ -104,7 +104,7 @@ end type vbf_CS
 contains
 
 !> Loop over all implemented diffusivities to diagnose and output Kd Work/buoyancy fluxes
-subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
+subroutine KdWork_Diagnostics(G, GV, US, diag, VBF, N2_Salt, N2_Temp, dz)
   type(ocean_grid_type),      intent(in)    :: G       !< Grid type
   type(verticalGrid_type),    intent(in)    :: GV      !< ocean vertical grid structure
   type(unit_scale_type),      intent(in)    :: US      !< A dimensional unit scaling type
@@ -871,7 +871,7 @@ subroutine Deallocate_VBF_CS(VBF)
 end subroutine Deallocate_VBF_CS
 
 !> Handles all KdWork diagnostics and flags which calculations should be done.
-subroutine KdWork_init(Time, G,GV,US,diag,VBF,Use_KdWork_diag)
+subroutine KdWork_init(Time, G, GV, US, diag, VBF, Use_KdWork_diag)
   type(time_type), target                :: Time             !< model time
   type(ocean_grid_type),   intent(in)    :: G        !< ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV       !< ocean vertical grid structure
