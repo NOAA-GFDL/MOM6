@@ -9,7 +9,7 @@ use MOM_coms, only : root_PE, broadcast
 use MOM_coms, only : any_across_PEs
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, MOM_mesg, assert
 use MOM_error_handler, only : is_root_pe, stdlog, stdout
-use MOM_time_manager, only : get_time, time_type, get_ticks_per_second
+use MOM_time_manager, only : get_time, time_type, get_ticks_per_second, convert_date_to_string
 use MOM_time_manager, only : set_date, get_date, real_to_time, operator(-), operator(==), set_time
 use MOM_document, only : doc_param, doc_module, doc_init, doc_end, doc_type
 use MOM_document, only : doc_openBlock, doc_closeBlock
@@ -1918,36 +1918,6 @@ subroutine log_param_time(CS, modulename, varname, value, desc, units, &
   endif
 
 end subroutine log_param_time
-
-!> This function converts a date into a string, valid with ticks and for dates up to year 99,999,999
-function convert_date_to_string(date) result(date_string)
-  type(time_type), intent(in) :: date !< The date to be translated into a string.
-  character(len=40) :: date_string    !< A date string in a format like YYYY-MM-DD HH:MM:SS.sss
-
-  ! Local variables
-  character(len=40) :: sub_string
-  real    :: real_secs
-  integer :: yrs, mons, days, hours, mins, secs, ticks, ticks_per_sec
-
-  call get_date(date, yrs, mons, days, hours, mins, secs, ticks)
-  write (date_string, '(i8.4)') yrs
-  write (sub_string, '("-", i2.2, "-", I2.2, " ", i2.2, ":", i2.2, ":")') &
-         mons, days, hours, mins
-  date_string = trim(adjustl(date_string)) // trim(sub_string)
-  if (ticks > 0) then
-    ticks_per_sec = get_ticks_per_second()
-    real_secs = secs + ticks/ticks_per_sec
-    if (ticks_per_sec <= 100) then
-      write (sub_string, '(F7.3)') real_secs
-    else
-      write (sub_string, '(F10.6)') real_secs
-    endif
-  else
-    write (sub_string, '(i2.2)') secs
-  endif
-  date_string = trim(date_string) // trim(adjustl(sub_string))
-
-end function convert_date_to_string
 
 !> This subroutine reads the value of an integer model parameter from a parameter file
 !! and logs it in documentation files.
