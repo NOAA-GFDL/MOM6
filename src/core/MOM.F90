@@ -118,7 +118,7 @@ use MOM_obsolete_diagnostics,  only : register_obsolete_diagnostics
 use MOM_open_boundary,         only : ocean_OBC_type, open_boundary_end
 use MOM_open_boundary,         only : register_temp_salt_segments, update_segment_tracer_reservoirs
 use MOM_open_boundary,         only : read_OBC_dynamics_data, read_OBC_tracer_data
-use MOM_open_boundary,         only : initialize_OBC_segment_reservoirs
+use MOM_open_boundary,         only : initialize_OBC_tracer_reservoirs
 use MOM_open_boundary,         only : setup_OBC_tracer_reservoirs
 use MOM_open_boundary,         only : setup_OBC_thickness_reservoirs
 use MOM_open_boundary,         only : open_boundary_register_restarts, remap_OBC_fields
@@ -127,6 +127,8 @@ use MOM_open_boundary,         only : update_OBC_dynamics_data, update_OBC_trace
 use MOM_open_boundary,         only : rotate_OBC_config
 use MOM_open_boundary,         only : open_boundary_halo_update, write_OBC_info, chksum_OBC_segments
 use MOM_open_boundary,         only : segment_thickness_reservoir_init
+use MOM_open_boundary,         only : fill_temp_salt_segments, fill_thickness_segments
+use MOM_open_boundary,         only : open_boundary_test_extern_h
 use MOM_open_boundary,         only : copy_OBC_radiation_coefs
 use MOM_open_boundary,         only : copy_OBC_tracer_reservoirs, copy_OBC_thickness_reservoirs
 use MOM_porous_barriers,       only : porous_widths_layer, porous_widths_interface, porous_barriers_init
@@ -136,7 +138,7 @@ use MOM_set_visc,              only : set_visc_register_restarts, remap_vertvisc
 use MOM_set_visc,              only : set_visc_init, set_visc_end
 use MOM_shared_initialization, only : write_ocean_geometry_file
 use MOM_sponge,                only : init_sponge_diags, sponge_CS
-use MOM_state_initialization,  only : MOM_initialize_state, MOM_initialize_OBCs
+use MOM_state_initialization,  only : MOM_initialize_state, initialize_user_OBCs
 use MOM_stoch_eos,             only : MOM_stoch_eos_init, MOM_stoch_eos_run, MOM_stoch_eos_CS
 use MOM_stoch_eos,             only : stoch_EOS_register_restarts, post_stoch_EOS_diags, mom_calc_varT
 use MOM_sum_output,            only : write_energy, accumulate_net_input
@@ -2412,6 +2414,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   logical :: calc_dtbt         ! Indicates whether the dynamically adjusted barotropic
                                ! time step needs to be updated before it is used.
   logical :: debug_truncations ! If true, turn on diagnostics useful for debugging truncations.
+  logical :: obc_debug_test    ! If true, call open_boundary_test_extern_uv.
   integer :: first_direction   ! An integer that indicates which direction is to be
                                ! updated first in directionally split parts of the
                                ! calculation.
@@ -2424,6 +2427,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   logical :: semi_Boussinesq   ! If true, this run is partially non-Boussinesq
   logical :: use_KPP           ! If true, diabatic is using KPP vertical mixing
   logical :: MLE_use_PBL_MLD   ! If true, use stored boundary layer depths for submesoscale restratification.
+  logical :: OBC_TS_reservoir_init_bug
   logical :: OBC_reservoir_init_bug
   logical :: OBC_bgc_time_ref_bug  ! If true, use the start of the current run (not the overall
                                ! start time) as the reference for OBC BGC tracer update schedule.
@@ -2622,6 +2626,10 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   call get_param(param_file, "MOM", "DEBUG_OBCS", CS%debug_OBCs, &
                  "If true, write out verbose debugging data about OBCs.", &
                  default=.false., debuggingParam=.true., do_not_log=(number_of_OBC_segments<=0))
+  call get_param(param_file, "MOM", "OBC_DEBUGGING_TESTS", obc_debug_test, &
+                 "If true, do additional calls resetting values to help verify the correctness "//&
+                 "of the open boundary condition code.", default=.false., do_not_log=.true., &
+                 old_name="DEBUG_OBC", debuggingParam=.true.)
   call get_param(param_file, "MOM", "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
                  "If true, the defaults for certain recently added bug-fix flags are set to "//&
                  "recreate the bugs so that the code can be moved forward without changing "//&
@@ -2631,7 +2639,15 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "means that bugs are only used if they are actively selected, but it also "//&
                  "means that answers may change when code is updated due to newly found bugs.", &
                  default=.true.)
-
+  ! Log this parameter in MOM_initialize_state
+  call get_param(param_file, "MOM", "OBC_TS_RESERVOIR_INIT_BUG", OBC_TS_reservoir_init_bug, &
+                 "If true, set the OBC temperature and salinity reservoirs at the startup of a "//&
+                 "new run from initial values that are set before remapping.", default=enable_bugs, &
+                 do_not_log=.true.)
+  call get_param(param_file, "MOM", "OBC_RESERVOIR_INIT_BUG", OBC_reservoir_init_bug, &
+                 "If true, set the OBC tracer reservoirs at the startup of a new run from the "//&
+                 "interior tracer concentrations regardless of properties that may be explicitly "//&
+                 "specified for the reservoir concentrations.", default=enable_bugs)
   call get_param(param_file, "MOM", "DT", CS%dt, &
                  "The (baroclinic) dynamics time step.  The time-step that "//&
                  "is actually used will be an integer fraction of the "//&
@@ -3311,11 +3327,6 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
       CS%tv%S => S_in
 
       if (associated(CS%OBC)) then
-        ! Log this parameter in MOM_initialize_state
-        call get_param(param_file, "MOM", "OBC_RESERVOIR_INIT_BUG", OBC_reservoir_init_bug, &
-                   "If true, set the OBC tracer reservoirs at the startup of a new run from the "//&
-                   "interior tracer concentrations regardless of properties that may be explicitly "//&
-                   "specified for the reservoir concentrations.", default=enable_bugs, do_not_log=.true.)
         if (OBC_reservoir_init_bug .and. (allocated(CS%OBC%tres_x) .or. allocated(CS%OBC%tres_y))) &
           call MOM_error(FATAL, "OBC_RESERVOIR_INIT_BUG can not be set to true with grid rotation.")
       endif
@@ -3414,21 +3425,46 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   endif
 
   if (associated(CS%OBC)) then
-    call MOM_initialize_OBCs(CS%h, CS%tv, CS%OBC, Time, G, GV, US, param_file, restart_CSp, CS%tracer_Reg)
-
-    if (use_temperature) then
-      call pass_var(CS%tv%T, G%Domain, complete=.false.)
-      call pass_var(CS%tv%S, G%Domain, complete=.true.)
-    endif
+    ! Read and calculate segment dynamic fields. Needed for
+    ! (a) continuity calls in initialize_dyn_*
+    ! (b) segment%dz used for subsequent read_OBC_tracer_data call
+    ! (c) One-time dynamic update when OBC_VALUE_UPDATE_BUG=True
+    !   Calcualte tv%SpV_avg for dz used in read_OBC_segment_data
     call calc_derived_thermo(CS%tv, CS%h, G, GV, US)
-
-    ! Call this during initialization to fill boundary arrays from fixed values
+    !   OBC file -> segment%field()%buffer_dst
     call read_OBC_dynamics_data(G, GV, US, CS%OBC, CS%tv, CS%h, Time)
+    !   segment%field()%buffer_dst -> segment%normal_trans etc
     call update_OBC_dynamics_data(G, GV, US, CS%OBC, CS%h, Time)
-    ! BGC data is not read/updated at initialization since OBC%update_OBC_seg_data is false.
-    call read_OBC_tracer_data(G, GV, US, CS%OBC, Time, include_bgc=.false.)
-    call update_OBC_tracer_data(CS%OBC, include_bgc=.false.)
-    call initialize_OBC_segment_reservoirs(GV, CS%OBC)
+    !   h -> %h and %h_res
+    if (CS%OBC%use_h_res) &
+      call fill_thickness_segments(G, GV, US, CS%OBC, CS%h)
+
+    ! Initialize OBC segment T/S reservoir [segment%tr_Reg%Tr()%tres]
+    if (is_new_run(restart_CSp) .and. use_temperature) then
+      ! T/S reservoirs are initialized by interior data.
+      ! They may be overriden by external data again a few lines later. The only reason that this
+      ! call is made unconditional to OBC_reservoir_init_bug or diabatic_first is to provide a
+      ! fallback for buggy cases where use_temperature is True but external T/S are not given.
+      if (.not. OBC_TS_reservoir_init_bug) &
+        ! Interior T/S -> segment%tr_Reg%Tr()%t and segment%tr_Reg%Tr()%tres
+        call fill_temp_salt_segments(G, GV, US, CS%OBC, CS%tv)
+
+      ! T/S reservoirs are initialized by external data.
+      ! OBC file -> segment%field()%buffer_dst -> segment%tr_Reg%Tr()%t -> segment%tr_Reg%Tr()%tres.
+      ! Note BGC data is deliberately not read/updated at initialization since OBC%update_OBC_seg_data is false.
+      if ((.not. OBC_reservoir_init_bug) .or. CS%diabatic_first) then
+        ! OBC file -> segment%field()%buffer_dst
+        call read_OBC_tracer_data(G, GV, US, CS%OBC, Time, include_bgc=.false.)
+        ! [T/S] segment%field()%buffer_dst -> segment%tr_Reg%Tr()%t
+        call update_OBC_tracer_data(CS%OBC, include_bgc=.false.)
+        ! [T/S] segment%tr_Reg%Tr()%t -> segment%tr_Reg%Tr()%tres
+        call initialize_OBC_tracer_reservoirs(CS%OBC)
+      endif
+    endif
+
+    call initialize_user_OBCs(CS%tv, CS%OBC, G, GV, US, param_file, CS%tracer_Reg)
+
+    if (obc_debug_test) call open_boundary_test_extern_h(G, GV, CS%OBC, CS%h)
   endif
 
   if (use_ice_shelf .and. CS%debug) then
@@ -3840,19 +3876,20 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     call register_diags_offline_transport(Time, CS%diag, CS%offline_CSp, GV, US)
   endif
 
+  ! [if new_sim] Save %tres to OBC%tres_[xy] (needs to be after tracer_flow_control_init to init BGC)
+  ! [if restart] copy OBC%tres_[xy] to %tres
   if (associated(CS%OBC)) then
-    ! At this point any information related to the tracer reservoirs has either been read from
-    ! the restart file or has been specified in the segments.  Initialize the tracer reservoir
-    ! values from the segments if they have not been set via the restart file.
-    call setup_OBC_tracer_reservoirs(G, GV, CS%OBC, restart_CSp)
-    call setup_OBC_thickness_reservoirs(G, GV, CS%OBC, restart_CSp)
-    call open_boundary_halo_update(G, CS%OBC)
-    call copy_OBC_radiation_coefs(CS%OBC)
-    if (.not. (CS%OBC%reservoir_init_bug .and. new_sim .and. CS%diabatic_first)) &
-      ! The if-guard is needed to preserve old answers with OBC_RESERVOIR_INIT_BUG=True, in which case
-      ! segment T/S reservoir %tres and global restart arrays OBC%tres_x/y have diverged at this point.
+    if (is_new_run(restart_CSp)) then
+      if (save_IC) then
+        call setup_OBC_tracer_reservoirs(G, GV, CS%OBC, restart_CSp)
+        call setup_OBC_thickness_reservoirs(G, GV, CS%OBC, restart_CSp)
+      endif
+    else
+      call open_boundary_halo_update(G, CS%OBC)
+      call copy_OBC_radiation_coefs(CS%OBC)
       call copy_OBC_tracer_reservoirs(CS%OBC)
-    call copy_OBC_thickness_reservoirs(CS%OBC, G, GV)
+      call copy_OBC_thickness_reservoirs(CS%OBC, G, GV)
+    endif
   endif
 
   call register_obsolete_diagnostics(param_file, CS%diag)
