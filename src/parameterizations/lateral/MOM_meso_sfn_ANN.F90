@@ -22,10 +22,12 @@
 module MOM_meso_sfn_ANN
 
 use MOM_ANN,              only : ANN_init, ANN_apply_array_sio, ANN_end, ANN_CS
+use MOM_array_transform,  only : symmetric_sum
 use MOM_diag_mediator,    only : post_data, register_diag_field, diag_ctrl, time_type
 use MOM_error_handler,    only : MOM_error, FATAL
 use MOM_file_parser,      only : get_param, log_version, param_file_type
 use MOM_grid,             only : ocean_grid_type
+use MOM_interface_heights, only : thickness_to_dz
 use MOM_isopycnal_slopes, only : calc_isoneutral_slopes
 use MOM_unit_scaling,     only : unit_scale_type
 use MOM_variables,        only : thermo_var_ptrs
@@ -43,9 +45,9 @@ type, public :: MESO_SFN_ANN_CS; private
   logical :: initialized = .false. !< If true, the module has been initialized.
   logical :: debug !< if true, write verbose checksums for debugging purposes.
 
-  real :: ann_coeff  !< Coefficient to multiply the ANN output by.
-  real    :: kappa_smooth        !< Vertical diffusivity used to interpolate more sensible values
-                                 !! of T & S into thin layers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+  real :: ann_coeff  !< Coefficient to multiply the ANN output by [nondim]
+  real    :: kappa_smooth !< Vertical diffusivity used to interpolate more sensible values
+                          !! of T & S into thin layers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
   integer :: ann_window !< Size of the window used in the ANN model.
 
   type(ANN_CS) :: ann_rho_flux !< ANN instance for off-diagonal and diagonal stress
@@ -55,6 +57,12 @@ type, public :: MESO_SFN_ANN_CS; private
   real :: flux_clamp  !< Maximum magnitude of ANN output density flux [R L T-1 ~> kg m-2 s-1]
   real :: Upsilon_clamp !< Maximum magnitude of the velocity-scale streamfunction
                         !! Upsilon (Ferrari et al. 2010) [L Z T-1 ~> m2 s-1]
+  integer :: answer_date  !< The vintage of the order of arithmetic and mathematical expressions in
+                          !! the meso_sfn_ANN calculations. Values below 20260901 recover the original
+                          !! answers, while higher values use rotationally symmetric orders of
+                          !! arithmetic and replace divisions with multiplication by reciprocals
+                          !! for efficiency.
+
   type(diag_ctrl), pointer :: diag => NULL() !< structure used to regulate timing of diagnostics
   ! Diagnostic identifiers
   integer :: id_drdx_u !< Diagnostic id for zonal density gradient at u-points.
@@ -83,14 +91,15 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   type(verticalGrid_type),                    intent(in)    :: GV     !< Vertical grid structure
   type(unit_scale_type),                      intent(in)    :: US     !< A dimensional unit scaling type
   type(thermo_var_ptrs),                      intent(in)    :: tv     !< Thermodynamics structure
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)    :: h      !< Layer thickness [Z ~> m or kg m-2]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1),  intent(in)    :: e      !< Layer thickness [Z ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)    :: h      !< Layer thickness [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(in)   :: e      !< heights of interfaces, relative to mean
+                                                                      !! sea level [Z ~> m], positive up.
   type(MESO_SFN_ANN_CS),                intent(inout) :: CS !< Control structure for thickness_flux_ann
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: sfn_u  !< Mesoscale volume streamfunction
-                                                                     !! on u-points [Z L2 T-1 ~> m3 s-1]
+                                                                      !! on u-points [Z L2 T-1 ~> m3 s-1]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(out) :: sfn_v  !< Mesoscale volume streamfunction
-                                                                     !! on v-points [Z L2 T-1 ~> m3 s-1]
-  real,                                      intent(in)    :: dt     !< Model time step [T ~> s]
+                                                                      !! on v-points [Z L2 T-1 ~> m3 s-1]
+  real,                                       intent(in)    :: dt     !< Model time step [T ~> s]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in)    :: u      !< Zonal velocity [L T-1 ~> m s-1].
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in)    :: v      !< Meridional velocity [L T-1 ~> m s-1].
 
@@ -109,7 +118,7 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1) :: Fy_v !< Meridional density flux at v-points [R L T-1 ~> kg m-2 s-1]
 
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1)  :: drdx_c !< Zonal density gradient at center points [R L-1 ~> kg m-4]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1) :: drdy_c !< Meridional density gradient
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1)  :: drdy_c !< Meridional density gradient
                                                           !! at center points [R L-1 ~> kg m-4]
 
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1)  :: Fx_c !< Zonal density flux at center points [R L T-1 ~> kg m-2 s-1]
@@ -120,23 +129,29 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dvdy !< dv/dy at cell center [T-1 ~> s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dudy !< du/dy at cell center [T-1 ~> s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dvdx !< dv/dx at cell center [T-1 ~> s-1]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: dz   !< Height change across layers [Z ~> m]
 
   real, dimension(SZI_(G),SZJ_(G)) :: norm_y !< Scaling coefficient for ANN outputs [R L-1 T-1 ~> kg m-4 s-1]
 
-  real, allocatable :: drdx_local(:,:) !< Local stencil of drdx [R L-1 ~> kg m-4]
-  real, allocatable :: drdy_local(:,:) !< Local stencil of drdy [R L-1 ~> kg m-4]
-  real, allocatable :: dudx_local(:,:) !< Local stencil of du/dx [T-1 ~> s-1]
-  real, allocatable :: dudy_local(:,:) !< Local stencil of du/dy [T-1 ~> s-1]
-  real, allocatable :: dvdx_local(:,:) !< Local stencil of dv/dx [T-1 ~> s-1]
-  real, allocatable :: dvdy_local(:,:) !< Local stencil of dv/dy [T-1 ~> s-1]
-  real, allocatable :: sh_xx_local(:,:) !< Local stencil of normal strain [T-1 ~> s-1]
-  real, allocatable :: sh_xy_local(:,:) !< Local stencil of shear strain [T-1 ~> s-1]
-  real, allocatable :: vort_local(:,:)  !< Local stencil of relative vorticity [T-1 ~> s-1]
+  real, dimension(CS%ann_window, CS%ann_window) :: &
+    drdx_local, &  !< Local stencil of dr/dx, first in [R L-1 ~> kg m-4] then [nondim]
+    drdy_local, &  !< Local stencil of dr/dy, first in [R L-1 ~> kg m-4] then [nondim]
+    dudx_local, &  !< Local stencil of du/dx, first in [T-1 ~> s-1] then [nondim]
+    dudy_local, &  !< Local stencil of du/dy, first in [T-1 ~> s-1] then [nondim]
+    dvdx_local, &  !< Local stencil of dv/dx, first in [T-1 ~> s-1] then [nondim]
+    dvdy_local, &  !< Local stencil of dv/dy, first in [T-1 ~> s-1] then [nondim]
+    sh_xx_local, & !< Local stencil of normal strain, first in [T-1 ~> s-1] then [nondim]
+    sh_xy_local, & !< Local stencil of shear strain, first in [T-1 ~> s-1] then [nondim]
+    vort_local, &  !< Local stencil of relative vorticity, first in [T-1 ~> s-1] then [nondim]
+    rho_grad_mag2, & !< The magnitude of the velocity gradient tensor squared [T-2 ~> s-2]
+    vel_grad_mag2  !< The magnitude of the density gradient tensor squared [R2 L-2 ~> kg2 m-8]
   real :: vel_grad_mag !< Magnitude of velocity gradient tensor over stencil [T-1 ~> s-1]
   real :: rho_grad_mag !< Magnitude of density gradient over stencil [R L-1 ~> kg m-4]
-  real, allocatable :: x(:,:) !< Input vector to the ANN
-  real, allocatable :: y(:,:) !< Output vector from the ANN
-  real, allocatable :: yy(:)   !< Local output vector from the ANN
+  real :: I_vel_grad_mag !< Inverse of the magnitude of the velocity gradient tensor over stencil [T ~> s]
+  real :: I_rho_grad_mag !< Inverse of the magnitude of the density gradient over stencil [L R-1 ~> m4 kg-1]
+  real, allocatable :: x(:,:) !< Input vector to the ANN [nondim]
+  real, allocatable :: y(:,:) !< Output vector from the ANN [nondim]
+  real :: yy(2)  !< Local output vector from the ANN [R L T-1 ~> kg m-2 s-1]
   real :: mag_grad !< Magnitude of 3-D density gradient [R Z-1 ~> kg m-4]
   logical :: use_stanley
   logical :: use_EOS
@@ -159,20 +174,12 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   rho_grad_neglect = 1.0e-30 * US%kg_m3_to_R * US%L_to_m
   vel_grad_neglect = 1.0e-30 * US%T_to_s
 
-  ! Allocate the local stencil variables
-  allocate(drdx_local(CS%ann_window, CS%ann_window), drdy_local(CS%ann_window, CS%ann_window), &
-           dudx_local(CS%ann_window, CS%ann_window), dudy_local(CS%ann_window, CS%ann_window), &
-           dvdx_local(CS%ann_window, CS%ann_window), dvdy_local(CS%ann_window, CS%ann_window), &
-           sh_xx_local(CS%ann_window, CS%ann_window), sh_xy_local(CS%ann_window, CS%ann_window), &
-           vort_local(CS%ann_window, CS%ann_window))
-
   shift = (CS%ann_window-1)/2
   stencil_points = CS%ann_window * CS%ann_window
 
   ! Number of horizontal grid points in ANN inference loop below
   nij = (ie - is + 3) * (je - js + 3)
   allocate(x(nij, stencil_points*5), y(nij, 2))
-  allocate(yy(2))
 
   slope_x(:,:,:) = 0.0
   slope_y(:,:,:) = 0.0
@@ -196,7 +203,9 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
     call calc_isoneutral_slopes(G, GV, US, h, e, tv, dt*CS%kappa_smooth, use_stanley, slope_x, slope_y, &
                               drdx_u=drdx_u, drdy_v=drdy_v, drdz_u=drdz_u, drdz_v=drdz_v, halo=3)
   else
-    call calc_layered_density_gradients(G, GV, US, h, e, drdx_u, drdy_v, drdz_u, drdz_v, halo=3, &
+    ! Rescale the thicknesses, perhaps using the specific volume.
+    call thickness_to_dz(h, tv, dz, G, GV, US, halo_size=3)
+    call calc_layered_density_gradients(G, GV, US, dz, e, drdx_u, drdy_v, drdz_u, drdz_v, halo=3, &
                                         min_dist_from_boundary=CS%min_dist_from_boundary)
   endif
 
@@ -234,29 +243,53 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
       sh_xy_local(:,:) = dudy_local(:,:) + dvdx_local(:,:)
       vort_local(:,:)  = dvdx_local(:,:) - dudy_local(:,:)
 
-      ! Compute the magnitude of the velocity gradient tensor for the local stencil
-      rho_grad_mag = 0.0
-      vel_grad_mag = 0.0
-      do jj=1, CS%ann_window
-        do ii=1, CS%ann_window
+      if (CS%answer_date < 20260901) then
+        ! Find the magnitudes of the density and velocity gradients averaged over the local ANN window.
+        rho_grad_mag = 0.0
+        vel_grad_mag = 0.0
+        do jj=1,CS%ann_window ; do ii=1,CS%ann_window
           rho_grad_mag = (rho_grad_mag + drdx_local(ii,jj)*drdx_local(ii,jj)) + &
                          drdy_local(ii,jj)*drdy_local(ii,jj)
           vel_grad_mag = ((vel_grad_mag + sh_xx_local(ii,jj)*sh_xx_local(ii,jj)) + &
                           sh_xy_local(ii,jj)*sh_xy_local(ii,jj)) + &
                          vort_local(ii,jj)*vort_local(ii,jj)
-        enddo
-      enddo
-      rho_grad_mag = sqrt(rho_grad_mag) + rho_grad_neglect
-      vel_grad_mag = sqrt(vel_grad_mag) + vel_grad_neglect
+        enddo ; enddo
+        rho_grad_mag = sqrt(rho_grad_mag) + rho_grad_neglect
+        vel_grad_mag = sqrt(vel_grad_mag) + vel_grad_neglect
+
+        ! Normalize inputs to be nondimensional
+        ! Note that division is much more expensive that multiplication by a reciprocal.
+        drdx_local(:,:) = drdx_local(:,:) / rho_grad_mag
+        drdy_local(:,:) = drdy_local(:,:) / rho_grad_mag
+
+        sh_xx_local(:,:) = sh_xx_local(:,:) / vel_grad_mag
+        sh_xy_local(:,:) = sh_xy_local(:,:) / vel_grad_mag
+        vort_local(:,:) = vort_local(:,:) / vel_grad_mag
+      else
+        ! Find the magnitudes of the density and velocity gradients averaged over the local ANN window.
+        do jj=1,CS%ann_window ; do ii=1,CS%ann_window
+          ! The parentheses on the next line are needed for symmetry when Fused-multiply-adds are used.
+          rho_grad_mag2(ii,jj) = (drdx_local(ii,jj)**2) + (drdy_local(ii,jj)**2)
+          vel_grad_mag2(ii,jj) = (sh_xx_local(ii,jj)**2 + sh_xy_local(ii,jj)**2) + &
+                                 vort_local(ii,jj)**2
+        enddo ; enddo
+        rho_grad_mag = sqrt(symmetric_sum(rho_grad_mag2)) + rho_grad_neglect
+        vel_grad_mag = sqrt(symmetric_sum(vel_grad_mag2)) + vel_grad_neglect
+
+        ! Normalize inputs to be nondimensional
+        I_rho_grad_mag = 1.0 / rho_grad_mag
+        I_vel_grad_mag = 1.0 / vel_grad_mag
+        do ii=1,CS%ann_window ; do jj=1,CS%ann_window
+          drdx_local(ii,jj) = drdx_local(ii,jj) * I_rho_grad_mag
+          drdy_local(ii,jj) = drdy_local(ii,jj) * I_rho_grad_mag
+
+          sh_xx_local(ii,jj) = sh_xx_local(ii,jj) * I_vel_grad_mag
+          sh_xy_local(ii,jj) = sh_xy_local(ii,jj) * I_vel_grad_mag
+          vort_local(ii,jj) = vort_local(ii,jj) * I_vel_grad_mag
+        enddo ; enddo
+      endif
+
       norm_y(i,j) = rho_grad_mag * vel_grad_mag
-
-      ! Normalize inputs
-      drdx_local(:,:) = drdx_local(:,:) / rho_grad_mag
-      drdy_local(:,:) = drdy_local(:,:) / rho_grad_mag
-
-      sh_xx_local(:,:) = sh_xx_local(:,:)/ vel_grad_mag
-      sh_xy_local(:,:) = sh_xy_local(:,:)/ vel_grad_mag
-      vort_local(:,:) = vort_local(:,:)/ vel_grad_mag
 
       ! Prepare input vector for ANN
       x(m,1:stencil_points) = RESHAPE(drdx_local, (/stencil_points/))
@@ -268,15 +301,15 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
     enddo ; enddo
 
     ! Call the ANN
-    call ANN_apply_array_sio(nij, x,y, CS%ann_rho_flux)
+    call ANN_apply_array_sio(nij, x, y, CS%ann_rho_flux)
 
-    m=0
+    m = 0
     do j = js-1, je+1 ; do i = is-1, ie+1
-      m=m+1
+      m = m + 1
       ! Dimensionalize the output. The factors applied here must match the
       ! nondimensionalization used when the network was trained; this is
       ! an implicit contract with the training procedure.
-      yy(:) = ((y(m,:) * norm_y(i,j)) * G%areaT(i,j)) * CS%ann_coeff
+      yy(1:2) = ((y(m,1:2) * norm_y(i,j)) * G%areaT(i,j)) * CS%ann_coeff
 
       ! Clamp ANN output to prevent extreme values
       yy(1) = max(-CS%flux_clamp, min(CS%flux_clamp, yy(1)))
@@ -361,24 +394,23 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   if (CS%id_sfn_u > 0) call post_data(CS%id_sfn_u, sfn_u, CS%diag)
   if (CS%id_sfn_v > 0) call post_data(CS%id_sfn_v, sfn_v, CS%diag)
 
-  deallocate(drdx_local, drdy_local, dudx_local, dudy_local, dvdx_local, dvdy_local, &
-             sh_xx_local, sh_xy_local, vort_local)
-  deallocate(x, y, yy)
+  deallocate(x, y)
+
 end subroutine meso_sfn_ANN_compute
 
 !> Interpolate density gradients from u- and v-points to cell centers.
 subroutine center_grad_rho(drdx_u, drdy_v, drdx_c, drdy_c, G, GV, CS)
-  type(ocean_grid_type),                      intent(in)    :: G      !< Ocean grid structure
-  type(verticalGrid_type),                    intent(in)    :: GV     !< Vertical grid structure
-  type(MESO_SFN_ANN_CS),                intent(inout) :: CS !< Control structure for thickness_flux_ann
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(in) :: drdx_u !< Zonal density gradient
-                                                                    !! at u-points [R L-1 ~> kg m-4]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(in) :: drdy_v !< Meridional density gradient
-                                                                    !! at v-points [R L-1 ~> kg m-4]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(inout) :: drdx_c !< Zonal density gradient
-                                                                       !! at center [R L-1 ~> kg m-4]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(inout) :: drdy_c !< Meridional density gradient
-                                                                       !! at center [R L-1 ~> kg m-4]
+  type(ocean_grid_type),   intent(in)    :: G      !< Ocean grid structure
+  type(verticalGrid_type), intent(in)    :: GV     !< Vertical grid structure
+  type(MESO_SFN_ANN_CS),   intent(inout) :: CS     !< Control structure for thickness_flux_ann
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), &
+                           intent(in)    :: drdx_u !< Zonal density gradient at u-points [R L-1 ~> kg m-4]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), &
+                           intent(in)    :: drdy_v !< Meridional density gradient at v-points [R L-1 ~> kg m-4]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
+                           intent(inout) :: drdx_c !< Zonal density gradient at center [R L-1 ~> kg m-4]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
+                           intent(inout) :: drdy_c !< Meridional density gradient at center [R L-1 ~> kg m-4]
 
   integer :: i, j, k, is, ie, js, je, nz, shift
 
@@ -466,35 +498,37 @@ subroutine vel_gradients(u, v, G, GV, dudx, dudy, dvdx, dvdy, CS)
     enddo; enddo
   enddo
 end subroutine vel_gradients
+
+
 !> Compute density gradients from fixed layer densities and interface heights
 !! This is a workaround for running the ANN parameterization in pure layered
 !! mode (USE_EOS=False) where calc_isoneutral_slopes won't work.
-subroutine calc_layered_density_gradients(G, GV, US, h, e, &
+subroutine calc_layered_density_gradients(G, GV, US, dz, e, &
                                           drdx_u, drdy_v, drdz_u, drdz_v, halo, min_dist_from_boundary)
   type(ocean_grid_type),                       intent(in)  :: G
   type(verticalGrid_type),                     intent(in)  :: GV
   type(unit_scale_type),                       intent(in)  :: US
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),   intent(in)  :: h   ! Layer thickness [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),   intent(in)  :: dz  ! Height change across layers [Z ~> m]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(in)  :: e   ! Interface heights [Z ~> m]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: drdx_u ! [R L-1 ~> kg m-4]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(out) :: drdy_v ! [R L-1 ~> kg m-4]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: drdz_u ! [R Z-1 ~> kg m-4]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(out) :: drdz_v ! [R Z-1 ~> kg m-4]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: drdx_u ! Lateral density gradient [R L-1 ~> kg m-4]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(out) :: drdy_v ! Lateral density gradient [R L-1 ~> kg m-4]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1), intent(out) :: drdz_u ! Vertical density gradient [R Z-1 ~> kg m-4]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1), intent(out) :: drdz_v ! Vertical density gradient [R Z-1 ~> kg m-4]
   integer,                                      intent(in)  :: halo
-  real,                                         intent(in)  :: min_dist_from_boundary  ! Threshold for boundaries [Z]
+  real,                                        intent(in)  :: min_dist_from_boundary ! Threshold for boundaries [Z ~> m]
 
   ! Local variables
-  real :: drho_k       ! Density difference across interface K [R]
-  real :: dz_u, dz_v   ! Vertical length scale at u,v points [Z]
-  real :: dedx, dedy   ! Interface slope [Z L-1]
-  real :: h_neglect    ! Small thickness [H]
-  real :: dist_from_bot_a, dist_from_bot_b  ! Distance from interface to bottom [Z]
-  real :: dist_from_sfc_a, dist_from_sfc_b  ! Distance from interface to surface [Z]
+  real :: drho_k       ! Density difference across interface K [R ~> kg m-3]
+  real :: dz_u, dz_v   ! Vertical length scales at u and v points [Z ~> m]
+  real :: dedx, dedy   ! Interface slope [Z L-1 ~> nondim]
+  real :: dz_neglect   ! Small thicknesses in vertical height units [Z ~> m]
+  real :: dist_from_bot_a, dist_from_bot_b  ! Distance from interface to bottom [Z ~> m]
+  real :: dist_from_sfc_a, dist_from_sfc_b  ! Distance from interface to surface [Z ~> m]
 
   integer :: i, j, k, is, ie, js, je, nz
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
-  h_neglect = GV%H_subroundoff
+  dz_neglect = GV%dz_subroundoff
   ! Initialize to zero
   drdx_u(:,:,:) = 0.0
   drdy_v(:,:,:) = 0.0
@@ -524,9 +558,8 @@ subroutine calc_layered_density_gradients(G, GV, US, h, e, &
             G%mask2dCu(I,j) > 0.5) then
 
           ! Average thickness of layers above and below interface at u-point
-          dz_u = 0.25 * GV%H_to_Z * ( &
-                (h(i,j,k-1) + h(i,j,k)) + (h(i+1,j,k-1) + h(i+1,j,k)) )
-          dz_u = max(dz_u, GV%H_to_Z * h_neglect)
+          dz_u = 0.25 * ( (dz(i,j,k-1) + dz(i,j,k)) + (dz(i+1,j,k-1) + dz(i+1,j,k)) )
+          dz_u = max(dz_u, dz_neglect)
 
           ! Interface height gradient (slope of isopycnal)
           dedx = (e(i+1,j,K) - e(i,j,K)) * G%IdxCu(I,j)  ! [Z L-1]
@@ -538,8 +571,8 @@ subroutine calc_layered_density_gradients(G, GV, US, h, e, &
           ! Physical interpretation: if interface tilts up to the east,
           ! denser water (layer k) is lifted, creating ∂ρ/∂x < 0
 
-          drdx_u(I,j,K) = drho_k * dedx / dz_u   ! [R L-1]
-          drdz_u(I,j,K) = - drho_k / dz_u          ! [R Z-1]
+          drdx_u(I,j,K) = drho_k * dedx / dz_u   ! [R L-1 ~> kg m-4]
+          drdz_u(I,j,K) = - drho_k / dz_u        ! [R Z-1 ~> kg m-4]
 
           ! Apply land mask
           drdx_u(I,j,K) = drdx_u(I,j,K) * (G%mask2dCu(I,j) * G%mask2dT(i,j) * G%mask2dT(i+1,j))
@@ -568,15 +601,14 @@ subroutine calc_layered_density_gradients(G, GV, US, h, e, &
             G%mask2dCv(i,J) > 0.5) then
 
           ! Interface is a real isopycnal on both sides - compute gradients
-          dz_v = 0.25 * GV%H_to_Z * ( &
-                 (h(i,j,k-1) + h(i,j,k)) + (h(i,j+1,k-1) + h(i,j+1,k)) )
-          dz_v = max(dz_v, GV%H_to_Z * h_neglect)
+          dz_v = 0.25 * ( (dz(i,j,k-1) + dz(i,j,k)) + (dz(i,j+1,k-1) + dz(i,j+1,k)) )
+          dz_v = max(dz_v, dz_neglect)
 
           ! Interface height gradient
-          dedy = (e(i,j+1,K) - e(i,j,K)) * G%IdyCv(i,J)  ! [Z L-1]
+          dedy = (e(i,j+1,K) - e(i,j,K)) * G%IdyCv(i,J)  ! [Z L-1 ~ nondim]
 
-          drdy_v(i,J,K) = drho_k * dedy / dz_v   ! [R L-1]
-          drdz_v(i,J,K) = -drho_k / dz_v         ! [R Z-1]
+          drdy_v(i,J,K) = drho_k * dedy / dz_v   ! [R L-1 ~> kg m-4]
+          drdz_v(i,J,K) = -drho_k / dz_v         ! [R Z-1 ~> kg m-4]
         else
           ! Interface is at/near bottom or surface on at least one side, or masked
           drdy_v(i,J,K) = 0.0
@@ -602,6 +634,7 @@ subroutine meso_sfn_ANN_init(Time, G, GV, US, param_file, diag, CS)
   ! Local variables
   character(len=40) :: mdl = "meso_sfn_ANN" ! This is module's name
 # include "version_variable.h"
+  integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags
 
   CS%diag => diag
 
@@ -610,37 +643,48 @@ subroutine meso_sfn_ANN_init(Time, G, GV, US, param_file, diag, CS)
 
   ! We don't need to check if use is true, because this is only called if it is.
   call get_param(param_file, mdl, "MESO_SFN_ANN_COEFF", CS%ann_coeff, &
-                      "Coefficient to multiply the mesoscale streamfunction ANN output by", default=1.0, units="nondim")
+                 "Coefficient to multiply the mesoscale streamfunction ANN output by", &
+                 default=1.0, units="nondim")
 
   call get_param(param_file, mdl, "KD_SMOOTH", CS%kappa_smooth, &
                  "A diapycnal diffusivity that is used to interpolate "//&
                  "more sensible values of T & S into thin layers.", &
                  units="m2 s-1", default=1.0e-6, scale=GV%m2_s_to_HZ_T)
   call get_param(param_file, mdl, "MESO_SFN_MIN_DIST_BOUNDARY", CS%min_dist_from_boundary, &
-             "Minimum distance from surface or bottom for interface to be considered valid "//&
-             "for density gradient calculations in layered mode.", &
-             units="m", default=50.0, scale=US%m_to_Z)
+                 "Minimum distance from surface or bottom for interface to be considered valid "//&
+                 "for density gradient calculations in layered mode.", &
+                 units="m", default=50.0, scale=US%m_to_Z)
   call get_param(param_file, mdl, "MESO_SFN_MAG_GRAD_FLOOR", CS%mag_grad_floor, &
-             "Minimum density gradient magnitude below which the streamfunction "//&
-             "is set to zero to avoid division by near-zero values.", &
-             units="kg m-4", default=1.0e-10, scale=US%kg_m3_to_R*US%Z_to_m)
+                 "Minimum density gradient magnitude below which the streamfunction "//&
+                 "is set to zero to avoid division by near-zero values.", &
+                 units="kg m-4", default=1.0e-10, scale=US%kg_m3_to_R*US%Z_to_m)
   call get_param(param_file, mdl, "MESO_SFN_FLUX_CLAMP", CS%flux_clamp, &
-             "Maximum magnitude of ANN output density flux before conversion "//&
-             "to streamfunction.", &
-             units="kg m-2 s-1", default=1.0e2, scale=US%kg_m3_to_R*US%m_to_L*US%T_to_s)
+                 "Maximum magnitude of ANN output density flux before conversion "//&
+                 "to streamfunction.", &
+                 units="kg m-2 s-1", default=1.0e2, scale=US%kg_m3_to_R*US%m_to_L*US%T_to_s)
   call get_param(param_file, mdl, "MESO_UPSILON_CLAMP", CS%Upsilon_clamp, &
-             "Maximum magnitude of the velocity-scale mesoscale streamfunction "//&
-             "(Upsilon in Ferrari et al. 2010).", &
-             units="m2 s-1", default=15., scale=US%m_to_L*US%m_to_Z*US%T_to_s)
+                 "Maximum magnitude of the velocity-scale mesoscale streamfunction "//&
+                 "(Upsilon in Ferrari et al. 2010).", &
+                 units="m2 s-1", default=15., scale=US%m_to_L*US%m_to_Z*US%T_to_s)
   call get_param(param_file, mdl, "MESO_SFN_ANN_WINDOW", CS%ann_window, &
-                      "Number of horizontal grid points to use in the thickness flux ANN window", default=1)
+                 "Number of horizontal grid points to use in the thickness flux ANN window", default=1)
   ! The stencil reads drdx_c(i-shift:i+shift,...) with shift=(ann_window-1)/2.
   ! halo=3 is requested in meso_sfn_ANN_compute, so shift must be <= 3.
   if (CS%ann_window < 1 .or. CS%ann_window > 3 .or. mod(CS%ann_window, 2) == 0) &
     call MOM_error(FATAL, "meso_sfn_ANN_init: MESO_SFN_ANN_WINDOW must be an odd integer in [1,3].")
   call get_param(param_file, mdl, "MESO_SFN_ANN_FILE", CS%ann_file_rho_flux, &
-               "ANN parameters for prediction of density fluxes (netcdf)", &
-               default="INPUT/rho_flux.nc")
+                 "ANN parameters for prediction of density fluxes (netcdf)", &
+                 default="INPUT/rho_flux.nc")
+  call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
+                 "This sets the default value for the various _ANSWER_DATE parameters.", &
+                 default=99991231, do_not_log=.true.)
+  call get_param(param_file, mdl, "MESO_SFN_ANN_ANSWER_DATE", CS%answer_date, &
+                 "The vintage of the order of arithmetic and mathematical expressions in the "//&
+                 "meso_sfn_ANN calculations.  Values below 20260901 recover the original answers, "//&
+                 "while higher values use rotationally symmetric orders of arithmetic and "//&
+                 "replace divisions with multiplication by reciprocals for efficiency.", &
+                 default=20260831) !### Change the default to default_answer_date)
+
   call ANN_init(CS%ann_rho_flux, CS%ann_file_rho_flux)
 
   ! Register diagnostic fields
