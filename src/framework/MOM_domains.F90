@@ -513,7 +513,7 @@ subroutine gen_auto_mask_table(n_global, reentrant, tripolar_N, npes, param_file
   integer,               intent(in)         :: npes       !< The desired number of active PEs.
   type(param_file_type), intent(in)         :: param_file !< A structure to parse for run-time parameters
   character(len=128),    intent(in)         :: inputdir   !< INPUTDIR parameter
-  character(len=:), allocatable, intent(in) :: filename   !< Mask table file path (to be auto-generated.)
+  character(len=*),      intent(in)         :: filename   !< Mask table file path (to be auto-generated.)
   integer,               intent(inout)      :: target_io_pes !< Target number of IO PEs when auto_mask_table is True.
   integer, dimension(2), intent(out)        :: layout     !< The generated layout of PEs (incl. masked blocks)
   integer, dimension(2), intent(out)        :: io_layout  !< The generated IO layout based on target_io_pes.
@@ -740,7 +740,7 @@ subroutine write_auto_mask_file(mask_table, layout, npes, filename)
   integer, intent(in) :: mask_table(:,:)      !> mask table array to be written out.
   integer, dimension(2), intent(in) :: layout !> PE layout
   integer, intent(in) :: npes                 !> Number of divisions (incl. eliminated ones)
-  character(len=:), allocatable, intent(in) :: filename !> file name for the mask_table to be written
+  character(len=*), intent(in) :: filename !> file name for the mask_table to be written
   ! local
   integer :: file_ascii= -1  !< The unit number of the auto-generated mask_file file.
   integer :: true_num_masked_blocks
