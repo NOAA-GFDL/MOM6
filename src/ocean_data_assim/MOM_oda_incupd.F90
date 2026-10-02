@@ -407,7 +407,7 @@ subroutine calc_oda_increments(h, tv, u, v, G, GV, US, CS)
         sum_h2 = sum_h2+h_obs(i,j,k)
       enddo
       do k=1,nz_data
-        tmp_h(k)=(sum_h1/sum_h2)*h_obs(i,j,k)
+        tmp_h(k) = (sum_h1/sum_h2) * h_obs(i,j,k)
       enddo
       ! get temperature
       do k=1,nz
@@ -461,7 +461,7 @@ subroutine calc_oda_increments(h, tv, u, v, G, GV, US, CS)
           sum_h2 = sum_h2+hu_obs(k)
         enddo
         do k=1,nz_data
-          hu_obs(k)=(sum_h1/sum_h2)*hu_obs(k)
+          hu_obs(k) = (sum_h1/sum_h2) * hu_obs(k)
         enddo
         ! remap model u on hu_obs
         call remapping_core_h(CS%remap_cs, nz, hu(1:nz), tmp_val1, &
@@ -496,7 +496,7 @@ subroutine calc_oda_increments(h, tv, u, v, G, GV, US, CS)
           sum_h2 = sum_h2+hv_obs(k)
         enddo
         do k=1,nz_data
-          hv_obs(k)=(sum_h1/sum_h2)*hv_obs(k)
+          hv_obs(k) = (sum_h1/sum_h2) * hv_obs(k)
         enddo
         ! remap model v on hv_obs
         call remapping_core_h(CS%remap_cs, nz, hv(1:nz), tmp_val1, &
@@ -713,7 +713,7 @@ subroutine apply_oda_incupd(h, tv, u, v, dt, G, GV, US, CS)
           sum_h2 = sum_h2 + hv_obs(k)
         enddo
         do k=1,nz_data
-          hv_obs(k)=( sum_h1 / sum_h2 ) * hv_obs(k)
+          hv_obs(k) = ( sum_h1 / sum_h2 ) * hv_obs(k)
         enddo
         ! remap increment profile on hv
         call remapping_core_h(CS%remap_cs, nz_data, hv_obs(1:nz_data), tmp_val2, &

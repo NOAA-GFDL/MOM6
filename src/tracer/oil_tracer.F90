@@ -46,8 +46,8 @@ type, public :: oil_tracer_CS ; private
   logical :: Z_IC_file         !< If true, the IC_file is in Z-space.  The default is false.
   real :: oil_source_longitude !< Latitude of source location (geographic) [degrees_N]
   real :: oil_source_latitude  !< Longitude of source location (geographic) [degrees_E]
-  integer :: oil_source_i=-999 !< Local i of source location (computational index location)
-  integer :: oil_source_j=-999 !< Local j of source location (computational index location)
+  integer :: oil_source_i = -999 !< Local i of source location (computational index location)
+  integer :: oil_source_j = -999 !< Local j of source location (computational index location)
   real :: oil_source_rate     !< Rate of oil injection [kg T-1 ~> kg s-1]
   real :: oil_start_year      !< The time at which the oil source starts [years]
   real :: oil_end_year        !< The time at which the oil source ends [years]
@@ -240,8 +240,8 @@ subroutine initialize_oil_tracer(restart, day, G, GV, US, h, diag, OBC, CS, &
         CS%oil_source_longitude>=G%geoLonBu(I-1,J) .and. &
         CS%oil_source_latitude<G%geoLatBu(I,J) .and. &
         CS%oil_source_latitude>=G%geoLatBu(I,J-1) ) then
-      CS%oil_source_i=i
-      CS%oil_source_j=j
+      CS%oil_source_i = i
+      CS%oil_source_j = j
     endif
   enddo ; enddo
 
@@ -380,7 +380,7 @@ subroutine oil_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, GV, US
     vol_scale = GV%H_to_m * US%L_to_m**2
     do k=nz, 2, -1
       h_total = h_total + h_new(i,j,k)
-      if (h_total < 10.*GV%m_to_H) k_max=k-1 ! Find bottom most interface that is 10 m above bottom
+      if (h_total < 10.*GV%m_to_H) k_max = k-1 ! Find bottom most interface that is 10 m above bottom
     enddo
     do m=1,CS%ntr
       k = CS%oil_source_k(m)

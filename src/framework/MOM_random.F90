@@ -31,8 +31,8 @@ integer, parameter :: &
     LMASK     = 2147483647      !< least significant r bits (0x7fffffffUL)
 
 ! Private tempering parameters for the Mersenne Twister
-integer, parameter :: TMASKB= -1658038656, & !< (0x9d2c5680UL)
-                      TMASKC= -272236544     !< (0xefc60000UL)
+integer, parameter :: TMASKB = -1658038656, & !< (0x9d2c5680UL)
+                      TMASKC = -272236544     !< (0xefc60000UL)
 
 !> A private type used by the Mersenne Twistor
 type randomNumberSequence

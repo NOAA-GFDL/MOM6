@@ -140,7 +140,7 @@ subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, unit
                                                                 !! indicating to use the scheme from MOM_tracer_advect
 
   logical :: mand
-  type(tracer_type), pointer :: Tr=>NULL()
+  type(tracer_type), pointer :: Tr => NULL()
   character(len=256) :: mesg    ! Message for error messages.
 
   if (.not. associated(Reg)) call tracer_registry_init(param_file, Reg)
@@ -315,7 +315,7 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
   character(len=120) :: var_lname      ! A temporary longname for a diagnostic.
   character(len=120) :: cmor_var_lname ! The temporary CMOR long name for a diagnostic
   real :: conversion ! Temporary term while we address a bug [conc m CU-1 H-1 ~> 1] or [conc kg m-2 CU-1 H-1 ~> 1]
-  type(tracer_type), pointer :: Tr=>NULL()
+  type(tracer_type), pointer :: Tr => NULL()
   integer :: i, j, k, is, ie, js, je, nz, m, m2, nTr_in
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
@@ -612,7 +612,7 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
     ! Vertical regridding/remapping tendencies
     if (use_ALE .and. Tr%remap_tr) then
       var_lname = "Vertical remapping tracer concentration tendency for "//trim(Reg%Tr(m)%name)
-      Tr%id_remap_conc= register_diag_field('ocean_model', &
+      Tr%id_remap_conc = register_diag_field('ocean_model', &
           trim(Tr%flux_nameroot)//'_tendency_vert_remap', diag%axesTL, Time, var_lname, &
           trim(units)//' s-1', conversion=Tr%conc_scale*US%s_to_T)
 
@@ -740,7 +740,7 @@ subroutine post_tracer_diagnostics_at_sync(Reg, h, diag_prev, diag, G, GV, dt)
   real    :: work2d(SZI_(G),SZJ_(G)) ! The vertically integrated time tendency of a diagnostic
                                      ! in [CU H T-1 ~> conc m s-1 or conc kg m-2 s-1]
   real    :: Idt ! The inverse of the time step [T-1 ~> s-1]
-  type(tracer_type), pointer :: Tr=>NULL()
+  type(tracer_type), pointer :: Tr => NULL()
   integer :: i, j, k, is, ie, js, je, nz, m
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
@@ -792,7 +792,7 @@ subroutine post_tracer_transport_diagnostics(G, GV, Reg, h_diag, diag)
   integer :: i, j, k, is, ie, js, je, nz, m
   real    :: work2d(SZI_(G),SZJ_(G))      ! The vertically integrated convergence of lateral advective
                                           ! tracer fluxes [CU H T-1 ~> conc m s-1 or conc kg m-2 s-1]
-  type(tracer_type), pointer :: Tr=>NULL()
+  type(tracer_type), pointer :: Tr => NULL()
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
@@ -843,7 +843,7 @@ subroutine post_tracer_integral_diagnostics(G, GV, US, Reg, h_diag, tv, diag)
   real    :: zbot(SZI_(G),SZJ_(G))    ! position of the bottom interface [Z ~> m]
   real    :: Z_100  ! 100 m in depth units [Z ~> m]
   logical :: dz_needed, dz100_used
-  type(tracer_type), pointer :: Tr=>NULL()
+  type(tracer_type), pointer :: Tr => NULL()
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
 
