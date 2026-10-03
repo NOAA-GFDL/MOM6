@@ -212,7 +212,7 @@ function reproducing_EFP_sum_2d(array, isr, ier, jsr, jer, overflow_check, err, 
     endif
     if (abs(max_mag_term) >= prec_error*pr(1)) then
       write(mesg, '(ES13.5)') max_mag_term
-      call MOM_error(FATAL,"Overflow in reproducing_EFP_sum(_2d) conversion of "//trim(mesg))
+      call MOM_error(FATAL, "Overflow in reproducing_EFP_sum(_2d) conversion of "//trim(mesg))
     endif
     if (overflow_error) then
       call MOM_error(FATAL, "Overflow in reproducing_EFP_sum(_2d).")
@@ -328,7 +328,7 @@ function reproducing_sum_2d(array, isr, ier, jsr, jer, EFP_sum, reproducing, &
           err = err + 2
         else
           write(mesg, '(ES13.5)') sum
-          call MOM_error(FATAL,"Repro_sum_2d: Overflow in real_to_ints conversion of "//trim(mesg))
+          call MOM_error(FATAL, "Repro_sum_2d: Overflow in real_to_ints conversion of "//trim(mesg))
         endif
       endif
     endif
@@ -441,7 +441,7 @@ function reproducing_sum_3d(array, isr, ier, jsr, jer, sums, EFP_sum, EFP_lay_su
       if (NaN_error) call MOM_error(FATAL, "NaN in input field of reproducing_sum(_3d).")
       if (abs(max_mag_term) >= prec_error*pr(1)) then
         write(mesg, '(ES13.5)') max_mag_term
-        call MOM_error(FATAL,"Overflow in reproducing_sum(_3d) conversion of "//trim(mesg))
+        call MOM_error(FATAL, "Overflow in reproducing_sum(_3d) conversion of "//trim(mesg))
       endif
       if (overflow_error) call MOM_error(FATAL, "Overflow in reproducing_sum(_3d).")
     endif
@@ -489,7 +489,7 @@ function reproducing_sum_3d(array, isr, ier, jsr, jer, sums, EFP_sum, EFP_lay_su
       if (NaN_error) call MOM_error(FATAL, "NaN in input field of reproducing_sum(_3d).")
       if (abs(max_mag_term) >= prec_error*pr(1)) then
         write(mesg, '(ES13.5)') max_mag_term
-        call MOM_error(FATAL,"Overflow in reproducing_sum(_3d) conversion of "//trim(mesg))
+        call MOM_error(FATAL, "Overflow in reproducing_sum(_3d) conversion of "//trim(mesg))
       endif
       if (overflow_error) call MOM_error(FATAL, "Overflow in reproducing_sum(_3d).")
     endif
@@ -550,7 +550,7 @@ function real_to_ints(r, prec_error, overflow) result(ints)
     if ((r >= 1e30) .eqv. (r < 1e30)) overflow = .true.
   elseif (.not.(rs < prec_err*pr(1))) then
     write(mesg, '(ES13.5)') r
-    call MOM_error(FATAL,"Overflow in real_to_ints conversion of "//trim(mesg))
+    call MOM_error(FATAL, "Overflow in real_to_ints conversion of "//trim(mesg))
   endif
 
   do i=1,efp_digits
@@ -965,7 +965,7 @@ function real_to_EFP(val, overflow)
     real_to_EFP%v(:) = real_to_ints(val, overflow=over)
     if (over) then
       write(mesg, '(ES13.5)') val
-      call MOM_error(FATAL,"Overflow in real_to_EFP conversion of "//trim(mesg))
+      call MOM_error(FATAL, "Overflow in real_to_EFP conversion of "//trim(mesg))
     endif
   endif
 

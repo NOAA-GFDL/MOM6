@@ -772,11 +772,11 @@ function query_initialized_name(name, CS) result(query_initialized)
     endif
   enddo
   if ((n==CS%novars+1) .and. (is_root_pe())) &
-    call MOM_error(NOTE,"MOM_restart: Unknown restart variable "//name// &
-                        " queried for initialization.")
+    call MOM_error(NOTE, "MOM_restart: Unknown restart variable "//name// &
+                         " queried for initialization.")
 
   if ((is_root_pe()) .and. query_initialized) &
-    call MOM_error(NOTE,"MOM_restart: "//name// &
+    call MOM_error(NOTE, "MOM_restart: "//name// &
                          " initialization confirmed by name.")
 
 end function query_initialized_name
@@ -929,7 +929,7 @@ function query_initialized_0d_name(f_ptr, name, CS) result(query_initialized)
   enddo
   if (n==CS%novars+1) then
     if (is_root_pe()) &
-      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+      call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
         "probably because of the suspect comparison of pointers by ASSOCIATED.")
     query_initialized = query_initialized_name(name, CS)
   endif
@@ -962,7 +962,7 @@ function query_initialized_1d_name(f_ptr, name, CS) result(query_initialized)
   enddo
   if (n==CS%novars+1) then
     if (is_root_pe()) &
-      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+      call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
         "probably because of the suspect comparison of pointers by ASSOCIATED.")
     query_initialized = query_initialized_name(name, CS)
   endif
@@ -995,7 +995,7 @@ function query_initialized_2d_name(f_ptr, name, CS) result(query_initialized)
   enddo
   if (n==CS%novars+1) then
     if (is_root_pe()) &
-      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+      call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
         "probably because of the suspect comparison of pointers by ASSOCIATED.")
     query_initialized = query_initialized_name(name, CS)
   endif
@@ -1083,8 +1083,8 @@ subroutine set_initialized_name(name, CS)
   endif ; enddo
 
   if ((m==CS%novars+1) .and. (is_root_pe())) &
-    call MOM_error(NOTE,"MOM_restart: Unknown restart variable "//name// &
-                        " used in set_initialized call.")
+    call MOM_error(NOTE, "MOM_restart: Unknown restart variable "//name// &
+                         " used in set_initialized call.")
 
 end subroutine set_initialized_name
 
@@ -1105,7 +1105,7 @@ subroutine set_initialized_0d_name(f_ptr, name, CS)
 
   if (m==CS%novars+1) then
     if (is_root_pe()) &
-      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+      call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
         "probably because of the suspect comparison of pointers by ASSOCIATED.")
     call set_initialized_name(name, CS)
   endif
@@ -1130,7 +1130,7 @@ subroutine set_initialized_1d_name(f_ptr, name, CS)
 
   if (m==CS%novars+1) then
     if (is_root_pe()) &
-      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+      call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
         "probably because of the suspect comparison of pointers by ASSOCIATED.")
     call set_initialized_name(name, CS)
   endif
@@ -1155,7 +1155,7 @@ subroutine set_initialized_2d_name(f_ptr, name, CS)
 
   if (m==CS%novars+1) then
     if (is_root_pe()) &
-      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+      call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
         "probably because of the suspect comparison of pointers by ASSOCIATED.")
     call set_initialized_name(name, CS)
   endif
@@ -1180,7 +1180,7 @@ subroutine set_initialized_3d_name(f_ptr, name, CS)
 
   if (m==CS%novars+1) then
     if (is_root_pe()) &
-      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+      call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
         "probably because of the suspect comparison of pointers by ASSOCIATED.")
     call set_initialized_name(name, CS)
   endif
@@ -1205,7 +1205,7 @@ subroutine set_initialized_4d_name(f_ptr, name, CS)
 
   if (m==CS%novars+1) then
     if (is_root_pe()) &
-      call MOM_error(NOTE,"MOM_restart: Unable to find "//name//" queried by pointer, "//&
+      call MOM_error(NOTE, "MOM_restart: Unable to find "//name//" queried by pointer, "//&
         "probably because of the suspect comparison of pointers by ASSOCIATED.")
     call set_initialized_name(name, CS)
   endif
@@ -1836,7 +1836,7 @@ subroutine restore_state(filename, directory, day, G, CS)
   if (num_file == 0) then
     write(mesg,'("Unable to find any restart files specified by  ",A,"  in directory ",A,".")') &
                   trim(filename), trim(directory)
-    call MOM_error(FATAL,"MOM_restart: "//mesg)
+    call MOM_error(FATAL, "MOM_restart: "//mesg)
   endif
 
   ! Get the time from the first file in the list that has one.
@@ -1984,7 +1984,7 @@ subroutine restore_state(filename, directory, day, G, CS)
     if (.not.(CS%restart_field(m)%initialized)) then
       CS%restart = .false.
       if (CS%restart_field(m)%mand_var) then
-        call MOM_error(FATAL,"MOM_restart: Unable to find mandatory variable " &
+        call MOM_error(FATAL, "MOM_restart: Unable to find mandatory variable " &
                        //trim(CS%restart_field(m)%var_name)//" in restart files.")
       endif
     endif
@@ -2388,10 +2388,10 @@ subroutine restart_error(CS)
 
   if (CS%novars > CS%max_fields) then
     write(num,'(I0)') CS%novars
-    call MOM_error(FATAL,"MOM_restart: Too many fields registered for " // &
+    call MOM_error(FATAL, "MOM_restart: Too many fields registered for " // &
            "restart.  Set MAX_FIELDS to be at least "//trim(num)//" in the MOM input file.")
   else
-    call MOM_error(FATAL,"MOM_restart: Unspecified fatal error.")
+    call MOM_error(FATAL, "MOM_restart: Unspecified fatal error.")
   endif
 end subroutine restart_error
 
