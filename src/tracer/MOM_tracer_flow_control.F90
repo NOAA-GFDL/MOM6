@@ -690,8 +690,9 @@ subroutine call_tracer_column_fns(h_old, h_new, ea, eb, fluxes, mld, dt, G, GV, 
 
 end subroutine call_tracer_column_fns
 
-!> This subroutine calls all registered tracer packages to enable them to
-!! add to the surface state returned to the coupler. These routines are optional.
+!> This subroutine does the calls that determine the tracer stocks (globally integrated amounts of
+!! selected tracers) for all the registered tracer packages that have a tracer stock routine.  This
+!! routine may also determine the global minimum and maximum concentrations for some tracers.
 subroutine call_tracer_stocks(h, stock_values, G, GV, US, CS, stock_names, stock_units, &
                               num_stocks, stock_index, got_min_max, global_min, global_max, &
                               xgmin, ygmin, zgmin, xgmax, ygmax, zgmax)
@@ -703,8 +704,7 @@ subroutine call_tracer_stocks(h, stock_values, G, GV, US, CS, stock_names, stock
                                                              !! amount of a tracer [kg conc].
   type(unit_scale_type),          intent(in)  :: US          !< A dimensional unit scaling type
   type(tracer_flow_control_CS),   pointer     :: CS          !< The control structure returned by a
-                                                             !! previous call to
-                                                             !! call_tracer_register.
+                                                             !! previous call to call_tracer_register
   character(len=*), dimension(:), &
                         optional, intent(out) :: stock_names !< Diagnostic names to use for each stock.
   character(len=*), dimension(:), &
@@ -746,8 +746,8 @@ subroutine call_tracer_stocks(h, stock_values, G, GV, US, CS, stock_names, stock
   index = -1 ; if (present(stock_index)) index = stock_index
   ns_tot = 0
   max_ns = size(stock_values)
-  if (present(stock_names)) max_ns = min(max_ns,size(stock_names))
-  if (present(stock_units)) max_ns = min(max_ns,size(stock_units))
+  if (present(stock_names)) max_ns = min(max_ns, size(stock_names))
+  if (present(stock_units)) max_ns = min(max_ns, size(stock_units))
 
 !  Add other user-provided calls here.
   if (CS%use_USER_tracer_example) then
