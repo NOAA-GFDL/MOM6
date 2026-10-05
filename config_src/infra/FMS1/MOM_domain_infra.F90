@@ -560,11 +560,11 @@ subroutine pass_vector_2d(u_cmpt, v_cmpt, MOM_dom, direction, stagger, complete,
 
   if (present(halo) .and. MOM_dom%thin_halo_updates) then
     call mpp_update_domains(u_cmpt, v_cmpt, MOM_dom%mpp_domain, flags=dirflag, &
-                   gridtype=stagger_local, complete = block_til_complete, &
+                   gridtype=stagger_local, complete=block_til_complete, &
                    whalo=halo, ehalo=halo, shalo=halo, nhalo=halo)
   else
     call mpp_update_domains(u_cmpt, v_cmpt, MOM_dom%mpp_domain, flags=dirflag, &
-                   gridtype=stagger_local, complete = block_til_complete)
+                   gridtype=stagger_local, complete=block_til_complete)
   endif
 
   if (present(clock)) then ; if (clock>0) call cpu_clock_end(clock) ; endif
@@ -705,11 +705,11 @@ subroutine pass_vector_3d(u_cmpt, v_cmpt, MOM_dom, direction, stagger, complete,
 
   if (present(halo) .and. MOM_dom%thin_halo_updates) then
     call mpp_update_domains(u_cmpt, v_cmpt, MOM_dom%mpp_domain, flags=dirflag, &
-                   gridtype=stagger_local, complete = block_til_complete, &
+                   gridtype=stagger_local, complete=block_til_complete, &
                    whalo=halo, ehalo=halo, shalo=halo, nhalo=halo)
   else
     call mpp_update_domains(u_cmpt, v_cmpt, MOM_dom%mpp_domain, flags=dirflag, &
-                   gridtype=stagger_local, complete = block_til_complete)
+                   gridtype=stagger_local, complete=block_til_complete)
   endif
 
   if (present(clock)) then ; if (clock>0) call cpu_clock_end(clock) ; endif
@@ -1215,7 +1215,7 @@ subroutine redistribute_array_2d(Domain1, array1, Domain2, array2, complete)
   ! Local variables
   logical :: do_complete
 
-  do_complete=.true. ; if (PRESENT(complete)) do_complete = complete
+  do_complete = .true. ; if (PRESENT(complete)) do_complete = complete
 
   call mpp_redistribute(Domain1, array1, Domain2, array2, do_complete)
 
@@ -1234,7 +1234,7 @@ subroutine redistribute_array_3d(Domain1, array1, Domain2, array2, complete)
   ! Local variables
   logical :: do_complete
 
-  do_complete=.true. ; if (PRESENT(complete)) do_complete = complete
+  do_complete = .true. ; if (PRESENT(complete)) do_complete = complete
 
   call mpp_redistribute(Domain1, array1, Domain2, array2, do_complete)
 
@@ -1253,7 +1253,7 @@ subroutine redistribute_array_4d(Domain1, array1, Domain2, array2, complete)
   ! Local variables
   logical :: do_complete
 
-  do_complete=.true. ; if (PRESENT(complete)) do_complete = complete
+  do_complete = .true. ; if (PRESENT(complete)) do_complete = complete
 
   call mpp_redistribute(Domain1, array1, Domain2, array2, do_complete)
 

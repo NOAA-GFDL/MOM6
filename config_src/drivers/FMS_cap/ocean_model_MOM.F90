@@ -97,7 +97,7 @@ type, public ::  ocean_public_type
                                  !! this instance of an ocean model, for example
                                  !! in ensembles when writing messages.
   integer, pointer, dimension(:) :: pelist => NULL()   !< The list of ocean PEs.
-  logical, pointer, dimension(:,:) :: maskmap =>NULL() !< A pointer to an array
+  logical, pointer, dimension(:,:) :: maskmap => NULL() !< A pointer to an array
                     !! indicating which logical processors are actually used for
                     !! the ocean code. The other logical processors would be all
                     !! land points and are not assigned to actual processors.
@@ -119,7 +119,7 @@ type, public ::  ocean_public_type
     v_surf => NULL(), & !< j-velocity at the locations indicated by stagger [m s-1].
     sea_lev => NULL(), & !< Sea level in m after correction for surface pressure,
                         !! i.e. dzt(1) + eta_t + patm/rho0/grav [m]
-    frazil =>NULL(), &  !< Accumulated heating [J m-2] from frazil
+    frazil => NULL(), & !< Accumulated heating [J m-2] from frazil
                         !! formation in the ocean.
     melt_potential => NULL(), & !< Instantaneous heat used to melt sea ice [J m-2].
     OBLD => NULL(),   & !< Ocean boundary layer depth [m].
@@ -367,9 +367,9 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, wind_stagger, gas
                  units="m", default=-1.0, scale=OS%US%m_to_Z, do_not_log=.true.)
 
   if (HFrz > 0.0) then
-    use_melt_pot=.true.
+    use_melt_pot = .true.
   else
-    use_melt_pot=.false.
+    use_melt_pot = .false.
   endif
 
   !allocate(OS%sfc_state)
@@ -424,7 +424,7 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, wind_stagger, gas
   if (present(calve_ice_shelf_bergs)) then
     if (calve_ice_shelf_bergs) then
       call convert_shelf_state_to_ocean_type(Ocean_sfc, OS%Ice_shelf_CSp, OS%US)
-      OS%calve_ice_shelf_bergs=.true.
+      OS%calve_ice_shelf_bergs = .true.
     endif
   endif
 
@@ -828,17 +828,17 @@ subroutine initialize_ocean_public_type(input_domain, Ocean_sfc, diag, gas_field
   Ocean_sfc%u_surf(:,:)  = 0.0  ! time averaged u-current (m/sec) passed to atmosphere/ice models
   Ocean_sfc%v_surf(:,:)  = 0.0  ! time averaged v-current (m/sec)  passed to atmosphere/ice models
   Ocean_sfc%sea_lev(:,:) = 0.0  ! time averaged thickness of top model grid cell (m) plus patm/rho0/grav
-  Ocean_sfc%calving(:,:)  = 0.0  ! time accumulated ice sheet calving (kg m-2) passed to ice model
+  Ocean_sfc%calving(:,:) = 0.0  ! time accumulated ice sheet calving (kg m-2) passed to ice model
   Ocean_sfc%calving_hflx(:,:) = 0.0 ! time accumulated ice sheet calving heat flux (W m-2) passed to ice model
   Ocean_sfc%frazil(:,:)  = 0.0  ! time accumulated frazil (J/m^2) passed to ice model
-  Ocean_sfc%melt_potential(:,:)  = 0.0  ! time accumulated melt potential (J/m^2) passed to ice model
+  Ocean_sfc%melt_potential(:,:) = 0.0  ! time accumulated melt potential (J/m^2) passed to ice model
   Ocean_sfc%OBLD(:,:)    = 0.0  ! ocean boundary layer depth (m)
   Ocean_sfc%area(:,:)    = 0.0
   Ocean_sfc%axes    = diag%axesT1%handles !diag axes to be used by coupler tracer flux diagnostics
 
   if (present(gas_fields_ocn)) then
     call coupler_type_spawn(gas_fields_ocn, Ocean_sfc%fields, (/isc,isc,iec,iec/), &
-                              (/jsc,jsc,jec,jec/), suffix = '_ocn', as_needed=.true.)
+                            (/jsc,jsc,jec,jec/), suffix='_ocn', as_needed=.true.)
   endif
 
 end subroutine initialize_ocean_public_type

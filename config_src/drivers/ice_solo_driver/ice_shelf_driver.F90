@@ -82,7 +82,7 @@ program Shelf_main
   ! nmax is the number of iterations after which to stop so that the simulation does not exceed its
   ! CPU time limit.  nmax is determined by evaluating the CPU time used between successive calls to
   ! write_cputime.  Initially it is set to be very large.
-  integer :: nmax=2000000000
+  integer :: nmax = 2000000000
   ! A structure containing pointers to the thermodynamic forcing fields
   ! at the ocean surface.
   type(forcing) :: fluxes
@@ -141,16 +141,16 @@ program Shelf_main
   type(time_type) :: daymax          ! The final day of the simulation.
 
   integer :: CPU_steps          ! The number of steps between writing CPU time.
-  integer :: date_init(6)=0                ! The start date of the whole simulation.
-  integer :: date(6)=-1                    ! Possibly the start date of this run segment.
-  integer :: years=0, months=0, days=0     ! These may determine the segment run
-  integer :: hours=0, minutes=0, seconds=0 ! length, if read from a namelist.
+  integer :: date_init(6) = 0              ! The start date of the whole simulation.
+  integer :: date(6) = -1                  ! Possibly the start date of this run segment.
+  integer :: years = 0, months = 0, days = 0     ! These may determine the segment run
+  integer :: hours = 0, minutes = 0, seconds = 0 ! length, if read from a namelist.
   integer :: yr, mon, day, hr, mins, sec   ! Temp variables for writing the date.
   type(param_file_type) :: param_file      ! The structure indicating the file(s)
                                            ! containing all run-time parameters.
   character(len=9)  :: month
   character(len=16) :: calendar = 'noleap'
-  integer :: calendar_type=-1
+  integer :: calendar_type = -1
   integer :: verbosity
   integer :: unit, io_status, ierr
   logical :: symmetric
