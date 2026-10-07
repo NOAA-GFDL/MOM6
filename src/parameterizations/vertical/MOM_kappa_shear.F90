@@ -92,9 +92,9 @@ type, public :: Kappa_shear_CS ; private
                              !! greater than 1.  The lower limit for the permitted fractional
                              !! decrease is (1 - 0.5/kappa_src_max_chg).  These limits could
                              !! perhaps be made dynamic with an improved iterative solver.
-  real    :: VS_GeoMean_Kdmin !< A minimum diffusivity for computing the horizontal averages
-                             !! when using the geometric mean with VERTEX_SHEAR=True.  The model
-                             !! is sensitive to this value, which is a drawback of using the
+  real    :: VS_GeoMean_Kdmin !< A minimum diffusivity for computing the horizontal averages when using
+                             !! the geometric mean with VERTEX_SHEAR=True, in [H Z T-1 ~> m2 s-1 or Pa s].
+                             !! The model is sensitive to this value, which is a drawback of using the
                              !! geometric average as currently implemented.
   logical :: psurf_bug       !< If true, do a simple average of the cell surface pressures to get a
                              !! surface pressure at the corner if VERTEX_SHEAR=True.  Otherwise mask

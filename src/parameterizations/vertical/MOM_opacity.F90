@@ -1321,16 +1321,15 @@ end subroutine opacity_init
 !! Step size is fine enough that nearest neighbor lookup is sufficiently
 !! accurate.
 subroutine init_ohlmann_table(optics)
-
-  implicit none
-
-  type(optics_type), intent(inout) :: optics
+  type(optics_type), intent(inout) :: optics !< The optics type with the lookup table
 
   ! Local variables
 
-  !! These are the data from Ohlmann (2003) Table 1a with additional
-  !! values provided by C. Ohlmann and implemented in CESM-POP by B. Briegleb
+  ! These are the data from Ohlmann (2003) Table 1a with additional
+  ! values provided by C. Ohlmann and implemented in CESM-POP by B. Briegleb
   integer, parameter :: nval_tab1a = 31
+
+  !> Chlorophyll concentrations at the input lookup table nodes [mg m-3]
   real, parameter, dimension(nval_tab1a) :: &
        chl_tab1a = (/                       &
        .001, .005, .01,  .02,               &
@@ -1342,6 +1341,7 @@ subroutine init_ohlmann_table(optics)
        4.00, 5.00, 6.00, 7.00,              &
        8.00, 9.00, 10.00  /)
 
+  !> Coefficient for band 1 at the input lookup table nodes [nondim]
   real, parameter, dimension(nval_tab1a) :: &
        a1_tab1a = (/                        &
        0.4421, 0.4451, 0.4488, 0.4563,      &
@@ -1353,6 +1353,7 @@ subroutine init_ohlmann_table(optics)
        0.56965, 0.55638, 0.54091, 0.52442,  &
        0.50766, 0.49110, 0.47505  /)
 
+  !> Coefficient for band 2 at the input lookup table nodes [nondim]
   real, parameter, dimension(nval_tab1a) :: &
        a2_tab1a = (/                        &
        0.2981, 0.2963, 0.2940, 0.2894,      &
@@ -1364,6 +1365,7 @@ subroutine init_ohlmann_table(optics)
        0.23357, 0.25504, 0.27829, 0.30274,  &
        0.32698, 0.35056, 0.37303 /)
 
+  !> Exponential decay scale for band 1 at the input lookup table nodes [Z-1 ~> m-1]
   real, parameter, dimension(nval_tab1a) :: &
        b1_tab1a = (/                        &
        0.0287, 0.0301, 0.0319, 0.0355,      &
@@ -1375,6 +1377,7 @@ subroutine init_ohlmann_table(optics)
        0.25808, 0.28498, 0.30844, 0.32932,  &
        0.34817, 0.36540, 0.38132 /)
 
+  !> Exponential decay scale for band 2 at the input lookup table nodes [Z-1 ~> m-1]
   real, parameter, dimension(nval_tab1a) :: &
        b2_tab1a = (/                        &
        0.3192, 0.3243, 0.3306, 0.3433,      &
@@ -1386,10 +1389,12 @@ subroutine init_ohlmann_table(optics)
        0.66172, 0.68144, 0.70086, 0.72144,  &
        0.74178, 0.76190, 0.78155 /)
 
-  !! Make the table big enough so step size is smaller
-  !! in log-space that any increment in Table 1a
+  ! Make the table big enough so step size is smaller
+  ! in log-space than any increment in Table 1a
   integer, parameter :: nval_lut=401
-  real :: chl, log10chl_lut, w1, w2
+  real :: chl    ! Chlorophyll concentrations at a lookup table node [mg m-3]
+  real :: log10chl_lut ! Log10 of chl in lookup table [log10 of Chl in mg m-3]
+  real :: w1, w2 ! Lookup table interpolation weights [nondim]
   integer :: n, m, mm1, err
 
   allocate(optics%a1_lut(nval_lut), optics%b1_lut(nval_lut), &
@@ -1433,16 +1438,13 @@ end subroutine init_ohlmann_table
 
 !> Get the partion of total solar into bands from Ohlmann lookup table
 function lookup_ohlmann_swpen(chl, optics) result(A)
-
-  implicit none
-
-  real, intent(in) :: chl
-  type(optics_type), intent(in) :: optics
-  real, dimension(2) :: A
+  real, intent(in) :: chl  !< The chlorophyll concentration [mg m-3]
+  type(optics_type), intent(in) :: optics !< The optics type with the lookup table
+  real, dimension(2) :: A  !< Coefficients for the two bands [nondim]
 
   ! Local variables
 
-  real :: log10chl
+  real :: log10chl  ! Log10 of chl [log10 of Chl in mg m-3]
   integer :: n
 
   ! Make sure we are in the table
@@ -1461,19 +1463,17 @@ end function lookup_ohlmann_swpen
 
 !> Get the opacity (decay scale) from Ohlmann lookup table
 function lookup_ohlmann_opacity(chl, optics) result(B)
-
-  implicit none
-  real, intent(in) :: chl
-  type(optics_type), intent(in) :: optics
-  real, dimension(2) :: B
+  real, intent(in) :: chl  !< The chlorophyll concentration [mg m-3]
+  type(optics_type), intent(in) :: optics !< The optics type with the lookup table
+  real, dimension(2) :: B  !< Exponential decay scales for the two bands [Z-1 ~> m-1]
 
   ! Local variables
-  real :: log10chl
+  real :: log10chl  ! Log10 of chl [log10 of Chl in mg m-3]
   integer :: n
 
   ! Make sure we are in the table
   if (chl > optics%chl_min) then
-    log10chl = min(log10(chl),optics%log10chl_max)
+    log10chl = min(log10(chl), optics%log10chl_max)
   else
     log10chl = optics%log10chl_min
   endif

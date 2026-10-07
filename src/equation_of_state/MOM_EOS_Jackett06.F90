@@ -232,7 +232,7 @@ elemental subroutine calculate_density_derivs_elem_Jackett06(this, T, S, pressur
   real :: dnum_dT ! The derivative of num with potential temperature [kg m-3 degC-1]
   real :: dnum_dS ! The derivative of num with salinity [kg m-3 PSU-1]
   real :: dden_dT ! The derivative of den with potential temperature [degC-1]
-  real :: dden_dS ! The derivative of den with salinity PSU-1]
+  real :: dden_dS ! The derivative of den with salinity [PSU-1]
   real :: T2      ! Temperature squared [degC2]
   real :: S1_2    ! Limited square root of salinity [PSU1/2]
 
@@ -288,7 +288,7 @@ elemental subroutine calculate_density_second_derivs_elem_Jackett06(this, T, S, 
   real :: dnum_dT     ! The derivative of num with potential temperature [kg m-3 degC-1]
   real :: dnum_dS     ! The derivative of num with salinity [kg m-3 PSU-1]
   real :: dden_dT     ! The derivative of den with potential temperature [degC-1]
-  real :: dden_dS     ! The derivative of den with salinity PSU-1]
+  real :: dden_dS     ! The derivative of den with salinity [PSU-1]
   real :: dnum_dp     ! The derivative of num with pressure [kg m-3 dbar-1]
   real :: dden_dp     ! The derivative of det with pressure [dbar-1]
   real :: d2num_dT2   ! The second derivative of num with potential temperature [kg m-3 degC-2]
@@ -391,7 +391,7 @@ elemental subroutine calculate_specvol_derivs_elem_Jackett06(this, T, S, pressur
   real :: dnum_dT ! The derivative of num with potential temperature [kg m-3 degC-1]
   real :: dnum_dS ! The derivative of num with salinity [kg m-3 PSU-1]
   real :: dden_dT ! The derivative of den with potential temperature [degC-1]
-  real :: dden_dS ! The derivative of den with salinity PSU-1]
+  real :: dden_dS ! The derivative of den with salinity [PSU-1]
   real :: T2      ! Temperature squared [degC2]
   real :: S1_2    ! Limited square root of salinity [PSU1/2]
 

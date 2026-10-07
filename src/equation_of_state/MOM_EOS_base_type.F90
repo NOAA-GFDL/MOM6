@@ -316,7 +316,7 @@ contains
   !! for scalar inputs
   subroutine a_calculate_density_derivs_scalar(this, T, S, P, drho_dT, drho_dS)
     class(EOS_base), intent(in) :: this !< This EOS
-    real, intent(in)  :: T       !< Potential temperature referenced to 0 dbar
+    real, intent(in)  :: T       !< Potential temperature referenced to 0 dbar [degC]
     real, intent(in)  :: S       !< Salinity [PSU]
     real, intent(in)  :: P       !< Pressure [Pa]
     real, intent(out) :: drho_dT !< The partial derivative of density with potential
@@ -357,7 +357,7 @@ contains
   subroutine a_calculate_density_second_derivs_scalar(this, T, S, pressure, &
                      drho_ds_ds, drho_ds_dt, drho_dt_dt, drho_ds_dp, drho_dt_dp)
     class(EOS_base), intent(in)  :: this       !< This EOS
-    real,            intent(in)  :: T          !< Potential temperature referenced to 0 dbar
+    real,            intent(in)  :: T          !< Potential temperature referenced to 0 dbar [degC]
     real,            intent(in)  :: S          !< Salinity [PSU]
     real,            intent(in)  :: pressure   !< Pressure [Pa]
     real,            intent(out) :: drho_ds_ds !< Partial derivative of beta with respect
@@ -381,7 +381,7 @@ contains
   subroutine a_calculate_density_second_derivs_array(this, T, S, pressure, &
                      drho_ds_ds, drho_ds_dt, drho_dt_dt, drho_ds_dp, drho_dt_dp, start, npts)
     class(EOS_base),    intent(in)  :: this       !< This EOS
-    real, dimension(:), intent(in)  :: T          !< Potential temperature referenced to 0 dbar
+    real, dimension(:), intent(in)  :: T          !< Potential temperature referenced to 0 dbar [degC]
     real, dimension(:), intent(in)  :: S          !< Salinity [PSU]
     real, dimension(:), intent(in)  :: pressure   !< Pressure [Pa]
     real, dimension(:), intent(out) :: drho_ds_ds !< Partial derivative of beta with respect

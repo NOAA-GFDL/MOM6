@@ -84,6 +84,7 @@ type, public :: forcing
   ! surface stress components and turbulent velocity scale
   real, pointer, dimension(:,:) :: &
     omega_w2x     => NULL(), & !< the counter-clockwise angle of the wind stress with respect
+                               !! to the horizontal abscissa (x-coordinate) at tracer points [rad].
     ustar         => NULL(), & !< surface friction velocity scale [Z T-1 ~> m s-1].
     tau_mag       => NULL(), & !< Magnitude of the wind stress averaged over tracer cells,
                                !! including any contributions from sub-gridscale variability
@@ -1476,7 +1477,7 @@ subroutine mech_forcing_SinglePointPrint(forces, G, i, j, mesg)
   contains
   !> Format and write a message depending on associated state of array
   subroutine locMsg(array, aname)
-    real, dimension(:,:), pointer :: array !< Array to write element from
+    real, dimension(:,:), pointer :: array !< Array to write element from [various]
     character(len=*)              :: aname !< Name of array
 
     if (associated(array)) then
@@ -1543,7 +1544,7 @@ subroutine forcing_SinglePointPrint(fluxes, G, i, j, mesg)
   contains
   !> Format and write a message depending on associated state of array
   subroutine locMsg(array, aname)
-    real, dimension(:,:), pointer :: array !< Array to write element from
+    real, dimension(:,:), pointer :: array !< Array to write element from [various]
     character(len=*)              :: aname !< Name of array
 
     if (associated(array)) then
@@ -3910,7 +3911,7 @@ end subroutine get_mech_forcing_groups
 
 !> Allocates and zeroes-out array.
 subroutine myAlloc_2d(array, is, ie, js, je, flag)
-  real, dimension(:,:), pointer :: array !< Array to be allocated
+  real, dimension(:,:), pointer :: array !< Array to be allocated [various]
   integer,           intent(in) :: is !< Start i-index
   integer,           intent(in) :: ie !< End i-index
   integer,           intent(in) :: js !< Start j-index
@@ -3923,7 +3924,7 @@ subroutine myAlloc_2d(array, is, ie, js, je, flag)
 end subroutine myAlloc_2d
 
 subroutine myAlloc_3d(array, is, ie, js, je, ks, ke, flag)
-  real, dimension(:,:,:), pointer :: array !< Array to be allocated
+  real, dimension(:,:,:), pointer :: array !< Array to be allocated [various]
   integer,             intent(in) :: is !< Start i-index
   integer,             intent(in) :: ie !< End i-index
   integer,             intent(in) :: js !< Start j-index

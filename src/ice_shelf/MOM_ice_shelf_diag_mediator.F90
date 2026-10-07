@@ -1536,7 +1536,7 @@ end subroutine MOM_IS_diag_mediator_init
 !> Sets up the 2d masks for native diagnostics
 subroutine diag_masks_set(G, missing_value, diag_cs)
   type(ocean_grid_type), target, intent(in)    :: G   !< The horizontal grid type
-  real,                          intent(in)    :: missing_value !< A fill value for missing points
+  real,                          intent(in)    :: missing_value !< A fill value for missing points [various]
   type(diag_ctrl),               intent(inout) :: diag_cs !< Structure used to regulate diagnostic output
 
   ! Local variables

@@ -244,12 +244,14 @@ end subroutine obsolete_char
 subroutine obsolete_real(param_file, varname, warning_val, hint, only_warn)
   type(param_file_type), intent(in) :: param_file  !< Structure containing parameter file data.
   character(len=*),      intent(in) :: varname     !< Name of obsolete REAL parameter.
-  real,        optional, intent(in) :: warning_val !< An allowed value that causes a warning instead of an error.
+  real,        optional, intent(in) :: warning_val !< An allowed value that causes a warning instead
+                                                   !! of an error [various]
   character(len=*), optional, intent(in) :: hint   !< A hint to the user about what to do.
   logical,     optional, intent(in) :: only_warn   !< If present and true, issue warnings instead of fatal errors.
 
   ! Local variables
-  real :: test_val, warn_val
+  real :: test_val ! The value of the parameter that is read in, or a default indicating it is unread [various]
+  real :: warn_val ! The value of the parameter that causes a warning instead of an error [various]
   logical :: var_is_set  ! True if this value was read by read_param.
   logical :: issue_warning
   character(len=128) :: hint_msg

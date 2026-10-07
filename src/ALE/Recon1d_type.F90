@@ -96,8 +96,8 @@ interface
     import :: Recon1d
     class(Recon1d), intent(in) :: this !< This reconstruction
     integer,        intent(in) :: k    !< Cell number
-    real,           intent(in) :: xa   !< Start of averaging interval on element (0 to 1)
-    real,           intent(in) :: xb   !< End of averaging interval on element (0 to 1)
+    real,           intent(in) :: xa   !< Start of averaging interval on element (0 to 1) [nondim]
+    real,           intent(in) :: xb   !< End of averaging interval on element (0 to 1) [nondim]
   end function i_average
 
   !> Point-wise value of reconstruction [A]

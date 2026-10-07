@@ -824,8 +824,9 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
   real :: diag_sfn_unlim_y(SZI_(G),SZJB_(G),SZK_(GV)+1) ! Diagnostic of the y-face streamfunction before
                                                         ! applying limiters [Z L2 T-1 ~> m3 s-1]
                                                         ! applying limiters [H L2 T-1 ~> m3 s-1 or kg s-1]
-  real, allocatable :: skeb_gm_work(:,:)                ! Temp array to hold GM work for SKEB
-  real, allocatable :: skeb_ebt_norm2(:,:)              ! Used to normalize EBT for SKEB
+  real, allocatable :: skeb_gm_work(:,:)   ! Temporary array to hold GM work for SKEB [R Z L2 T-3 ~> W m-2]
+  real, allocatable :: skeb_ebt_norm2(:,:) ! Array used to normalize EBT for SKEB, first in units of
+                                           ! [H ~> m or kg m-2], then converted to [R Z ~> kg m-2]
 
   logical :: present_slope_x, present_slope_y, calc_derivatives
   integer, dimension(2) :: EOSdom_u  ! The shifted I-computational domain to use for equation of
