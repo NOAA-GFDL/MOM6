@@ -436,7 +436,8 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
     vort_xy_q, & ! vertical vorticity at corner points [T-1 ~> s-1]
     sh_xy_q,   & ! horizontal shearing strain at corner points [T-1 ~> s-1]
     GME_coeff_q, &  !< GME coeff. at q-points [L2 T-1 ~> m2 s-1]
-    visc_limit_q, &  ! used to stabilize the EY24_EBT_BS backscatter [nondim]
+    visc_limit_q, & ! A limiting biharmonic viscosity used to stabilize the EY24_EBT_BS backscatter
+                    ! parameterization [L4 T-1 ~> m4 s-1]
     visc_limit_q_flag, & ! determines whether backscatter is shut off [nondim]
     visc_limit_q_frac, & ! determines how close backscatter is to shutting off [nondim]
     BS_coeff_q, &  ! A diagnostic array of the backscatter coefficient [L2 T-1 ~> m2 s-1]
@@ -462,7 +463,8 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
     grid_Re_Kh, &    ! Grid Reynolds number for Laplacian horizontal viscosity at h points [nondim]
     grid_Re_Ah, &    ! Grid Reynolds number for Biharmonic horizontal viscosity at h points [nondim]
     GME_coeff_h, &   ! GME coefficient at h-points [L2 T-1 ~> m2 s-1]
-    visc_limit_h, &  ! Used to stabilize the EY24_EBT_BS backscatter [nondim]
+    visc_limit_h, &  ! A limiting biharmonic viscosity used to stabilize the EY24_EBT_BS backscatter
+                     ! parameterization [L4 T-1 ~> m4 s-1]
     visc_limit_h_flag, & ! determines whether backscatter is shut off [nondim]
     visc_limit_h_frac    ! determines how close backscatter is to shutting off [nondim]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: &
@@ -521,7 +523,7 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
   integer :: ksb, keb  ! Start and end domain index bounds of current block
   integer :: kke       ! Block end index of current block
   real :: inv_PI3, inv_PI2, inv_PI6 ! Powers of the inverse of pi [nondim]
-  real :: tmp
+  real :: tmp  ! An estimated biharmonic viscosity [L4 T-1 ~> m4 s-1]
 
   ! Fields evaluated on active layers, used for constructing 3D stress fields
   ! NOTE: The position of these declarations can impact performance, due to the
@@ -3699,8 +3701,10 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
           'Locations where the biharmonic viscosity reached the better_bound limiter at q points', 'nondim')
       CS%id_visc_limit_h = register_diag_field('ocean_model', 'visc_limit_h', diag%axesTL, Time, &
           'Value of the biharmonic viscosity limiter at h points', 'nondim')
+!###      'Value of the biharmonic viscosity limiter at h points', units='m4 s-1', conversion=US%L_to_m**4*US%s_to_T)
       CS%id_visc_limit_q = register_diag_field('ocean_model', 'visc_limit_q', diag%axesBL, Time, &
           'Value of the biharmonic viscosity limiter at q points', 'nondim')
+!###      'Value of the biharmonic viscosity limiter at q points', units='m4 s-1', conversion=US%L_to_m**4*US%s_to_T)
       CS%id_visc_limit_h_frac = register_diag_field('ocean_model', 'visc_limit_h_frac', diag%axesTL, Time, &
           'Value of the biharmonic viscosity limiter at h points', 'nondim')
       CS%id_visc_limit_q_frac = register_diag_field('ocean_model', 'visc_limit_q_frac', diag%axesBL, Time, &
@@ -3913,7 +3917,7 @@ function sum_5x5(x) result(sum_x)
   implicit none
   real, intent(in)    :: x(:,:)  !< 5x5 array to be summed. Assumed-shape to avoid copies. [arbitrary]
   real                :: sum_x   !< output [same as x]
-  real :: sum_partial            !< scalar holding a partial sum, for convenience
+  real :: sum_partial            !< scalar holding a partial sum, for convenience [same as x]
 
   sum_partial = ((x(1,1) + x(5,5)) + (x(1,5) + x(5,1)))
   sum_partial = sum_partial + 6.*((x(3,1) + x(1,3)) + (x(3,5) + x(5,3)))

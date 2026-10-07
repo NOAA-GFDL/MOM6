@@ -2162,9 +2162,9 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, test, halo_size, r
   real,                  intent(in)    :: freq !< Wave frequency [T-1 ~> s-1].
   real,                  intent(in)    :: dt   !< Time step [T ~> s].
   type(unit_scale_type), intent(in)    :: US   !< A dimensional unit scaling type
-  real, dimension(G%isd:G%ied,G%jsd:G%jed,2), intent(in) :: test !< test rotation vector
-  type(int_tide_CS),     intent(inout)    :: CS   !< Internal tide control structure
-  integer, intent(in) :: halo_size  !< halo size for correct rotation
+  real, dimension(G%isd:G%ied,G%jsd:G%jed,2), intent(in) :: test !< test rotation vector [nondim]
+  type(int_tide_CS),     intent(inout) :: CS   !< Internal tide control structure
+  integer,               intent(in)    :: halo_size  !< halo size for correct rotation
   real, dimension(G%isd:G%ied,G%jsd:G%jed,NAngle), &
                          intent(inout) :: residual_loss !< internal tide energy loss due
                                                         !! to the residual at slopes [H Z2 T-3 ~> m3 s-3 or W m-2].
@@ -2712,7 +2712,7 @@ subroutine turning_latitude(En, NAngle, freq2, CS, G, LB)
   real    :: TwoPi                         ! 2*pi = 6.2831853... [nondim]
   real    :: Angle_size                    ! size of beam wedge [rad]
   real    :: I_Angle_size                  ! inverse of size of beam wedge [rad-1]
-  real    :: f2
+  real    :: f2                            ! The squared Coriolis parameter [T-2 ~> s-2]
 
   integer :: angle_wall                    ! angle-bin of coast/ridge/shelf wrt equator
   integer :: angle_wall0                   ! angle-bin of coast/ridge/shelf wrt equator
@@ -3283,8 +3283,8 @@ subroutine minmod_limiter(h_in, h_L, h_R, G, iis, iie, jis, jie)
   integer,                          intent(in)     :: jis   !< Start j-index for computations
   integer,                          intent(in)     :: jie   !< End j-index for computations
   ! Local variables
-  real :: sign_h_L, sign_h_R, sign_h_in  ! the signs of the edge and center values
-  real :: sign_h_L_in, sign_h_R_in       ! products of signs, detect crossing the zero line
+  real :: sign_h_L, sign_h_R, sign_h_in  ! the signs of the edge and center values [nondim]
+  real :: sign_h_L_in, sign_h_R_in       ! products of signs, detect crossing the zero line [nondim]
   integer :: i, j
 
   do j=jis,jie ; do i=iis,iie

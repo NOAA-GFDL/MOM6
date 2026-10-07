@@ -30,7 +30,7 @@ type, public :: ice_shelf_state
     h_shelf => NULL(), &       !< the thickness of the shelf [Z ~> m], redundant with mass but may
                                !! make the code more readable
     dhdt_shelf => NULL(), &       !< the change in thickness of the shelf over time [Z T-1 ~> m s-1]
-    hmask => NULL(),&          !< Mask used to indicate ice-covered or partiall-covered cells
+    hmask => NULL(),&          !< Mask used to indicate ice-covered or partiall-covered cells [nondim]
                                !! 1: fully covered, solve for velocity here (for now all
                                !!   ice-covered cells are treated the same, this may change)
                                !! 2: partially covered, do not solve for velocity

@@ -325,7 +325,7 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
   real :: h_bbl_fr         ! The fraction of the bottom boundary layer in a layer [nondim].
   real :: h_sum            ! The sum of the thicknesses of the layers below the one being
                            ! worked on [H ~> m or kg m-2].
-  real :: tideampfac2_x_0p5 ! tideampfac2 multiplied by the c-grid averaging factor of 0.5
+  real :: tideampfac2_x_0p5 ! tideampfac2 multiplied by the c-grid averaging factor of 0.5 [nondim]
   real, parameter :: C1_3 = 1.0/3.0, C1_6 = 1.0/6.0, C1_12 = 1.0/12.0 ! Rational constants [nondim]
   real :: tmp              ! A temporary variable, sometimes in [Z ~> m]
   logical :: use_BBL_EOS, do_i(SZIB_(G))

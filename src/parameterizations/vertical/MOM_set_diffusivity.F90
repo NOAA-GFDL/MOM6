@@ -226,8 +226,9 @@ type diffusivity_diags
     prof_itidal => NULL(), & !< vertical profile for wave drag [H-1 ~> m-1 or m2 kg-1]
     prof_Froude => NULL(), & !< vertical profile for Froude drag [H-1 ~> m-1 or m2 kg-1]
     prof_slope  => NULL()    !< vertical profile for critical slopes [H-1 ~> m-1 or m2 kg-1]
-  real, pointer, dimension(:,:) ::  bbl_thick => NULL(), & !< bottom boundary layer thickness [H ~> m or kg m-2]
-                                    kbbl => NULL() !< top of bottom boundary layer
+  real, pointer, dimension(:,:) :: &
+    bbl_thick => NULL(), & !< Bottom boundary layer thickness [H ~> m or kg m-2]
+    kbbl => NULL()         !< Index of the top of the bottom boundary layer [nondim]
 
   real, pointer, dimension(:,:,:) :: TKE_to_Kd => NULL()
                           !< conversion rate (~1.0 / (G_Earth + dRho_lay)) between TKE

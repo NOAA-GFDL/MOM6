@@ -114,7 +114,9 @@ subroutine initialize_ice_thickness_from_file(h_shelf, area_shelf_h, hmask, melt
   character(len=40)  :: mdl = "initialize_ice_thickness_from_file" ! This subroutine's name.
   integer :: i, j, isc, jsc, iec, jec
   logical :: hmask_set
-  real :: len_sidestress, udh
+  real :: len_sidestress ! Longitude beyond which the shelf sides are stress-free, in the units of
+                         ! longitude [km] or [m] or [degrees_E]
+  real :: udh  ! A nominal ice-shlf thickness [Z ~> m]
 
   call MOM_mesg("Initialize_ice_thickness_from_file: reading thickness")
 
@@ -174,8 +176,9 @@ subroutine initialize_ice_thickness_from_file(h_shelf, area_shelf_h, hmask, melt
       ! but do not interfere with hmask
 
         if ((len_sidestress > 0.) .and. (G%geoLonCv(i,j) > len_sidestress)) then
+          !### The hard-coded 5.0 here needs units.
           udh = exp(-(G%geoLonCv(i,j)-len_sidestress)/5.0) * h_shelf(i,j)
-          if (udh <= 25.0) then
+          if (udh <= 25.0) then  !### The hard-coded 25.0 here is missing a factor of US%m_to_Z.
             h_shelf(i,j) = 0.0
             area_shelf_h(i,j) = 0.0
           else
@@ -208,13 +211,21 @@ subroutine initialize_ice_thickness_channel(h_shelf, area_shelf_h, hmask, G, US,
                          intent(inout) :: area_shelf_h !< The area per cell covered by the ice shelf [L2 ~> m2].
   real, dimension(SZDI_(G),SZDJ_(G)), &
                          intent(inout) :: hmask !< A mask indicating which tracer points are
-                                             !! partly or fully covered by an ice-shelf
+                                             !! partly or fully covered by an ice-shelf [nondim]
   type(unit_scale_type), intent(in)    :: US !< A structure containing unit conversion factors
   type(param_file_type), intent(in)    :: PF !< A structure to parse for run-time parameters
 
   character(len=40)  :: mdl = "initialize_ice_shelf_thickness_channel" ! This subroutine's name.
-  real :: max_draft, min_draft, flat_shelf_width, c1, slope_pos
-  real :: edge_pos, shelf_slope_scale
+  real :: max_draft, min_draft ! The minimum and maximum permitted ice shelf draft [Z ~> m]
+  real :: flat_shelf_width  ! The horizontal distance over which the shelf is flat, in the units of
+                            ! longitude [km] or [m] or [degrees_E]
+  real :: slope_pos         ! The position where the ice shelf slope ends, in the units of
+                            ! longitude [km] or [m] or [degrees_E]
+  real :: edge_pos          ! The position of the ice-shelf edge, in the units of
+                            ! longitude [km] or [m] or [degrees_E]
+  real :: shelf_slope_scale ! The horizontal distance over which the slope occurs, in the units of
+                            ! longitude [km] or [m] or [degrees_E]
+  real :: c1  ! The inverse of shelf_slope_scale, if it is positive, often in [km-1]
   integer :: i, j, jsc, jec, jsd, jed, jedg, nyh, isc, iec, isd, ied
   integer :: j_off
 
@@ -296,22 +307,23 @@ subroutine initialize_ice_shelf_boundary_channel(u_face_mask_bdry, v_face_mask_b
 
   type(ocean_grid_type), intent(in)    :: G    !< The ocean's grid structure
   real, dimension(SZIB_(G),SZJB_(G)), &
-                         intent(inout) :: u_face_mask_bdry !< A boundary-type mask at C-grid u faces
+                         intent(inout) :: u_face_mask_bdry !< A boundary-type mask at C-grid u faces [nondim]
 
   real, dimension(SZIB_(G),SZJ_(G)), &
                          intent(inout) :: u_flux_bdry_val  !< The boundary thickness flux through
                                                      !! C-grid u faces [L Z T-1 ~> m2 s-1].
   real, dimension(SZIB_(G),SZJB_(G)), &
-                         intent(inout) :: v_face_mask_bdry !< A boundary-type mask at C-grid v faces
+                         intent(inout) :: v_face_mask_bdry !< A boundary-type mask at C-grid v faces [nondim]
 
   real, dimension(SZI_(G),SZJB_(G)), &
                          intent(inout) :: v_flux_bdry_val  !< The boundary thickness flux through
                                                      !! C-grid v faces [L Z T-1 ~> m2 s-1].
   real, dimension(SZIB_(G),SZJB_(G)), &
                          intent(inout) :: u_bdry_val !< The zonal ice shelf velocity at open
-                                                      !! boundary vertices [L T-1 ~> m s-1].
+                                                     !! boundary vertices [L T-1 ~> m s-1]
   real, dimension(SZIB_(G),SZJB_(G)), &
                          intent(inout) :: v_bdry_val !< The meridional ice shelf velocity at open
+                                                     !! boundary vertices [L T-1 ~> m s-1]
   real, dimension(SZIB_(G),SZJB_(G)), &
                          intent(inout) :: u_shelf !< The zonal ice shelf velocity  [L T-1 ~> m s-1].
   real, dimension(SZIB_(G),SZJB_(G)), &
@@ -320,7 +332,7 @@ subroutine initialize_ice_shelf_boundary_channel(u_face_mask_bdry, v_face_mask_b
                          intent(inout) :: h_bdry_val !< The ice shelf thickness at open boundaries [Z ~> m]
   real, dimension(SZDI_(G),SZDJ_(G)), &
                          intent(inout) :: hmask !< A mask indicating which tracer points are
-                                             !! partly or fully covered by an ice-shelf
+                                             !! partly or fully covered by an ice-shelf [nondim]
   real, dimension(SZDI_(G),SZDJ_(G)), &
                          intent(inout) :: h_shelf !< Ice-shelf thickness [Z ~> m]
   type(unit_scale_type), intent(in)    :: US !< A structure containing unit conversion factors
@@ -330,7 +342,12 @@ subroutine initialize_ice_shelf_boundary_channel(u_face_mask_bdry, v_face_mask_b
   integer :: i, j, isd, jsd, giec, gjec, gisc, gjsc, gisd, gjsd, isc, jsc, iec, jec, ied, jed
   real    :: input_thick ! The input ice shelf thickness [Z ~> m]
   real    :: input_vel  ! The input ice velocity at the upstream boundary [L T-1 ~> m s-1]
-  real    :: lenlat, len_stress, westlon, lenlon, southlat ! The input positions of the channel boundarises
+  real :: len_stress    ! Longitude beyond which the shelf sides are stress-free, in the units of
+                        ! longitude [km] or [m] or [degrees_E]
+  real :: lenlat        ! The latitudinal (or y-coord) extent of physical domain [degrees_N] or [km] or [m]
+  real :: lenlon        ! The longitudinal (or x-coord) extent of physical domain [degrees_E] or [km] or [m]
+  real :: southlat      ! The latitude (or y-coordinate) of the first v-line [degrees_N] or [km] or [m]
+  real :: westlon       ! The longitude (or x-coordinate) of the first u-line [degrees_E] or [km] or [m]
 
   lenlat = G%len_lat
   lenlon = G%len_lon

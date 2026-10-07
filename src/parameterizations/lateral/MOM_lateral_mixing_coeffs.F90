@@ -136,8 +136,8 @@ type, public :: VarMix_CS
   real, allocatable :: khth_struct(:,:,:) !< Vertical structure function used in thickness diffusivity [nondim]
   real, allocatable :: khtr_struct(:,:,:) !< Vertical structure function used in tracer diffusivity [nondim]
   real, allocatable :: kdgl90_struct(:,:,:) !< Vertical structure function used in GL90 diffusivity [nondim]
-  real :: BS_EBT_power                !< Power to raise EBT vertical structure to. Default 0.0.
-  real :: sqg_expo     !< Exponent for SQG vertical structure [nondim]. Default 1.0
+  real :: BS_EBT_power                !< Power to raise EBT vertical structure to [nondim]. Default 0.0.
+  real :: sqg_expo                    !< Exponent for SQG vertical structure [nondim]. Default 1.0
   logical :: interpolated_sqg_struct  !< If true, interpolate properties to velocity points and then
                                       !! interpolate the buoyancy frequencies and layer thicknesses
                                       !! back to tracer points when calculating the SQG vertical

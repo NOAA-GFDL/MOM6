@@ -51,7 +51,7 @@ subroutine USER_initialize_shelf_mass(mass_shelf, area_shelf_h, h_shelf, hmask, 
                            intent(out) :: area_shelf_h !< The area per cell covered by the ice shelf [L2 ~> m2].
   real, dimension(SZDI_(G),SZDJ_(G)), &
                            intent(out) :: hmask !< A mask indicating which tracer points are
-                                                !! partly or fully covered by an ice-shelf
+                                                !! partly or fully covered by an ice-shelf [nondim]
   type(unit_scale_type),   intent(in)  :: US    !< A structure containing unit conversion factors
   type(user_ice_shelf_CS), pointer     :: CS    !< A pointer to the user ice shelf control structure
   type(param_file_type),   intent(in)  :: param_file !< A structure to parse for run-time parameters
