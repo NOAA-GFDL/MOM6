@@ -37,7 +37,7 @@ type, extends (MPLM_WA) :: MPLM_WA_poly
 
   ! Legacy representation
   integer :: degree !< Degree of polynomial used in legacy representation
-  real, allocatable, dimension(:,:) :: poly_coef !< Polynomial coefficients in legacy representation
+  real, allocatable, dimension(:,:) :: poly_coef !< Polynomial coefficients in legacy representation [A]
 
 contains
   !> Implementation of the MPLM_WA_poly initialization
@@ -246,8 +246,8 @@ end function PLM_monotonized_slope
 real function average(this, k, xa, xb)
   class(MPLM_WA_poly), intent(in) :: this !< This reconstruction
   integer,        intent(in) :: k    !< Cell number
-  real,           intent(in) :: xa   !< Start of averaging interval on element (0 to 1)
-  real,           intent(in) :: xb   !< End of averaging interval on element (0 to 1)
+  real,           intent(in) :: xa   !< Start of averaging interval on element (0 to 1) [nondim]
+  real,           intent(in) :: xb   !< End of averaging interval on element (0 to 1) [nondim]
 
   average = this%poly_coef(k,1) &
           + this%poly_coef(k,2) * 0.5 * ( xb + xa )
@@ -290,7 +290,7 @@ subroutine remap_to_sub_grid(this, h0, u0, n1, h_sub, &
   real :: dh0_eff ! Running sum of source cell thickness [H]
   integer :: i0_last_thick_cell, n0
   real :: u0_min(this%n), u0_max(this%n) ! Min/max of u0 for each source cell [A]
-  real :: ul, ur ! left/right edge values of cell i0
+  real :: ul, ur ! left/right edge values of cell i0 [A]
 
   n0 = this%n
 

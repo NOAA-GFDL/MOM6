@@ -123,7 +123,7 @@ type, public :: energetic_PBL_CS ; private
                              !! integrated shear production minus the vertically integrated
                              !! dissipation of TKE produced by shear.  This value is used if the option
                              !! for using a fixed mstar is used.
-  real    :: BBL_fixed_mstar !< Similar to fixed_mstar, but for the bottom boundary layer
+  real    :: BBL_fixed_mstar !< Similar to fixed_mstar, but for the bottom boundary layer [nondim]
 
   !/ mstar_scheme == 2
   real :: C_Ek = 0.17        !< mstar Coefficient in rotation limit for EPBL_MSTAR_SCHEME=OM4 [nondim]
@@ -1994,7 +1994,7 @@ subroutine ePBL_BBL_column(h, dz, u, v, T0, S0, dSV_dT, dSV_dS, SpV_dt, absf, &
                                                        !! in thickness flux units [H T-1 ~> m s-1 or kg m-2 s-1]
   real,                    intent(in)    :: u_star_BBL_z_t !< The bottom boundary layer friction velocity
                                                        !! converted to length flux units [Z T-1 ~> m s-1]
-  real,                    intent(in)    :: b_flux_BBL !< The bottom boundary layer buoyancy flux
+  real,                    intent(in)    :: b_flux_BBL !< The bottom boundary layer buoyancy flux [Z2 T-3 ~> m2 s-3]
   real, dimension(SZK_(GV)+1), &
                            intent(out)   :: Kd_BBL !< The bottom boundary layer contribution to diffusivities
                                                    !! at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1].
