@@ -487,13 +487,13 @@ logical function isPointInCell(G, i, j, x, y)
   l2 = (x-xNE)*(yNW-yNE) - (y-yNE)*(xNW-xNE)
   l3 = (x-xNW)*(ySW-yNW) - (y-yNW)*(xSW-xNW)
 
-  p0 = sign(1., l0) ; if (l0 == 0.) p0=0.
-  p1 = sign(1., l1) ; if (l1 == 0.) p1=0.
-  p2 = sign(1., l2) ; if (l2 == 0.) p2=0.
-  p3 = sign(1., l3) ; if (l3 == 0.) p3=0.
+  p0 = sign(1., l0) ; if (l0 == 0.) p0 = 0.
+  p1 = sign(1., l1) ; if (l1 == 0.) p1 = 0.
+  p2 = sign(1., l2) ; if (l2 == 0.) p2 = 0.
+  p3 = sign(1., l3) ; if (l3 == 0.) p3 = 0.
 
   if ( (abs(p0)+abs(p2)) + (abs(p1)+abs(p3)) == abs((p0+p2) + (p1+p3)) ) then
-    isPointInCell=.true.
+    isPointInCell = .true.
   endif
 end function isPointInCell
 

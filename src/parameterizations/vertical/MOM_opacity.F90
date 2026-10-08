@@ -1388,7 +1388,7 @@ subroutine init_ohlmann_table(optics)
 
   !! Make the table big enough so step size is smaller
   !! in log-space that any increment in Table 1a
-  integer, parameter :: nval_lut=401
+  integer, parameter :: nval_lut = 401
   real :: chl, log10chl_lut, w1, w2
   integer :: n, m, mm1, err
 

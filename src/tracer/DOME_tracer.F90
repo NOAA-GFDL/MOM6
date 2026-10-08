@@ -249,7 +249,7 @@ subroutine initialize_DOME_tracer(restart, day, G, GV, US, h, diag, OBC, CS, &
                 else
                   d_tr = 0.0
                 endif
-                if (dz(i,k) < 2.0*GV%Angstrom_Z) d_tr=0.0
+                if (dz(i,k) < 2.0*GV%Angstrom_Z) d_tr = 0.0
                 CS%tr(i,j,k,m) = CS%tr(i,j,k,m) + d_tr
               enddo
             enddo

@@ -2917,7 +2917,7 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, GV, LB, nkk, h_min, monotonic
           segment => OBC%segment(n)
           if (.not. segment%on_pe) cycle
           if (segment%is_E_or_W) then
-            I=segment%HI%IsdB
+            I = segment%HI%IsdB
             do kk=1,kke ; do j=segment%HI%jsd,segment%HI%jed
               slp(i+1,j,kk) = 0.0
               slp(i,j,kk) = 0.0
@@ -2948,7 +2948,7 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, GV, LB, nkk, h_min, monotonic
         segment => OBC%segment(n)
         if (.not. segment%on_pe) cycle
         if (segment%direction == OBC_DIRECTION_E) then
-          I=segment%HI%IsdB
+          I = segment%HI%IsdB
           if (associated(segment%h_Reg)) then
             do kk=1,kke ; do j=segment%HI%jsd,segment%HI%jed
               k = ksb + kk - 1
@@ -2969,7 +2969,7 @@ subroutine PPM_reconstruction_x(h_in, h_W, h_E, G, GV, LB, nkk, h_min, monotonic
             enddo ; enddo
           endif
         elseif (segment%direction == OBC_DIRECTION_W) then
-          I=segment%HI%IsdB
+          I = segment%HI%IsdB
           if (associated(segment%h_Reg)) then
             do kk=1,kke ; do j=segment%HI%jsd,segment%HI%jed
               k = ksb + kk - 1
@@ -3095,7 +3095,7 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, GV, LB, nkk, h_min, monotonic
           segment => OBC%segment(n)
           if (.not. segment%on_pe) cycle
           if (segment%is_N_or_S) then
-            J=segment%HI%JsdB
+            J = segment%HI%JsdB
             do kk=1,kke ; do i=segment%HI%isd,segment%HI%ied
               slp(i,j+1,kk) = 0.0
               slp(i,j,kk) = 0.0
@@ -3124,7 +3124,7 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, GV, LB, nkk, h_min, monotonic
         segment => OBC%segment(n)
         if (.not. segment%on_pe) cycle
         if (segment%direction == OBC_DIRECTION_N) then
-          J=segment%HI%JsdB
+          J = segment%HI%JsdB
           if (associated(segment%h_Reg)) then
             do kk=1,kke ; do i=segment%HI%isd,segment%HI%ied
               k = ksb + kk - 1
@@ -3145,7 +3145,7 @@ subroutine PPM_reconstruction_y(h_in, h_S, h_N, G, GV, LB, nkk, h_min, monotonic
             enddo ; enddo
           endif
         elseif (segment%direction == OBC_DIRECTION_S) then
-          J=segment%HI%JsdB
+          J = segment%HI%JsdB
           if (associated(segment%h_Reg)) then
             do kk=1,kke ; do i=segment%HI%isd,segment%HI%ied
               k = ksb + kk - 1

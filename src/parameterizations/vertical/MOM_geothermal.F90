@@ -529,7 +529,7 @@ subroutine geothermal_in_place(h, tv, dt, G, GV, US, CS, BFlx_geothermal, halo)
           if (calc_diags) dTdt_diag(i,j,k) = dTemp * Idt
         endif
 
-        if (do_i(i) .and. (heat_rem(i) > 0.0)) do_any= .true.
+        if (do_i(i) .and. (heat_rem(i) > 0.0)) do_any = .true.
       enddo
 
       if (.not.do_any) exit

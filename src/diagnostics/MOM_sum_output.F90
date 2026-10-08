@@ -697,7 +697,7 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, dt_forci
           (volbelow < CS%DL%vol_below(CS%lH(k)+1))) then
         li = CS%lH(k)
       else
-        labove=CS%DL%listsize
+        labove = CS%DL%listsize
         li = (labove + lbelow) / 2
         do while (li > lbelow)
           if (volbelow < CS%DL%vol_below(li)) then ; labove = li
@@ -1274,7 +1274,7 @@ subroutine create_depth_list(G, DL, min_depth_inc)
       ir = ir - 1
       if (ir == 1) then ; indx2(1) = indxt ; exit ; endif
     endif
-    i=k ; j=k*2
+    i = k ; j = k*2
     do ; if (j > ir) exit
       if (j < ir .AND. Dlist(indx2(j)) < Dlist(indx2(j+1))) j = j + 1
       if (Dnow < Dlist(indx2(j))) then ; indx2(i) = indx2(j) ; i = j ; j = j + i

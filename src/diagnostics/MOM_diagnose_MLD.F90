@@ -530,7 +530,7 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, k_bounds
               Cc2 = ( R2 * D2 ) * ( 2.* Zr + pe_dir * ( 2. * D1 + D2 ) )
             endif
 
-            IT=0
+            IT = 0
             do while(IT<10)!We can iterate up to 10 times
 
               ! G and its derivative
@@ -559,13 +559,13 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, k_bounds
                   ! The iteration seems to be robust, but we need to do something *if*
                   ! things go wrong... How should we treat failed iteration?
                   ! Present solution: Stop trying to compute and just say we can't mix this layer.
-                  X=0
+                  X = 0
                   exit
                 else
                   X = X2
                 endif
               else
-                exit! Quit the iteration
+                exit ! Quit the iteration
               endif
             enddo
             H_ML = H_ML + X
