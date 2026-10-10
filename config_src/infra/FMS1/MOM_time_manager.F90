@@ -28,7 +28,7 @@ public :: operator(>), operator(<), operator(>=), operator(<=)
 public :: operator(==), operator(/=), operator(//)
 public :: get_date, set_date, increment_date, month_name, days_in_month
 public :: JULIAN, NOLEAP, THIRTY_DAY_MONTHS, GREGORIAN, NO_CALENDAR
-public :: set_calendar_type, get_calendar_type
+public :: set_calendar_type, get_calendar_type, convert_date_to_string
 ! Module functions
 public :: real_to_time, time_minus_signed, time_to_real
 
@@ -95,5 +95,36 @@ real function time_minus_signed(time_a, time_b, scale)
   time_minus_signed = merge(abs_diff, -abs_diff, time_a >= time_b)
 
 end function time_minus_signed
+
+
+!> This function converts a date into a string, valid with ticks and for dates up to year 99,999,999
+function convert_date_to_string(date) result(date_string)
+  type(time_type), intent(in) :: date !< The date to be translated into a string.
+  character(len=40) :: date_string    !< A date string in a format like YYYY-MM-DD HH:MM:SS.sss
+
+  ! Local variables
+  character(len=40) :: sub_string
+  real    :: real_secs
+  integer :: yrs, mons, days, hours, mins, secs, ticks, ticks_per_sec
+
+  call get_date(date, yrs, mons, days, hours, mins, secs, ticks)
+  write (date_string, '(i8.4)') yrs
+  write (sub_string, '("-", i2.2, "-", I2.2, " ", i2.2, ":", i2.2, ":")') &
+         mons, days, hours, mins
+  date_string = trim(adjustl(date_string)) // trim(sub_string)
+  if (ticks > 0) then
+    ticks_per_sec = get_ticks_per_second()
+    real_secs = secs + ticks/ticks_per_sec
+    if (ticks_per_sec <= 100) then
+      write (sub_string, '(F7.3)') real_secs
+    else
+      write (sub_string, '(F10.6)') real_secs
+    endif
+  else
+    write (sub_string, '(i2.2)') secs
+  endif
+  date_string = trim(date_string) // trim(adjustl(sub_string))
+
+end function convert_date_to_string
 
 end module MOM_time_manager
