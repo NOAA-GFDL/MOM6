@@ -112,7 +112,7 @@ subroutine Rossby_front_initialize_thickness(h, G, GV, US, param_file, just_read
         enddo ; enddo
 
       case default
-        call MOM_error(FATAL,"Rossby_front_initialize: "// &
+        call MOM_error(FATAL, "Rossby_front_initialize: "// &
         "Unrecognized i.c. setup - set REGRIDDING_COORDINATE_MODE")
 
     end select

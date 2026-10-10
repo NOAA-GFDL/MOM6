@@ -71,7 +71,7 @@ subroutine find_dz_for_eta(h, tv, G, GV, US, dz_lay, halo_size)
   nz = GV%ke
 
   if ((isv<G%isd) .or. (iev>G%ied) .or. (jsv<G%jsd) .or. (jev>G%jed)) &
-    call MOM_error(FATAL,"find_dz_for_eta called with an overly large halo_size.")
+    call MOM_error(FATAL, "find_dz_for_eta called with an overly large halo_size.")
 
   if (GV%Boussinesq) then
     do k=1,nz ; do j=jsv,jev ; do i=isv,iev
@@ -153,7 +153,7 @@ subroutine find_eta_3d(h, tv, G, GV, US, eta, eta_bt, halo_size, dZref)
   nz = GV%ke
 
   if ((isv<G%isd) .or. (iev>G%ied) .or. (jsv<G%jsd) .or. (jev>G%jed)) &
-    call MOM_error(FATAL,"find_eta called with an overly large halo_size.")
+    call MOM_error(FATAL, "find_eta called with an overly large halo_size.")
 
   dZ_ref = 0.0 ; if (present(dZref)) dZ_ref = dZref
 

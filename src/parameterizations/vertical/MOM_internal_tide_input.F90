@@ -133,10 +133,10 @@ subroutine set_int_tide_input(u, v, h, tv, fluxes, itide, dt, G, GV, US, CS)
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
 
-  if (.not.associated(CS)) call MOM_error(FATAL,"set_diffusivity: "//&
+  if (.not.associated(CS)) call MOM_error(FATAL, "set_diffusivity: "//&
          "Module must be initialized before it is used.")
 
-  if (.not.CS%initialized) call MOM_error(FATAL,"set_diffusivity: "//&
+  if (.not.CS%initialized) call MOM_error(FATAL, "set_diffusivity: "//&
          "Module must be initialized before it is used.")
 
   use_EOS = associated(tv%eqn_of_state)

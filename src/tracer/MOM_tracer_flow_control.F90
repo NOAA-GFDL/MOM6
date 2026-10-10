@@ -876,11 +876,11 @@ subroutine store_stocks(pkg_name, ns, names, units, values, index, stock_values,
   if ((index > 0) .and. (ns > 0)) then
     write(ind_text,'(I0)') index
     if (ns > 1) then
-      call MOM_error(FATAL,"Tracer package "//trim(pkg_name)//&
+      call MOM_error(FATAL, "Tracer package "//trim(pkg_name)//&
           " is not permitted to return more than one value when queried "//&
           "for specific stock index "//trim(ind_text)//".")
     elseif (ns+ns_tot > 1) then
-      call MOM_error(FATAL,"Tracer packages "//trim(pkg_name)//" and "//&
+      call MOM_error(FATAL, "Tracer packages "//trim(pkg_name)//" and "//&
           trim(set_pkg_name)//" both attempted to set values for "//&
           "specific stock index "//trim(ind_text)//".")
     else
@@ -890,7 +890,7 @@ subroutine store_stocks(pkg_name, ns, names, units, values, index, stock_values,
 
   if (ns_tot+ns > max_ns) then
     write(ns_text,'(I0)') ns_tot+ns ; write(max_text,'(I0)') max_ns
-    call MOM_error(FATAL,"Attempted to return more tracer stock values (at least "//&
+    call MOM_error(FATAL, "Attempted to return more tracer stock values (at least "//&
       trim(ns_text)//") than the size "//trim(max_text)//&
       "of the smallest value, name, or units array.")
   endif

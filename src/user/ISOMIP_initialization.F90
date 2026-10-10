@@ -255,7 +255,7 @@ subroutine ISOMIP_initialize_thickness ( h, depth_tot, G, GV, US, param_file, tv
     enddo ; enddo
 
   case default
-      call MOM_error(FATAL,"isomip_initialize: "// &
+      call MOM_error(FATAL, "isomip_initialize: "// &
       "Unrecognized i.c. setup - set REGRIDDING_COORDINATE_MODE")
 
   end select
@@ -422,7 +422,7 @@ subroutine ISOMIP_initialize_temperature_salinity ( T, S, h, depth_tot, G, GV, U
       enddo ; enddo
 
     case default
-      call MOM_error(FATAL,"isomip_initialize: "// &
+      call MOM_error(FATAL, "isomip_initialize: "// &
       "Unrecognized i.c. setup - set REGRIDDING_COORDINATE_MODE")
 
   end select
@@ -607,7 +607,7 @@ subroutine ISOMIP_initialize_sponges(G, GV, US, tv, depth_tot, PF, use_ALE, CSp,
         enddo ; enddo
 
       case default
-         call MOM_error(FATAL,"ISOMIP_initialize_sponges: "// &
+         call MOM_error(FATAL, "ISOMIP_initialize_sponges: "// &
          "Unrecognized i.c. setup - set REGRIDDING_COORDINATE_MODE")
 
     end select

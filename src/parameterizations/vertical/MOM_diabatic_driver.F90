@@ -3415,7 +3415,7 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
     case ('H_ePBL')
       CS%MLD_param_ePBL = .true.
     case default
-      call MOM_error(FATAL,"Invalid choice for BRINE_PLUME_MLD_DEF.  Valid options are"//&
+      call MOM_error(FATAL, "Invalid choice for BRINE_PLUME_MLD_DEF.  Valid options are"//&
                      "MLD_003, MLD_EN1, or H_ePBL.")
     end select
 

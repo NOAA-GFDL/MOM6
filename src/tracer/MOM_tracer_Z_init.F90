@@ -460,7 +460,7 @@ subroutine read_Z_edges(filename, tr_name, z_edges, nz_out, has_edges, &
   ! Check that z_edges is now monotonically decreasing.
   monotonic = .true.
   do k=2,nz_edge ; if (z_edges(k) >= z_edges(k-1)) monotonic = .false. ; enddo
-  if (.not.monotonic) call MOM_error(WARNING,mdl//" "//trim(dim_msg)//" is not monotonic.")
+  if (.not.monotonic) call MOM_error(WARNING, mdl//" "//trim(dim_msg)//" is not monotonic.")
 
   if (scale /= 1.0) then ; do k=1,nz_edge ; z_edges(k) = scale*z_edges(k) ; enddo ; endif
 
