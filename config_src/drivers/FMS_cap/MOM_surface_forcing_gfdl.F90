@@ -185,36 +185,36 @@ end type surface_forcing_CS
 !> ice_ocean_boundary_type is a structure corresponding to forcing, but with the elements, units,
 !! and conventions that exactly conform to the use for MOM6-based coupled models.
 type, public :: ice_ocean_boundary_type
-  real, pointer, dimension(:,:) :: u_flux          =>NULL() !< i-direction wind stress [Pa]
-  real, pointer, dimension(:,:) :: v_flux          =>NULL() !< j-direction wind stress [Pa]
-  real, pointer, dimension(:,:) :: t_flux          =>NULL() !< sensible heat flux [W m-2]
-  real, pointer, dimension(:,:) :: q_flux          =>NULL() !< specific humidity flux [kg m-2 s-1]
-  real, pointer, dimension(:,:) :: salt_flux       =>NULL() !< salt flux [kg m-2 s-1]
-  real, pointer, dimension(:,:) :: excess_salt     =>NULL() !< salt left behind by brine rejection [kg m-2 s-1]
-  real, pointer, dimension(:,:) :: lw_flux         =>NULL() !< long wave radiation [W m-2]
-  real, pointer, dimension(:,:) :: sw_flux_vis_dir =>NULL() !< direct visible sw radiation [W m-2]
-  real, pointer, dimension(:,:) :: sw_flux_vis_dif =>NULL() !< diffuse visible sw radiation [W m-2]
-  real, pointer, dimension(:,:) :: sw_flux_nir_dir =>NULL() !< direct Near InfraRed sw radiation [W m-2]
-  real, pointer, dimension(:,:) :: sw_flux_nir_dif =>NULL() !< diffuse Near InfraRed sw radiation [W m-2]
-  real, pointer, dimension(:,:) :: lprec           =>NULL() !< mass flux of liquid precip [kg m-2 s-1]
-  real, pointer, dimension(:,:) :: fprec           =>NULL() !< mass flux of frozen precip [kg m-2 s-1]
-  real, pointer, dimension(:,:) :: runoff          =>NULL() !< mass flux of liquid runoff [kg m-2 s-1]
-  real, pointer, dimension(:,:) :: runoff_carbon   =>NULL() !< mass flux of carbon in liquid runoff [kg m-2 s-1]
-  real, pointer, dimension(:,:) :: calving         =>NULL() !< mass flux of frozen runoff [kg m-2 s-1]
-  real, pointer, dimension(:,:) :: stress_mag      =>NULL() !< The time-mean magnitude of the stress on the ocean [Pa]
-  real, pointer, dimension(:,:) :: ustar_berg      =>NULL() !< frictional velocity beneath icebergs [m s-1]
-  real, pointer, dimension(:,:) :: area_berg       =>NULL() !< fractional area covered by icebergs [m2 m-2]
-  real, pointer, dimension(:,:) :: mass_berg       =>NULL() !< mass of icebergs per unit ocean area [kg m-2]
-  real, pointer, dimension(:,:) :: runoff_hflx     =>NULL() !< heat content of liquid runoff [W m-2]
-  real, pointer, dimension(:,:) :: calving_hflx    =>NULL() !< heat content of frozen runoff [W m-2]
-  real, pointer, dimension(:,:) :: p               =>NULL() !< pressure of overlying ice and atmosphere
-                                                            !< on ocean surface [Pa]
-  real, pointer, dimension(:,:) :: mi              =>NULL() !< mass of ice per unit ocean area [kg m-2]
-  real, pointer, dimension(:,:) :: ice_rigidity    =>NULL() !< rigidity of the sea ice, sea-ice and
-                                                            !! ice-shelves, expressed as a coefficient
-                                                            !! for divergence damping, as determined
-                                                            !! outside of the ocean model [m3 s-1]
-  real, pointer, dimension(:,:) :: shelf_sfc_mass_flux =>NULL() !< mass flux to surface of ice sheet [kg m-2 s-1]
+  real, pointer, dimension(:,:) :: u_flux          => NULL() !< i-direction wind stress [Pa]
+  real, pointer, dimension(:,:) :: v_flux          => NULL() !< j-direction wind stress [Pa]
+  real, pointer, dimension(:,:) :: t_flux          => NULL() !< sensible heat flux [W m-2]
+  real, pointer, dimension(:,:) :: q_flux          => NULL() !< specific humidity flux [kg m-2 s-1]
+  real, pointer, dimension(:,:) :: salt_flux       => NULL() !< salt flux [kg m-2 s-1]
+  real, pointer, dimension(:,:) :: excess_salt     => NULL() !< salt left behind by brine rejection [kg m-2 s-1]
+  real, pointer, dimension(:,:) :: lw_flux         => NULL() !< long wave radiation [W m-2]
+  real, pointer, dimension(:,:) :: sw_flux_vis_dir => NULL() !< direct visible sw radiation [W m-2]
+  real, pointer, dimension(:,:) :: sw_flux_vis_dif => NULL() !< diffuse visible sw radiation [W m-2]
+  real, pointer, dimension(:,:) :: sw_flux_nir_dir => NULL() !< direct Near InfraRed sw radiation [W m-2]
+  real, pointer, dimension(:,:) :: sw_flux_nir_dif => NULL() !< diffuse Near InfraRed sw radiation [W m-2]
+  real, pointer, dimension(:,:) :: lprec           => NULL() !< mass flux of liquid precip [kg m-2 s-1]
+  real, pointer, dimension(:,:) :: fprec           => NULL() !< mass flux of frozen precip [kg m-2 s-1]
+  real, pointer, dimension(:,:) :: runoff          => NULL() !< mass flux of liquid runoff [kg m-2 s-1]
+  real, pointer, dimension(:,:) :: runoff_carbon   => NULL() !< mass flux of carbon in liquid runoff [kg m-2 s-1]
+  real, pointer, dimension(:,:) :: calving         => NULL() !< mass flux of frozen runoff [kg m-2 s-1]
+  real, pointer, dimension(:,:) :: stress_mag      => NULL() !< The time-mean magnitude of the stress on the ocean [Pa]
+  real, pointer, dimension(:,:) :: ustar_berg      => NULL() !< frictional velocity beneath icebergs [m s-1]
+  real, pointer, dimension(:,:) :: area_berg       => NULL() !< fractional area covered by icebergs [m2 m-2]
+  real, pointer, dimension(:,:) :: mass_berg       => NULL() !< mass of icebergs per unit ocean area [kg m-2]
+  real, pointer, dimension(:,:) :: runoff_hflx     => NULL() !< heat content of liquid runoff [W m-2]
+  real, pointer, dimension(:,:) :: calving_hflx    => NULL() !< heat content of frozen runoff [W m-2]
+  real, pointer, dimension(:,:) :: p               => NULL() !< pressure of overlying ice and atmosphere
+                                                             !< on ocean surface [Pa]
+  real, pointer, dimension(:,:) :: mi              => NULL() !< mass of ice per unit ocean area [kg m-2]
+  real, pointer, dimension(:,:) :: ice_rigidity    => NULL() !< rigidity of the sea ice, sea-ice and
+                                                             !! ice-shelves, expressed as a coefficient
+                                                             !! for divergence damping, as determined
+                                                             !! outside of the ocean model [m3 s-1]
+  real, pointer, dimension(:,:) :: shelf_sfc_mass_flux => NULL() !< mass flux to surface of ice sheet [kg m-2 s-1]
   integer :: xtype                    !< The type of the exchange - REGRID, REDIST or DIRECT
   type(coupler_2d_bc_type) :: fluxes  !< A structure that may contain an array of named fields
                                       !! used for passive tracer fluxes.
@@ -382,7 +382,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
     open_ocn_mask(:,:) = 1.0
     if (CS%mask_srestore_under_ice) then ! Do not restore under sea-ice
       do j=js,je ; do i=is,ie
-        if (sfc_state%SST(i,j) <= CS%SPEAR_dTf_dS*sfc_state%SSS(i,j)) open_ocn_mask(i,j)=0.0
+        if (sfc_state%SST(i,j) <= CS%SPEAR_dTf_dS*sfc_state%SSS(i,j)) open_ocn_mask(i,j) = 0.0
       enddo ; enddo
     endif
     if (CS%salt_restore_as_sflux) then
@@ -1401,7 +1401,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
   endif
   allocate(CS)
 
-  id_clock_forcing=cpu_clock_id('Ocean surface forcing', grain=CLOCK_SUBCOMPONENT)
+  id_clock_forcing = cpu_clock_id('Ocean surface forcing', grain=CLOCK_SUBCOMPONENT)
   call cpu_clock_begin(id_clock_forcing)
 
   CS%diag => diag
@@ -1652,7 +1652,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "The path to the file containing the spatially varying "//&
                  "tidal amplitudes with INT_TIDE_DISSIPATION.", &
                  default="tideamp.nc")
-    CS%utide=0.0
+    CS%utide = 0.0
   else
     call get_param(param_file, mdl, "UTIDE", CS%utide, &
                  "The constant tidal amplitude used with INT_TIDE_DISSIPATION.", &

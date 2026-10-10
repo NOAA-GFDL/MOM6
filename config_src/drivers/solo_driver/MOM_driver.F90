@@ -105,7 +105,7 @@ program MOM6
   ! simulation does not exceed its CPU time limit.  nmax is determined by
   ! evaluating the CPU time used between successive calls to write_cputime.
   ! Initially it is set to be very large.
-  integer :: nmax=2000000000
+  integer :: nmax = 2000000000
 
   ! A structure containing several relevant directory paths.
   type(directories) :: dirs
@@ -157,7 +157,7 @@ program MOM6
   type(param_file_type) :: param_file      ! The structure indicating the file(s)
                                            ! containing all run-time parameters.
 
-  integer :: calendar_type=-1              ! A coded integer indicating the calendar type.
+  integer :: calendar_type = -1 ! A coded integer indicating the calendar type.
 
   integer :: unit, io_status, ierr
   integer :: initClock, mainClock, termClock
@@ -191,10 +191,10 @@ program MOM6
   character(len=40)  :: mod_name = "MOM_main (MOM_driver)" ! This module's name.
 
   ! These are the variables that might be read via the namelist capability.
-  integer :: date_init(6)=0                ! The start date of the whole simulation.
+  integer :: date_init(6) = 0              ! The start date of the whole simulation.
   character(len=16) :: calendar = 'julian' ! The name of the calendar type.
-  integer :: years=0, months=0, days=0     ! These may determine the segment run
-  integer :: hours=0, minutes=0, seconds=0 ! length, if read from a namelist.
+  integer :: years = 0, months = 0, days = 0     ! These may determine the segment run
+  integer :: hours = 0, minutes = 0, seconds = 0 ! length, if read from a namelist.
   integer :: ocean_nthreads = 1
   logical :: use_hyper_thread = .false.
   namelist /ocean_solo_nml/ date_init, calendar, months, days, hours, minutes, seconds, &

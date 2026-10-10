@@ -1575,30 +1575,32 @@ subroutine MARBL_forcing_from_data_override(fluxes, day, G, US, CS)
   type(surface_forcing_CS), pointer       :: CS     !< pointer to control structure returned by
                                                     !! a previous surface_forcing_init call
   ! Local variables
-  real, pointer, dimension(:,:) :: atm_co2_prog         =>NULL() !< Prognostic atmospheric CO2 concentration [ppm]
-  real, pointer, dimension(:,:) :: atm_co2_diag         =>NULL() !< Diagnostic atmospheric CO2 concentration [ppm]
-  real, pointer, dimension(:,:) :: atm_fine_dust_flux   =>NULL() !< Fine dust flux from atmosphere
-                                                                 !! [R Z T-1 ~> kg m-2 s-1]
-  real, pointer, dimension(:,:) :: atm_coarse_dust_flux =>NULL() !< Coarse dust flux from atmosphere
-                                                                 !! [R Z T-1 ~> kg m-2 s-1]
-  real, pointer, dimension(:,:) :: seaice_dust_flux     =>NULL() !< Dust flux from seaice
-                                                                 !! [R Z T-1 ~> kg m-2 s-1]
-  real, pointer, dimension(:,:) :: atm_bc_flux          =>NULL() !< Black carbon flux from atmosphere
-                                                                 !! [R Z T-1 ~> kg m-2 s-1]
-  real, pointer, dimension(:,:) :: seaice_bc_flux       =>NULL() !< Black carbon flux from seaice
-                                                                 !! [R Z T-1 ~> kg m-2 s-1]
-  real, pointer, dimension(:,:) :: nhx_dep              =>NULL() !< Nitrogen deposition
-                                                                 !! [R Z T-1 ~> kg m-2 s-1]
-  real, pointer, dimension(:,:) :: noy_dep              =>NULL() !< Nitrogen deposition
-                                                                 !! [R Z T-1 ~> kg m-2 s-1]
+  real, pointer, dimension(:,:) :: atm_co2_prog         => NULL() !< Prognostic atmospheric CO2 concentration [ppm]
+  real, pointer, dimension(:,:) :: atm_co2_diag         => NULL() !< Diagnostic atmospheric CO2 concentration [ppm]
+  real, pointer, dimension(:,:) :: atm_fine_dust_flux   => NULL() !< Fine dust flux from atmosphere
+                                                                  !! [R Z T-1 ~> kg m-2 s-1]
+  real, pointer, dimension(:,:) :: atm_coarse_dust_flux => NULL() !< Coarse dust flux from atmosphere
+                                                                  !! [R Z T-1 ~> kg m-2 s-1]
+  real, pointer, dimension(:,:) :: seaice_dust_flux     => NULL() !< Dust flux from seaice
+                                                                  !! [R Z T-1 ~> kg m-2 s-1]
+  real, pointer, dimension(:,:) :: atm_bc_flux          => NULL() !< Black carbon flux from atmosphere
+                                                                  !! [R Z T-1 ~> kg m-2 s-1]
+  real, pointer, dimension(:,:) :: seaice_bc_flux       => NULL() !< Black carbon flux from seaice
+                                                                  !! [R Z T-1 ~> kg m-2 s-1]
+  real, pointer, dimension(:,:) :: nhx_dep              => NULL() !< Nitrogen deposition
+                                                                  !! [R Z T-1 ~> kg m-2 s-1]
+  real, pointer, dimension(:,:) :: noy_dep              => NULL() !< Nitrogen deposition
+                                                                  !! [R Z T-1 ~> kg m-2 s-1]
   integer :: isc, iec, jsc, jec
 
   ! Necessary null pointers for arguments to convert_driver_fields_to_forcings()
   ! Since they are null, MARBL will not use multiple ice categories
-  real, pointer, dimension(:,:)   :: afracr        =>NULL()
-  real, pointer, dimension(:,:)   :: swnet_afracr  =>NULL()
-  real, pointer, dimension(:,:,:) :: swpen_ifrac_n =>NULL()
-  real, pointer, dimension(:,:,:) :: ifrac_n       =>NULL()
+  real, pointer, dimension(:,:)   :: afracr        => NULL() ! Open ocean fraction (0 to 1) [nondim]
+  real, pointer, dimension(:,:)   :: swnet_afracr  => NULL() ! Shortwave flux times the open ocean
+                                                             ! fraction [Q R Z T-1 ~> W m-2]
+  real, pointer, dimension(:,:,:) :: swpen_ifrac_n => NULL() ! Shortwave flux times the fractional coverage
+                                                             ! for each ice thickness category [Q R Z T-1 ~> W m-2]
+  real, pointer, dimension(:,:,:) :: ifrac_n       => NULL() ! per-category ice fractional coverage (0 to 1) [nondim]
 
   call callTree_enter("MARBL_forcing_from_data_override, MOM_surface_forcing.F90")
 
@@ -1713,7 +1715,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, tracer_flow_C
   endif
   allocate(CS)
 
-  id_clock_forcing=cpu_clock_id('(Ocean surface forcing)', grain=CLOCK_MODULE)
+  id_clock_forcing = cpu_clock_id('(Ocean surface forcing)', grain=CLOCK_MODULE)
   call cpu_clock_begin(id_clock_forcing)
 
   CS%diag => diag
