@@ -150,6 +150,8 @@ type, public :: barotropic_CS ; private
   real ALLOCABLE_, dimension(NIMEMW_,NJMEMW_) :: IareaT
                     !<   This is a copy of G%IareaT with wide halos, but will
                     !! still utilize the macro IareaT when referenced, [L-2 ~> m-2].
+  real ALLOCABLE_, dimension(NIMEMW_,NJMEMW_) :: areaT
+                    !< A copy of G%areaT with wide halos [L2 ~> m2].
   real ALLOCABLE_, dimension(NIMEMBW_,NJMEMW_) :: &
     dy_Cu, &        !<   A copy of G%dy_Cu with wide halos [L ~> m].
     IdxCu, &        !<   A copy of G%IdxCu with wide halos [L-1 ~> m-1].
@@ -2603,6 +2605,20 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
   p_surf_dyn(:,:) = 0.0
   cfl_ltd_vol(:,:) = huge( GV%Z_to_H )
   if (CS%bt_limit_integral_transport) then
+    ! Both cells adjacent to every valid transport face need a limit, including in the wide halos.
+    ! Only sinks are included so that divergent transport cannot use a source before it is applied.
+    if (GV%Boussinesq) then
+      do j=jsvf-1,jevf+1 ; do i=isvf-1,ievf+1
+        cfl_ltd_vol(i,j) = ( CS%maxCFL_BT_cont * CS%areaT(i,j) ) * &
+                  max( 0., ( GV%Z_to_H*CS%bathyT(i,j) + eta_IC(i,j) ) + nstep * min( 0., eta_src(i,j) ) )
+      enddo ; enddo
+    else
+      do j=jsvf-1,jevf+1 ; do i=isvf-1,ievf+1
+        cfl_ltd_vol(i,j) = ( CS%maxCFL_BT_cont * CS%areaT(i,j) ) * &
+                  max( 0., eta_IC(i,j) + nstep * min( 0., eta_src(i,j) ) )
+      enddo ; enddo
+    endif
+
     ! Issue warnings if there are unphysical values of the initial sea surface height or total water column mass.
     if (GV%Boussinesq) then
       do j=js,je ; do i=is,ie
@@ -2734,23 +2750,6 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
 
     ! Determine the transports based on the updated velocities when no OBCs are applied
     if (integral_BT_cont) then
-      if (CS%bt_limit_integral_transport) then
-        ! Calculate the volume that could be used for divergent transport to use for a limter. This applies to
-        ! uhbt_int and vhbt_int at each BT step. It does not allow for temporary flooding during the BT cycling.
-        ! Only the sink is accounted for: if diverent motion occurs at the beginning of the BT cycling but the volume
-        ! was due only to a +ve source being applied gradually, then the instantaneous eta could drop below the bottom.
-        if (GV%Boussinesq) then
-          do j=jsv,jev ; do i=isv,iev
-            cfl_ltd_vol(i,j) = ( CS%maxCFL_BT_cont * G%areaT(i,j) ) * &
-                      max( 0., ( GV%Z_to_H*G%bathyT(i,j) + eta_IC(i,j) ) + nstep * min( 0., eta_src(i,j) ) )
-          enddo ; enddo
-        else
-          do j=jsv,jev ; do i=isv,iev
-            cfl_ltd_vol(i,j) = ( CS%maxCFL_BT_cont * G%areaT(i,j) ) * &
-                      max( 0., eta_IC(i,j) + nstep * min( 0., eta_src(i,j) ) )
-          enddo ; enddo
-        endif
-      endif
       !$OMP do schedule(static)
       do j=jsv,jev ; do I=isv-1,iev
         ubt_trans(I,j) = trans_wt1*ubt(I,j) + trans_wt2*ubt_prev(I,j)
@@ -6021,6 +6020,7 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   endif
 
   ! IareaT, IdxCu, and IdyCv need to be allocated with wide halos.
+  ALLOC_(CS%areaT(CS%isdw:CS%iedw,CS%jsdw:CS%jedw)) ; CS%areaT(:,:) = 0.0
   ALLOC_(CS%IareaT(CS%isdw:CS%iedw,CS%jsdw:CS%jedw)) ; CS%IareaT(:,:) = 0.0
   ALLOC_(CS%bathyT(CS%isdw:CS%iedw,CS%jsdw:CS%jedw)) ; CS%bathyT(:,:) = 0.0
   ALLOC_(CS%IdxCu(CS%isdw-1:CS%iedw,CS%jsdw:CS%jedw)) ; CS%IdxCu(:,:) = 0.0
@@ -6031,6 +6031,7 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   ALLOC_(CS%OBCmask_u(CS%isdw-1:CS%iedw,CS%jsdw:CS%jedw)) ; CS%OBCmask_u(:,:) = 0.0
   ALLOC_(CS%OBCmask_v(CS%isdw:CS%iedw,CS%jsdw-1:CS%jedw)) ; CS%OBCmask_v(:,:) = 0.0
   do j=G%jsd,G%jed ; do i=G%isd,G%ied
+    CS%areaT(i,j) = G%areaT(i,j)
     CS%IareaT(i,j) = G%IareaT(i,j)
     CS%bathyT(i,j) = G%bathyT(i,j)
     CS%IareaT_OBCmask(i,j) = CS%IareaT(i,j)
@@ -6096,6 +6097,7 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
     CS%integral_OBCs = .false.
   endif
 
+  call create_group_pass(pass_static_data, CS%areaT, CS%BT_domain, To_All)
   call create_group_pass(pass_static_data, CS%IareaT, CS%BT_domain, To_All)
   call create_group_pass(pass_static_data, CS%bathyT, CS%BT_domain, To_All)
   call create_group_pass(pass_static_data, CS%IareaT_OBCmask, CS%BT_domain, To_All)
@@ -6545,7 +6547,7 @@ subroutine barotropic_end(CS)
   DEALLOC_(CS%IDatu)    ; DEALLOC_(CS%IDatv)
   if (allocated(CS%eta_cor_bound)) deallocate(CS%eta_cor_bound)
   DEALLOC_(CS%eta_cor)
-  DEALLOC_(CS%bathyT) ; DEALLOC_(CS%IareaT)
+  DEALLOC_(CS%bathyT) ; DEALLOC_(CS%IareaT) ; DEALLOC_(CS%areaT)
   DEALLOC_(CS%frhatu) ; DEALLOC_(CS%frhatv)
   DEALLOC_(CS%OBCmask_u) ; DEALLOC_(CS%OBCmask_v)
   DEALLOC_(CS%IdxCu) ; DEALLOC_(CS%IdyCv)
