@@ -315,6 +315,9 @@ type, public :: barotropic_CS ; private
   logical :: adjust_BT_cont  !< If true, adjust the curve fit to the BT_cont type
                              !! that is used by the barotropic solver to match the
                              !! transport about which the flow is being linearized.
+  logical :: cfl_ltd_vol_bug !< If true, the volume limits on the integrated transports are only found
+                           !! at points inside the currently valid region, so the faces at its edge use
+                           !! unset values for the cell outside of it.
   logical :: use_old_coriolis_bracket_bug !< If True, use an order of operations
                              !! that is not bitwise rotationally symmetric in the
                              !! meridional Coriolis term of the barotropic solver.
@@ -2487,6 +2490,7 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
                       ! source is all used up by the beginning of the filtering [nondim]
   real :: eta_acc     ! Change due to divergence of mass transport [H ~> m or kg m-2]
   logical :: do_hifreq_output  ! If true, output occurs every barotropic step.
+  integer :: is_ltd, ie_ltd, js_ltd, je_ltd ! Index range over which cfl_ltd_vol is found.
   logical :: do_ave   ! If true, diagnostics are enabled on this step.
   logical :: evolving_face_areas
   logical :: v_first  ! If true, update the v-velocity first with the present loop iteration
@@ -2725,13 +2729,21 @@ subroutine btstep_timeloop(eta, ubt, vbt, uhbt0, Datu, BTCL_u, vhbt0, Datv, BTCL
         ! uhbt_int and vhbt_int at each BT step. It does not allow for temporary flooding during the BT cycling.
         ! Only the sink is accounted for: if diverent motion occurs at the beginning of the BT cycling but the volume
         ! was due only to a +ve source being applied gradually, then the instantaneous eta could drop below the bottom.
+        ! The limits are needed one point beyond the valid region because the faces at its edges
+        ! use the volume available in the cells on both sides.
+        if (CS%cfl_ltd_vol_bug) then
+          is_ltd = isv ; ie_ltd = iev ; js_ltd = jsv ; je_ltd = jev
+        else
+          is_ltd = max(isv-1, G%isd) ; ie_ltd = min(iev+1, G%ied)
+          js_ltd = max(jsv-1, G%jsd) ; je_ltd = min(jev+1, G%jed)
+        endif
         if (GV%Boussinesq) then
-          do j=jsv,jev ; do i=isv,iev
+          do j=js_ltd,je_ltd ; do i=is_ltd,ie_ltd
             cfl_ltd_vol(i,j) = ( CS%maxCFL_BT_cont * G%areaT(i,j) ) * &
                       max( 0., ( GV%Z_to_H*G%bathyT(i,j) + eta_IC(i,j) ) + nstep * min( 0., eta_src(i,j) ) )
           enddo ; enddo
         else
-          do j=jsv,jev ; do i=isv,iev
+          do j=js_ltd,je_ltd ; do i=is_ltd,ie_ltd
             cfl_ltd_vol(i,j) = ( CS%maxCFL_BT_cont * G%areaT(i,j) ) * &
                       max( 0., eta_IC(i,j) + nstep * min( 0., eta_src(i,j) ) )
           enddo ; enddo
@@ -5923,6 +5935,14 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                  "If true, recover a bug where the barotropic timestep DTBT read from a restart "//&
                  "file is immediately overridden by a recalculation on the first dynamics step.", &
                  default=enable_bugs, do_not_log=(dtbt_input>0.0))
+  call get_param(param_file, mdl, "BT_CFL_LTD_VOL_BUG", CS%cfl_ltd_vol_bug, &
+                 "If true, recover a bug in the barotropic solver where the volume limits on the "//&
+                 "time-integrated transports are not set for the cells just outside the valid "//&
+                 "region of each time step, so that the transports at the edges of the wide halos "//&
+                 "and domain boundaries between processors are limited using unset values.  "//&
+                 "This makes the answers depend on the processor layout. It is only used if "//&
+                 "BT_LIMIT_INTEGRAL_TRANSPORT is true.", &
+                 default=enable_bugs, do_not_log=.not.CS%bt_limit_integral_transport)
   call get_param(param_file, mdl, "BT_USE_OLD_CORIOLIS_BRACKET_BUG", CS%use_old_coriolis_bracket_bug, &
                  "If True, use an order of operations that is not bitwise "//&
                  "rotationally symmetric in the meridional Coriolis term of "//&
