@@ -55,6 +55,8 @@ type, public :: diabatic_aux_CS ; private
                              !! freezing temperature when making frazil.  The
                              !! default is false, which will be faster but is
                              !! inappropriate with ice-shelf cavities.
+  logical :: print_grounding_fluxes !< If true, print all of the surface fluxes at each point where
+                             !! mass is created because fluxes could not be applied.
   logical :: ignore_fluxes_over_land    !< If true, the model does not check
                              !! if fluxes are applied over land points. This
                              !! flag must be used when the ocean is coupled with
@@ -1442,7 +1444,8 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
 ! The following check will be ignored if ignore_fluxes_over_land = true
   if ((numberOfGroundings > 0) .and. .not.CS%ignore_fluxes_over_land) then
     do i = 1, min(numberOfGroundings, maxGroundings)
-      call forcing_SinglePointPrint(fluxes,G,iGround(i),jGround(i),'applyBoundaryFluxesInOut (grounding)')
+      if (CS%print_grounding_fluxes) &
+        call forcing_SinglePointPrint(fluxes,G,iGround(i),jGround(i),'applyBoundaryFluxesInOut (grounding)')
       write(mesg(1:45),'(3es15.3)') G%geoLonT( iGround(i), jGround(i) ), &
                              G%geoLatT( iGround(i), jGround(i)), hGrounding(i)*GV%H_to_m
       call MOM_error(WARNING, "MOM_diabatic_aux.F90, applyBoundaryFluxesInOut(): "//&
@@ -1520,6 +1523,12 @@ subroutine diabatic_aux_init(Time, G, GV, US, param_file, diag, CS, useALEalgori
                  "when making frazil. The default is false, which will be "//&
                  "faster but is inappropriate with ice-shelf cavities.", &
                  default=.false., do_not_log=.not.use_temperature)
+
+  call get_param(param_file, mdl, "PRINT_GROUNDING_FLUXES", CS%print_grounding_fluxes, &
+                 "If true, print all of the surface fluxes at each point where a warning about "//&
+                 "mass being created is issued because the fluxes could not be applied.  Setting "//&
+                 "this to false suppresses the long list of fluxes, but not the warning itself.", &
+                 default=.true., do_not_log=.not.use_temperature)
 
   if (use_ePBL) then
     call get_param(param_file, mdl, "IGNORE_FLUXES_OVER_LAND", CS%ignore_fluxes_over_land,&
