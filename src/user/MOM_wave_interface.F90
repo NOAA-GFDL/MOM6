@@ -173,6 +173,7 @@ type, public :: wave_parameters_CS ; private
   logical :: LA_Misalignment = .false. !< Flag to use misalignment in Langmuir number
   logical :: LA_misalign_bug = .false. !< Flag to use code with a sign error when calculating the
                        !! misalignment between the shear and waves in the Langmuir number calculation.
+  logical :: la_underflow_bug = .true. !< If true, recover a low-stress Langmuir-number underflow bug.
   real :: g_Earth      !< The gravitational acceleration, equivalent to GV%g_Earth but with
                        !! different dimensional rescaling appropriate for deep-water gravity
                        !! waves [Z T-2 ~> m s-2]
@@ -299,6 +300,7 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags
   logical :: use_waves
   logical :: StatisticalWaves
+  logical :: enable_bugs ! The default value for answer-changing bug flags
 
   ! Dummy Check
   if (.not. associated(CS)) then
@@ -330,6 +332,8 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
+  call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+                 default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
 
   call get_param(param_file, mdl, "WAVE_INTERFACE_ANSWER_DATE", CS%answer_date, &
                  "The vintage of the order of arithmetic and expressions in the surface wave "//&
@@ -548,6 +552,10 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
          "If true, use a code with a sign error when calculating the misalignment between "//&
          "the shear and waves when LA_MISALIGNMENT is true.", &
          default=.false., do_not_log=.not.CS%LA_Misalignment)
+  call get_param(param_file, mdl, "LA_LI2016_UNDERFLOW_BUG", CS%la_underflow_bug, &
+         "If true, recover a bug that can produce NaNs in the Li-Fox-Kemper Langmuir-number "//&
+         "calculation when the Stokes transport underflows at vanishing wind stress.", &
+         default=enable_bugs, do_not_log=(CS%WaveMethod/=LF17))
   call get_param(param_file, mdl, "MIN_LANGMUIR", CS%La_min,    &
          "A minimum value for all Langmuir numbers that is not physical, "//&
          "but is likely only encountered when the wind is very small and "//&
@@ -1404,6 +1412,10 @@ subroutine get_StokesSL_LiFoxKemper(ustar, hbl, GV, US, CS, UStokes_SL, LA)
     !  and the use of PM peak frequency and PM significant wave height
     !  on estimating the Stokes transport)
     vstokes = 0.125 * PI * r_loss * US%Z_to_L * fm * hm0**2
+    !
+    ! At vanishing wind stress, the Stokes transport can underflow to zero.
+    ! Treat this as no waves rather than forming an invalid peak wavenumber.
+    if ((.not.CS%la_underflow_bug) .and. (vstokes <= tiny(vstokes))) return
     !
     ! the general peak wavenumber for Phillips' spectrum
     ! (Breivik et al., 2016) with correction of directional spreading
