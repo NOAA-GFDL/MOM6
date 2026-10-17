@@ -130,6 +130,8 @@ type, public :: surface_forcing_CS ; private
   logical :: adjust_net_fresh_water_to_zero !< Adjust net surface fresh-water (with restoring) to zero
   logical :: use_net_FW_adjustment_sign_bug !< Use the wrong sign when adjusting net FW
   logical :: adjust_net_fresh_water_by_scaling !< Adjust net surface fresh-water w/o moving zero contour
+  logical :: net_FW_adjust_exclude_shelf    !< If true, the net fresh-water adjustment is not applied to
+                                            !! cells that are covered by ice shelves
   logical :: mask_srestore_under_ice        !< If true, use an ice mask defined by frazil criteria
                                             !! for salinity restoring.
   real    :: ice_salt_concentration         !< Salt concentration for sea ice [kg/kg]
@@ -258,6 +260,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
                      ! anomalies when calculating restorative precipitation anomalies [S ~> ppt]
     net_FW,        & ! The area integrated net freshwater flux into the ocean [R Z L2 T-1 ~> kg s-1]
     net_FW2,       & ! The area averaged net freshwater flux into the ocean [R Z T-1 ~> kg m-2 s-1]
+    adjust_area,   & ! The area of the cells over which the net fresh-water adjustment is spread [L2 ~> m2]
     work_sum,      & ! A 2-d array that is used as the work space for global sums [L2 ~> m2] or [R Z L2 T-1 ~> kg s-1]
     open_ocn_mask    ! a binary field indicating where ice is present based on frazil criteria [nondim]
 
@@ -682,11 +685,25 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
             (net_FW2(i,j) - net_FW(i,j)/G%areaT(i,j)) * G%mask2dT(i,j)
       enddo ; enddo
     else
-      fluxes%netFWGlobalAdj = reproducing_sum(net_FW(:,:), isr, ier, jsr, jer, unscale=US%RZL2_to_kg*US%s_to_T) / &
-                               CS%area_surf
-      do j=js,je ; do i=is,ie
-        fluxes%vprec(i,j) = ( fluxes%vprec(i,j) - fluxes%netFWGlobalAdj ) * G%mask2dT(i,j)
-      enddo ; enddo
+      if (CS%net_FW_adjust_exclude_shelf .and. associated(fluxes%frac_shelf_h)) then
+        ! The adjustment is spread only over cells that are not covered by ice shelves.
+        do j=js,je ; do i=is,ie
+          adjust_area(i,j) = G%areaT(i,j) * G%mask2dT(i,j)
+          if (fluxes%frac_shelf_h(i,j) > 0.0) adjust_area(i,j) = 0.0
+        enddo ; enddo
+        fluxes%netFWGlobalAdj = reproducing_sum(net_FW(:,:), isr, ier, jsr, jer, &
+                                                unscale=US%RZL2_to_kg*US%s_to_T) / &
+                                reproducing_sum(adjust_area(:,:), isr, ier, jsr, jer, unscale=US%L_to_m**2)
+        do j=js,je ; do i=is,ie
+          if (adjust_area(i,j) > 0.0) fluxes%vprec(i,j) = fluxes%vprec(i,j) - fluxes%netFWGlobalAdj
+        enddo ; enddo
+      else
+        fluxes%netFWGlobalAdj = reproducing_sum(net_FW(:,:), isr, ier, jsr, jer, &
+                                                unscale=US%RZL2_to_kg*US%s_to_T) / CS%area_surf
+        do j=js,je ; do i=is,ie
+          fluxes%vprec(i,j) = ( fluxes%vprec(i,j) - fluxes%netFWGlobalAdj ) * G%mask2dT(i,j)
+        enddo ; enddo
+      endif
     endif
 
   endif
@@ -1475,6 +1492,14 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "If true, adjustments to net fresh water to achieve zero net are "//&
                  "made by scaling values without moving the zero contour.",&
                  default=.false.)
+  CS%net_FW_adjust_exclude_shelf = .false.
+  if (CS%adjust_net_fresh_water_to_zero) &
+    call get_param(param_file, mdl, "NET_FW_ADJUST_EXCLUDE_SHELF", &
+                 CS%net_FW_adjust_exclude_shelf, &
+                 "If true, the adjustment of the net fresh-water forcing to zero is not applied "//&
+                 "to cells that are covered by ice shelves, which can be too thin to absorb it.  "//&
+                 "The adjustment is spread uniformly over the remaining ocean cells.  This is not "//&
+                 "used with ADJUST_NET_FRESH_WATER_BY_SCALING.", default=.false.)
   call get_param(param_file, mdl, "ICE_SALT_CONCENTRATION", &
                  CS%ice_salt_concentration, &
                  "The assumed sea-ice salinity needed to reverse engineer the "//&
