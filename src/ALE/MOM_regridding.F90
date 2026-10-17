@@ -234,6 +234,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   character(len=320) :: message ! Temporary strings
   character(len=12) :: expected_units, alt_units ! Temporary strings
   logical :: tmpLogical, do_sum, main_parameters
+  logical :: enable_bugs ! The default value for answer-changing bug flags
   logical :: coord_is_state_dependent, ierr
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   integer :: remap_answer_date    ! The vintage of the remapping expressions to use.
@@ -1013,6 +1014,14 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
               "When regridding, an interface is only moved if this improves "//&
               "the fit to the target density.", default=.false.)
     call set_hycom_params(CS%hycom_CS, only_improves=tmpLogical)
+    call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+                   default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
+    call get_param(param_file, mdl, "HYCOM1_SHELF_DEPTH_BUG", tmpLogical, &
+              "If true, recover a bug in which the nominal z* depths and the maximum interface depths "//&
+              "of the HYCOM1 coordinate are measured from the sea surface instead of the top of the "//&
+              "water column under ice shelves, which can push interfaces above the ice-ocean interface "//&
+              "and remove mass from columns under thick ice.", default=enable_bugs)
+    call set_hycom_params(CS%hycom_CS, shelf_depth_bug=tmpLogical)
   endif
 
   CS%use_hybgen_unmix = .false.
