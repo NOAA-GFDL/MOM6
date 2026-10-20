@@ -42,6 +42,7 @@ use MOM_io, only : slasher, fieldtype, vardesc, var_desc
 use MOM_io, only : close_file, SINGLE_FILE, MULTIPLE
 use MOM_restart, only : register_restart_field, save_restart
 use MOM_restart, only : restart_init, restore_state, MOM_restart_CS, register_restart_pair
+use MOM_restart, only : query_initialized
 use MOM_time_manager, only : time_type, time_to_real, real_to_time, operator(>), operator(-)
 use MOM_transcribe_grid, only : copy_dyngrid_to_MOM_grid, copy_MOM_grid_to_dyngrid
 use MOM_transcribe_grid, only : rotate_dyngrid
@@ -255,6 +256,8 @@ type, public :: ice_shelf_CS ; private
 
   logical :: debug                !< If true, write verbose checksums for debugging purposes
                                   !! and use reproducible sums
+  logical :: frazil_restored = .false. !< True while ISS%frazil contains the restored reservoir,
+                                  !! until the first shelf flux calculation has applied it.
 end type ice_shelf_CS
 
 !>@{ CPU time clock IDs
@@ -1028,6 +1031,7 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   endif
 
   call cpu_clock_end(id_clock_shelf)
+  CS%frazil_restored = .false.
 
   if (CS%debug) call MOM_forcing_chksum("End of shelf calc flux", fluxes, G, CS%US, haloshift=0)
 
@@ -1058,8 +1062,10 @@ subroutine adjust_ice_sheet_frazil(sfc_state_in, fluxes_in, CS)
                                                  !! the ice-shelf state
   type(surface), pointer :: sfc_state => NULL()
   type(forcing), pointer :: fluxes => NULL()
+  logical :: add_sfc_frazil ! If true, add surface frazil to the shelf reservoir.
   integer :: i, j, is, ie, js, je
 
+  add_sfc_frazil = .not.CS%frazil_restored
   G => CS%grid ; ISS => CS%ISS
 
   if (CS%rotate_index) then
@@ -1079,7 +1085,7 @@ subroutine adjust_ice_sheet_frazil(sfc_state_in, fluxes_in, CS)
     !Copy frazil to the ice sheet module where ice sheet is present.
     !No scaling to account for partial ice-sheet cells is necessary here, as
     !this is taken care of when applied to the ice sheet.
-    if (fluxes%frac_shelf_h(i,j)>0.0) then
+    if ((fluxes%frac_shelf_h(i,j)>0.0) .and. add_sfc_frazil) then
       if (CS%frazil_refreeze_bug) then
         ISS%frazil(i,j) = sfc_state%frazil(i,j)
       else
@@ -2103,6 +2109,11 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
                               "ice sheet/shelf thickness", "m", conversion=US%Z_to_m)
   call register_restart_field(ISS%melt_mask, "melt_mask", .false., CS%restart_CSp, &
                               "Mask that is >0 where ice-shelf melting is allowed", "none")
+  if (.not.CS%frazil_refreeze_bug) then
+    call register_restart_field(ISS%frazil, "shelf_frazil", .false., CS%restart_CSp, &
+                                "Frazil heat awaiting refreezing onto the ice shelf", "J m-2", &
+                                conversion=US%Q_to_J_kg*US%RZ_to_kg_m2)
+  endif
   if (CS%calve_ice_shelf_bergs) then
     call register_restart_field(ISS%calving, "shelf_calving", .true., CS%restart_CSp, &
                                 "Calving flux from ice shelf into icebergs", "kg m-2", conversion=US%RZ_to_kg_m2)
@@ -2167,6 +2178,8 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, Time_init,
     ! This line calls a subroutine that reads the initial conditions from a restart file.
     call MOM_mesg("MOM_ice_shelf.F90, initialize_ice_shelf: Restoring ice shelf from file.")
     call restore_state(dirs%input_filename, dirs%restart_input_dir, Time, G, CS%restart_CSp)
+    if (.not.CS%frazil_refreeze_bug) &
+      CS%frazil_restored = query_initialized(ISS%frazil, "shelf_frazil", CS%restart_CSp)
 
   endif ! .not. new_sim
 
