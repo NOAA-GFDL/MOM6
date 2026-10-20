@@ -38,6 +38,7 @@ type, public :: tracer_advect_CS ; private
   logical :: debug                 !< If true, write verbose checksums for debugging purposes.
   logical :: useHuynhStencilBug = .false. !< If true, use the incorrect stencil width.
                                    !! This is provided for compatibility with legacy simuations.
+  logical :: halo_transport_bug    !< If true, ignore meridional transports in halo columns when selecting work.
   type(group_pass_type) :: pass_uhr_vhr_t_hprev !< A structure used for group passes
   integer :: default_advect_scheme = -1 !< Determines which reconstruction to use
 end type tracer_advect_CS
@@ -125,6 +126,7 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
   integer :: nsten_halo         ! number of stencils that fit in the halos
   integer :: i, j, k, m, is, ie, js, je, isd, ied, jsd, jed, nz, itt, ntr, do_any
   integer :: isv, iev, jsv, jev ! The valid range of the indices.
+  integer :: is_scan, ie_scan ! Zonal range used to select meridional transport work.
   integer :: IsdB, IedB, JsdB, JedB
   integer :: stencil_local          ! Stencil for the local adection scheme
   integer :: local_advect_scheme(Reg%ntr) ! contains the list of the advection for each tracer
@@ -285,6 +287,11 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
       ! Reevaluate domore_u & domore_v unless the valid range is the same size as
       ! before.  Also, do this if there is Strang splitting.
       if ((nsten_halo > 1) .or. (itt==1)) then
+        is_scan = isv + stencil ; ie_scan = iev - stencil
+        ! A meridional-first sweep must update halo columns before zonal reconstruction.
+        if ((.not.CS%halo_transport_bug) .and. (.not.x_first)) then
+          is_scan = isv ; ie_scan = iev
+        endif
         !$OMP parallel do default(shared)
         do k=1,nz ; if (domore_k(k) > 0) then
           do j=jsv,jev ; if (.not.domore_u(j,k)) then
@@ -293,7 +300,7 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
             endif ; enddo ! i-loop
           endif ; enddo
           do J=jsv+stencil-1,jev-stencil ; if (.not.domore_v(J,k)) then
-            do i=isv+stencil,iev-stencil ; if (vhr(i,J,k) /= 0.0) then
+            do i=is_scan,ie_scan ; if (vhr(i,J,k) /= 0.0) then
               domore_v(J,k) = .true. ; exit
             endif ; enddo ! i-loop
           endif ; enddo
@@ -1276,6 +1283,7 @@ subroutine tracer_advect_init(Time, G, US, param_file, diag, CS)
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_tracer_advect" ! This module's name.
   character(len=256) :: mesg    ! Message for error messages.
+  logical :: enable_bugs ! If true, keep answer-changing bugs enabled by default.
 
   if (associated(CS)) then
     call MOM_error(WARNING, "tracer_advect_init called with associated control structure.")
@@ -1287,9 +1295,14 @@ subroutine tracer_advect_init(Time, G, US, param_file, diag, CS)
 
   ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, "")
+  call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+          default=.true., do_not_log=.true.)
   call get_param(param_file, mdl, "DT", CS%dt, fail_if_missing=.true., &
           desc="The (baroclinic) dynamics time step.", units="s", scale=US%s_to_T)
   call get_param(param_file, mdl, "DEBUG", CS%debug, default=.false.)
+  call get_param(param_file, mdl, "TRACER_ADVECT_HALO_TRANSPORT_BUG", CS%halo_transport_bug, &
+          desc="If true, recover a bug that meridional-first tracer advection can skip transports in "//&
+          "halo columns, leaving inconsistent tracer fluxes at processor boundaries.", default=enable_bugs)
   call get_param(param_file, mdl, "TRACER_ADVECTION_SCHEME", mesg, &
           desc="The horizontal transport scheme for tracers:\n"//&
           trim(TracerAdvectionSchemeDoc), default='PLM')
