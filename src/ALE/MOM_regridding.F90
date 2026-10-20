@@ -104,6 +104,7 @@ type, public :: regridding_CS ; private
 
   !> If true, call adjust_interface_motion() after initial grid generation
   logical :: use_adjust_interface_motion
+  logical :: hycom1_conservation_bug = .true. !< If true, retain HYCOM1 column thickness errors from roundoff.
 
   !> Reference pressure for potential density calculations [R L2 T-2 ~> Pa]
   real :: ref_pressure = 2.e7
@@ -251,6 +252,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   real :: adaptBuoyCoeff, adaptAlpha     ! Temporary variables for input parameters [nondim]
   real :: adaptZoom  ! The thickness of the near-surface zooming region with the adaptive coordinate [H ~> m or kg m-2]
   real :: adaptDrho0 ! Reference density difference for stratification-dependent diffusion. [R ~> kg m-3]
+  logical :: enable_bugs ! If true, keep answer-changing bugs enabled by default.
   integer :: i, j, k, nzf(4)
   real, dimension(:), allocatable :: dz     ! Resolution (thickness) in units of coordinate, which may be [m]
                                             ! or [Z ~> m] or [H ~> m or kg m-2] or [R ~> kg m-3] or other units.
@@ -1009,6 +1011,11 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   endif
 
   if (main_parameters .and. coordinateMode(coord_mode) == REGRIDDING_HYCOM1) then
+    call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+                   default=.true., do_not_log=.true.)
+    call get_param(param_file, mdl, "HYCOM1_REGRID_CONSERVATION_BUG", CS%hycom1_conservation_bug, &
+              "If true, recover a bug that HYCOM1 regridding can change column thickness through "//&
+              "roundoff in boundary motion and clipping of negative layer thicknesses.", default=enable_bugs)
     call get_param(param_file, mdl, "HYCOM1_ONLY_IMPROVES", tmpLogical, &
               "When regridding, an interface is only moved if this improves "//&
               "the fit to the target density.", default=.false.)
@@ -2074,6 +2081,9 @@ subroutine build_grid_HyCOM1( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface,
 
       ! This adjusts things robust to round-off errors
       dz_col(:) = -dz_col(:)
+      if (.not.CS%hycom1_conservation_bug) then
+        dz_col(1) = 0.0 ; dz_col(CS%nk+1) = 0.0
+      endif
       if (CS%use_adjust_interface_motion) call adjust_interface_motion( CS, GV%ke, h(i,j,:), dz_col(:) )
 
       dzInterface(i,j,1:nki+1) = dz_col(1:nki+1)
@@ -2085,8 +2095,84 @@ subroutine build_grid_HyCOM1( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface,
   enddo ; enddo ! i,j
 
   call calc_h_new_by_dz(CS, G, GV, h, dzInterface, h_new)
+  if (.not.CS%hycom1_conservation_bug) then
+    do j=G%jsc-1,G%jec+1 ; do i=G%isc-1,G%iec+1
+      if (G%mask2dT(i,j) > 0.0) then
+        call conserve_hycom1_thickness(GV%ke, h(i,j,:), CS%nk, h_new(i,j,:), &
+                                       nom_depth_H(i,j), dzInterface(i,j,:))
+      endif
+    enddo ; enddo
+  endif
 
 end subroutine build_grid_HyCOM1
+
+!> Correct roundoff-sized HYCOM1 column thickness errors before tracer remapping.
+subroutine conserve_hycom1_thickness(n_old, h_old, n_new, h_new, coordinate_depth, dzInterface)
+  integer, intent(in) :: n_old !< Number of source layers
+  real, intent(in) :: h_old(n_old) !< Source thicknesses [H ~> m or kg m-2]
+  integer, intent(in) :: n_new !< Number of destination layers
+  real, intent(inout) :: h_new(n_new) !< Destination thicknesses [H ~> m or kg m-2]
+  real, intent(in) :: coordinate_depth !< Nominal bottom depth [H ~> m or kg m-2]
+  real, intent(out) :: dzInterface(n_new+1) !< Interface motion for the corrected thicknesses
+                                            !! [H ~> m or kg m-2]
+  real :: depth_old ! Source column thickness [H ~> m or kg m-2]
+  real :: depth_new ! Destination column thickness [H ~> m or kg m-2]
+  real :: depth_scale ! Scale of interface arithmetic [H ~> m or kg m-2]
+  real :: tolerance ! Maximum column discrepancy attributable to roundoff [H ~> m or kg m-2]
+  real :: correction ! Column thickness missing from the destination [H ~> m or kg m-2]
+  real :: old_thickness ! Source thickness at the current interface [H ~> m or kg m-2]
+  real :: new_thickness ! Destination thickness at the current interface [H ~> m or kg m-2]
+  real :: largest_thickness ! Largest destination thickness [H ~> m or kg m-2]
+  character(len=256) :: mesg ! Description of a column conservation failure
+  integer :: k, k_thick
+
+  depth_old = 0.0 ; depth_new = 0.0
+  do k=1,n_old
+    depth_old = depth_old + h_old(k)
+  enddo
+  do k=1,n_new
+    depth_new = depth_new + h_new(k)
+  enddo
+  correction = 0.0
+  do k=1,max(n_old,n_new)
+    old_thickness = 0.0 ; new_thickness = 0.0
+    if (k <= n_old) old_thickness = h_old(k)
+    if (k <= n_new) new_thickness = h_new(k)
+    correction = correction + (old_thickness - new_thickness)
+  enddo
+  depth_scale = max(depth_old, depth_new, abs(coordinate_depth))
+  tolerance = (8.0*real(max(n_old,n_new))*epsilon(1.0)) * depth_scale
+  if (abs(correction) > tolerance) then
+    write(mesg,'(A,ES13.5,A,ES13.5)') &
+        "MOM_regridding.F90: conserve_hycom1_thickness: thickness error ", correction, &
+        " exceeds roundoff tolerance ", tolerance
+    call MOM_error(FATAL, trim(mesg))
+  endif
+
+  k_thick = 1
+  largest_thickness = h_new(1)
+  do k=2,n_new
+    if (h_new(k) > largest_thickness) then
+      largest_thickness = h_new(k)
+      k_thick = k
+    endif
+  enddo
+  if (h_new(k_thick) + correction < 0.0) then
+    write(mesg,'(A,ES13.5,A,ES13.5)') &
+        "MOM_regridding.F90: conserve_hycom1_thickness: correction ", correction, &
+        " would make destination thickness negative: ", h_new(k_thick)
+    call MOM_error(FATAL, trim(mesg))
+  endif
+  h_new(k_thick) = h_new(k_thick) + correction
+
+  dzInterface(1) = 0.0
+  do k=1,n_new
+    old_thickness = 0.0
+    if (k <= n_old) old_thickness = h_old(k)
+    dzInterface(k+1) = dzInterface(k) + (old_thickness - h_new(k))
+  enddo
+  dzInterface(n_new+1) = 0.0
+end subroutine conserve_hycom1_thickness
 
 !> This subroutine builds an adaptive grid that follows density surfaces where
 !! possible, subject to constraints on the smoothness of interface heights.
