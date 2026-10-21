@@ -235,20 +235,21 @@ type diagcs_dsamp
   type(axes_grp), dimension(:), allocatable :: remap_axesTi, remap_axesBi, remap_axesCui, remap_axesCvi
   !>@}
 
+  ! Mask arrays for 2D diagnostics
   real, dimension(:,:),   pointer :: mask2dT   => null() !< 2D mask array for cell-center points [nondim]
   real, dimension(:,:),   pointer :: mask2dBu  => null() !< 2D mask array for cell-corner points [nondim]
   real, dimension(:,:),   pointer :: mask2dCu  => null() !< 2D mask array for east-face points [nondim]
   real, dimension(:,:),   pointer :: mask2dCv  => null() !< 2D mask array for north-face points [nondim]
-  !>@{ 3D mask arrays for diagnostics at layers (mask...L) and interfaces (mask...i), all [nondim]
-  real, dimension(:,:,:), pointer :: mask3dTL  => null()
-  real, dimension(:,:,:), pointer :: mask3dBL  => null()
-  real, dimension(:,:,:), pointer :: mask3dCuL => null()
-  real, dimension(:,:,:), pointer :: mask3dCvL => null()
-  real, dimension(:,:,:), pointer :: mask3dTi  => null()
-  real, dimension(:,:,:), pointer :: mask3dBi  => null()
-  real, dimension(:,:,:), pointer :: mask3dCui => null()
-  real, dimension(:,:,:), pointer :: mask3dCvi => null()
-  !>@}
+
+  ! Mask arrays for 3D diagnostics
+  real, dimension(:,:,:), pointer :: mask3dTL  => null() !< 3D mask for layers at tracer points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dBL  => null() !< 3D mask for layers at corner points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dCuL => null() !< 3D mask for layers at east-face points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dCvL => null() !< 3D mask for layers at north-face points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dTi  => null() !< 3D mask for interfaces at tracer points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dBi  => null() !< 3D mask for interfaces at corner points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dCui => null() !< 3D mask for interfaces at east-face points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dCvi => null() !< 3D mask for interfaces at north-face points [nondim]
 end type diagcs_dsamp
 
 !> The following data type a list of diagnostic fields an their variants,
@@ -295,15 +296,16 @@ type, public :: diag_ctrl
   real, dimension(:,:),   pointer :: mask2dBu  => null() !< 2D mask array for cell-corner points [nondim]
   real, dimension(:,:),   pointer :: mask2dCu  => null() !< 2D mask array for east-face points [nondim]
   real, dimension(:,:),   pointer :: mask2dCv  => null() !< 2D mask array for north-face points [nondim]
-  !>@{ 3D mask arrays for diagnostics at layers (mask...L) and interfaces (mask...i) all [nondim]
-  real, dimension(:,:,:), pointer :: mask3dTL  => null()
-  real, dimension(:,:,:), pointer :: mask3dBL  => null()
-  real, dimension(:,:,:), pointer :: mask3dCuL => null()
-  real, dimension(:,:,:), pointer :: mask3dCvL => null()
-  real, dimension(:,:,:), pointer :: mask3dTi  => null()
-  real, dimension(:,:,:), pointer :: mask3dBi  => null()
-  real, dimension(:,:,:), pointer :: mask3dCui => null()
-  real, dimension(:,:,:), pointer :: mask3dCvi => null()
+
+  ! Mask arrays for 3D diagnostics
+  real, dimension(:,:,:), pointer :: mask3dTL  => null() !< 3D mask for layers at tracer points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dBL  => null() !< 3D mask for layers at corner points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dCuL => null() !< 3D mask for layers at east-face points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dCvL => null() !< 3D mask for layers at north-face points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dTi  => null() !< 3D mask for interfaces at tracer points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dBi  => null() !< 3D mask for interfaces at corner points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dCui => null() !< 3D mask for interfaces at east-face points [nondim]
+  real, dimension(:,:,:), pointer :: mask3dCvi => null() !< 3D mask for interfaces at north-face points [nondim]
 
   integer :: num_diag_dsamp_levels !< The number of downsampled levels requested in the parameters files (default 0)
   integer, dimension(:), allocatable :: diag_dsamp_levels !< The downsample levels requested by diag registrations

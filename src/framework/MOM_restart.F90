@@ -501,7 +501,7 @@ end subroutine register_restart_pair_ptr4d
 subroutine set_conversion_pair(u_conv, v_conv, turns, conversion, scalar_pair)
   real,   intent(out) :: u_conv !< A factor to multiply the u-component of a vector by before it is
                                 !! written, including sign changes due to grid rotation [a A-1 ~> 1]
-  real,   intent(out) :: v_conv !< A factor to multiply the u-component of a vector by before it is
+  real,   intent(out) :: v_conv !< A factor to multiply the v-component of a vector by before it is
                                 !! written, including sign changes due to grid rotation [a A-1 ~> 1]
   integer, intent(in) :: turns  !< Number of quarter turns from input to model domain
   real,    optional, intent(in) :: conversion !< A factor to multiply a restart field by
@@ -1465,7 +1465,7 @@ end subroutine copy_restart_var_3d
 !! of 3-d arrays, perhaps after rotation
 subroutine copy_restart_vector_3d(u_var, v_var, u_name, v_name, CS, unrotate, scalar_pair)
   real, dimension(:,:,:), intent(inout) :: u_var !< The u-component of the field that is being copied [arbitrary]
-  real, dimension(:,:,:), intent(inout) :: v_var !< The u-component of the field that is being copied [arbitrary]
+  real, dimension(:,:,:), intent(inout) :: v_var !< The v-component of the field that is being copied [arbitrary]
   character(len=*),       intent(in)    :: u_name !< The name of the u-component of the field that is being copied
   character(len=*),       intent(in)    :: v_name !< The name of the v-component of the field that is being copied
   type(MOM_restart_CS),   intent(in)    :: CS    !< MOM restart control struct
@@ -1549,8 +1549,8 @@ end subroutine copy_restart_vector_3d
 
 !> Indicate if two 3-d arrays are not of the same size after rotation is considered.
 logical function size_mismatch_3d(var_a, var_b, turns, size_msg)
-  real,    intent(in) :: var_a(:,:,:)   !< The first field being compared
-  real,    intent(in) :: var_b(:,:,:)   !< The second field being compared
+  real,    intent(in) :: var_a(:,:,:)   !< The first field being compared [arbitrary]
+  real,    intent(in) :: var_b(:,:,:)   !< The second field being compared [arbitrary]
   integer, intent(in) :: turns          !< Number of quarter turns from input to model domain
   character(len=256), intent(out) :: size_msg  !< The array sizes
 

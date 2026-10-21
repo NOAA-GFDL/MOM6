@@ -14,7 +14,7 @@ public ndiv, idiv_scale_lookup, idiv_residual_lookup
 !! The domain [-ln2/2, ln2/2] is divided into ndiv subintervals.
 integer, parameter :: ndiv = 128
 
-!> Lookup table of 2**(i/ndiv) in real64 precision.
+!> Lookup table of 2**(i/ndiv) in real64 precision [nondim].
 !! Used in range reduction: exp(x) = 2**K * 2**(i/ndiv) * exp(r)
 real, parameter :: idiv_scale_lookup(0:ndiv-1) = [ &
   1.00000000000000000e+00, 1.00542990111280273e+00, 1.01088928605170048e+00, 1.01637831491095310e+00, &
@@ -51,7 +51,7 @@ real, parameter :: idiv_scale_lookup(0:ndiv-1) = [ &
   1.95714412417540018e+00, 1.96777122323317588e+00, 1.97845602638795093e+00, 1.98919884696726634e+00  &
 ]
 
-!> Lookup table for the residual correction of idiv_scale_lookup.
+!> Lookup table for the residual correction of idiv_scale_lookup [nondim].
 !! The exact value is: 2**(i/ndiv) = idiv_scale_lookup(i) * (1 + idiv_residual_lookup(i))
 real, parameter :: idiv_residual_lookup(0:ndiv-1) = [ &
   0.00000000000000000e+00,  9.44788545172706630e-17, -1.50706697692603887e-17, -5.67915508282501219e-17, &

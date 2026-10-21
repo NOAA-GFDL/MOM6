@@ -77,9 +77,15 @@ subroutine unit_scaling_init( param_file, US )
   ! This routine initializes a unit_scale_type structure (US).
 
   ! Local variables
+  real :: Z_rescale_factor ! Translates distances in the units of depth to meters              [m Z-1 ~> 1]
+  real :: L_rescale_factor ! Translates lengths in the units of horizontal lengths to meters   [m L-1 ~> 1]
+  real :: T_rescale_factor ! Translates the units of time to seconds                           [s T-1 ~> 1]
+  real :: R_rescale_factor ! Translates the units of density to kilograms per meter cubed [kg m-3 R-1 ~> 1]
+  real :: Q_rescale_factor ! Translates the units of enthalpy to Joules per kilogram      [J kg-1 Q-1 ~> 1]
+  real :: C_rescale_factor ! Translates the units of temperature to degrees Celsius         [degC C-1 ~> 1]
+  real :: S_rescale_factor ! Translates the units of salinity to parts per thousand          [ppt S-1 ~> 1]
   integer :: Z_power, L_power, T_power, R_power, Q_power, C_power, S_power
-  real    :: Z_rescale_factor, L_rescale_factor, T_rescale_factor, R_rescale_factor, Q_rescale_factor
-  real    :: C_rescale_factor, S_rescale_factor
+
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=16) :: mdl = "MOM_unit_scaling"

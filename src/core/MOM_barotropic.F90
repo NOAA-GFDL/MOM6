@@ -3283,7 +3283,7 @@ subroutine btloop_find_PF(PFu, PFv, isv, iev, jsv, jev, eta_PF_BT, eta_PF, &
                   !! sea surface height [nondim].  It is of order 1, but for stability this
                   !! may be made larger than the physical  problem would suggest.
   logical, intent(in) :: find_etaav !< If true, diagnose the time mean value of eta
-  real,    intent(in) :: wt_accel2_n !< The weighting value of wt_accel2 at step n.
+  real,    intent(in) :: wt_accel2_n !< The weighting value of wt_accel2 at step n [nondim]
   real, dimension(SZIW_(CS),SZJW_(CS)), intent(inout) :: &
     eta_sum       !< A weighted running sum of eta summed across the timesteps [H ~> m or kg m-2]
   logical, intent(in) :: v_first !< If true, update the v-velocity first with the present loop iteration

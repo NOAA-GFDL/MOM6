@@ -43,9 +43,9 @@ type, public :: MESO_SFN_ANN_CS; private
   logical :: initialized = .false. !< If true, the module has been initialized.
   logical :: debug !< if true, write verbose checksums for debugging purposes.
 
-  real :: ann_coeff  !< Coefficient to multiply the ANN output by.
-  real    :: kappa_smooth        !< Vertical diffusivity used to interpolate more sensible values
-                                 !! of T & S into thin layers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
+  real :: ann_coeff  !< Coefficient to multiply the ANN output by [nondim]
+  real    :: kappa_smooth !< Vertical diffusivity used to interpolate more sensible values
+                          !! of T & S into thin layers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
   integer :: ann_window !< Size of the window used in the ANN model.
 
   type(ANN_CS) :: ann_rho_flux !< ANN instance for off-diagonal and diagonal stress
@@ -134,9 +134,9 @@ subroutine meso_sfn_ANN_compute(h, e, sfn_u, sfn_v, G, GV, US, tv, CS, dt, u, v)
   real, allocatable :: vort_local(:,:)  !< Local stencil of relative vorticity [T-1 ~> s-1]
   real :: vel_grad_mag !< Magnitude of velocity gradient tensor over stencil [T-1 ~> s-1]
   real :: rho_grad_mag !< Magnitude of density gradient over stencil [R L-1 ~> kg m-4]
-  real, allocatable :: x(:,:) !< Input vector to the ANN
-  real, allocatable :: y(:,:) !< Output vector from the ANN
-  real, allocatable :: yy(:)   !< Local output vector from the ANN
+  real, allocatable :: x(:,:) !< Input vector to the ANN [nondim]
+  real, allocatable :: y(:,:) !< Output vector from the ANN [nondim]
+  real, allocatable :: yy(:)   !< Local output vector from the ANN [R L T-1 ~> kg m-2 s-1]
   real :: mag_grad !< Magnitude of 3-D density gradient [R Z-1 ~> kg m-4]
   logical :: use_stanley
   logical :: use_EOS

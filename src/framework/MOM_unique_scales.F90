@@ -222,10 +222,10 @@ end subroutine encode_dim_powers
 !> Find the integer power of two that describe each of the scaling factors, or return 0 for
 !! scaling factors that are not exceptionally close to an integer power of 2.
 subroutine scales_to_powers(scale, pow2)
-  real,    intent(in)  :: scale(:)  !< The scaling factor for each dimension
+  real,    intent(in)  :: scale(:)  !< The scaling factor for each dimension [various]
   integer, intent(out) :: pow2(:)   !< The exact powers of 2 for each scale, or 0 for non-exact powers of 2.
 
-  real :: log2_sc        ! The log base 2 of an element of scale
+  real :: log2_sc        ! The log base 2 of an element of scale [nondim]
   integer :: n, ndim
 
   ndim = size(scale)

@@ -765,7 +765,7 @@ function auto_determine_io_layout(idiv, jdiv, nio) result(best_io_layout)
   integer :: io_layout(2) ! Temporary IO layout
   integer :: best_io_layout(2) ! Best IO layout
   integer :: f, best_idiv_io, best_jdiv_io
-  real :: ratio_diff, min_ratio_diff
+  real :: ratio_diff, min_ratio_diff ! Ratios of the number of i- and j-points on each domain [nondim]
 
   if (mod(idiv*jdiv, nio) /= 0) then
     call MOM_error(FATAL, "The product of the compute layout must be divisible by the target number of IO PEs.")

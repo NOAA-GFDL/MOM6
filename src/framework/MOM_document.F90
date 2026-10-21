@@ -281,8 +281,8 @@ subroutine doc_param_real(doc, varname, desc, units, val, default, debuggingPara
   character(len=*),  intent(in) :: varname !< The name of the parameter being documented
   character(len=*),  intent(in) :: desc    !< A description of the parameter being documented
   character(len=*),  intent(in) :: units   !< The units of the parameter being documented
-  real,              intent(in) :: val     !< The value of this parameter
-  real,    optional, intent(in) :: default !< The default value of this parameter
+  real,              intent(in) :: val     !< The value of this parameter in arbitrary units [arbitrary]
+  real,    optional, intent(in) :: default !< The default value of this parameter [arbitrary]
   logical, optional, intent(in) :: debuggingParam !< If present and true, this is a debugging parameter.
   logical, optional, intent(in) :: like_default !< If present and true, log this parameter as though
                                            !! it has the default value, even if there is no default.
@@ -318,9 +318,9 @@ subroutine doc_param_real_array(doc, varname, desc, units, vals, default, defaul
   character(len=*),  intent(in) :: varname !< The name of the parameter being documented
   character(len=*),  intent(in) :: desc    !< A description of the parameter being documented
   character(len=*),  intent(in) :: units   !< The units of the parameter being documented
-  real,              intent(in) :: vals(:) !< The array of values to record
-  real,    optional, intent(in) :: default !< A uniform default value of this parameter
-  real,    optional, intent(in) :: defaults(:) !< The element-wise default values of this parameter
+  real,              intent(in) :: vals(:) !< The array of values to record in arbitrary units [arbitrary]
+  real,    optional, intent(in) :: default !< A uniform default value of this parameter [arbitrary]
+  real,    optional, intent(in) :: defaults(:) !< The element-wise default values of this parameter [arbitrary]
   logical, optional, intent(in) :: debuggingParam !< If present and true, this is a debugging parameter.
   logical, optional, intent(in) :: like_default !< If present and true, log this parameter as though
                                            !! it has the default value, even if there is no default.
@@ -621,7 +621,7 @@ end function time_string
 
 !> This function returns a string with a real formatted like '(G)'
 function real_string(val)
-  real, intent(in)  :: val !< The value being written into a string
+  real, intent(in)  :: val !< The value being written into a string in arbitrary units [arbitrary]
   character(len=32) :: real_string
 ! This function returns a string with a real formatted like '(G)'
   integer :: len, ind
@@ -689,7 +689,7 @@ end function real_string
 !> e.g. "1., 2., 5*3., 5.E2", that give the list of values.
 function real_array_string(vals, sep)
   character(len=:), allocatable :: real_array_string !< The output string listing vals
-  real,      intent(in)  :: vals(:) !< The array of values to record
+  real,      intent(in)  :: vals(:) !< The array of values to record in arbitrary units [arbitrary]
   character(len=*), &
     optional, intent(in) :: sep     !< The separator between successive values,
                                     !! by default it is ', '.
@@ -779,10 +779,10 @@ end function int_array_string
 !> This function tests whether a real value is encoded in a string.
 function testFormattedFloatIsReal(str, val)
   character(len=*), intent(in) :: str !< The string that match val
-  real,             intent(in) :: val !< The value being tested
+  real,             intent(in) :: val !< The value being tested in arbitrary units [arbitrary]
   logical                      :: testFormattedFloatIsReal
   ! Local variables
-  real :: scannedVal
+  real :: scannedVal  ! The value obtained by interpreting str [arbitrary]
 
   read(str(1:),*) scannedVal
   if (scannedVal == val) then

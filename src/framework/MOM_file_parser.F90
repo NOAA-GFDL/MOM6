@@ -704,11 +704,11 @@ subroutine read_param_real(CS, varname, value, fail_if_missing, scale, set)
                                          !! it is also a structure to parse for run-time parameters
   character(len=*),      intent(in) :: varname !< The case-sensitive name of the parameter to read
   real,               intent(inout) :: value   !< The value of the parameter that may be
-                                         !! read from the parameter file
+                                         !! read from the parameter file [A ~> a]
   logical,     optional, intent(in) :: fail_if_missing !< If present and true, a fatal error occurs
                                          !! if this variable is not found in the parameter file
   real,        optional, intent(in) :: scale   !< A scaling factor that the parameter is multiplied
-                                         !! by before it is returned.
+                                         !! by before it is returned [A a-1 ~> 1]
   logical,     optional, intent(out) :: set    !< If present, this indicates whether this parameter
                                          !! has been found and successfully set in the input files.
 
@@ -744,11 +744,11 @@ subroutine read_param_real_array(CS, varname, value, fail_if_missing, scale, set
                                          !! it is also a structure to parse for run-time parameters
   character(len=*),      intent(in) :: varname !< The case-sensitive name of the parameter to read
   real, dimension(:), intent(inout) :: value   !< The value of the parameter that may be
-                                         !! read from the parameter file
+                                         !! read from the parameter file [A ~> a]
   logical,     optional, intent(in) :: fail_if_missing !< If present and true, a fatal error occurs
                                          !! if this variable is not found in the parameter file
   real,        optional, intent(in) :: scale   !< A scaling factor that the parameter is multiplied
-                                         !! by before it is returned.
+                                         !! by before it is returned [A a-1 ~> 1]
   logical,     optional, intent(out) :: set    !< If present, this indicates whether this parameter
                                          !! has been found and successfully set in the input files.
 
@@ -880,7 +880,8 @@ subroutine read_param_time(CS, varname, value, timeunit, fail_if_missing, date_f
   character(len=*),       intent(in) :: varname !< The case-sensitive name of the parameter to read
   type(time_type),     intent(inout) :: value   !< The value of the parameter that may be
                                          !! read from the parameter file
-  real,         optional, intent(in) :: timeunit !< The number of seconds in a time unit for real-number input.
+  real,         optional, intent(in) :: timeunit !< The number of seconds in the arbitrary time unit
+                                         !! for real-number input [s a-1 ~> nondim]
   logical,      optional, intent(in) :: fail_if_missing !< If present and true, a fatal error occurs
                                          !! if this variable is not found in the parameter file
   logical,     optional, intent(out) :: date_format !< If present, this indicates whether this
@@ -893,7 +894,8 @@ subroutine read_param_time(CS, varname, value, timeunit, fail_if_missing, date_f
   character(len=CS%max_line_len) :: value_string(1)
   character(len=240) :: err_msg
   logical            :: found, defined
-  real               :: real_time, time_unit
+  real               :: real_time  ! The time that is read in arbitrary time units [a]
+  real               :: time_unit  ! The conversion factor from the input time units into seconds [s a-1 ~> nondim]
   integer            :: vals(7)
 
   if (present(date_format)) date_format = .false.
@@ -1681,19 +1683,21 @@ subroutine log_param_real(CS, modulename, varname, value, desc, units, &
                                          !! it is also a structure to parse for run-time parameters
   character(len=*),           intent(in) :: modulename !< The name of the calling module
   character(len=*),           intent(in) :: varname !< The name of the parameter to log
-  real,                       intent(in) :: value   !< The value of the parameter to log
+  real,                       intent(in) :: value   !< The value of the parameter to log in arbitrary
+                                                    !! scaled or unscaled units [A ~> a] or [a]
   character(len=*), optional, intent(in) :: desc    !< A description of this variable; if not
                                          !! present, this parameter is not written to a doc file
   character(len=*),           intent(in) :: units   !< The units of this parameter
-  real,             optional, intent(in) :: default !< The default value of the parameter
+  real,             optional, intent(in) :: default !< The default value of the parameter in
+                                                    !! arbitrary unscaled units [a]
   logical,          optional, intent(in) :: debuggingParam !< If present and true, this parameter is
                                          !! logged in the debugging parameter file
   logical,          optional, intent(in) :: like_default !< If present and true, log this parameter as
                                          !! though it has the default value, even if there is no default.
   real,             optional, intent(in) :: unscale   !< A reciprocal scaling factor that the parameter is
-                                         !! multiplied by before it is logged
+                                         !! multiplied by before it is logged [a A-1 ~> 1]
 
-  real :: log_val ! The parameter value that is written out
+  real :: log_val ! The parameter value that is written out in arbitrary unscaled units [a]
   character(len=240) :: mesg, myunits
 
   log_val = value ; if (present(unscale)) log_val = unscale * value
@@ -1719,20 +1723,24 @@ subroutine log_param_real_array(CS, modulename, varname, value, desc, &
                                          !! it is also a structure to parse for run-time parameters
   character(len=*),           intent(in) :: modulename !< The name of the calling module
   character(len=*),           intent(in) :: varname !< The name of the parameter to log
-  real, dimension(:),         intent(in) :: value   !< The value of the parameter to log
+  real, dimension(:),         intent(in) :: value   !< The values of the parameter to log in arbitrary
+                                                    !! scaled or unscaled units [A ~> a] or [a]
   character(len=*), optional, intent(in) :: desc    !< A description of this variable; if not
                                              !! present, this parameter is not written to a doc file
   character(len=*),           intent(in) :: units   !< The units of this parameter
-  real,             optional, intent(in) :: default !< A uniform default value of the parameter
+  real,             optional, intent(in) :: default !< A uniform default value of the parameter in
+                                                    !! arbitrary unscaled units [a]
   real,             optional, intent(in) :: defaults(:) !< The element-wise defaults of the parameter
+                                                    !! in arbitrary unscaled units [a]
   logical,          optional, intent(in) :: debuggingParam !< If present and true, this parameter is
                                          !! logged in the debugging parameter file
   logical,          optional, intent(in) :: like_default !< If present and true, log this parameter as
                                          !! though it has the default value, even if there is no default.
   real,             optional, intent(in) :: unscale   !< A reciprocal scaling factor that the parameter is
-                                         !! multiplied by before it is logged
+                                         !! multiplied by before it is logged [a A-1 ~> 1]
 
-  real, dimension(size(value)) :: log_val ! The array of parameter values that is written out
+  real, dimension(size(value)) :: log_val ! The array of parameter values that is written out in
+                                          ! arbitrary unscaled units [a]
   character(len=:), allocatable :: mesg
   character(len=240) :: myunits
 
@@ -1840,8 +1848,8 @@ subroutine log_param_time(CS, modulename, varname, value, desc, units, &
                                          !! present, this parameter is not written to a doc file
   character(len=*), optional, intent(in) :: units   !< The units of this parameter
   type(time_type),  optional, intent(in) :: default !< The default value of the parameter
-  real,             optional, intent(in) :: timeunit !< The number of seconds in a time unit for
-                                         !! real-number output.
+  real,             optional, intent(in) :: timeunit !< The number of seconds in the arbitrary time unit
+                                         !! for real-number input [s a-1 ~> nondim]
   logical,          optional, intent(in) :: log_date   !< If true, log the time_type in date format.
                                          !! If missing the default is false.
   logical,          optional, intent(in) :: layoutParam !< If present and true, this parameter is
@@ -1852,7 +1860,8 @@ subroutine log_param_time(CS, modulename, varname, value, desc, units, &
                                          !! though it has the default value, even if there is no default.
 
   ! Local variables
-  real :: real_time, real_default
+  real :: real_time    ! The time increment that is written out in arbitrary time units [s] or [a]
+  real :: real_default ! The default time increment in arbitrary time units [s] or [a]
   logical :: use_timeunit, date_format
   character(len=240) :: mesg, myunits
   character(len=80) :: date_string, default_string
@@ -1926,7 +1935,7 @@ function convert_date_to_string(date) result(date_string)
 
   ! Local variables
   character(len=40) :: sub_string
-  real    :: real_secs
+  real    :: real_secs ! The real number of seconds, including fractional ticks [s]
   integer :: yrs, mons, days, hours, mins, secs, ticks, ticks_per_sec
 
   call get_date(date, yrs, mons, days, hours, mins, secs, ticks)
@@ -2100,11 +2109,13 @@ subroutine get_param_real(CS, modulename, varname, value, desc, units, &
   character(len=*),           intent(in)    :: modulename !< The name of the calling module
   character(len=*),           intent(in)    :: varname !< The case-sensitive name of the parameter to read
   real,                       intent(inout) :: value   !< The value of the parameter that may be
-                                         !! read from the parameter file and logged
+                                         !! read from the parameter file and logged, in arbitrary scaled
+                                         !! or unscaled units [A ~> a] or [a]
   character(len=*), optional, intent(in)    :: desc    !< A description of this variable; if not
                                          !! present, this parameter is not written to a doc file
   character(len=*),           intent(in)    :: units   !< The units of this parameter
-  real,             optional, intent(in)    :: default !< The default value of the parameter
+  real,             optional, intent(in)    :: default !< The default value of the parameter in arbitrary
+                                         !! unscaled units [a]
   logical,          optional, intent(in)    :: fail_if_missing !< If present and true, a fatal error occurs
                                          !! if this variable is not found in the parameter file
   logical,          optional, intent(in)    :: do_not_read  !< If present and true, do not read a
@@ -2114,9 +2125,10 @@ subroutine get_param_real(CS, modulename, varname, value, desc, units, &
   logical,          optional, intent(in)    :: debuggingParam !< If present and true, this parameter is
                                          !! logged in the debugging parameter file
   real,             optional, intent(in)    :: scale   !< A scaling factor that the parameter is
-                                         !! multiplied by before it is returned.
+                                         !! multiplied by before it is returned [A a-1 ~> 1]
   real,             optional, intent(out)   :: unscaled !< The value of the parameter that would be
-                                         !! returned without any multiplication by a scaling factor.
+                                         !! returned without any multiplication by a scaling factor
+                                         !! in arbitrary units [a]
   character(len=*), optional, intent(in)    :: old_name !< A case-sensitive archaic name of the parameter
                                          !! to read.  Errors or warnings are issued if the old name
                                          !! is being used.
@@ -2124,7 +2136,7 @@ subroutine get_param_real(CS, modulename, varname, value, desc, units, &
   ! Local variables
   logical :: do_read, do_log
   logical :: new_name_used, old_name_used, same_value
-  real :: new_name_value  ! The value that is set when the old name is used.
+  real :: new_name_value  ! The value that is set when the standard name is used, in arbitrary unscaled units [a]
 
   do_read = .true. ; if (present(do_not_read)) do_read = .not.do_not_read
   do_log  = .true. ; if (present(do_not_log))  do_log  = .not.do_not_log
@@ -2169,13 +2181,16 @@ subroutine get_param_real_array(CS, modulename, varname, value, desc, units, &
                                          !! it is also a structure to parse for run-time parameters
   character(len=*),           intent(in)    :: modulename !< The name of the calling module
   character(len=*),           intent(in)    :: varname !< The case-sensitive name of the parameter to read
-  real, dimension(:),         intent(inout) :: value   !< The value of the parameter that may be
-                                         !! read from the parameter file and logged
+  real, dimension(:),         intent(inout) :: value   !< The values of the parameter that may be
+                                         !! read from the parameter file and logged, in arbitrary scaled
+                                         !! or unscaled units [A ~> a] or [a]
   character(len=*), optional, intent(in)    :: desc    !< A description of this variable; if not
                                          !! present, this parameter is not written to a doc file
   character(len=*),           intent(in)    :: units   !< The units of this parameter
-  real,             optional, intent(in)    :: default !< A uniform default value of the parameter
-  real,             optional, intent(in)    :: defaults(:) !< The element-wise defaults of the parameter
+  real,             optional, intent(in)    :: default !< A uniform default value of the parameter,
+                                         !! in arbitrary unscaled units [a]
+  real,             optional, intent(in)    :: defaults(:) !< The element-wise defaults of the parameter,
+                                         !! in arbitrary unscaled units [a]
   logical,          optional, intent(in)    :: fail_if_missing !< If present and true, a fatal error occurs
                                          !! if this variable is not found in the parameter file
   logical,          optional, intent(in)    :: do_not_read  !< If present and true, do not read a
@@ -2185,9 +2200,10 @@ subroutine get_param_real_array(CS, modulename, varname, value, desc, units, &
   logical,          optional, intent(in)    :: debuggingParam !< If present and true, this parameter is
                                          !! logged in the debugging parameter file
   real,             optional, intent(in)    :: scale   !< A scaling factor that the parameter is
-                                         !! multiplied by before it is returned.
+                                         !! multiplied by before it is returned [A a-1 ~> 1]
   real, dimension(:), optional, intent(out) :: unscaled !< The value of the parameter that would be
-                                         !! returned without any multiplication by a scaling factor.
+                                         !! returned without any multiplication by a scaling factor
+                                         !! in arbitrary units [a]
   character(len=*), optional, intent(in)    :: old_name !< A case-sensitive archaic name of the parameter
                                          !! to read.  Errors or warnings are issued if the old name
                                          !! is being used.
@@ -2195,7 +2211,8 @@ subroutine get_param_real_array(CS, modulename, varname, value, desc, units, &
   ! Local variables
   logical :: do_read, do_log
   logical :: new_name_used, old_name_used, same_value
-  real    :: new_name_value(size(value))  ! The values that are set when the standard name is used.
+  real    :: new_name_value(size(value))  ! The values that are set when the standard name is used,
+                                          ! in arbitrary unscaled units [a]
   integer :: m
 
   do_read = .true. ; if (present(do_not_read)) do_read = .not.do_not_read
@@ -2465,7 +2482,7 @@ subroutine get_param_time(CS, modulename, varname, value, desc, units, &
   logical,          optional, intent(in)    :: do_not_log !< If present and true, do not log this
                                          !! parameter to the documentation files
   real,             optional, intent(in)    :: timeunit !< The number of seconds in a time unit for
-                                         !! real-number input to be translated to a time.
+                                         !! real-number input to be translated to a time [s a-1 ~> nondim]
   logical,          optional, intent(in)    :: layoutParam !< If present and true, this parameter is
                                          !! logged in the layout parameter file
   logical,          optional, intent(in)    :: debuggingParam !< If present and true, this parameter is

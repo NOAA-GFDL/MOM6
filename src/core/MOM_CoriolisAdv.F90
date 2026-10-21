@@ -215,7 +215,7 @@ subroutine CorAdCalc_block(u, v, h, uh, vh, CAu, CAv, OBC, AD, G, GV, US, CS, nk
     q, &        ! Layer potential vorticity [H-1 T-1 ~> m-1 s-1 or m2 kg-1 s-1].
     qS, &       ! Layer Stokes vorticity [H-1 T-1 ~> m-1 s-1 or m2 kg-1 s-1].
     Ih_q, &     ! The inverse of thickness interpolated to q points [H-1 ~> m-1 or m2 kg-1].
-    h_q, &      ! The thickness interpolated to q points [H-1 ~> m-1 or m2 kg-1].
+    h_q, &      ! The thickness interpolated to q points [H ~> m or kg m-2]
     dvdx, dudy, & ! Contributions to the circulation around q-points [L2 T-1 ~> m2 s-1]
     dvSdx, duSdy, & ! idem. for Stokes drift [L2 T-1 ~> m2 s-1]
     rel_vort, & ! Relative vorticity at q-points [T-1 ~> s-1].
@@ -1394,7 +1394,7 @@ subroutine gradKE(u, v, h, KE, KEx, KEy, ksb, keb, nkk, G, GV, US, CS)
   real :: um, up, vm, vp         ! Temporary variables [L T-1 ~> m s-1].
   real :: um2, up2, vm2, vp2     ! Temporary variables [L2 T-2 ~> m2 s-2].
   real :: um2a, up2a, vm2a, vp2a ! Temporary variables [L4 T-2 ~> m4 s-2].
-  real :: third_order_u, third_order_v  ! Product of mask values to determine the boundary
+  real :: third_order_u, third_order_v  ! Products of mask values to determine the boundary [nondim]
   integer :: i, j, k, kk, kke, is, ie, js, je, Isq, Ieq, Jsq, Jeq
   real, parameter     :: C1_12 = 1.0/12.0   ! The ratio of 1/12 [nondim]
 
@@ -1839,12 +1839,12 @@ end subroutine weno_five_reconstruction_2
 subroutine weno_seven_h_weight_reconstruction(q8, h8, u8, &
                                             h_tiny, u, qr, velocity_smoothing)
   real, intent(in)    :: q8(8)
-  !< Tracer values on points i-4, i-3, i-2, i-1, i, i+1, i+2, i+3
+  !< Tracer values on points i-4, i-3, i-2, i-1, i, i+1, i+2, i+3 in arbitrary units [A ~> a]
   real, intent(in)    :: h8(8)
-  !< Thickness on the same tracer points i-4, i-3, i-2, i-1, i, i+1, i+2, i+3 [L ~> m]
+  !< Thickness on the same tracer points i-4, i-3, i-2, i-1, i, i+1, i+2, i+3 [H ~> m or kg m-2]
   real, optional, intent(in)    :: u8(8)
   !< Velocity values on points i-4, i-3, i-2, i-1, i, i+1, i+2, i+3 [L T-1 ~> m s-1]
-  real, intent(in)    :: h_tiny  !< A tiny thickness to prevent division by zero [L ~> m]
+  real, intent(in)    :: h_tiny  !< A tiny thickness to prevent division by zero [H ~> m or kg m-2]
   real, intent(in)    :: u    !< Velocity or thickness flux on point i-1/2
                               !! [L T-1 ~> m s-1] or [L2 T-1 ~> m2 s-1]
   logical, intent(in) :: velocity_smoothing !< If true, use velocity to compute the smoothness indicator

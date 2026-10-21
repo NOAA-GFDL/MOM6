@@ -1163,12 +1163,12 @@ elemental subroutine flux_elem(u, h, h_p1, h_L, h_L_p1, h_R, h_R_p1, uh, &
   real :: h_marg
     ! Marginal thickness of a flux [H ~> m or kg m-2].
   real :: tmp
-    ! temporary variable to store precalculated values
+    ! temporary variable to store the open face area [L ~> m]
   real :: dh
-    ! h differential between E/W
+    ! Difference between the edge thicknesses [H ~> m or kg m-2]
 
   ! Set new values of uh and duhdu.
-  tmp = G_dy_Cu * por_face_area ! precalculate things
+  tmp = G_dy_Cu * por_face_area ! precalculate the open face area
 
   if (u > 0.) then
     if (vol_CFL) then
@@ -1289,7 +1289,8 @@ subroutine zonal_flux_thickness(u, h, h_W, h_E, h_u, dt, G, GV, US, LB, vol_CFL,
   real :: curv_3 ! A measure of the thickness curvature over a grid length [H ~> m or kg m-2]
   logical :: local_open_BC
   integer :: i, j, k, ish, ieh, jsh, jeh, nz, n
-  real :: dh
+  real :: dh     ! Difference between the eastern and western edge thicknesses [H ~> m or kg m-2]
+
   ish = LB%ish ; ieh = LB%ieh ; jsh = LB%jsh ; jeh = LB%jeh ; nz = GV%ke
 
   do k=1,nz ; do j=jsh,jeh ; do I=ish-1,ieh
@@ -1820,9 +1821,9 @@ subroutine meridional_mass_flux(v, h_in, h_S, h_N, vh, dt, G, GV, US, CS, OBC, p
   ! routine their first (nii) block index is at the tracer-column (i) points, while the second
   ! (nJJB) block index is staggered at the meridional velocity (v, C-grid J) points.
   real, dimension(nii,nJJB) :: &
-    vhbt_b
+    vhbt_b        ! The summed volume flux through meridional faces [H L2 T-1 ~> m3 s-1 or kg s-1]
   real, dimension(nii,nJJB,SZK_(GV)) :: &
-    vh_b
+    vh_b          ! Volume flux through meridional faces = v*h*dx [H L2 T-1 ~> m3 s-1 or kg s-1]
   real, dimension(nii,nJJB,SZK_(GV)) :: &
     dvhdv         ! Partial derivative of vh with v, at v points [H L ~> m2 or kg m-1].
   real, dimension(nii,nJJB) :: &
@@ -2335,7 +2336,8 @@ subroutine meridional_flux_thickness(v, h, h_S, h_N, h_v, dt, G, GV, US, LB, vol
   real :: h_marg ! The marginal thickness of a flux [H ~> m or kg m-2].
   logical :: local_open_BC
   integer :: i, j, k, ish, ieh, jsh, jeh, n, nz
-  real :: dh
+  real :: dh     ! Difference between the northern and southern edge thicknesses [H ~> m or kg m-2]
+
   ish = LB%ish ; ieh = LB%ieh ; jsh = LB%jsh ; jeh = LB%jeh ; nz = GV%ke
 
   do k=1,nz ; do J=jsh-1,jeh ; do i=ish,ieh

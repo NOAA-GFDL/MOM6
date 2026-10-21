@@ -2237,8 +2237,8 @@ subroutine read_netCDF_data_2d(filename, fieldname, values, MOM_Domain, &
   character(len=*), intent(in)  :: fieldname
     !< Field variable name
   real, intent(inout) :: values(:,:)
-    !< Field values read from the file.  It would be intent(out) but for the
-    !! need to preserve any initialized values in the halo regions.
+    !< Field values read from the file in arbitrary scaled or unscaled units [A ~> a] or [a].
+    !! It would be intent(out) but for the need to preserve any initialized values in the halo regions.
   type(MOM_domain_type), intent(in) :: MOM_Domain
     !< Model domain decomposition
   integer, optional, intent(in) :: timelevel
@@ -2246,7 +2246,7 @@ subroutine read_netCDF_data_2d(filename, fieldname, values, MOM_Domain, &
   integer, optional, intent(in) :: position
     !< Grid positioning flag
   real, optional, intent(in) :: rescale
-    !< Rescale factor, omitting this is the same as setting it to 1.
+    !< Rescaling factor [A a-1 ~> 1], omitting this is the same as setting it to 1.
   integer, optional, intent(in) :: turns
     !< Number of quarter-turns to rotate the data.  If absent the number of turns is taken
     !! from MOM_Domain.
@@ -2254,7 +2254,7 @@ subroutine read_netCDF_data_2d(filename, fieldname, values, MOM_Domain, &
   integer :: qturns
     ! Number of quarter-turns from input to model grid
   real, allocatable :: values_in(:,:)
-    ! Field array on the unrotated input grid
+    ! Field array on the unrotated input grid in arbitrary scaled or unscaled units [A ~> a] or [a]
   type(MOM_netcdf_file) :: handle
     ! netCDF file handle
 
@@ -2673,7 +2673,7 @@ subroutine MOM_write_field_legacy_2d(IO_handle, field_md, MOM_domain, field, tst
   real, dimension(:,:),   intent(inout) :: field      !< Unrotated field to write in arbitrary units [A ~> a]
   real,         optional, intent(in)    :: tstamp     !< Model timestamp, often in [days]
   integer,      optional, intent(in)    :: tile_count !< PEs per tile (default: 1)
-  real,         optional, intent(in)    :: fill_value !< Missing data fill value
+  real,         optional, intent(in)    :: fill_value !< Missing data fill value [a]
   integer,      optional, intent(in)    :: turns      !< Number of quarter-turns to rotate the data
   real,         optional, intent(in)    :: scale      !< A scaling factor that the field is multiplied by before
                                                       !! it is written [a A-1 ~> 1], for example to convert it

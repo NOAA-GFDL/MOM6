@@ -35,7 +35,7 @@ contains
 
 !> Allocate a pointer to a 1-d array
 subroutine safe_alloc_ptr_1d(ptr, i1, i2)
-  real, dimension(:), pointer :: ptr !< A pointer to allocate
+  real, dimension(:), pointer :: ptr !< A pointer to allocate [arbitrary]
   integer,            intent(in) :: i1 !< The size of the array, or its starting index if i2 is present
   integer, optional,  intent(in) :: i2 !< The ending index of the array
   if (.not.associated(ptr)) then
@@ -49,7 +49,7 @@ end subroutine safe_alloc_ptr_1d
 
 !> Allocate a pointer to a 2-d array based on its dimension sizes
 subroutine safe_alloc_ptr_2d_2arg(ptr, ni, nj)
-  real, dimension(:,:), pointer :: ptr !< A pointer to allocate
+  real, dimension(:,:), pointer :: ptr !< A pointer to allocate [arbitrary]
   integer, intent(in) :: ni !< The size of the 1st dimension of the array
   integer, intent(in) :: nj !< The size of the 2nd dimension of the array
   if (.not.associated(ptr)) then
@@ -59,7 +59,7 @@ end subroutine safe_alloc_ptr_2d_2arg
 
 !> Allocate a pointer to a 3-d array based on its dimension sizes
 subroutine safe_alloc_ptr_3d_3arg(ptr, ni, nj, nk)
-  real, dimension(:,:,:), pointer :: ptr !< A pointer to allocate
+  real, dimension(:,:,:), pointer :: ptr !< A pointer to allocate [arbitrary]
   integer, intent(in) :: ni !< The size of the 1st dimension of the array
   integer, intent(in) :: nj !< The size of the 2nd dimension of the array
   integer, intent(in) :: nk !< The size of the 3rd dimension of the array
@@ -70,7 +70,7 @@ end subroutine safe_alloc_ptr_3d_3arg
 
 !> Allocate a pointer to a 2-d array based on its index starting and ending values
 subroutine safe_alloc_ptr_2d(ptr, is, ie, js, je)
-  real, dimension(:,:), pointer :: ptr !< A pointer to allocate
+  real, dimension(:,:), pointer :: ptr !< A pointer to allocate [arbitrary]
   integer, intent(in) :: is !< The start index to allocate for the 1st dimension
   integer, intent(in) :: ie !< The end index to allocate for the 1st dimension
   integer, intent(in) :: js !< The start index to allocate for the 2nd dimension
@@ -82,7 +82,7 @@ end subroutine safe_alloc_ptr_2d
 
 !> Allocate a pointer to a 3-d array based on its index starting and ending values
 subroutine safe_alloc_ptr_3d(ptr, is, ie, js, je, nk)
-  real, dimension(:,:,:), pointer :: ptr !< A pointer to allocate
+  real, dimension(:,:,:), pointer :: ptr !< A pointer to allocate [arbitrary]
   integer, intent(in) :: is !< The start index to allocate for the 1st dimension
   integer, intent(in) :: ie !< The end index to allocate for the 1st dimension
   integer, intent(in) :: js !< The start index to allocate for the 2nd dimension
@@ -95,7 +95,7 @@ end subroutine safe_alloc_ptr_3d
 
 !> Allocate a pointer to a 3-d array based on its index starting and ending values
 subroutine safe_alloc_ptr_3d_6arg(ptr, is, ie, js, je, ks, ke)
-  real, dimension(:,:,:), pointer :: ptr !< A pointer to allocate
+  real, dimension(:,:,:), pointer :: ptr !< A pointer to allocate [arbitrary]
   integer, intent(in) :: is !< The start index to allocate for the 1st dimension
   integer, intent(in) :: ie !< The end index to allocate for the 1st dimension
   integer, intent(in) :: js !< The start index to allocate for the 2nd dimension
@@ -110,7 +110,7 @@ end subroutine safe_alloc_ptr_3d_6arg
 
 !> Allocate a 2-d allocatable array based on its index starting and ending values
 subroutine safe_alloc_allocatable_2d(ptr, is, ie, js, je)
-  real, dimension(:,:), allocatable :: ptr !< An allocatable array to allocate
+  real, dimension(:,:), allocatable :: ptr !< An allocatable array to allocate [arbitrary]
   integer, intent(in) :: is !< The start index to allocate for the 1st dimension
   integer, intent(in) :: ie !< The end index to allocate for the 1st dimension
   integer, intent(in) :: js !< The start index to allocate for the 2nd dimension
@@ -123,7 +123,7 @@ end subroutine safe_alloc_allocatable_2d
 !> Allocate a 3-d allocatable array based on its index starting and ending values
 !! and k-index size
 subroutine safe_alloc_allocatable_3d(ptr, is, ie, js, je, nk)
-  real, dimension(:,:,:), allocatable :: ptr !< An allocatable array to allocate
+  real, dimension(:,:,:), allocatable :: ptr !< An allocatable array to allocate [arbitrary]
   integer, intent(in) :: is !< The start index to allocate for the 1st dimension
   integer, intent(in) :: ie !< The end index to allocate for the 1st dimension
   integer, intent(in) :: js !< The start index to allocate for the 2nd dimension
@@ -136,7 +136,7 @@ end subroutine safe_alloc_allocatable_3d
 
 !> Allocate a 3-d allocatable array based on its 6 index starting and ending values
 subroutine safe_alloc_allocatable_3d_6arg(ptr, is, ie, js, je, ks, ke)
-  real, dimension(:,:,:), allocatable :: ptr !< An allocatable array to allocate
+  real, dimension(:,:,:), allocatable :: ptr !< An allocatable array to allocate [arbitrary]
   integer, intent(in) :: is !< The start index to allocate for the 1st dimension
   integer, intent(in) :: ie !< The end index to allocate for the 1st dimension
   integer, intent(in) :: js !< The start index to allocate for the 2nd dimension

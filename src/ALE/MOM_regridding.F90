@@ -243,7 +243,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   real :: maximum_depth ! The maximum depth of the ocean [m] (not in Z).
   real :: dz_extra      ! The thickness of an added layer to append to the woa09_dz profile when
                         ! maximum_depth is large [m] (not in Z).
-  real :: nominalDepth  ! Depth of ocean bottom in thickness units (positive downward) [H ~> m or kg m-2]
+  real :: nominalDepth  ! Depth of ocean bottom in mks units [m] (not in Z)
   real :: depth_q       ! A depth scale factor [nondim]
   real :: depth_s       ! The end of the shallow Z regime [m]
   real :: depth_d       ! The start of the deep Z regime [m]
