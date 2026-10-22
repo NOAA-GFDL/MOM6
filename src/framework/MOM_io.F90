@@ -297,10 +297,14 @@ subroutine create_MOM_file(IO_handle, filename, vars, novars, fields, &
   integer        :: var_periods, num_periods=0
   real, dimension(:), allocatable :: axis_val ! Axis label values [various]
   real, pointer, dimension(:) :: &
-    gridLatT => NULL(), & ! The latitude of T or B points for the purpose of labeling
-    gridLatB => NULL(), & ! the output axes, often in units of [degrees_N] or [km] or [m].
-    gridLonT => NULL(), & ! The longitude of T or B points for the purpose of labeling
-    gridLonB => NULL()    ! the output axes, often in units of [degrees_E] or [km] or [m].
+    gridLatT => NULL(), & ! The latitude of cell-center points for the purpose of labeling the
+                          ! output axes, often in units of [gridpoints], [degrees_N], [km] or [m].
+    gridLatB => NULL(), & ! The latitude of corner points for the purpose of labeling
+                          ! output axes, often in units of [gridpoints], [degrees_N], [km] or [m].
+    gridLonT => NULL(), & ! The longitude of cell-center points for the purpose of labeling
+                          ! output axes, often in units of [gridpoints], [degrees_E], [km] or [m].
+    gridLonB => NULL()    ! The longitude of corner points for the purpose of labeling.
+                          ! output axes, often in units of [gridpoints], [degrees_E], [km] or [m].
   character(len=40) :: time_units, x_axis_units, y_axis_units
   character(len=8)  :: t_grid, t_grid_read
   character(len=64) :: ax_name(5)  ! The axis names of a variable

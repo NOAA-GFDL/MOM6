@@ -553,16 +553,18 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
                                                          !! averaged over the barotropic integration [H ~> m or kg m-2].
 
   ! Local variables
-  real :: ubt_Cor(SZIB_(G),SZJ_(G)) ! The barotropic velocities that had been
-  real :: vbt_Cor(SZI_(G),SZJB_(G)) ! used to calculate the input Coriolis
-                                    ! terms [L T-1 ~> m s-1].
-  real :: wt_u(SZIB_(G),SZJ_(G),SZK_(GV)) ! wt_u and wt_v are the
-  real :: wt_v(SZI_(G),SZJB_(G),SZK_(GV)) ! normalized weights to
-                ! be used in calculating barotropic velocities, possibly with
-                ! sums less than one due to viscous losses [nondim]
-  real :: Iwt_u_tot(SZIB_(G),SZJ_(G)) ! Iwt_u_tot and Iwt_v_tot are the
-  real :: Iwt_v_tot(SZI_(G),SZJB_(G)) ! inverses of wt_u and wt_v vertical integrals,
-                ! used to normalize wt_u and wt_v [nondim]
+  real :: ubt_Cor(SZIB_(G),SZJ_(G)) ! The zonal barotropic velocities that had been used to
+                  ! calculate the input Coriolis terms [L T-1 ~> m s-1].
+  real :: vbt_Cor(SZI_(G),SZJB_(G)) ! The meridional barotropic velocities that had been used to
+                  ! calculate the input Coriolis terms [L T-1 ~> m s-1].
+  real :: wt_u(SZIB_(G),SZJ_(G),SZK_(GV)) ! The normalized weights to be used in calculating zonal
+                  ! barotropic velocities, possibly with sums less than one due to viscous losses [nondim]
+  real :: wt_v(SZI_(G),SZJB_(G),SZK_(GV)) ! The normalized weights to be used in calculating meridional
+                  ! barotropic velocities, possibly with sums less than one due to viscous losses [nondim]
+  real :: Iwt_u_tot(SZIB_(G),SZJ_(G)) ! The inverse of wt_u vertical integrals, used to normalize
+                  ! wt_u [nondim]
+  real :: Iwt_v_tot(SZI_(G),SZJB_(G)) ! The inverse of wt_v vertical integrals, used to normalize
+                  ! wt_v [nondim]
   real, dimension(SZIB_(G),SZJ_(G)) :: &
     av_rem_u, &   ! The weighted average of visc_rem_u [nondim]
     tmp_u, &      ! A temporary array at u points [L T-2 ~> m s-2] or [nondim]
@@ -666,11 +668,11 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
                   ! true [H ~> m or kg m-2].
     d_eta_PF, &   ! The change in eta_PF over the barotropic time stepping when
                   ! interp_eta_PF is true [H ~> m or kg m-2].
-    gtot_E, &     ! gtot_X is the effective total reduced gravity used to relate
-    gtot_W, &     ! free surface height deviations to pressure forces (including
-    gtot_N, &     ! GFS and baroclinic  contributions) in the barotropic momentum
-    gtot_S, &     ! equations half a grid-point in the X-direction (X is N, S, E, or W)
-                  ! from the thickness point [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
+    gtot_E, gtot_W, gtot_N, gtot_S, & ! gtot_X is the effective total reduced gravity used to relate
+                  ! free surface height deviations to pressure forces (including GFS and baroclinic
+                  ! contributions) in the barotropic momentum equations half a grid-point in the
+                  ! X-direction (X is N, S, E, or W) from the thickness point
+                  ! [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
                   ! (See Hallberg, J Comp Phys 1997 for a discussion.)
     eta_src, &    ! The source of eta per barotropic timestep [H ~> m or kg m-2].
     SpV_col_avg, &  ! The column average specific volume [R-1 ~> m3 kg-1]
@@ -3703,11 +3705,11 @@ subroutine set_dtbt(G, GV, US, CS, pbce, gtot_est, BT_cont, eta, SSH_add, Time)
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
-    gtot_E, &     ! gtot_X is the effective total reduced gravity used to relate
-    gtot_W, &     ! free surface height deviations to pressure forces (including
-    gtot_N, &     ! GFS and baroclinic  contributions) in the barotropic momentum
-    gtot_S        ! equations half a grid-point in the X-direction (X is N, S, E, or W)
-                  ! from the thickness point [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
+    gtot_E, gtot_W, gtot_N, gtot_S  ! gtot_X is the effective total reduced gravity used to relate
+                  ! free surface height deviations to pressure forces (including GFS and baroclinic
+                  ! contributions) in the barotropic momentum equations half a grid-point in the
+                  ! X-direction (X is N, S, E, or W) from the thickness point
+                  ! [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
                   ! (See Hallberg, J Comp Phys 1997 for a discussion.)
   real, dimension(SZIBS_(G),SZJ_(G)) :: &
     Datu          ! Basin depth at u-velocity grid points times the y-grid
@@ -4860,9 +4862,6 @@ function uhbt_to_ubt(uhbt, BTC) result(ubt)
   real :: uherr_min, uherr_max   ! The bounding values of the transport error [H L2 T-1 ~> m3 s-1 or kg s-1]
                                  ! or [H L2 ~> m3 or kg].
   real, parameter :: tol = 1.0e-10 ! A fractional match tolerance [nondim]
-  real, parameter :: vs1 = 1.25  ! Nondimensional parameters used in limiting
-  real, parameter :: vs2 = 2.0   ! the velocity, starting at vs1, with the
-                                 ! maximum increase of vs2, both [nondim].
   integer :: itt, max_itt = 20
 
   ! Find the value of ubt that gives uhbt.
@@ -4993,9 +4992,6 @@ function vhbt_to_vbt(vhbt, BTC) result(vbt)
   real :: vherr_min, vherr_max   ! The bounding values of the transport error [H L2 T-1 ~> m3 s-1 or kg s-1]
                                  ! or [H L2 ~> m3 or kg].
   real, parameter :: tol = 1.0e-10 ! A fractional match tolerance [nondim]
-  real, parameter :: vs1 = 1.25  ! Nondimensional parameters used in limiting
-  real, parameter :: vs2 = 2.0   ! the velocity, starting at vs1, with the
-                                 ! maximum increase of vs2, both [nondim].
   integer :: itt, max_itt = 20
 
   ! Find the value of vbt that gives vhbt.

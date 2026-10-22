@@ -103,9 +103,10 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
     uhr             ! The remaining zonal thickness flux [H L2 ~> m3 or kg]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: &
     vhr             ! The remaining meridional thickness fluxes [H L2 ~> m3 or kg]
-  real :: uh_neglect(SZIB_(G),SZJ_(G)) ! uh_neglect and vh_neglect are the
-  real :: vh_neglect(SZI_(G),SZJB_(G)) ! magnitude of remaining transports that
-                                       ! can be simply discarded [H L2 ~> m3 or kg].
+  real :: uh_neglect(SZIB_(G),SZJ_(G))  ! The magnitude of remaining zonal transports that
+                                        ! can be simply discarded [H L2 ~> m3 or kg].
+  real :: vh_neglect(SZI_(G),SZJB_(G))  ! The magnitude of remaining meridional transports that
+                                        ! can be simply discarded [H L2 ~> m3 or kg].
 
   real :: landvolfill                   ! An arbitrary? nonzero cell volume [H L2 ~> m3 or kg].
   logical :: use_PPM_stencil            ! If true, use the correct PPM stencil width.

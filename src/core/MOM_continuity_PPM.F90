@@ -1601,20 +1601,19 @@ subroutine set_zonal_BT_cont(u, h_in, h_W, h_E, BT_cont, uh_tot_0, duhdu_tot_0, 
     zeros         ! An array of full of 0 transports [H L2 T-1 ~> m3 s-1 or kg s-1]
   real, dimension(nIIB,njj) :: &
     duL, duR, &   ! The barotropic velocity increments that give the westerly
-                  ! (duL) and easterly (duR) test velocities [L T-1 ~> m s-1].
+                  ! (duL) and easterly (duR) test velocities [L T-1 ~> m s-1]
     du_CFL, &     ! The velocity increment that corresponds to CFL_min [L T-1 ~> m s-1].
-    FAmt_L, FAmt_R, & ! The summed effective marginal face areas for the 3
-    FAmt_0, &     ! test velocities [H L ~> m2 or kg m-1].
-    uhtot_L, &    ! The summed transport with the westerly (uhtot_L) and
-    uhtot_R       ! and easterly (uhtot_R) test velocities [H L2 T-1 ~> m3 s-1 or kg s-1].
+    FAmt_L, FAmt_R, FAmt_0, & ! The summed effective marginal face areas for the 3
+                  ! test velocities [H L ~> m2 or kg m-1]
+    uhtot_L, &    ! The summed transport with the westerly test velocities [H L2 T-1 ~> m3 s-1 or kg s-1]
+    uhtot_R       ! The summed transport with the easterly test velocities [H L2 T-1 ~> m3 s-1 or kg s-1]
   real :: &
-    u_L, u_R, &   ! The westerly (u_L), easterly (u_R), and zero-barotropic
-    u_0, &        ! transport (u_0) layer test velocities [L T-1 ~> m s-1].
-    duhdu_L, &    ! The effective layer marginal face areas with the westerly
-    duhdu_R, &    ! (_L), easterly (_R), and zero-barotropic (_0) test
-    duhdu_0, &    ! velocities [H L ~> m2 or kg m-1].
-    uh_L, uh_R, & ! The layer transports with the westerly (_L), easterly (_R),
-    uh_0       ! and zero-barotropic (_0) test velocities [H L2 T-1 ~> m3 s-1 or kg s-1].
+    u_L, u_R, u_0, & ! The westerly (u_L), easterly (u_R), and zero-barotropic transport (u_0)
+                  ! layer test velocities [L T-1 ~> m s-1]
+    duhdu_L, duhdu_R, duhdu_0, & ! The effective layer marginal face areas with the westerly (_L),
+                  ! easterly (_R), and zero-barotropic (_0) test velocities [H L ~> m2 or kg m-1]
+    uh_L, uh_R, uh_0 ! The layer transports with the westerly (_L), easterly (_R), and
+                  ! zero-barotropic (_0) test velocities [H L2 T-1 ~> m3 s-1 or kg s-1]
   real :: FA_0    ! The effective face area with 0 barotropic transport [L H ~> m2 or kg m-1].
   real :: FA_avg  ! The average effective face area [L H ~> m2 or kg m-1], nominally given by
                   ! the realized transport divided by the barotropic velocity.
@@ -2657,20 +2656,19 @@ subroutine set_merid_BT_cont(v, h_in, h_S, h_N, BT_cont, vh_tot_0, dvhdv_tot_0, 
     dvL, dvR, &   ! The barotropic velocity increments that give the southerly
                   ! (dvL) and northerly (dvR) test velocities [L T-1 ~> m s-1].
     dv_CFL, &     ! The velocity increment that corresponds to CFL_min [L T-1 ~> m s-1].
-    FAmt_L, FAmt_R, & ! The summed effective marginal face areas for the 3
-    FAmt_0, &     ! test velocities [H L ~> m2 or kg m-1].
-    vhtot_L, &    ! The summed transport with the southerly (vhtot_L) and
-    vhtot_R       ! and northerly (vhtot_R) test velocities [H L2 T-1 ~> m3 s-1 or kg s-1].
+    FAmt_L, FAmt_R, FAmt_0, & ! The summed effective marginal face areas for the 3
+                  ! test velocities [H L ~> m2 or kg m-1].
+    vhtot_L, &    ! The summed transport with the southerly test velocities [H L2 T-1 ~> m3 s-1 or kg s-1]
+    vhtot_R       ! The summed transport with the northerly test velocities [H L2 T-1 ~> m3 s-1 or kg s-1]
   real, dimension(nii,nJJB) :: &
     zeros      ! An array of full of 0 transports [H L2 T-1 ~> m3 s-1 or kg s-1]
   real :: &
-    vh_L, vh_R, & ! The layer transports with the southerly (_L), northerly (_R)
-    vh_0, &       ! and zero-barotropic (_0) test velocities [H L2 T-1 ~> m3 s-1 or kg s-1].
-    dvhdv_L, &    ! The effective layer marginal face areas with the southerly
-    dvhdv_R, &    ! (_L), northerly (_R), and zero-barotropic (_0) test
-    dvhdv_0, &    ! velocities [H L ~> m2 or kg m-1].
-    v_L, v_R, &   ! The southerly (v_L), northerly (v_R), and zero-barotropic
-    v_0        ! transport (v_0) layer test velocities [L T-1 ~> m s-1].
+    vh_L, vh_R, vh_0, & ! The layer transports with the southerly (_L), northerly (_R)
+                  ! and zero-barotropic (_0) test velocities [H L2 T-1 ~> m3 s-1 or kg s-1].
+    dvhdv_L, dvhdv_R, dvhdv_0, & ! The effective layer marginal face areas with the southerly (_L),
+                  ! northerly (_R), and zero-barotropic (_0) test velocities [H L ~> m2 or kg m-1]
+    v_L, v_R, v_0 ! The southerly (v_L), northerly (v_R), and zero-barotropic transport (v_0) layer
+                  ! test velocities [L T-1 ~> m s-1].
   real :: FA_0    ! The effective face area with 0 barotropic transport [H L ~> m2 or kg m-1].
   real :: FA_avg  ! The average effective face area [H L ~> m2 or kg m-1], nominally given by
                   ! the realized transport divided by the barotropic velocity.

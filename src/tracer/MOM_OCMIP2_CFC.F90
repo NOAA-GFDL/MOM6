@@ -105,9 +105,12 @@ function register_OCMIP2_CFC(HI, GV, param_file, CS, tr_Reg, restart_CS)
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   real, dimension(:,:,:), pointer :: tr_ptr => NULL() ! A pointer to a CFC tracer [mol m-3]
-  real :: a11_dflt(4), a12_dflt(4) ! Default values of the various coefficients
-  real :: d11_dflt(4), d12_dflt(4) ! in the expressions for the solubility and
-  real :: e11_dflt(3), e12_dflt(3) ! Schmidt numbers [various units by element].
+  real :: a11_dflt(4), a12_dflt(4) ! Default values of various coefficients in the expressions
+                                   ! for the Schmidt numbers [various units by element]
+  real :: d11_dflt(4), d12_dflt(4) ! Default values of various coefficients in the expressions
+                                   ! for the solubilities [various units by element]
+  real :: e11_dflt(3), e12_dflt(3) ! Default values of various coefficients in the expressions
+                                   ! for the solubilities [various units by element]
   character(len=48) :: flux_units ! The units for tracer fluxes.
   logical :: register_OCMIP2_CFC
   integer :: isd, ied, jsd, jed, nz
@@ -441,8 +444,10 @@ subroutine OCMIP2_CFC_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, GV, US
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
-    CFC11_flux, &    ! The fluxes of CFC11 and CFC12 into the ocean, in unscaled units of
-    CFC12_flux       ! CFC concentrations times a vertical mass flux [mol R Z m-3 T-1 ~> mol kg m-3 s-1]
+    CFC11_flux, &    ! The fluxes of CFC11 into the ocean, in unscaled units of CFC concentrations
+                     ! times a vertical mass flux [mol R Z m-3 T-1 ~> mol kg m-3 s-1]
+    CFC12_flux       ! The fluxes of CFC12 into the ocean, in unscaled units of CFC concentrations
+                     ! times a vertical mass flux [mol R Z m-3 T-1 ~> mol kg m-3 s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: h_work ! Used so that h can be modified [H ~> m or kg m-2]
   integer :: i, j, k, is, ie, js, je, nz, idim(4), jdim(4)
 
