@@ -7,7 +7,7 @@
 module MOM_intrinsic_functions
 
 use iso_fortran_env, only : stdout => output_unit, stderr => error_unit
-use iso_fortran_env, only : int64
+use iso_fortran_env, only : int32, int64
 
 implicit none ; private
 
@@ -25,21 +25,43 @@ interface
     real :: a
       !< exp(x) [nondim]
   end function exp_repro
+
 end interface
 
 real, parameter :: real_mold = 0.
   !< Real mold for numerical format queries [nondim]
+integer, parameter :: int_rsize &
+    = merge(int64, int32, storage_size(real_mold) > storage_size(0_int32))
+  !< Integer kind with the same storage size as default real
+integer(kind=int_rsize), parameter :: int_mold = 0
+  !< Integer mold value
 
 ! Floating point layout
 integer, parameter :: expbit = digits(real_mold) - 1
   !< Position of lowest exponent bit
-  ! NOTE: digits() includes the implicit leading digit
 integer, parameter :: signbit = storage_size(real_mold) - 1
   !< Position of sign bit
 integer, parameter :: expwidth = signbit - expbit
   !< Number of exponent bits
 integer, parameter :: expbias = maxexponent(real_mold) - 1
   !< Exponent bias
+integer(kind=int_rsize), parameter :: signmask = ibset(0_int_rsize, signbit)
+  !< Sign bit mask
+integer(kind=int_rsize), parameter :: expmax = 2_int_rsize**expwidth - 1
+  !< Maximum encoded exponent value; reserved for infinity and NaN
+integer(kind=int_rsize), parameter :: expmask = ishft(expmax, expbit)
+  !< Exponent field mask
+integer(kind=int_rsize), parameter :: expstep = 2_int_rsize**expbit
+  !< Step between encoded exponent values.
+  !! Also the smallest (non-subnormal) representable value.
+
+! Mathematical constants (assuming real64)
+real, parameter :: ln2 = 0.693147180559945309417232121458176568
+  !< Natural logarithm of 2 [nondim]
+real, parameter :: ln2_hi = 0.69314718036912381649017333984375
+  !< Upper 32 bits of ln2 [nondim]
+real, parameter :: ln2_lo = 1.90821492927058770002e-10
+  !< Remaining bits of ln2 [nondim]
 
 contains
 
