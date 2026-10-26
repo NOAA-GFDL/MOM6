@@ -1,0 +1,16 @@
+/* Generate a candidate for MOM_log.F90:log1p_compensated_near.
+   Run from intrinsics/: sollya generators/generate_MOM_log_near.sollya
+
+   Approximate log(1+x) - x + x^2/2 on [-1/16, 265/4096], using only
+   powers x^3 through x^13.  The linear and quadratic terms are evaluated
+   separately with compensation in the Fortran routine.
+
+   This reconstructs the approximation problem, not the exact historical
+   generation settings: its coefficients differ from the currently stored
+   ones.  Validate rounded coefficients and the complete compensated
+   evaluation before replacing the Fortran constants. */
+prec = 256!;
+f = log(1+x)-x+x^2/2;
+p = remez(f, [|3,4,5,6,7,8,9,10,11,12,13|], [-1/16;265/4096], default, 1e-20);
+for i from 3 to 13 do print(coeff(p,i));
+quit;
