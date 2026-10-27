@@ -53,7 +53,7 @@ public read_OBC_dynamics_data
 public read_OBC_tracer_data
 public update_OBC_dynamics_data
 public update_OBC_tracer_data
-public initialize_OBC_segment_reservoirs
+public initialize_OBC_tracer_reservoirs
 public open_boundary_test_extern_uv
 public open_boundary_test_extern_h
 public open_boundary_zero_normal_flow
@@ -76,7 +76,6 @@ public copy_OBC_tracer_reservoirs
 public copy_OBC_thickness_reservoirs
 public update_segment_tracer_reservoirs
 public update_segment_thickness_reservoirs
-public set_initialized_OBC_tracer_reservoirs
 public update_OBC_ramp
 public remap_OBC_fields
 public rotate_OBC_config
@@ -155,7 +154,6 @@ end type OBC_segment_data_type
 
 !> Tracer on OBC segment data structure, for putting into a segment tracer registry.
 type, public :: OBC_segment_tracer_type
-  logical           :: is_initialized       !< Reservoir values have been set when True
   character(len=32) :: name                 !< Tracer name used for error messages
   integer           :: ntr_index = -1       !< Index of segment tracer in the global tracer registry
   real, allocatable :: t(:,:,:)             !< External tracer concentration array in rescaled
@@ -954,6 +952,8 @@ subroutine open_boundary_config(G, US, param_file, OBC)
     ! No open boundaries have been requested
     call open_boundary_dealloc(OBC)
   endif
+
+  id_clock_pass = cpu_clock_id('(Ocean OBC halo updates)', grain=CLOCK_ROUTINE)
 
 end subroutine open_boundary_config
 
@@ -2294,13 +2294,12 @@ subroutine open_boundary_halo_update(G, OBC)
 
   if (.not.associated(OBC)) return
 
-  id_clock_pass = cpu_clock_id('(Ocean OBC halo updates)', grain=CLOCK_ROUTINE)
   if (OBC%radiation_BCs_exist_globally) call pass_vector(OBC%rx_normal, OBC%ry_normal, G%Domain, &
                      To_All+Scalar_Pair)
   if (OBC%oblique_BCs_exist_globally) then
-!   call pass_vector(OBC%rx_oblique_u, OBC%ry_oblique_v, G%Domain, To_All+Scalar_Pair)
-!   call pass_vector(OBC%ry_oblique_u, OBC%rx_oblique_v, G%Domain, To_All+Scalar_Pair)
-!   call pass_vector(OBC%cff_normal_u, OBC%cff_normal_v, G%Domain, To_All+Scalar_Pair)
+  !   call pass_vector(OBC%rx_oblique_u, OBC%ry_oblique_v, G%Domain, To_All+Scalar_Pair)
+  !   call pass_vector(OBC%ry_oblique_u, OBC%rx_oblique_v, G%Domain, To_All+Scalar_Pair)
+  !   call pass_vector(OBC%cff_normal_u, OBC%cff_normal_v, G%Domain, To_All+Scalar_Pair)
     call create_group_pass(OBC%pass_oblique, OBC%rx_oblique_u, OBC%ry_oblique_v, G%Domain, To_All+Scalar_Pair)
     call create_group_pass(OBC%pass_oblique, OBC%ry_oblique_u, OBC%rx_oblique_v, G%Domain, To_All+Scalar_Pair)
     call create_group_pass(OBC%pass_oblique, OBC%cff_normal_u, OBC%cff_normal_v, G%Domain, To_All+Scalar_Pair)
@@ -2604,26 +2603,14 @@ subroutine setup_OBC_tracer_reservoirs(G, GV, OBC, restart_CS)
 
         if (segment%is_E_or_W .and. set_tres_x) then
           I = segment%HI%IsdB
-          if (segment%tr_Reg%Tr(m)%is_initialized) then
-            do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
-              OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,j,k)
-            enddo ; enddo
-          else
-            do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
-              OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%t(i,j,k)
-            enddo ; enddo
-          endif
+          do k=1,GV%ke ; do j=segment%HI%jsd,segment%HI%jed
+            OBC%tres_x(I,j,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,j,k)
+          enddo ; enddo
         elseif (segment%is_N_or_S .and. set_tres_y) then
           J = segment%HI%JsdB
-          if (segment%tr_Reg%Tr(m)%is_initialized) then
-            do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
-              OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,J,k)
-            enddo ; enddo
-          else
-            do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
-              OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%t(i,J,k)
-            enddo ; enddo
-          endif
+          do k=1,GV%ke ; do i=segment%HI%isd,segment%HI%ied
+            OBC%tres_y(i,J,k,m) = I_scale * segment%tr_Reg%Tr(m)%tres(i,J,k)
+          enddo ; enddo
         endif
       endif ; endif
     enddo
@@ -2695,30 +2682,6 @@ subroutine setup_OBC_thickness_reservoirs(G, GV, OBC, restart_CS)
   enddo
 
 end subroutine setup_OBC_thickness_reservoirs
-
-!> Record that the tracer reservoirs have been initialized so that their values are not reset later.
-subroutine set_initialized_OBC_tracer_reservoirs(G, OBC, restart_CS)
-  type(ocean_grid_type),          intent(in)    :: G   !< Ocean grid structure
-  type(ocean_OBC_type),           intent(in)    :: OBC !< Open boundary control structure
-  type(MOM_restart_CS),           intent(inout) :: restart_CS !< MOM restart control structure
-  character(len=12) :: x_var_name, y_var_name
-  integer :: m
-
-  do m=1,OBC%ntr
-    ! Set the names of the reservoirs for this tracer in the restart file
-    if (modulo(G%HI%turns, 2) == 0) then
-      write(x_var_name,'("tres_x_",I3.3)') m
-      write(y_var_name,'("tres_y_",I3.3)') m
-    else
-      write(x_var_name,'("tres_y_",I3.3)') m
-      write(y_var_name,'("tres_x_",I3.3)') m
-    endif
-
-    if (OBC%tracer_x_reservoirs_used(m)) call set_initialized(OBC%tres_x, x_var_name, restart_CS)
-    if (OBC%tracer_y_reservoirs_used(m)) call set_initialized(OBC%tres_y, y_var_name, restart_CS)
-  enddo
-
-end subroutine set_initialized_OBC_tracer_reservoirs
 
 !> Copy radiation and oblique boundary condition coefficients (phase speeds and normalizing
 !! denominator) from the global restart arrays into the per-segment arrays.
@@ -4999,25 +4962,22 @@ subroutine update_OBC_tracer_data(OBC, include_bgc)
   enddo ! end segment loop
 end subroutine update_OBC_tracer_data
 
-!> Initialize thickness and tracer reservoirs to external value.
-subroutine initialize_OBC_segment_reservoirs(GV, OBC)
-  type(verticalGrid_type), intent(in) :: GV  !< Ocean vertical grid structure
-  type(ocean_OBC_type),    pointer    :: OBC !< Open boundary structure
+!> Initialize tracer reservoirs to the current external tracer value.
+subroutine initialize_OBC_tracer_reservoirs(OBC)
+  type(ocean_OBC_type), pointer :: OBC !< Open boundary structure
 
   ! Local variables
   type(OBC_segment_type), pointer :: segment => NULL()
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
   integer :: is_seg, ie_seg, js_seg, je_seg, nz
   integer :: n, m, nt, i, j, k
-  character(len=256) :: msg ! Error message
 
   if (.not. associated(OBC)) return
 
-  nz = GV%ke
+  nz = OBC%ke
 
   do n=1,OBC%number_of_segments
     segment => OBC%segment(n)
-
     if (.not. segment%on_pe) cycle
 
     isd = segment%HI%isd ; ied = segment%HI%ied ; IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
@@ -5031,32 +4991,17 @@ subroutine initialize_OBC_segment_reservoirs(GV, OBC)
       js_seg = JsdB ; je_seg = JedB ! = js_seg
     endif
 
-    ! Thickness
-    ! If the thickness reservoir has not yet been initialized, then set to external value.
-    if (OBC%thickness_x_reservoirs_used .or. OBC%thickness_y_reservoirs_used) then
-      if (.not. segment%h_Reg%is_initialized) then ! h_Reg may be initialized by fill_thickness_segments
-        do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
-          segment%h_Reg%h_res(i,j,k) = segment%h_Reg%h(i,j,k)
-        enddo ; enddo ; enddo
-        segment%h_Reg%is_initialized = .true.
-      endif
-    endif
-
-    ! Tracers
     ! If the tracer reservoir has not yet been initialized, then set to external value.
     do m=NUM_PHYS_FIELDS-1, segment%num_fields ! F_T = NUM_PHYS_FIELDS-1 and F_S = NUM_PHYS_FIELDS
       if ((.not. allocated(segment%field(m)%buffer_dst)) .or. &
           (segment%field(m)%bgc_tracer .and. (.not. OBC%update_OBC_seg_data))) cycle
       nt = segment%field(m)%tr_index
-      if (.not. segment%tr_Reg%Tr(nt)%is_initialized) then ! T/S may be initialized by fill_temp_salt_segments
-        do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
-          segment%tr_Reg%Tr(nt)%tres(i,j,k) = segment%tr_Reg%Tr(nt)%t(i,j,k)
-        enddo ; enddo ; enddo
-        segment%tr_Reg%Tr(nt)%is_initialized = .true.
-      endif
+      do k=1,nz ; do j=js_seg,je_seg ; do i=is_seg,ie_seg
+        segment%tr_Reg%Tr(nt)%tres(i,j,k) = segment%tr_Reg%Tr(nt)%t(i,j,k)
+      enddo ; enddo ; enddo
     enddo ! end tracer field loop
   enddo ! end segment loop
-end subroutine initialize_OBC_segment_reservoirs
+end subroutine initialize_OBC_tracer_reservoirs
 
 !> Update the OBC ramp value as a function of time.
 !! If called with the optional argument activate=.true., record the
@@ -5270,12 +5215,10 @@ subroutine register_segment_tracer(tr_ptr, ntr_index, param_file, GV, segment, O
 
   if (present(OBC_scalar)) then
     init_value = OBC_scalar
-    segment%tr_Reg%Tr(ntseg)%is_initialized = .true.
     segment%tr_Reg%Tr(ntseg)%resrv_lfac_in  = 0.0
     segment%tr_Reg%Tr(ntseg)%resrv_lfac_out = 0.0
   else
     init_value = 0.0
-    segment%tr_Reg%Tr(ntseg)%is_initialized = .false.
     ! Currently, resrv_lfac_in/out are for BGC tracers only.
     if (present(resrv_lfac_in))  segment%tr_Reg%Tr(ntseg)%resrv_lfac_in  = resrv_lfac_in
     if (present(resrv_lfac_out)) segment%tr_Reg%Tr(ntseg)%resrv_lfac_out = resrv_lfac_out
@@ -5499,31 +5442,7 @@ subroutine fill_obgc_segments(G, GV, OBC, tr_ptr, tr_name)
       enddo ; enddo
     endif
 
-    if (.not.segment%tr_Reg%Tr(nt)%is_initialized) &
-      segment%tr_Reg%Tr(nt)%tres(:,:,:) = segment%tr_Reg%Tr(nt)%t(:,:,:)
-
-    if (OBC%reservoir_init_bug) then
-      ! OBC%tres_x and OBC%tres_y should not be set here, but in a subsequent call to setup_OBC_tracer_reservoirs.
-      ! Note that fill_obgc_segments is not called for runs that start from a restart file.
-      I_scale = 1.0
-      if (segment%tr_Reg%Tr(nt)%scale /= 0.0) I_scale = 1.0 / segment%tr_Reg%Tr(nt)%scale
-      if (segment%is_E_or_W) then
-        if (allocated(OBC%tres_x)) then
-          I = segment%HI%IsdB
-          do k=1,nz ; do j=segment%HI%jsd,segment%HI%jed
-            OBC%tres_x(I,j,k,nt) = I_scale * segment%tr_Reg%Tr(nt)%tres(I,j,k)
-          enddo ; enddo
-        endif
-      else  ! segment%is_N_or_S
-        if (allocated(OBC%tres_y)) then
-          J = segment%HI%JsdB
-          do k=1,nz ; do i=segment%HI%isd,segment%HI%ied
-            OBC%tres_y(i,J,k,nt) = I_scale * segment%tr_Reg%Tr(nt)%tres(i,J,k)
-          enddo ; enddo
-        endif
-      endif
-    endif
-
+    segment%tr_Reg%Tr(nt)%tres(:,:,:) = segment%tr_Reg%Tr(nt)%t(:,:,:)
   enddo ! End of loop over segments.
 
 end subroutine fill_obgc_segments
@@ -5579,10 +5498,9 @@ subroutine fill_temp_salt_segments(G, GV, US, OBC, tv)
         endif
       enddo ; enddo
     endif
-    if (.not.segment%tr_Reg%Tr(1)%is_initialized) &
-      segment%tr_Reg%Tr(1)%tres(:,:,:) = segment%tr_Reg%Tr(1)%t(:,:,:)
-    if (.not.segment%tr_Reg%Tr(2)%is_initialized) &
-      segment%tr_Reg%Tr(2)%tres(:,:,:) = segment%tr_Reg%Tr(2)%t(:,:,:)
+
+    segment%tr_Reg%Tr(1)%tres(:,:,:) = segment%tr_Reg%Tr(1)%t(:,:,:)
+    segment%tr_Reg%Tr(2)%tres(:,:,:) = segment%tr_Reg%Tr(2)%t(:,:,:)
   enddo
 
 end subroutine fill_temp_salt_segments
