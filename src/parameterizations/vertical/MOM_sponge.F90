@@ -416,13 +416,13 @@ subroutine apply_sponge(h, tv, dt, G, GV, US, ea, eb, CS, Rcv_ml)
       call global_i_mean(eta_anom(:,:), eta_mean_anom(:,K), G, tmp_scale=US%Z_to_m)
     enddo
 
-    if (CS%fldno > 0) allocate(fld_mean_anom(G%isd:G%ied,nz,CS%fldno))
-    do m=1,CS%fldno
+    if (CS%fldno > 0) allocate(fld_mean_anom(G%jsd:G%jed,nz,CS%fldno))
+    do m=1,CS%fldno ; do k=1,nz
       do j=js,je ; do i=is,ie
         fld_anom(i,j) = CS%var(m)%p(i,j,k) - CS%Ref_val_im(m)%p(j,k)
       enddo ; enddo
       call global_i_mean(fld_anom(:,:), fld_mean_anom(:,k,m), G, h(:,:,k))
-    enddo
+    enddo ; enddo
 
     do j=js,je ; if (CS%Iresttime_im(j) > 0.0) then
       damp = dt * CS%Iresttime_im(j) ; damp_1pdamp = damp / (1.0 + damp)
@@ -629,9 +629,8 @@ subroutine sponge_end(CS)
   if (associated(CS%Ref_eta_im)) deallocate(CS%Ref_eta_im)
 
   do m=1,CS%fldno
-    if (associated(CS%Ref_val(CS%fldno)%p)) deallocate(CS%Ref_val(CS%fldno)%p)
-    if (associated(CS%Ref_val_im(CS%fldno)%p)) &
-      deallocate(CS%Ref_val_im(CS%fldno)%p)
+    if (associated(CS%Ref_val(m)%p)) deallocate(CS%Ref_val(m)%p)
+    if (associated(CS%Ref_val_im(m)%p)) deallocate(CS%Ref_val_im(m)%p)
   enddo
 
   deallocate(CS)
