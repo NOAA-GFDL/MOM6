@@ -970,6 +970,7 @@ EXCLUDE_SYMLINKS       = NO
 # exclude all test directories for example use the pattern */test/*
 
 EXCLUDE_PATTERNS       = makedep.py \
+                         generate_MOM_log_data_n128.py \
                          Makefile \
                          INSTALL
 
