@@ -1462,13 +1462,13 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
     call cpu_clock_begin(id_clock_ml_restrat)
     if (CS%wave_enhanced_ustar .and. CS%StokesMOST) then
       if (associated(CS%visc%Lam2)) then
-        call mixedlayer_restrat(h, CS%uhtr, CS%vhtr, CS%tv, forces, dt, CS%visc%MLD, CS%visc%h_ML, &
+        call mixedlayer_restrat(h, u, v, CS%uhtr, CS%vhtr, CS%tv, forces, dt, CS%visc%MLD, CS%visc%h_ML, &
                     CS%visc%sfc_buoy_flx, CS%VarMix, G, GV, US, CS%mixedlayer_restrat_CSp, CS%visc%Lam2)
       else
         call MOM_error(FATAL,'step_MOM_dynamics:CS%visc%Lam2 not associated')
       endif
     else
-      call mixedlayer_restrat(h, CS%uhtr, CS%vhtr, CS%tv, forces, dt, CS%visc%MLD, CS%visc%h_ML, &
+      call mixedlayer_restrat(h, u, v, CS%uhtr, CS%vhtr, CS%tv, forces, dt, CS%visc%MLD, CS%visc%h_ML, &
                   CS%visc%sfc_buoy_flx, CS%VarMix, G, GV, US, CS%mixedlayer_restrat_CSp)
     endif
     call cpu_clock_end(id_clock_ml_restrat)
