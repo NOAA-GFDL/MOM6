@@ -393,7 +393,7 @@ subroutine calc_resoln_function(h, tv, G, GV, US, CS, MEKE, OBC, dt)
     !$OMP do
     do J=js-1,Jeq ; do I=is-1,Ieq
       if ((OBC%segnum_u(I,j) /= 0) .or. (OBC%segnum_u(I,j+1) /= 0) .or. &
-          (OBC%segnum_v(i,J) /= 0) .or. (OBC%segnum_u(i+1,J) /= 0)) then
+          (OBC%segnum_v(i,J) /= 0) .or. (OBC%segnum_v(i+1,J) /= 0)) then
         ! This is an OBC node, so use the fact that G%mask2dT is zero behind OBCs.  The nondimensional
         ! constant 1e-20 in the denominator makes this a de facto implementation of Adcroft's reciprocal
         ! rule with a value that works for either 64-bit or 32-bit real numbers.
