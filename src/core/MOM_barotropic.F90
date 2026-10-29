@@ -276,6 +276,10 @@ type, public :: barotropic_CS ; private
   logical :: linearized_BT_PV  !< If true, the PV and interface thicknesses used
                              !! in the barotropic Coriolis calculation is time
                              !! invariant and linearized.
+  logical :: DCor_v_bug      !< If True, use a horizontal indexing bug in the contribution of free
+                             !! surface height anomalies to the thicknesses used to calculate the
+                             !! barotropic Coriolis term.  This only applies in Boussinesq mode when
+                             !! LINEARIZED_BT_CORIOLIS is false.
   logical :: use_filter      !< If true, use streaming band-pass filter to detect the
                              !! instantaneous tidal signals in the simulation.
   logical :: linear_freq_drag  !< If true, apply a linear frequency-dependent drag to the tidal
@@ -909,11 +913,19 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
         enddo
       endif
 
-      !$OMP parallel do default(shared)
-      do J=js-1,je ; do i=is,ie
-        DCor_v(i,J) = 0.5 * (max(GV%Z_to_H*G%bathyT(i,j+1) + eta_in(i+1,j), 0.0) + &
-                             max(GV%Z_to_H*G%bathyT(i,j) + eta_in(i,j), 0.0) )
-      enddo ; enddo
+      if (CS%DCor_v_bug) then
+        !$OMP parallel do default(shared)
+        do J=js-1,je ; do i=is,ie
+          DCor_v(i,J) = 0.5 * (max(GV%Z_to_H*G%bathyT(i,j+1) + eta_in(i+1,j), 0.0) + &
+                               max(GV%Z_to_H*G%bathyT(i,j) + eta_in(i,j), 0.0) )
+        enddo ; enddo
+      else
+        !$OMP parallel do default(shared)
+        do J=js-1,je ; do i=is,ie
+          DCor_v(i,J) = 0.5 * (max(GV%Z_to_H*G%bathyT(i,j+1) + eta_in(i,j+1), 0.0) + &
+                               max(GV%Z_to_H*G%bathyT(i,j) + eta_in(i,j), 0.0) )
+        enddo ; enddo
+      endif
       if (CS%interior_OBC_PV .and. CS%BT_OBC%v_OBCs_on_PE) then
         !$OMP parallel do default(shared)
         do j = max(js,CS%BT_OBC%js_v_S_obc), min(je,CS%BT_OBC%je_v_S_obc)
@@ -5927,6 +5939,13 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                  "If True, use an order of operations that is not bitwise "//&
                  "rotationally symmetric in the meridional Coriolis term of "//&
                  "the barotropic solver.", default=.false.)
+  call get_param(param_file, mdl, "NONLIN_BT_COR_INDEX_BUG", CS%DCor_v_bug, &
+                 "If True, use a horizontal indexing bug in the contribution of free "//&
+                 "surface height anomalies to the thicknesses used to calculate the "//&
+                 "barotropic Coriolis term.  This only applies in Boussinesq mode when "//&
+                 "LINEARIZED_BT_CORIOLIS is false.", &
+                 default=enable_bugs, do_not_log=(CS%linearized_BT_PV.or.(.not.GV%Boussinesq)))
+                 !### Change the default for NONLIN_BT_COR_INDEX_BUG to false.
   call get_param(param_file, mdl, "MASK_COASTAL_PRESSURE_FORCE", mask_coastal_pressure_force, &
                  "If true, use the land masks to zero out the diagnosed barotropic pressure "//&
                  "gradient accelerations at coastal or land points.  This changes diagnostics "//&
