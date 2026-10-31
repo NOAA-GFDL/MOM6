@@ -918,15 +918,15 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       enddo ; enddo
       if (CS%interior_OBC_PV .and. CS%BT_OBC%v_OBCs_on_PE) then
         !$OMP parallel do default(shared)
-        do j = max(js,CS%BT_OBC%js_v_S_obc), min(je,CS%BT_OBC%je_v_S_obc)
-          do I = max(is-1,CS%BT_OBC%Is_v_S_obc), min(ie,CS%BT_OBC%Ie_v_S_obc)
+        do J = max(js-1,CS%BT_OBC%Js_v_S_obc), min(je,CS%BT_OBC%Je_v_S_obc)
+          do i = max(is,CS%BT_OBC%is_v_S_obc), min(ie,CS%BT_OBC%ie_v_S_obc)
             if (CS%BT_OBC%v_OBC_type(i,J) < 0) & ! Southern boundary condition
               DCor_v(i,J) = max(GV%Z_to_H*G%bathyT(i,j+1) + eta_in(i,j+1), 0.0)
           enddo
         enddo
         !$OMP parallel do default(shared)
-        do j = max(js,CS%BT_OBC%js_v_N_obc), min(je,CS%BT_OBC%je_v_N_obc)
-          do I = max(is-1,CS%BT_OBC%Is_v_N_obc), min(ie,CS%BT_OBC%Ie_v_N_obc)
+        do J = max(js-1,CS%BT_OBC%Js_v_N_obc), min(je,CS%BT_OBC%Je_v_N_obc)
+          do i = max(is,CS%BT_OBC%is_v_N_obc), min(ie,CS%BT_OBC%ie_v_N_obc)
             if (CS%BT_OBC%v_OBC_type(i,J) > 0) & ! Northern boundary condition
               DCor_v(i,J) = max(GV%Z_to_H*G%bathyT(i,j) + eta_in(i,j), 0.0)
           enddo
@@ -967,14 +967,14 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       enddo ; enddo
       if (CS%interior_OBC_PV .and. CS%BT_OBC%v_OBCs_on_PE) then
         !$OMP parallel do default(shared)
-        do j = max(js,CS%BT_OBC%js_v_S_obc), min(je,CS%BT_OBC%je_v_S_obc)
-          do I = max(is-1,CS%BT_OBC%Is_v_S_obc), min(ie,CS%BT_OBC%Ie_v_S_obc)
+        do J = max(js-1,CS%BT_OBC%Js_v_S_obc), min(je,CS%BT_OBC%Je_v_S_obc)
+          do i = max(is,CS%BT_OBC%is_v_S_obc), min(ie,CS%BT_OBC%ie_v_S_obc)
             if (CS%BT_OBC%v_OBC_type(i,J) < 0) DCor_v(i,J) = eta_in(i,j+1) ! Southern boundary condition
           enddo
         enddo
         !$OMP parallel do default(shared)
-        do j = max(js,CS%BT_OBC%js_v_N_obc), min(je,CS%BT_OBC%je_v_N_obc)
-          do I = max(is-1,CS%BT_OBC%Is_v_N_obc), min(ie,CS%BT_OBC%Ie_v_N_obc)
+        do J = max(js-1,CS%BT_OBC%Js_v_N_obc), min(je,CS%BT_OBC%Je_v_N_obc)
+          do i = max(is,CS%BT_OBC%is_v_N_obc), min(ie,CS%BT_OBC%ie_v_N_obc)
             if (CS%BT_OBC%v_OBC_type(i,J) > 0) DCor_v(i,J) = eta_in(i,j) ! Northern boundary condition
           enddo
         enddo
