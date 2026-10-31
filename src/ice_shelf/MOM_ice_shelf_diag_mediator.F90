@@ -300,7 +300,7 @@ subroutine define_axes_group(diag_cs, handles, axes, &
   axes%handles(:) = handles(:)
   axes%diag_cs => diag_cs ! A (circular) link back to the diag_ctrl structure
 
-  if ((axes%rank<2) .and. (present(x_cell_method) .or. present(x_cell_method))) &
+  if ((axes%rank<2) .and. (present(x_cell_method) .or. present(y_cell_method))) &
     call MOM_error(FATAL, 'define_axes_group: Can not set x_cell_method or y_cell_method for rank<2.')
   axes%x_cell_method = '' ; if (present(x_cell_method)) axes%x_cell_method = trim(x_cell_method)
   axes%y_cell_method = '' ; if (present(y_cell_method)) axes%y_cell_method = trim(y_cell_method)
