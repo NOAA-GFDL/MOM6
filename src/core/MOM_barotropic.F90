@@ -5235,12 +5235,13 @@ subroutine adjust_local_BT_cont_types(ubt, uhbt, vbt, vhbt, BTCL_u, BTCL_v, &
   !$OMP parallel do default(shared)
   do j=js-hs,je+hs ; do I=is-hs-1,ie+hs
     if ((dt*ubt(I,j) > BTCL_u(I,j)%uBT_WW) .and. (dt*uhbt(I,j) > BTCL_u(I,j)%uh_WW)) then
-      ! Expand the cubic fit to use this new point.  ubt is negative.
+      ! Expand the cubic fit to use this new point.  ubt is positive.
       BTCL_u(I,j)%ubt_WW = dt * ubt(I,j)
-      if (3.0*uhbt(I,j) < 2.0*ubt(I,j) * BTCL_u(I,j)%FA_u_W0) then
-        ! No further bounding is needed.
+      if (3.0*uhbt(I,j) > 2.0*ubt(I,j) * BTCL_u(I,j)%FA_u_W0) then
+        ! No further bounding is needed to keep the face area positive in the range from 0 to ubt.
         BTCL_u(I,j)%uh_crvW = (uhbt(I,j) - ubt(I,j) * BTCL_u(I,j)%FA_u_W0) / (dt**2 * ubt(I,j)**3)
-      else ! This should not happen often!
+      else ! This should not happen often.
+        ! Adjust the value of FA_u_W0 so that the transport at ubt matches uhbt with a face area of 0 at ubt.
         BTCL_u(I,j)%FA_u_W0 = 1.5*uhbt(I,j) / ubt(I,j)
         BTCL_u(I,j)%uh_crvW = -0.5*uhbt(I,j) / (dt**2 * ubt(I,j)**3)
       endif
@@ -5251,9 +5252,10 @@ subroutine adjust_local_BT_cont_types(ubt, uhbt, vbt, vhbt, BTCL_u, BTCL_v, &
       ! Expand the cubic fit to use this new point.  ubt is negative.
       BTCL_u(I,j)%ubt_EE = dt * ubt(I,j)
       if (3.0*uhbt(I,j) < 2.0*ubt(I,j) * BTCL_u(I,j)%FA_u_E0) then
-        ! No further bounding is needed.
+        ! No further bounding is needed to keep the face area positive in the range from ubt to 0.
         BTCL_u(I,j)%uh_crvE = (uhbt(I,j) - ubt(I,j) * BTCL_u(I,j)%FA_u_E0) / (dt**2 * ubt(I,j)**3)
-      else ! This should not happen often!
+      else ! This should not happen often.
+        ! Adjust the value of FA_u_E0 so that the transport at ubt matches uhbt with a face area of 0 at ubt.
         BTCL_u(I,j)%FA_u_E0 = 1.5*uhbt(I,j) / ubt(I,j)
         BTCL_u(I,j)%uh_crvE = -0.5*uhbt(I,j) / (dt**2 * ubt(I,j)**3)
       endif
@@ -5265,12 +5267,13 @@ subroutine adjust_local_BT_cont_types(ubt, uhbt, vbt, vhbt, BTCL_u, BTCL_v, &
   !$OMP parallel do default(shared)
   do J=js-hs-1,je+hs ; do i=is-hs,ie+hs
     if ((dt*vbt(i,J) > BTCL_v(i,J)%vBT_SS) .and. (dt*vhbt(i,J) > BTCL_v(i,J)%vh_SS)) then
-      ! Expand the cubic fit to use this new point.  vbt is negative.
+      ! Expand the cubic fit to use this new point.  vbt is positive.
       BTCL_v(i,J)%vbt_SS = dt * vbt(i,J)
-      if (3.0*vhbt(i,J) < 2.0*vbt(i,J) * BTCL_v(i,J)%FA_v_S0) then
-        ! No further bounding is needed.
+      if (3.0*vhbt(i,J) > 2.0*vbt(i,J) * BTCL_v(i,J)%FA_v_S0) then
+        ! No further bounding is needed to keep the face area positive in the range from 0 to vbt.
         BTCL_v(i,J)%vh_crvS = (vhbt(i,J) - vbt(i,J) * BTCL_v(i,J)%FA_v_S0) /  (dt**2 * vbt(i,J)**3)
-      else ! This should not happen often!
+      else ! This should not happen often.
+        ! Adjust the value of FA_v_S0 so that the transport at vbt matches vhbt with a face area of 0 at vbt.
         BTCL_v(i,J)%FA_v_S0 = 1.5*vhbt(i,J) / (vbt(i,J))
         BTCL_v(i,J)%vh_crvS = -0.5*vhbt(i,J) /  (dt**2 * vbt(i,J)**3)
       endif
@@ -5281,9 +5284,10 @@ subroutine adjust_local_BT_cont_types(ubt, uhbt, vbt, vhbt, BTCL_u, BTCL_v, &
       ! Expand the cubic fit to use this new point.  vbt is negative.
       BTCL_v(i,J)%vbt_NN = dt * vbt(i,J)
       if (3.0*vhbt(i,J) < 2.0*vbt(i,J) * BTCL_v(i,J)%FA_v_N0) then
-        ! No further bounding is needed.
+        ! No further bounding is needed to keep the face area positive in the range from vbt to 0.
         BTCL_v(i,J)%vh_crvN = (vhbt(i,J) - vbt(i,J) * BTCL_v(i,J)%FA_v_N0) /  (dt**2 * vbt(i,J)**3)
-      else ! This should not happen often!
+      else ! This should not happen often.
+        ! Adjust the value of FA_v_N0 so that the transport at vbt matches vhbt with a face area of 0 at vbt.
         BTCL_v(i,J)%FA_v_N0 = 1.5*vhbt(i,J) / (vbt(i,J))
         BTCL_v(i,J)%vh_crvN = -0.5*vhbt(i,J) /  (dt**2 * vbt(i,J)**3)
       endif
