@@ -4410,7 +4410,6 @@ subroutine read_OBC_field_data(G, GV, US, OBC, segment, m, Time)
   real, dimension(:,:,:), allocatable, target :: tmp_buffer ! A buffer for input data [various units]
   real :: dz_stack(SZK_(GV)) ! Distance between the interfaces at corner points [Z ~> m]
   integer :: ni_seg, nj_seg  ! number of src gridpoints along the segments
-  integer :: ni_buf, nj_buf  ! Number of filled values in tmp_buffer
   integer :: i_seg_offset, j_seg_offset, bug_offset
   real :: net_dz_src  ! Total vertical extent of the incoming flow in the source field [Z ~> m]
   real :: net_dz_int  ! Total vertical extent of the incoming flow in the model [Z ~> m]
@@ -4470,16 +4469,10 @@ subroutine read_OBC_field_data(G, GV, US, OBC, segment, m, Time)
   ! NOTE: Rotation of face-points require that we skip the final value when not in brushcutter mode.
   if (turns /= 0) then
     flip_buffer = ((turns==1) .or. (turns==3))
-    if (OBC%brushcutter_mode .or. (.not.flip_buffer)) then
+    if (OBC%brushcutter_mode .or. (.not.segment%field(m)%on_face)) then
       call rotate_array(tmp_buffer_in, turns, tmp_buffer)
-    elseif (flip_buffer .and. segment%is_E_or_W .and. segment%field(m)%on_face) then
-      nj_buf = size(tmp_buffer, 2) - 1
-      call rotate_array(tmp_buffer_in(:nj_buf,:,:), turns, tmp_buffer(:,:nj_buf,:))
-    elseif (flip_buffer .and. segment%is_N_or_S .and. segment%field(m)%on_face) then
-      ni_buf = size(tmp_buffer, 1) - 1
-      call rotate_array(tmp_buffer_in(:,:ni_buf,:), turns, tmp_buffer(:ni_buf,:,:))
     else
-      call rotate_array(tmp_buffer_in, turns, tmp_buffer)
+      call rotate_face_buffer(tmp_buffer_in, turns, flip_buffer, segment%is_E_or_W, tmp_buffer)
     endif
 
     if (((segment%field(m)%name == 'U') .and. ((turns==1).or.(turns==2))) .or. &
@@ -4548,14 +4541,10 @@ subroutine read_OBC_field_data(G, GV, US, OBC, segment, m, Time)
 
     if (turns /= 0) then
       flip_buffer = ((turns==1) .or. (turns==3))
-      if (flip_buffer .and. segment%is_E_or_W .and. segment%field(m)%on_face) then
-        nj_buf = size(tmp_buffer, 2) - 1
-        call rotate_array(tmp_buffer_in(:nj_buf,:,:), turns, tmp_buffer(:,:nj_buf,:))
-      elseif (flip_buffer .and. segment%is_N_or_S .and. segment%field(m)%on_face) then
-        ni_buf = size(tmp_buffer, 1) - 1
-        call rotate_array(tmp_buffer_in(:,:ni_buf,:), turns, tmp_buffer(:ni_buf,:,:))
-      else
+      if (OBC%brushcutter_mode .or. (.not.segment%field(m)%on_face)) then
         call rotate_array(tmp_buffer_in, turns, tmp_buffer)
+      else
+        call rotate_face_buffer(tmp_buffer_in, turns, flip_buffer, segment%is_E_or_W, tmp_buffer)
       endif
     endif ! End of rotation
 
@@ -6653,6 +6642,35 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment, fld, at_node, end
   deallocate(eta, dz_tot)
 
 end subroutine adjustSegmentEtaToFitBathymetry
+
+!> Rotate a buffer of face-point OBC segment data that was read on the unrotated grid.  Face data
+!! fill only the first n-1 of the n entries along the segment, so only those entries are rotated.
+!! Rotating the full buffer would reverse the unused final entry into the first position whenever
+!! the rotation reverses the along-segment direction.
+subroutine rotate_face_buffer(buf_in, turns, flip_buffer, is_E_or_W, buf)
+  real, dimension(:,:,:), intent(in)    :: buf_in      !< Buffer on the unrotated grid [various]
+  integer,                intent(in)    :: turns       !< Number of quarter turns, from 1 to 3
+  logical,                intent(in)    :: flip_buffer !< True if the i and j axes are exchanged
+  logical,                intent(in)    :: is_E_or_W   !< True if the rotated segment is E or W
+  real, dimension(:,:,:), intent(inout) :: buf         !< Buffer on the rotated grid [various]
+  integer :: n_buf  ! The number of filled face values along the segment
+
+  if (is_E_or_W) then
+    n_buf = size(buf, 2) - 1
+    if (flip_buffer) then
+      call rotate_array(buf_in(:n_buf,:,:), turns, buf(:,:n_buf,:))
+    else
+      call rotate_array(buf_in(:,:n_buf,:), turns, buf(:,:n_buf,:))
+    endif
+  else
+    n_buf = size(buf, 1) - 1
+    if (flip_buffer) then
+      call rotate_array(buf_in(:,:n_buf,:), turns, buf(:n_buf,:,:))
+    else
+      call rotate_array(buf_in(:n_buf,:,:), turns, buf(:n_buf,:,:))
+    endif
+  endif
+end subroutine rotate_face_buffer
 
 !> This is more of a rotate initialization than an actual rotate
 subroutine rotate_OBC_config(OBC_in, G_in, OBC, G, turns)
