@@ -19,17 +19,34 @@ real, parameter :: xmin = -10.
 real, parameter :: xmax = 10.
   !< Maximum x value [nondim]
 
-real, allocatable :: x(:), x_log(:), val(:)
-integer(kind=int64) :: count_rate, c1, c2
-real(kind=real64) :: clock_rate, time_intrinsic, time_repro, time_log_intrinsic, time_log_repro
-real(kind=real64) :: time_scalar_baseline, time_scalar_intrinsic, time_scalar_repro
-real(kind=real64) :: time_scalar_log_intrinsic, time_scalar_log_repro
+real, allocatable :: x(:), x_log(:)
+  ! Normal and log-distributed sample grids [nondim]
+real, allocatable :: val(:)
+  ! Function evaluations along sample grids [nondim]
+integer(kind=int64) :: c1, c2
+  ! Clock cycle measurements
+integer(kind=int64) :: count_rate
+  ! Clock cycles per second
+real(kind=real64) :: t_cycle
+  ! Nanoseconds per nominal clock cycle [wall-clock nanoseconds]
+real(kind=real64) :: t_exp, t_exp_repro
+  ! exp() evaluation time per loop iteration [wall-clock nanoseconds]
+real(kind=real64) :: t_log, t_log_repro
+  ! log() evaluation time per loop iteration [wall-clock nanoseconds]
+real(kind=real64) :: t_scalar_baseline
+  ! Scalar baseline time per iteration [wall-clock nanoseconds]
+real(kind=real64) :: t_exp_scalar, t_exp_repro_scalar
+  ! exp() evaluation time per scalar loop iteration [wall-clock nanoseconds]
+real(kind=real64) :: t_log_scalar, t_log_repro_scalar
+  ! exp() evaluation time per scalar loop iteration [wall-clock nanoseconds]
 real :: I_npts
+  ! Bit-reproducible 1/dx used in sample grid generation [nondim]
 real, volatile :: scalar_x, scalar_val
+  ! Unused summations, to preserve loops during optimization [nondim]
 integer :: i, j
 
 call system_clock(count_rate=count_rate)
-clock_rate = real(count_rate, real64)
+t_cycle = 1e9 / real(count_rate, real64)
 
 allocate(x(npts), x_log(npts), val(npts))
 I_npts = 1. / (npts - 1)
@@ -55,9 +72,9 @@ do j = 1, niter
   if (val(1) < 0.) val(1) = 0.
 enddo
 call system_clock(count=c2)
-time_intrinsic = real(c2 - c1, real64) / clock_rate / niter / npts * 1e9
+t_exp = real(c2 - c1, real64) * t_cycle / (niter * npts)
 
-print '("exp() time/elem:", t30, f8.2, " ns")', time_intrinsic
+print '("exp() time/elem:", t30, f8.2, " ns")', t_exp
 print '("  sum (to prevent elision):", t30, ES12.5)', sum(val)
 
 ! Warm-up and time exp_repro()
@@ -71,13 +88,13 @@ do j = 1, niter
   if (val(1) < 0.) val(1) = 0.
 enddo
 call system_clock(count=c2)
-time_repro = real(c2 - c1, real64) / clock_rate / niter / npts * 1e9
+t_exp_repro = real(c2 - c1, real64) * t_cycle / (niter * npts)
 
-print '("exp_repro() time/elem:", t30, f8.2, " ns")', time_repro
+print '("exp_repro() time/elem:", t30, f8.2, " ns")', t_exp_repro
 print '("  sum (to prevent elision):", t30, ES12.5)', sum(val)
 
 print *
-print '("slowdown factor:", t30, f8.2, "x")', time_repro / time_intrinsic
+print '("slowdown factor:", t30, f8.2, "x")', t_exp_repro / t_exp
 
 print *
 
@@ -92,9 +109,9 @@ do j = 1, niter
   if (val(1) > huge(val(1))) val(1) = 0.
 enddo
 call system_clock(count=c2)
-time_log_intrinsic = real(c2 - c1, real64) / clock_rate / niter / npts * 1e9
+t_log = real(c2 - c1, real64) * t_cycle / (niter * npts)
 
-print '("log() time/elem:", t30, f8.2, " ns")', time_log_intrinsic
+print '("log() time/elem:", t30, f8.2, " ns")', t_log
 print '("  sum (to prevent elision):", t30, ES12.5)', sum(val)
 
 ! Warm-up and time log_repro()
@@ -108,13 +125,13 @@ do j = 1, niter
   if (val(1) > huge(val(1))) val(1) = 0.
 enddo
 call system_clock(count=c2)
-time_log_repro = real(c2 - c1, real64) / clock_rate / niter / npts * 1e9
+t_log_repro = real(c2 - c1, real64) * t_cycle / (niter * npts)
 
-print '("log_repro() time/elem:", t30, f8.2, " ns")', time_log_repro
+print '("log_repro() time/elem:", t30, f8.2, " ns")', t_log_repro
 print '("  sum (to prevent elision):", t30, ES12.5)', sum(val)
 
 print *
-print '("log slowdown factor:", t30, f8.2, "x")', time_log_repro / time_log_intrinsic
+print '("log slowdown factor:", t30, f8.2, "x")', t_log_repro / t_log
 
 print *
 print '("=== scalar loop-carried timing ===")'
@@ -140,9 +157,9 @@ do j = 1, niter
   enddo
 enddo
 call system_clock(count=c2)
-time_scalar_baseline = real(c2 - c1, real64) / clock_rate / niter / npts * 1e9
+t_scalar_baseline = real(c2 - c1, real64) * t_cycle / (niter * npts)
 
-print '("baseline scalar time/call:", t30, f8.2, " ns")', time_scalar_baseline
+print '("baseline scalar time/call:", t30, f8.2, " ns")', t_scalar_baseline
 print '("  final scalar value:", t30, ES12.5)', scalar_val
 
 ! Warm-up and time intrinsic exp() in a scalar loop with a carried dependency.
@@ -166,9 +183,9 @@ do j = 1, niter
   enddo
 enddo
 call system_clock(count=c2)
-time_scalar_intrinsic = real(c2 - c1, real64) / clock_rate / niter / npts * 1e9
+t_exp_scalar = real(c2 - c1, real64) * t_cycle / (niter * npts)
 
-print '("exp() scalar time/call:", t30, f8.2, " ns")', time_scalar_intrinsic
+print '("exp() scalar time/call:", t30, f8.2, " ns")', t_exp_scalar
 print '("  final scalar value:", t30, ES12.5)', scalar_val
 
 ! Warm-up and time exp_repro() in the same scalar loop pattern.
@@ -191,21 +208,21 @@ do j = 1, niter
   enddo
 enddo
 call system_clock(count=c2)
-time_scalar_repro = real(c2 - c1, real64) / clock_rate / niter / npts * 1e9
+t_exp_repro_scalar = real(c2 - c1, real64) * t_cycle / (niter * npts)
 
-print '("exp_repro() scalar time/call:", t30, f8.2, " ns")', time_scalar_repro
+print '("exp_repro() scalar time/call:", t30, f8.2, " ns")', t_exp_repro_scalar
 print '("  final scalar value:", t30, ES12.5)', scalar_val
 
 print *
 print '("scalar slowdown factor:", t30, f8.2, "x")', &
-    time_scalar_repro / time_scalar_intrinsic
+    t_exp_repro_scalar / t_exp_scalar
 print '("exp() minus baseline:", t30, f8.2, " ns")', &
-    time_scalar_intrinsic - time_scalar_baseline
+    t_exp_scalar - t_scalar_baseline
 print '("exp_repro() minus baseline:", t30, f8.2, " ns")', &
-    time_scalar_repro - time_scalar_baseline
+    t_exp_repro_scalar - t_scalar_baseline
 print '("adjusted slowdown factor:", t30, f8.2, "x")', &
-    (time_scalar_repro - time_scalar_baseline) &
-      / (time_scalar_intrinsic - time_scalar_baseline)
+    (t_exp_repro_scalar - t_scalar_baseline) &
+      / (t_exp_scalar - t_scalar_baseline)
 
 print *
 print '("=== scalar log loop-carried timing ===")'
@@ -230,9 +247,9 @@ do j = 1, niter
   enddo
 enddo
 call system_clock(count=c2)
-time_scalar_log_intrinsic = real(c2 - c1, real64) / clock_rate / niter / npts * 1e9
+t_log_scalar = real(c2 - c1, real64) * t_cycle / (niter * npts)
 
-print '("log() scalar time/call:", t30, f8.2, " ns")', time_scalar_log_intrinsic
+print '("log() scalar time/call:", t30, f8.2, " ns")', t_log_scalar
 print '("  final scalar value:", t30, ES12.5)', scalar_val
 
 ! Warm-up and time log_repro() in the same scalar loop pattern.
@@ -255,21 +272,21 @@ do j = 1, niter
   enddo
 enddo
 call system_clock(count=c2)
-time_scalar_log_repro = real(c2 - c1, real64) / clock_rate / niter / npts * 1e9
+t_log_repro_scalar = real(c2 - c1, real64) * t_cycle / (niter * npts)
 
-print '("log_repro() scalar time/call:", t30, f8.2, " ns")', time_scalar_log_repro
+print '("log_repro() scalar time/call:", t30, f8.2, " ns")', t_log_repro_scalar
 print '("  final scalar value:", t30, ES12.5)', scalar_val
 
 print *
 print '("log scalar slowdown factor:", t30, f8.2, "x")', &
-    time_scalar_log_repro / time_scalar_log_intrinsic
+    t_log_repro_scalar / t_log_scalar
 print '("log() minus baseline:", t30, f8.2, " ns")', &
-    time_scalar_log_intrinsic - time_scalar_baseline
+    t_log_scalar - t_scalar_baseline
 print '("log_repro() minus baseline:", t30, f8.2, " ns")', &
-    time_scalar_log_repro - time_scalar_baseline
+    t_log_repro_scalar - t_scalar_baseline
 print '("log adjusted slowdown factor:", t30, f8.2, "x")', &
-    (time_scalar_log_repro - time_scalar_baseline) &
-      / (time_scalar_log_intrinsic - time_scalar_baseline)
+    (t_log_repro_scalar - t_scalar_baseline) &
+      / (t_log_scalar - t_scalar_baseline)
 
 deallocate(x, x_log, val)
 
