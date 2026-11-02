@@ -119,7 +119,7 @@ subroutine diapyc_energy_req_test(h_3d, dt, tv, G, GV, US, CS, Kd_int)
 
         ustar = 0.01*US%m_to_Z*US%T_to_s ! Change this to being an input parameter?
         absf = 0.25*((abs(G%CoriolisBu(I-1,J-1)) + abs(G%CoriolisBu(I,J))) + &
-                     (abs(G%CoriolisBu(I-1,J-1)) + abs(G%CoriolisBu(I,J))))
+                     (abs(G%CoriolisBu(I-1,J)) + abs(G%CoriolisBu(I,J-1))))
         Kd(1) = 0.0 ; Kd(nz+1) = 0.0
         if (GV%Boussinesq) then
           do K=2,nz
@@ -130,7 +130,7 @@ subroutine diapyc_energy_req_test(h_3d, dt, tv, G, GV, US, CS, Kd_int)
         else
           do K=2,nz
             tmp1 = h_top(K) * h_bot(K)
-            dz_h_int = (dz_2d(j,k-1) + dz_2d(j,k) + GV%dz_subroundoff) / &
+            dz_h_int = (dz_2d(i,k-1) + dz_2d(i,k) + GV%dz_subroundoff) / &
                        (h_3d(i,j,k-1) + h_3d(i,j,k) + GV%H_subroundoff)
             Kd(K) = CS%test_Kh_scaling *  &
                     ustar * CS%VonKar * (tmp1*ustar) / (dz_h_int*absf*tmp1 + htot*ustar)
