@@ -1260,16 +1260,16 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
       endif
 
       if (CS%EY24_EBT_BS) then
-          do kk=1,kke ; do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
-            k = ksb + kk - 1
+        do kk=1,kke ; do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
+          k = ksb + kk - 1
 
-            tmp = CS%KS_coef * hrat_min(i,j,kk) * CS%Ah_Max_xx_KS(i,j)
-            visc_limit_h(i,j,k) = tmp
-            visc_limit_h_frac(i,j,k) = Ah(i,j,kk) / (CS%KS_coef * hrat_min(i,j,kk) * CS%Ah_Max_xx_KS(i,j))
-            if (Ah(i,j,kk) >= tmp) then
-              visc_limit_h_flag(i,j,k) = 1.
-            endif
-          enddo ; enddo ; enddo
+          tmp = CS%KS_coef * hrat_min(i,j,kk) * CS%Ah_Max_xx_KS(i,j)
+          visc_limit_h(i,j,k) = tmp
+          visc_limit_h_frac(i,j,k) = Ah(i,j,kk) / (CS%KS_coef * hrat_min(i,j,kk) * CS%Ah_Max_xx_KS(i,j))
+          if (Ah(i,j,kk) >= tmp) then
+            visc_limit_h_flag(i,j,k) = 1.
+          endif
+        enddo ; enddo ; enddo
       endif
 
       if ((CS%id_Ah_h>0) .or. CS%debug .or. CS%use_Leithy) then
@@ -1641,16 +1641,16 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
       endif
 
       if (CS%EY24_EBT_BS) then
-          do kk=1,kke ; do J=js-1,Jeq ; do I=is-1,Ieq
-            k = ksb + kk - 1
+        do kk=1,kke ; do J=js-1,Jeq ; do I=is-1,Ieq
+          k = ksb + kk - 1
 
-            tmp = CS%KS_coef * hrat_min(I,J,kk) * CS%Ah_Max_xy_KS(I,J)
-            visc_limit_q(I,J,k) = tmp
-            visc_limit_q_frac(i,j,k) = Ah(i,j,kk) / (CS%KS_coef * hrat_min(i,j,kk) * CS%Ah_Max_xy_KS(i,j))
-            if (Ah(I,J,kk) >= tmp) then
-              visc_limit_q_flag(I,J,k) = 1.
-            endif
-          enddo ; enddo ; enddo
+          tmp = CS%KS_coef * hrat_min(I,J,kk) * CS%Ah_Max_xy_KS(I,J)
+          visc_limit_q(I,J,k) = tmp
+          visc_limit_q_frac(i,j,k) = Ah(i,j,kk) / (CS%KS_coef * hrat_min(i,j,kk) * CS%Ah_Max_xy_KS(i,j))
+          if (Ah(I,J,kk) >= tmp) then
+            visc_limit_q_flag(I,J,k) = 1.
+          endif
+        enddo ; enddo ; enddo
       endif
 
       ! Leith+E doesn't recompute Ah at q points, it just interpolates it from h to q points
@@ -3700,15 +3700,13 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
       CS%id_visc_limit_q_flag = register_diag_field('ocean_model', 'visc_limit_q_flag', diag%axesBL, Time, &
           'Locations where the biharmonic viscosity reached the better_bound limiter at q points', 'nondim')
       CS%id_visc_limit_h = register_diag_field('ocean_model', 'visc_limit_h', diag%axesTL, Time, &
-          'Value of the biharmonic viscosity limiter at h points', 'nondim')
-!###      'Value of the biharmonic viscosity limiter at h points', units='m4 s-1', conversion=US%L_to_m**4*US%s_to_T)
+          'Value of the biharmonic viscosity limiter at h points', units='m4 s-1', conversion=US%L_to_m**4*US%s_to_T)
       CS%id_visc_limit_q = register_diag_field('ocean_model', 'visc_limit_q', diag%axesBL, Time, &
-          'Value of the biharmonic viscosity limiter at q points', 'nondim')
-!###      'Value of the biharmonic viscosity limiter at q points', units='m4 s-1', conversion=US%L_to_m**4*US%s_to_T)
+          'Value of the biharmonic viscosity limiter at q points', units='m4 s-1', conversion=US%L_to_m**4*US%s_to_T)
       CS%id_visc_limit_h_frac = register_diag_field('ocean_model', 'visc_limit_h_frac', diag%axesTL, Time, &
-          'Value of the biharmonic viscosity limiter at h points', 'nondim')
+          'Value of the biharmonic viscosity at h points as a fraction of the viscosity limit', 'nondim')
       CS%id_visc_limit_q_frac = register_diag_field('ocean_model', 'visc_limit_q_frac', diag%axesBL, Time, &
-          'Value of the biharmonic viscosity limiter at q points', 'nondim')
+          'Value of the biharmonic viscosity at q points as a fraction of the viscosity limit', 'nondim')
     endif
 
     if (CS%id_grid_Re_Ah > 0) &
