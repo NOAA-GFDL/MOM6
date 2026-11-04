@@ -96,6 +96,27 @@ type, public :: mixedlayer_restrat_CS ; private
                                    !! cuberoot function in the Bodner code to avoid needing to undo
                                    !! dimensional rescaling.
 
+  ! The following parameters are used in the Zhang et al., 2023, parameterization
+  logical :: use_Zhang23 = .false. !< If true, use the Zhang et al., 2023, parameterization.
+  real    :: C_z                   !< Efficiency coefficient used by the Zhang et al., 2023, parameterization. [nondim]
+  real    :: B_z                   !< Tunable parameter used for parameterization, see Calvert et al., 2020
+                                   !! and Feng et al., 2026 for details. [T L-1 ~> s m-1]
+  real    :: Zhang23_MLD_decay_time = 0. !< Time-scale for a running-mean filter applied to the MLD used by
+                                   !! the Zhang23 parameterization; filters both deepening and shoaling [T ~> s].
+  real    :: Zhang23_MSR_decay_time = 0. !< Time-scale for a running-mean filter applied to the mixed-layer
+                                   !! averaged strain rate used by the Zhang23 parameterization [T ~> s].
+  real    :: Zhang23_f_min         !< Hard floor on abs(f) used by the Zhang23 parameterization [T-1 ~> s-1]
+  real    :: Zhang23_min_depth     !< Minimum ocean depth on both sides of a velocity point for the
+                                   !! Zhang23 parameterization to be applied there [Z ~> m]
+  logical :: Zhang23_MLD_filt_set = .false. !< If true, MLD_filtered holds a valid running mean for the
+                                   !! Zhang23 parameterization, either read from a restart file or set
+                                   !! on a previous call.  If false, it is set to the instantaneous MLD
+                                   !! on the next call rather than spinning up from zero.
+  logical :: Zhang23_MSR_filt_set = .false. !< If true, MSR_filtered holds a valid running mean for the
+                                   !! Zhang23 parameterization, either read from a restart file or set
+                                   !! on a previous call.  If false, it is set to the instantaneous strain
+                                   !! rate on the next call rather than spinning up from zero.
+
   logical :: debug = .false.       !< If true, calculate checksums of fields for debugging.
 
   type(diag_ctrl), pointer :: diag !< A structure that is used to regulate the
@@ -121,7 +142,10 @@ type, public :: mixedlayer_restrat_CS ; private
          MLD_filtered_slow, &      !< Slower time-filtered MLD [H ~> m or kg m-2]
          wpup_filtered, &          !< Time-filtered vertical momentum flux [H L T-2 ~> m2 s-2 or kg m-1 s-2]
          MLD_Tfilt_space, &        !< Spatially varying time scale for MLD filter [T ~> s]
-         Cr_space                  !< Spatially varying Cr coefficient [nondim]
+         Cr_space, &               !< Spatially varying Cr coefficient [nondim]
+         MSR_filtered              !< Time-filtered mixed layer averaged strain rate for the Zhang23
+                                   !! parameterization [T-1 ~> s-1]
+
 
   !>@{
   !! Diagnostic identifier
@@ -141,6 +165,9 @@ type, public :: mixedlayer_restrat_CS ; private
   integer :: id_bflux = -1
   integer :: id_lfbod = -1
   integer :: id_mle_fl = -1
+  integer :: id_sh_xx = -1
+  integer :: id_sh_xy = -1
+  integer :: id_MSR = -1
   !>@}
 
 end type mixedlayer_restrat_CS
@@ -150,13 +177,16 @@ character(len=40)  :: mdl = "MOM_mixed_layer_restrat" !< This module's name.
 contains
 
 !> Driver for the mixed-layer restratification parameterization.
-!! The code branches between two different implementations depending
-!! on whether the bulk-mixed layer or a general coordinate are in use.
-subroutine mixedlayer_restrat(h, uhtr, vhtr, tv, forces, dt, MLD, h_MLD, bflux, VarMix, G, GV, US, CS, Lam2)
+!! With a bulk mixed layer (GV\%nkml>0) this calls mixedlayer_restrat_BML.
+!! In general coordinates it calls the OM4 (Fox-Kemper et al., 2008), Bodner et al. (2023),
+!! or Zhang et al. (2023) implementation, as selected by MLE\%USE_BODNER23 and USE_ZHANG23.
+subroutine mixedlayer_restrat(h, u, v, uhtr, vhtr, tv, forces, dt, MLD, h_MLD, bflux, VarMix, G, GV, US, CS, Lam2)
   type(ocean_grid_type),                      intent(inout) :: G      !< Ocean grid structure
   type(verticalGrid_type),                    intent(in)    :: GV     !< Ocean vertical grid structure
   type(unit_scale_type),                      intent(in)    :: US     !< A dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(inout) :: h      !< Layer thickness [H ~> m or kg m-2]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in)    :: u      !< The zonal velocity [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in)    :: v      !< The meridional velocity [L T-1 ~> m s-1]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(inout) :: uhtr   !< Accumulated zonal mass flux
                                                                       !! [H L2 ~> m3 or kg]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(inout) :: vhtr   !< Accumulated meridional mass flux
@@ -196,6 +226,10 @@ subroutine mixedlayer_restrat(h, uhtr, vhtr, tv, forces, dt, MLD, h_MLD, bflux, 
     else
       call mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, dt, MLD, h_MLD, bflux)
     endif
+  elseif (CS%use_Zhang23) then
+    ! Implementation of Zhang et al., 2023 parameterization,
+    ! simultaneously considering submesoscale baroclinic instability and strain-induced frontogenesis
+    call mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV, US, CS)
   else
     ! Implementation of Fox-Kemper et al., 2008, to work in general coordinates
     call mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, G, GV, US, CS)
@@ -1230,6 +1264,511 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
 
 end subroutine mixedlayer_restrat_Bodner
 
+!> Calculates a restratifying flow following the formulation of \cite Zhang2023 (Zhang23),
+!! which simultaneously considers submesoscale baroclinic instability and strain-induced frontogenesis
+!! with an improved vertical structure function.
+subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV, US, CS)
+  ! Arguments
+  type(ocean_grid_type),                      intent(inout) :: G      !< Ocean grid structure
+  type(verticalGrid_type),                    intent(in)    :: GV     !< Ocean vertical grid structure
+  type(unit_scale_type),                      intent(in)    :: US     !< A dimensional unit scaling type
+  type(mixedlayer_restrat_CS),                intent(inout) :: CS     !< Module control structure
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(inout) :: h      !< Layer thickness [H ~> m or kg m-2]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(in)    :: u      !< The zonal velocity [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(in)    :: v      !< The meridional velocity [L T-1 ~> m s-1]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), intent(inout) :: uhtr   !< Accumulated zonal mass flux
+                                                                      !!   [H L2 ~> m3 or kg]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), intent(inout) :: vhtr   !< Accumulated meridional mass flux
+                                                                      !!   [H L2 ~> m3 or kg]
+  real, dimension(:,:),                       pointer       :: h_MLD  !< Thickness of water within the
+                                                                      !! mixed layer depth provided by
+                                                                      !!  the PBL scheme [H ~> m or kg m-2]
+  type(thermo_var_ptrs),                      intent(in)    :: tv     !< Thermodynamic variables structure
+  real,                                       intent(in)    :: dt     !< Time increment [T ~> s]
+
+  ! Local variables
+  real :: uhml(SZIB_(G),SZJ_(G),SZK_(GV)) ! Restratifying zonal thickness transports [H L2 T-1 ~> m3 s-1 or kg s-1]
+  real :: vhml(SZI_(G),SZJB_(G),SZK_(GV)) ! Restratifying meridional thickness transports [H L2 T-1 ~> m3 s-1 or kg s-1]
+  real :: vol_dt_avail(SZI_(G),SZJ_(G),SZK_(GV)) ! The volume available for exchange out of each face of
+                          ! each layer, divided by dt [H L2 T-1 ~> m3 s-1 or kg s-1]
+  real :: uDml_diag(SZIB_(G),SZJ_(G))  ! A 2D copy of psi_mag for diagnostics [H L2 T-1 ~> m3 s-1 or kg s-1]
+  real :: vDml_diag(SZI_(G),SZJB_(G))  ! A 2D copy of psi_mag for diagnostics [H L2 T-1 ~> m3 s-1 or kg s-1]
+  real, dimension(SZI_(G),SZJ_(G)) :: &
+    mld, &                ! The mixed layer depth returned by detect_mld or ePBL scheme [H ~> m or kg m-2]
+    htot, &               ! The sum of the thicknesses of layers in the mixed layer [H ~> m or kg m-2]
+    buoy_av               ! Negative g_Rho0 times the average mixed layer density or G_Earth
+                          ! times the average specific volume [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2]
+  real, dimension(SZI_(G),SZJ_(G)) :: sh_xx_int   ! Thickness-weighted integral of normal strain rate
+                                                  ! in the mixed layer [H T-1 ~> m s-1 or kg m-2 s-1]
+  real, dimension(SZIB_(G),SZJB_(G)) :: sh_xy_int ! Thickness-weighted integral of shear strain rate
+                                                  !  in the ML [H T-1 ~> m s-1 or kg m-2 s-1]
+  real, dimension(SZIB_(G),SZJB_(G)) :: htot_q    ! Running sum of thickness at q-points within the ML
+                                                  ! [H ~> m or kg m-2]
+  real, dimension(SZIB_(G),SZJB_(G)) :: sh_xy_q   ! ML-average shear strain rate at q-points [T-1 ~> s-1]
+  real, dimension(SZI_(G),SZJ_(G)) :: sh_xx       ! ML-average normal strain rate [T-1 ~> s-1]
+  real, dimension(SZI_(G),SZJ_(G)) :: sh_xy       ! ML-average shear strain rate at h-points [T-1 ~> s-1]
+  real, dimension(SZI_(G),SZJ_(G)) :: MSR         ! Magnitude of the ML-averaged strain rate [T-1 ~> s-1]
+  real :: dudx_k          ! du/dx for layer k at an h-point [T-1 ~> s-1]
+  real :: dvdy_k          ! dv/dy for layer k at an h-point [T-1 ~> s-1]
+  real :: dvdx_k          ! dv/dx for layer k at a q-point [T-1 ~> s-1]
+  real :: dudy_k          ! du/dy for layer k at a q-point [T-1 ~> s-1]
+  real :: hAtq            ! Layer thickness interpolated to q-point [H ~> m or kg m-2]
+  real :: mld_q(SZIB_(G)) ! MLD interpolated to q-points along a row [H ~> m or kg m-2]
+  real :: g_Rho0          ! G_Earth/Rho0 times a thickness conversion factor
+                          ! [L2 H-1 T-2 R-1 ~> m4 s-2 kg-1 or m7 s-2 kg-2]
+  real, dimension(SZI_(G)) :: covTS, & ! SGS TS covariance in Stanley param; currently 0 [C S ~> degC ppt]
+                              varS     ! SGS S variance in Stanley param; currently 0    [S2 ~> ppt2]
+  real :: dxi(SZK_(GV))   ! Change in xi(z) across layer k [nondim]
+  real :: Rml_int(SZI_(G)) ! Potential density integrated through the mixed layer [R H ~> kg m-2 or kg2 m-5]
+  real :: SpV_ml(SZI_(G)) ! Specific volume evaluated at the surface pressure [R-1 ~> m3 kg-1]
+  real :: SpV_int(SZI_(G)) ! Specific volume integrated through the mixed layer [H R-1 ~> m4 kg-1 or m]
+  real :: rho_ml(SZI_(G)) ! Potential density relative to the surface [R ~> kg m-3]
+  real :: p0(SZI_(G))     ! A pressure of 0 [R L2 T-2 ~> Pa]
+  real :: grid_scale      ! horizontal grid scales [L ~> m]
+  real :: psi_mag         ! Magnitude of stream function [L2 H T-1 ~> m3 s-1 or kg s-1]
+  real :: grd_b           ! The vertically average gradient of buoyancy [L H-1 T-2 ~> s-2 or m3 kg-1 s-2]
+  real :: h_vel           ! The lesser of htot interpolated onto velocity points and 0.4 times
+                          ! the shallower adjacent ocean depth [H ~> m or kg m-2]
+  real :: absf            ! absolute value of f, interpolated to velocity points [T-1 ~> s-1]
+  real :: h_min           ! The minimum layer thickness [H ~> m or kg m-2].  h_min could be 0.
+  real :: h_neglect       ! tiny thickness usually lost in roundoff so can be neglected [H ~> m or kg m-2]
+  real :: I4dt            ! 1/(4 dt) [T-1 ~> s-1]
+  real :: Ihtot           ! Inverses of the total mixed layer thickness [H-1 ~> m-1 or m2 kg-1]
+  real :: hAtVel          ! Thickness at the velocity points [H ~> m or kg m-2]
+  real :: mldAtVel        ! Mixed layer depth at the velocity points [H ~> m or kg m-2]
+  real :: dh              ! Portion of the layer thickness that is in the mixed layer [H ~> m or kg m-2]
+  real :: MSR_f           ! Strain rate divided by Coriolis parameter [nondim]
+  real :: z_h             ! Fractional position within the mixed layer of the interface above a layer [nondim]
+  real :: aFac, bFac, &   ! Nondimensional ratios for time filtering [nondim]
+          cFac, dFac
+  integer :: kb           ! The index of the deepest layer that is non-vanished on both sides of the velocity face.
+  logical :: reach_bottom ! Whether the column of layers has reached the bathymetry.
+  logical :: line_is_empty, keep_going
+  integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
+  integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
+
+  is  = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec ; nz = GV%ke
+  Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
+
+  I4dt = 0.25 / dt
+  g_Rho0 = GV%H_to_Z * GV%g_Earth / GV%Rho0
+  h_neglect = GV%H_subroundoff
+  h_min = GV%Angstrom_H
+
+  covTS(:) = 0.0 ! Might be in tv% in the future. Not implemented for the time being.
+  varS(:) = 0.0  ! Ditto.
+
+  if (.not.associated(tv%eqn_of_state)) call MOM_error(FATAL, "mixedlayer_restrat_Zhang23: "// &
+         "An equation of state must be used with this module.")
+  if (CS%use_Stanley_ML .and. .not.GV%Boussinesq) call MOM_error(FATAL, &
+       "mixedlayer_restrat_Zhang23: The Stanley parameterization is not "//&
+       "available without the Boussinesq approximation.")
+
+  if (CS%MLE_use_PBL_MLD) then
+    if (.not. associated(h_MLD)) &
+      call MOM_error(FATAL, "mixedlayer_restrat_Zhang23: "// &
+          "h_MLD must be associated when MLE_use_PBL_MLD is true.")
+  endif
+
+  ! Honor the configured MLD source before considering the density criterion.
+  if (CS%MLE_use_PBL_MLD) then
+    do j=js-1,je+1 ; do i=is-1,ie+1
+      MLD(i,j) = CS%MLE_MLD_stretch * h_MLD(i,j)
+    enddo ; enddo
+  elseif (CS%MLE_density_diff > 0.) then
+    call detect_mld(h, tv, MLD, G, GV, CS)
+  else
+    call MOM_error(FATAL, "mixedlayer_restrat_Zhang23: "// &
+         "No MLD to use for Zhang23 parameterization.")
+  endif
+
+  ! Apply time filter to MLD if desired.
+  if (CS%Zhang23_MLD_decay_time > 0.) then
+    if (CS%debug) then
+      call hchksum(CS%MLD_filtered, 'Zhang23: MLD_filtered', G%HI, haloshift=1, unscale=GV%H_to_mks)
+      call hchksum(MLD, 'Zhang23: MLD in', G%HI, haloshift=1, unscale=GV%H_to_mks)
+    endif
+    if (.not. CS%Zhang23_MLD_filt_set) then
+      ! The running mean was not read from a restart file, so start it from the current MLD
+      ! instead of from zero, which would suppress the parameterization for about one decay time.
+      do j=js-1,je+1 ; do i=is-1,ie+1
+        CS%MLD_filtered(i,j) = MLD(i,j)
+      enddo ; enddo
+      CS%Zhang23_MLD_filt_set = .true.
+    endif
+    aFac = CS%Zhang23_MLD_decay_time / ( dt + CS%Zhang23_MLD_decay_time )
+    bFac = dt / ( dt + CS%Zhang23_MLD_decay_time )
+    do j=js-1,je+1 ; do i=is-1,ie+1
+      CS%MLD_filtered(i,j) = bFac*MLD(i,j) + aFac*CS%MLD_filtered(i,j)
+      MLD(i,j) = CS%MLD_filtered(i,j)
+    enddo ; enddo
+  endif
+
+  p0(:) = 0.0
+  EOSdom(:) = EOS_domain(G%HI, halo=1)
+  uhml(:,:,:) = 0.0
+  vhml(:,:,:) = 0.0
+  sh_xx_int(:,:) = 0.0
+  sh_xx(:,:) = 0.0
+  sh_xy(:,:) = 0.0
+
+  !$OMP parallel &
+  !$OMP default(shared) &
+  !$OMP private(i, j, k, dh, keep_going, line_is_empty, &
+  !$OMP         Rml_int, SpV_int, rho_ml, SpV_ml, &
+  !$OMP         dudx_k, dvdy_k, dvdx_k, dudy_k, hAtq, mld_q)
+
+  !$OMP do
+  do j=js-1,je+1
+    rho_ml(:) = 0.0 ; SpV_ml(:) = 0.0
+    do i=is-1,ie+1
+      htot(i,j) = 0.0 ; Rml_int(i) = 0.0 ; SpV_int(i) = 0.0
+      sh_xx_int(i,j) = 0.0
+    enddo
+    keep_going = .true.
+    do k=1,nz
+      do i=is-1,ie+1
+        vol_dt_avail(i,j,k) = max(I4dt*G%areaT(i,j)*(h(i,j,k)-GV%Angstrom_H), 0.0)
+      enddo
+      if (keep_going) then
+        if (GV%Boussinesq .or. GV%semi_Boussinesq) then
+          if (CS%use_Stanley_ML) then
+            call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p0, tv%varT(:,j,k), covTS, varS, &
+                                   rho_ml, tv%eqn_of_state, EOSdom)
+          else
+            call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p0, rho_ml, tv%eqn_of_state, EOSdom)
+          endif
+        else
+          call calculate_spec_vol(tv%T(:,j,k), tv%S(:,j,k), p0, SpV_ml, tv%eqn_of_state, EOSdom)
+        endif
+        line_is_empty = .true.
+        do i=is-1,ie+1
+          if (htot(i,j) < MLD(i,j)) then
+            dh = min( h(i,j,k), MLD(i,j) - htot(i,j) )
+            Rml_int(i) = Rml_int(i) + dh*rho_ml(i)
+            SpV_int(i) = SpV_int(i) + dh*SpV_ml(i)
+            ! Calculate the normal strain rate at h-points
+            dudx_k = (G%dyT(i,j)*G%IdxT(i,j))*((G%IdyCu(I,j) * u(I,j,k)) - &
+                                  (G%IdyCu(I-1,j) * u(I-1,j,k)))
+            dvdy_k = (G%dxT(i,j)*G%IdyT(i,j))*((G%IdxCv(i,J) * v(i,J,k)) - &
+                                  (G%IdxCv(i,J-1) * v(i,J-1,k)))
+            sh_xx_int(i,j) = sh_xx_int(i,j) + dh * (dudx_k - dvdy_k)
+            htot(i,j) = htot(i,j) + dh
+            line_is_empty = .false.
+          endif
+        enddo
+        if (line_is_empty) keep_going = .false.
+      endif
+    enddo
+    if (GV%Boussinesq .or. GV%semi_Boussinesq) then
+      do i=is-1,ie+1
+        buoy_av(i,j) = -( g_Rho0 * Rml_int(i) ) / (htot(i,j) + h_neglect)
+      enddo
+    else
+      do i=is-1,ie+1
+        buoy_av(i,j) = (GV%H_to_RZ*GV%g_Earth * SpV_int(i)) / (htot(i,j) + h_neglect)
+      enddo
+    endif
+    ! Calculate the mixed-layer averaged normal strain rate at h-points.
+    do i=is-1,ie+1
+      sh_xx(i,j) = sh_xx_int(i,j) / (htot(i,j) + h_neglect)
+    enddo
+  enddo
+  !$OMP end do
+
+  ! Accumulate the thickness-weighted shear strain rate over the mixed layer at q-points.
+  !$OMP do
+  do J=js-1,je
+    do I=is-1,ie
+      sh_xy_int(I,J) = 0.0
+      htot_q(I,J)    = 0.0
+      mld_q(I) = 0.25 * ( (MLD(i,j) + MLD(i+1,j+1)) + (MLD(i+1,j) + MLD(i,j+1)) )
+    enddo
+    do k=1,nz
+      do I=is-1,ie
+        if (htot_q(I,J) < mld_q(I)) then
+          hAtq = 0.25 * ( (h(i,j,k) + h(i+1,j+1,k)) + (h(i+1,j,k) + h(i,j+1,k)) )
+          dh = min( hAtq, mld_q(I) - htot_q(I,J) )
+          dvdx_k = (G%dyBu(I,J)*G%IdxBu(I,J)) * &
+                   ( v(i+1,J,k)*G%IdyCv(i+1,J) - v(i,J,k)*G%IdyCv(i,J) )
+          dudy_k = (G%dxBu(I,J)*G%IdyBu(I,J)) * &
+                   ( u(I,j+1,k)*G%IdxCu(I,j+1) - u(I,j,k)*G%IdxCu(I,j) )
+          sh_xy_int(I,J) = sh_xy_int(I,J) + dh * G%mask2dBu(I,J) * (dvdx_k + dudy_k)
+          htot_q(I,J)    = htot_q(I,J) + dh
+        endif
+      enddo
+    enddo
+  enddo
+  !$OMP end do
+
+  ! Calculate the mixed-layer averaged shear strain rate at q-points.
+  !$OMP do
+  do J=js-1,je
+    do I=is-1,ie
+      sh_xy_q(I,J) = sh_xy_int(I,J) / (htot_q(I,J) + h_neglect)
+    enddo
+  enddo
+  !$OMP end do
+
+  ! Move the mixed-layer averaged shear strain rate to h-points.
+  !$OMP do
+  do j=js,je
+    do i=is,ie
+      sh_xy(i,j) = 0.25 * ( (sh_xy_q(I,  J  ) + sh_xy_q(I-1,J-1)) + &
+                            (sh_xy_q(I-1,J  ) + sh_xy_q(I,  J-1)) )
+    enddo
+  enddo
+  !$OMP end do
+  !$OMP end parallel
+
+  ! Halo updates involve MPI communication and must be done outside of OpenMP parallel regions.
+  call pass_var(sh_xy, G%domain, halo=1, complete=.true.)
+
+  ! Magnitude of the mixed-layer averaged strain rate at h-points, sqrt(sh_xx**2 + sh_xy**2).
+  !$OMP parallel do default(shared) private(i, j)
+  do j=js-1,je+1 ; do i=is-1,ie+1
+    MSR(i,j) = sqrt(sh_xx(i,j)**2 + sh_xy(i,j)**2)
+  enddo ; enddo
+  !$OMP end parallel do
+
+  if (CS%debug) then
+    call hchksum(htot, 'Zhang23: htot', G%HI, haloshift=1, unscale=GV%H_to_mks)
+    call hchksum(buoy_av, 'Zhang23: buoy_av', G%HI, haloshift=1, unscale=GV%m_to_H*US%L_T_to_m_s**2)
+    call hchksum(MLD, 'Zhang23: MLD', G%HI, haloshift=1, unscale=GV%H_to_mks)
+    call hchksum(MSR, 'Zhang23: MSR', G%HI, haloshift=1, unscale=US%s_to_T)
+  endif
+
+
+  ! Apply time filter to mixed-layer averaged strain rate if desired.
+  if (CS%Zhang23_MSR_decay_time > 0.) then
+    if (.not. CS%Zhang23_MSR_filt_set) then
+      ! The running mean was not read from a restart file, so start it from the current strain rate
+      ! instead of from zero, which would suppress the parameterization for about one decay time.
+      do j=js-1,je+1 ; do i=is-1,ie+1
+        CS%MSR_filtered(i,j) = MSR(i,j)
+      enddo ; enddo
+      CS%Zhang23_MSR_filt_set = .true.
+    endif
+    cFac = CS%Zhang23_MSR_decay_time / ( dt + CS%Zhang23_MSR_decay_time )
+    dFac = dt / ( dt + CS%Zhang23_MSR_decay_time )
+    do j=js-1,je+1 ; do i=is-1,ie+1
+      CS%MSR_filtered(i,j) = dFac*MSR(i,j) + cFac*CS%MSR_filtered(i,j)
+      MSR(i,j) = CS%MSR_filtered(i,j)
+    enddo ; enddo
+    if (CS%debug) then
+      call hchksum(CS%MSR_filtered, 'Zhang23: MSR_filtered', G%HI, haloshift=1, unscale=US%s_to_T)
+    endif
+  endif
+
+  !$OMP parallel &
+  !$OMP default(shared) &
+  !$OMP private(i, j, k, kb, reach_bottom, &
+  !$OMP         grid_scale, absf, grd_b, psi_mag, Ihtot, &
+  !$OMP         hAtVel, mldAtVel, MSR_f, z_h, dxi)
+
+  !$OMP do
+  do j=js,je ; do I=is-1,ie
+    if ((G%OBCmaskCu(I,j) > 0.0) .and. &
+      (min(G%bathyT(i,j), G%bathyT(i+1,j)) > CS%Zhang23_min_depth)) then
+
+      grid_scale = sqrt(0.5*( G%dxCu(I,j)**2 + G%dyCu(I,j)**2 ))              ! [L ~> m]
+      absf = max(0.5*(abs(G%CoriolisBu(I,J-1)) + abs(G%CoriolisBu(I,J))), &   ! [T-1 ~> s-1]
+                  CS%Zhang23_f_min)
+      mldAtVel = 0.5*((htot(i,j) + htot(i+1,j)) + h_neglect)                  ! [H ~> m or kg m-2]
+      grd_b = ( buoy_av(i+1,j) - buoy_av(i,j) ) * G%IdxCu(I,j)                ! [L H-1 T-2 ~> s-2 or m3 kg-1 s-2]
+      MSR_f = (0.5*(MSR(i,j) + MSR(i+1,j)) / absf)                            ! [nondim]
+      psi_mag = CS%C_z * CS%B_z * grid_scale * (MSR_f**2) * &                 ! [L2 H T-1 ~> m3 s-1 or kg s-1]
+                grd_b * ( mldAtVel**2 ) * G%dyCu(I,j)
+    else
+      psi_mag = 0.0
+    endif
+
+    ! uhml was initialized to 0, so there is nothing more to do at faces without a restratifying
+    ! flux.  Skipping these faces also avoids evaluating the depth limit below over land.
+    if (psi_mag == 0.0) then
+      uDml_diag(I,j) = 0.0
+      cycle
+    endif
+
+    ! Find the deepest valid layer.
+    kb = 0
+    do k = nz, 1, -1
+      if ( min(h(i,j,k), h(i+1,j,k)) > (GV%Angstrom_H + GV%H_subroundoff) ) then
+        kb = k
+        exit
+      endif
+    enddo
+
+    ! Limit 1/MLD to ensure the closure of structure function xi(z) within the shallower column.
+    ! Both arguments of min() are twice the corresponding depth, hence the 2.0 in the numerator.
+    Ihtot = (2.0 / min( ((htot(i,j) + htot(i+1,j)) + h_neglect), &
+              (0.4 * GV%Z_to_H * (2.0*min(G%bathyT(i,j), G%bathyT(i+1,j))) + h_neglect) ) )
+    dxi(:) = 0.0
+    z_h = 0.0
+    reach_bottom = .false.
+    do k=1,nz
+      hAtVel = 0.5*(h(i,j,k) + h(i+1,j,k))      ! Thickness at velocity point [H ~> m or kg m-2]
+      dxi(k) = xi(z_h, reach_bottom)            ! xi(z/MLD) for upper interface [nondim]
+      if (k < (kb-1)) then                      ! Determine if the column has reached the layer above bathymetry.
+        reach_bottom = .false.
+      else
+        reach_bottom = .true.
+      endif
+      z_h = z_h - (hAtVel * Ihtot)              ! z/H for lower interface [nondim]
+      dxi(k) = dxi(k) - xi(z_h, reach_bottom)   ! Change in xi(z) across layer [nondim]
+      ! dxi(k)*psi_mag is the transport in this layer [L2 H T-1 ~> m3 s-1 or kg s-1]
+      ! Limit magnitude (psi_mag) if it would violate CFL
+      if (dxi(k)*psi_mag > 0.0) then
+        if (dxi(k)*psi_mag > vol_dt_avail(i,j,k)) psi_mag = vol_dt_avail(i,j,k) / dxi(k)
+      elseif (dxi(k)*psi_mag < 0.0) then
+        if (-dxi(k)*psi_mag > vol_dt_avail(i+1,j,k)) psi_mag = -vol_dt_avail(i+1,j,k) / dxi(k)
+      endif
+    enddo
+
+    do k=1,nz
+      uhml(I,j,k) = dxi(k) * psi_mag
+      uhtr(I,j,k) = uhtr(I,j,k) + uhml(I,j,k) * dt
+    enddo
+
+    uDml_diag(I,j) = psi_mag
+  enddo ; enddo
+  !$OMP end do
+
+  !$OMP do
+  do J=js-1,je ; do i=is,ie
+    if ((G%OBCmaskCv(i,J) > 0.0) .and. &
+        (min(G%bathyT(i,j), G%bathyT(i,j+1)) > CS%Zhang23_min_depth)) then
+
+      grid_scale = sqrt(0.5*( G%dxCv(i,J)**2 + G%dyCv(i,J)**2 ))              ! [L ~> m]
+      absf = max(0.5*(abs(G%CoriolisBu(I-1,J)) + abs(G%CoriolisBu(I,J))), &   ! [T-1 ~> s-1]
+                  CS%Zhang23_f_min)
+      mldAtVel = 0.5*((htot(i,j) + htot(i,j+1)) + h_neglect)                  ! [H ~> m or kg m-2]
+      grd_b = ( buoy_av(i,j+1) - buoy_av(i,j) ) * G%IdyCv(i,J)                ! [L H-1 T-2 ~> s-2 or m3 kg-1 s-2]
+      MSR_f = (0.5*(MSR(i,j) + MSR(i,j+1)) / absf)                            ! [nondim]
+      psi_mag = CS%C_z * CS%B_z * grid_scale * (MSR_f**2) * &                 ! [L2 H T-1 ~> m3 s-1 or kg s-1]
+                grd_b * ( mldAtVel**2 ) * G%dxCv(i,J)
+    else
+      psi_mag = 0.0
+    endif
+
+    ! vhml was initialized to 0, so there is nothing more to do at faces without a restratifying
+    ! flux.  Skipping these faces also avoids evaluating the depth limit below over land.
+    if (psi_mag == 0.0) then
+      vDml_diag(i,J) = 0.0
+      cycle
+    endif
+
+    ! Find the deepest valid layer.
+    kb = 0
+    do k = nz, 1, -1
+      if ( min(h(i,j,k), h(i,j+1,k)) > (GV%Angstrom_H + GV%H_subroundoff) ) then
+        kb = k
+        exit
+      endif
+    enddo
+
+    ! Limit 1/MLD to ensure the closure of structure function xi(z) within the shallower column.
+    ! Both arguments of min() are twice the corresponding depth, hence the 2.0 in the numerator.
+    Ihtot = (2.0 / min( ((htot(i,j) + htot(i,j+1)) + h_neglect), &
+              (0.4 * GV%Z_to_H * (2.0*min(G%bathyT(i,j), G%bathyT(i,j+1))) + h_neglect) ) )
+    dxi(:) = 0.0
+    z_h = 0.0
+    reach_bottom = .false.
+    do k=1,nz
+      hAtVel = 0.5*(h(i,j,k) + h(i,j+1,k))      ! Thickness at velocity point [H ~> m or kg m-2]
+      dxi(k) = xi(z_h, reach_bottom)            ! xi(z/MLD) for upper interface [nondim]
+      if (k < (kb-1)) then                      ! Determine if the column has reached the layer above bathymetry.
+        reach_bottom = .false.
+      else
+        reach_bottom = .true.
+      endif
+      z_h = z_h - (hAtVel * Ihtot)              ! z/H for lower interface [nondim]
+      dxi(k) = dxi(k) - xi(z_h, reach_bottom)   ! Change in xi(z) across layer [nondim]
+      ! dxi(k)*psi_mag is the transport in this layer [L2 H T-1 ~> m3 s-1 or kg s-1]
+      ! Limit magnitude (psi_mag) if it would violate CFL
+      if (dxi(k)*psi_mag > 0.0) then
+        if (dxi(k)*psi_mag > vol_dt_avail(i,j,k)) psi_mag = vol_dt_avail(i,j,k) / dxi(k)
+      elseif (dxi(k)*psi_mag < 0.0) then
+        if (-dxi(k)*psi_mag > vol_dt_avail(i,j+1,k)) psi_mag = -vol_dt_avail(i,j+1,k) / dxi(k)
+      endif
+    enddo
+
+    do k=1,nz
+      vhml(i,J,k) = dxi(k) * psi_mag
+      vhtr(i,J,k) = vhtr(i,J,k) + vhml(i,J,k) * dt
+    enddo
+
+    vDml_diag(i,J) = psi_mag
+  enddo ; enddo
+  !$OMP end do
+
+  !$OMP end parallel
+
+  !$OMP parallel do default(shared) private(i, j, k)
+  do j=js,je ; do k=1,nz ; do i=is,ie
+    h(i,j,k) = h(i,j,k) - dt*G%IareaT(i,j) * &
+        ((uhml(I,j,k) - uhml(I-1,j,k)) + (vhml(i,J,k) - vhml(i,J-1,k)))
+    if (h(i,j,k) < h_min) h(i,j,k) = h_min
+  enddo ; enddo ; enddo
+  !$OMP end parallel do
+
+  if (CS%id_uhml > 0 .or. CS%id_vhml > 0) &
+    call pass_var(h, G%domain, To_West+To_South+Omit_Corners, halo=1)
+  call diag_update_remap_grids(CS%diag)
+
+  if (query_averaging_enabled(CS%diag)) then
+    if (CS%id_Rml   > 0) call post_data(CS%id_Rml, buoy_av, CS%diag)
+    if (CS%id_uhml  > 0) call post_data(CS%id_uhml, uhml, CS%diag)
+    if (CS%id_vhml  > 0) call post_data(CS%id_vhml, vhml, CS%diag)
+    if (CS%id_MLD   > 0) call post_data(CS%id_MLD, MLD, CS%diag)
+    if (CS%id_MSR   > 0) call post_data(CS%id_MSR, MSR, CS%diag)
+    if (CS%id_sh_xx > 0) call post_data(CS%id_sh_xx, sh_xx, CS%diag)
+    if (CS%id_sh_xy > 0) call post_data(CS%id_sh_xy, sh_xy, CS%diag)
+
+    ! Post the final limited stream-function amplitudes before these work
+    ! arrays are reused below for the separate surface-velocity diagnostics.
+    if (CS%id_uDml > 0) call post_data(CS%id_uDml, uDml_diag, CS%diag)
+    if (CS%id_vDml > 0) call post_data(CS%id_vDml, vDml_diag, CS%diag)
+
+    if (CS%id_uml > 0) then
+      do j=js,je ; do I=is-1,ie
+        h_vel = min(0.5*((htot(i,j) + htot(i+1,j)) + h_neglect), &
+                0.4 * GV%Z_to_H * min(G%bathyT(i,j), G%bathyT(i+1,j)) + 0.5*h_neglect )
+        uDml_diag(I,j) = uDml_diag(I,j) / (0.01*h_vel) * G%IdyCu(I,j) * (xi(0.,.false.) - xi(-0.01,.false.))
+      enddo ; enddo
+      call post_data(CS%id_uml, uDml_diag, CS%diag)
+    endif
+    if (CS%id_vml > 0) then
+      do J=js-1,je ; do i=is,ie
+        h_vel = min(0.5*((htot(i,j) + htot(i,j+1)) + h_neglect), &
+                0.4 * GV%Z_to_H * min(G%bathyT(i,j), G%bathyT(i,j+1)) + 0.5*h_neglect )
+        vDml_diag(i,J) = vDml_diag(i,J) / (0.01*h_vel) * G%IdxCv(i,J) * (xi(0.,.false.) - xi(-0.01,.false.))
+      enddo ; enddo
+      call post_data(CS%id_vml, vDml_diag, CS%diag)
+    endif
+  endif
+
+end subroutine mixedlayer_restrat_Zhang23
+
+!> Stream function shape as a function of non-dimensional position
+!! normalized by the mixed-layer depth [nondim]
+!! Formulation adapted with modifications from Eq. 10 of \cite Zhang2023.
+real function xi(sigma, reach_bottom)
+  real, intent(in) :: sigma !< Fractional position normalized by the mixed-layer depth [nondim]
+                            !! sigma=0 is surface
+  logical, intent(in) :: reach_bottom !< Whether the column of layers has reached the bathymetry
+  ! Local variables
+  real, parameter :: C_1 = -4.0/3.0  !< The ratio of -4/3 [nondim]
+  real, parameter :: C_2 = -8.0/9.0  !< The ratio of -8/9 [nondim]
+
+  if ( (sigma > -2.5) .and. (.not. reach_bottom)) then
+    xi = C_1 * sigma * exp(C_2 * sigma**2 + 0.5)
+  else
+    xi = 0.0
+  endif
+
+end function xi
+
 !> Two time-scale running mean in the same arbitrary units as "signal" and "filtered"
 !!
 !! If signal > filtered, returns running-mean with time scale "tau_growing".
@@ -1660,6 +2199,19 @@ real function growth_time(u_star, hBL, absf, h_neg, vonKar, Kv_rest, restrat_coe
 
 end function growth_time
 
+!> Reject conflicting or unsupported mixed-layer restratification schemes.
+subroutine check_restrat_schemes(use_Bodner, use_Zhang23, nkml)
+  logical, intent(in) :: use_Bodner  !< Enable the Bodner et al. scheme.
+  logical, intent(in) :: use_Zhang23 !< Enable the Zhang et al. scheme.
+  integer, intent(in) :: nkml        !< Number of bulk mixed-layer levels.
+
+  if (use_Bodner .and. use_Zhang23) call MOM_error(FATAL, "mixedlayer_restrat: "// &
+      "MLE%USE_BODNER23 and USE_ZHANG23 cannot both be true.")
+  if ((nkml > 0) .and. (use_Bodner .or. use_Zhang23)) call MOM_error(FATAL, "mixedlayer_restrat: "// &
+      "MLE%USE_BODNER23 and USE_ZHANG23 require GV%nkml=0; "// &
+      "they cannot be combined with the bulk mixed-layer implementation.")
+end subroutine check_restrat_schemes
+
 !> Initialize the mixed layer restratification module
 logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, restart_CS)
   type(time_type), target,     intent(in)    :: Time       !< Current model time
@@ -1709,9 +2261,18 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   CS%MLE_MLD_stretch = -9.e9
   CS%use_Stanley_ML = .false.
   CS%use_Bodner = .false.
+  CS%Bodner_detect_MLD = .false.
   CS%fl_from_file = .false.
   CS%MLD_grid = .false.
   CS%Cr_grid = .false.
+  CS%use_Zhang23 = .false.
+  CS%Zhang23_MLD_decay_time = -9.e9*US%s_to_T
+  CS%Zhang23_MSR_decay_time = -9.e9*US%s_to_T
+  CS%Zhang23_f_min = -9.e9*US%T_to_s
+  CS%Zhang23_min_depth = -9.e9*US%m_to_Z
+  CS%C_z = -9.e9
+  CS%B_z = -9.e9
+
 
   call get_param(param_file, mdl, "DEBUG", CS%debug, default=.false., do_not_log=.true.)
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
@@ -1726,6 +2287,10 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   if (CS%use_Stanley_ML .and. .not.stoch_eos) then
     call MOM_error(FATAL, "mixedlayer_restrat_init: USE_STANLEY_ML requires STOCH_EOS")
   endif
+  call get_param(param_file, mdl, "USE_ZHANG23", CS%use_Zhang23, &
+           "If true, use the Zhang et al., 2023, formulation of the "//&
+           "mixed-layer restratification parameterization. This only works in ALE mode.", &
+           default=.false.)
   call openParameterBlock(param_file,'MLE') ! Prepend MLE% to all parameters
   if (GV%nkml==0) then
     call get_param(param_file, mdl, "USE_BODNER23", CS%use_Bodner, &
@@ -1843,8 +2408,66 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
     call closeParameterBlock(param_file) ! The remaining parameters do not have MLE% prepended
   endif
 
-  if (.not.CS%use_Bodner) then
-    ! This coefficient is used in both layered and ALE versions of Fox-Kemper but not Bodner
+  if (CS%use_Zhang23) then
+    call get_param(param_file, mdl, "MLE_USE_PBL_MLD", CS%MLE_use_PBL_MLD, &
+           "If true, use the mixed-layer depth provided by the active PBL "//&
+           "parameterization. Otherwise detect MLD using MLE_DENSITY_DIFF.", default=.false.)
+    call get_param(param_file, mdl, "MLE_MLD_STRETCH", CS%MLE_MLD_stretch, &
+           "A scaling coefficient for stretching/shrinking the MLD "//&
+           "used in the MLE scheme. This simply multiplies MLD wherever used.", &
+           units="nondim", default=1.0)
+    if (.not. CS%MLE_use_PBL_MLD) then
+      call get_param(param_file, mdl, "MLE_DENSITY_DIFF", CS%MLE_density_diff, &
+           "Positive density difference used to detect the mixed-layer depth "//&
+           "for the selected MLE parameterization.", &
+           units="kg m-3", default=0.03, scale=US%kg_m3_to_R)
+      if (CS%MLE_density_diff <= 0.0) call MOM_error(FATAL, "mixedlayer_restrat_init: "// &
+          "MLE_DENSITY_DIFF must be positive when MLE_USE_PBL_MLD is false.")
+    endif
+  endif
+
+  if (CS%use_Zhang23) then
+    call openParameterBlock(param_file, 'ZHANG23') ! Prepend ZHANG23% to parameters
+    call get_param(param_file, mdl, "C_Z", CS%C_z, &
+            "The efficiency coefficient in Eq. 11 of Zhang et al., 2023. "//&
+            "This may vary with the model's horizontal resolution because the resolved "//&
+            "strain rate is underestimated at coarse resolution. Zhang et al. (2023) used "//&
+            "C_Z=8. The default value here is tuned for OM4_025.", &
+            units="nondim", default=450.0)
+    call get_param(param_file, mdl, "B_Z", CS%B_z, &
+            "Tunable parameter used for Zhang23 parameterization. "//&
+            "B_Z is equivalent to the inverse of the product of the "//&
+            "reference mixed-layer Rossby radius and the reference Coriolis parameter. "//&
+            "More details about this parameter can be found in Calvert et al. 2020 and Feng et al. 2026.",&
+            units="s m-1", default=4.0, scale=US%L_to_m*US%s_to_T)
+    call get_param(param_file, mdl, "F_MIN", CS%Zhang23_f_min, &
+            "A hard floor on the absolute value of the Coriolis parameter used by the "//&
+            "Zhang23 parameterization.  Because the stream function scales as "//&
+            "(strain rate / f)**2, this sets the largest amplification near the equator. "//&
+            "The default corresponds to about 5 degrees of latitude.", &
+            units="s-1", default=1.27e-5, scale=US%T_to_s)
+    call get_param(param_file, mdl, "MIN_OCEAN_DEPTH", CS%Zhang23_min_depth, &
+            "The Zhang23 parameterization is only applied at velocity points where the "//&
+            "ocean on both sides is deeper than this.", &
+            units="m", default=50.0, scale=US%m_to_Z)
+    call get_param(param_file, mdl, "MLD_DECAY_TIME", CS%Zhang23_MLD_decay_time, &
+            "The time-scale for a running-mean filter applied to the mixed-layer depth "//&
+            "used in the Zhang23 parameterization.", &
+            units="s", default=0.0, scale=US%s_to_T)
+    call get_param(param_file, mdl, "MSR_DECAY_TIME", CS%Zhang23_MSR_decay_time, &
+            "The time-scale for a running-mean filter applied to the mixed-layer averaged "//&
+            "strain rate used in the Zhang23 restratification parameterization.",&
+            units="s", default=0.0, scale=US%s_to_T)
+    call closeParameterBlock(param_file) ! The remaining parameters do not have ZHANG23% prepended
+    if (CS%C_z < 0.0) call MOM_error(FATAL, "mixedlayer_restrat_init: ZHANG23%C_Z must be >= 0.")
+    if (CS%B_z < 0.0) call MOM_error(FATAL, "mixedlayer_restrat_init: ZHANG23%B_Z must be >= 0.")
+    if (CS%Zhang23_f_min <= 0.0) call MOM_error(FATAL, &
+        "mixedlayer_restrat_init: ZHANG23%F_MIN must be > 0.")
+  endif
+
+  if ((.not. CS%use_Bodner) .and. (.not. CS%use_Zhang23)) then
+    ! This coefficient is used in both layered and ALE versions of Fox-Kemper but
+    ! not Bodner or Zhang23.
     call get_param(param_file, mdl, "FOX_KEMPER_ML_RESTRAT_COEF", CS%ml_restrat_coef, &
              "A nondimensional coefficient that is proportional to "//&
              "the ratio of the deformation radius to the dominant "//&
@@ -1936,7 +2559,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
                  "restratification module.  This can be tiny, but if this is greater than 0, "//&
                  "it will prevent divisions by zero when f and KV_RESTRAT are zero.", &
                  units="m s-1", default=US%Z_to_m*US%s_to_T*ustar_min_dflt, scale=GV%m_to_H*US%T_to_s)
-  elseif (CS%Bodner_detect_MLD) then
+  elseif ((CS%Bodner_detect_MLD) .and. (.not. CS%use_Zhang23)) then
     call get_param(param_file, mdl, "MLE_DENSITY_DIFF", CS%MLE_density_diff, &
            "Density difference used to detect the mixed-layer "//&
            "depth used for the mixed-layer eddy parameterization "//&
@@ -1995,16 +2618,42 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
     CS%id_lfbod = register_diag_field('ocean_model', 'lf_bodner', diag%axesT1, Time, &
         'Front length in Bodner mixed layer restratificiation parameterization', &
         'm', conversion=US%L_to_m)
-  else
+  elseif (.not.CS%use_Zhang23) then
     CS%id_mle_fl = register_diag_field('ocean_model', 'mle_fl', diag%axesT1, Time, &
         'Frontal length scale used in the mixed layer restratificiation parameterization', &
         'm', conversion=US%L_to_m)
+  endif
+  if (CS%use_Zhang23) then
+    CS%id_sh_xx = register_diag_field('ocean_model', 'sh_xx_ml', diag%axesT1, Time, &
+        'Mixed-layer averaged normal strain rate', &
+        's-1', conversion=US%s_to_T)
+    CS%id_sh_xy = register_diag_field('ocean_model', 'sh_xy_ml', diag%axesT1, Time, &
+        'Mixed-layer averaged shear strain rate', &
+        's-1', conversion=US%s_to_T)
+    CS%id_MSR = register_diag_field('ocean_model', 'MSR_restrat', diag%axesT1, Time, &
+        'Mixed layer averaged strain rate as used in the Zhang23 mixed layer restratification '//&
+        'parameterization', 's-1', conversion=US%s_to_T)
   endif
 
   ! If MLD_filtered is being used, we need to update halo regions after a restart
   if (allocated(CS%MLD_filtered)) call pass_var(CS%MLD_filtered, G%domain)
   if (allocated(CS%MLD_filtered_slow)) call pass_var(CS%MLD_filtered_slow, G%domain)
   if (allocated(CS%wpup_filtered)) call pass_var(CS%wpup_filtered, G%domain)
+  if (allocated(CS%MSR_filtered)) call pass_var(CS%MSR_filtered, G%domain)
+
+  ! Determine whether the Zhang23 running means were read from a restart file.  If they were not,
+  ! they are set to the instantaneous values on the first call instead of starting from zero.
+  CS%Zhang23_MLD_filt_set = .false. ; CS%Zhang23_MSR_filt_set = .false.
+  if (CS%use_Zhang23) then
+    if (allocated(CS%MLD_filtered)) then
+      if (CS%Zhang23_MLD_decay_time > 0.) &
+        CS%Zhang23_MLD_filt_set = query_initialized(CS%MLD_filtered, "Zhang23_MLD_filtered", restart_CS)
+    endif
+    if (allocated(CS%MSR_filtered)) then
+      if (CS%Zhang23_MSR_decay_time > 0.) &
+        CS%Zhang23_MSR_filt_set = query_initialized(CS%MSR_filtered, "Zhang23_MSR_filtered", restart_CS)
+    endif
+  endif
 
 end function mixedlayer_restrat_init
 
@@ -2020,21 +2669,37 @@ subroutine mixedlayer_restrat_register_restarts(HI, GV, US, param_file, CS, rest
 
   ! Local variables
   character(len=64) :: mom_flux_units
-  logical :: mixedlayer_restrat_init, use_Bodner
+  logical :: mixedlayer_restrat_init, use_Bodner, use_Zhang23
 
   ! Check to see if this module will be used
   call get_param(param_file, mdl, "MIXEDLAYER_RESTRAT", mixedlayer_restrat_init, &
              default=.false., do_not_log=.true.)
   if (.not. mixedlayer_restrat_init) return
 
-  call get_param(param_file, mdl, "MLE_MLD_DECAY_TIME", CS%MLE_MLD_decay_time, &
-                 units="s", default=0., scale=US%s_to_T, do_not_log=.true.)
-  call get_param(param_file, mdl, "MLE_MLD_DECAY_TIME2", CS%MLE_MLD_decay_time2, &
-                 units="s", default=0., scale=US%s_to_T, do_not_log=.true.)
+  call get_param(param_file, mdl, "USE_ZHANG23", use_Zhang23, &
+                 default=.false., do_not_log=.true.)
   call openParameterBlock(param_file, 'MLE', do_not_log=.true.)
   call get_param(param_file, mdl, "USE_BODNER23", use_Bodner, &
                  default=.false., do_not_log=.true.)
   call closeParameterBlock(param_file)
+  call check_restrat_schemes(use_Bodner, use_Zhang23, GV%nkml)
+
+  CS%MLE_MLD_decay_time = 0. ; CS%MLE_MLD_decay_time2 = 0.
+  if (.not. use_Zhang23) then
+    call get_param(param_file, mdl, "MLE_MLD_DECAY_TIME", CS%MLE_MLD_decay_time, &
+                   units="s", default=0., scale=US%s_to_T, do_not_log=.true.)
+    call get_param(param_file, mdl, "MLE_MLD_DECAY_TIME2", CS%MLE_MLD_decay_time2, &
+                   units="s", default=0., scale=US%s_to_T, do_not_log=.true.)
+  endif
+
+  if (use_Zhang23) then
+    call openParameterBlock(param_file, 'ZHANG23', do_not_log=.true.)
+    call get_param(param_file, mdl, "MLD_DECAY_TIME", CS%Zhang23_MLD_decay_time, &
+                   units="s", default=0.0, scale=US%s_to_T, do_not_log=.true.)
+    call get_param(param_file, mdl, "MSR_DECAY_TIME", CS%Zhang23_MSR_decay_time, &
+                   units="s", default=0.0, scale=US%s_to_T, do_not_log=.true.)
+    call closeParameterBlock(param_file)
+  endif
   if (CS%MLE_MLD_decay_time>0. .or. CS%MLE_MLD_decay_time2>0. .or. use_Bodner) then
     ! CS%MLD_filtered is used to keep a running mean of the PBL's actively mixed MLD.
     allocate(CS%MLD_filtered(HI%isd:HI%ied,HI%jsd:HI%jed), source=0.)
@@ -2056,6 +2721,20 @@ subroutine mixedlayer_restrat_register_restarts(HI, GV, US, param_file, CS, rest
     call register_restart_field(CS%wpup_filtered, "MLE_Bflux", .false., restart_CS, &
                                 longname="Time-filtered vertical turbulent momentum flux for use in MLE", &
                                 units=mom_flux_units, conversion=US%L_to_m*GV%H_to_mks*US%s_to_T**2 )
+  endif
+  if (use_Zhang23 .and. CS%Zhang23_MLD_decay_time>0.) then
+    ! CS%MSR_filtered is used to keep a running mean of the MLD.
+    allocate(CS%MLD_filtered(HI%isd:HI%ied,HI%jsd:HI%jed), source=0.)
+    call register_restart_field(CS%MLD_filtered, "Zhang23_MLD_filtered", .false., restart_CS, &
+                                longname="Time-filtered MLD for use in Zhang23 parameterization", &
+                                units=get_thickness_units(GV), conversion=GV%H_to_MKS)
+  endif
+  if (use_Zhang23 .and. CS%Zhang23_MSR_decay_time>0.) then
+    ! CS%MSR_filtered is used to keep a running mean of the mixed-layer averaged strain rate.
+    allocate(CS%MSR_filtered(HI%isd:HI%ied,HI%jsd:HI%jed), source=0.)
+    call register_restart_field(CS%MSR_filtered, "Zhang23_MSR_filtered", .false., restart_CS, &
+                                longname="Time-filtered mixed-layer averaged strain rate for Zhang23", &
+                                units="s-1", conversion=US%s_to_T)
   endif
 
 end subroutine mixedlayer_restrat_register_restarts
@@ -2106,6 +2785,18 @@ logical function mixedlayer_restrat_unit_tests(verbose)
   if (.not. this_test) print '(a)','  Passed tests of rmean2ts(s,f,g,d,dt)'
   mixedlayer_restrat_unit_tests = mixedlayer_restrat_unit_tests .or. this_test
 
+  ! Tests of the Zhang23 shape function xi(z)
+  this_test = &
+    test_answer(verbose, xi(0.,.false.), 0., 'xi(0)=0')
+  this_test = this_test .or. &
+    test_answer(verbose, xi(-0.75,.false.), 1., 'xi(-0.75)=1', tol=4.*epsilon(1.))
+  this_test = this_test .or. &
+    test_answer(verbose, xi(-3.,.false.), 0., 'xi(-3)=0')
+  this_test = this_test .or. &
+    test_answer(verbose, xi(-0.75,.true.), 0., 'xi(-0.75,reach_bottom)=0')
+  if (.not. this_test) print '(a)','  Passed tests of xi(z)'
+  mixedlayer_restrat_unit_tests = mixedlayer_restrat_unit_tests .or. this_test
+
 end function mixedlayer_restrat_unit_tests
 
 !> Returns true if any cell of u and u_true are not identical. Returns false otherwise.
@@ -2143,9 +2834,13 @@ end function test_answer
 !! This is derived in part from the older parameterization that is described in
 !! \cite Hallberg2003, which this new parameterization surpasses, which
 !! in turn is based on the sub-inertial mixed layer theory of \cite Young1994.
-!! There is no net horizontal volume transport due to this parameterization, and
-!! no direct effect below the mixed layer. A revised version of the parameterization by
-!! \cite Bodner2023 is also available as an option.
+!! In the original Fox-Kemper formulation, there is no net horizontal
+!! volume transport and no direct effect below the mixed layer.
+!! A revised version of the parameterization by \cite Bodner2023
+!! is available as an option.
+!! The formulation of \cite Zhang2023, which simultaneously considers
+!! submesoscale baroclinic instability and strain-induced frontogenesis
+!! with an improved vertical structure function is available as an option.
 !!
 !! This parameterization sets the restratification timescale to agree with
 !! high-resolution studies of mixed layer restratification.
@@ -2299,5 +2994,187 @@ end function test_answer
 !! and J. Dong, 2023: Modifying the Mixed Layer Eddy Parameterization to Include Frontogenesis Arrest by
 !! Boundary Layer Turbulence. J. Phys. Oceanogr., 53(1), p323-339.
 !! https://doi.org/10.1175/JPO-D-21-0297.1
+!!
+!! \subsection section_zhang23 The Zhang et al. (2023) parameterization
+!! To use this parameterization, set <code>USE_ZHANG23=True</code>.
+!!
+!! \cite Zhang2023 proposed a parameterization of submesoscale vertical buoyancy
+!! flux (VBF) that simultaneously accounts for submesoscale baroclinic instability and
+!! strain-induced frontogenesis. The Zhang23 parameterization explicitly includes
+!! the mixed-layer strain rate and uses a vertical structure function that
+!! extends beneath the mixed-layer base.
+!!
+!! The three-dimensional VBF proposed by \cite Zhang2023 can be written as
+!! \f[
+!!   \overline{w'b'} =
+!!   C\,\xi\left(\frac{z}{H}\right)
+!!   \frac{ \left(\overline{SR}\,H\right)^2
+!!          \left|\nabla_h\bar{b}\right|^2 }
+!!        {|f|^3},
+!! \f]
+!! where \f$H\f$ is the mixed-layer depth, \f$\bar{b}\f$ is the buoyancy averaged
+!! over the mixed layer, \f$\overline{SR}\f$ is the mixed-layer strain rate,
+!! \f$f\f$ is the Coriolis parameter, \f$C\f$ is an empirical efficiency coefficient,
+!! and \f$\xi\f$ is the vertical structure function.
+!!
+!! Following \cite Calvert2020 and \cite Feng2026,
+!! a grid-scale-dependent factor \f$B L\f$ is introduced
+!! when applying Zhang23 in a mesoscale-resolving model,
+!! where \f$B = \frac{1}{L_0 f_0}\f$, \f$L_0\f$ and \f$f_0\f$ are
+!! a reference mixed-layer Rossby radius and Coriolis parameter, and
+!! \f$L=\sqrt{(\Delta x^2+\Delta y^2)/2}\f$ is the grid spacing at velocity points.
+!! Using \f$L_0=5\f$ km and \f$f_0=5\times10^{-5}\ {\rm s}^{-1}\f$
+!! gives \f$B=4\ {\rm s}\,{\rm m}^{-1}\f$.
+!!
+!! In this MOM6 implementation, the parameterization is expressed as a
+!! restratifying overturning stream function,
+!! \f[
+!!   {\bf \Psi}
+!!   =
+!!   C_Z B_Z L H^2
+!!   \left(\frac{\overline{SR}}{f_*}\right)^2
+!!   \left(\nabla_h\bar{b}\times\hat{\bf z}\right)
+!!   \xi(\sigma),
+!! \f]
+!! where
+!! \f[
+!!   f_* = \max\left(|f|,f_{\min}\right).
+!! \f]
+!! The lower bound \f$f_{\min}\f$ prevents the stream function, which scales as
+!! \f$(\overline{SR}/f)^2\f$, from becoming singular near the equator.
+!!
+!!
+!! The vertical structure function is adapted from Eq. 10 of \cite Zhang2023:
+!! \f[
+!!   \xi(\sigma)
+!!   =
+!!   -\frac{4}{3}\sigma
+!!   \exp\left(-\frac{8}{9}\sigma^2+\frac{1}{2}\right),
+!!   \qquad -2.5 < \sigma \le 0,
+!! \f]
+!! where
+!! \f[
+!!   \sigma=\frac{z}{H_\xi}.
+!! \f]
+!! The surface corresponds to \f$\sigma=0\f$. The function reaches its maximum
+!! value of 1 at \f$\sigma=-3/4\f$ and decreases below.
+!! In the MOM6 implementation,
+!! \f[
+!!   \xi(\sigma)=0
+!!   \qquad {\rm for}\qquad \sigma\le-2.5,
+!! \f]
+!! or when the water column has reached the layer above bathymetry.
+!!
+!! To prevent the vertical structure function from extending below the shallower
+!! of the two columns adjoining a velocity point, the depth scale used for
+!! \f$\sigma\f$ is limited according to
+!! \f[
+!!   H_\xi = \min\left(H,\,0.4D\right),
+!! \f]
+!! where \f$D\f$ is the shallower local ocean depth. Because the structure
+!! function is set to zero at \f$\sigma=-2.5\f$, this choice ensures that its
+!! nominal lower limit, \f$2.5H_\xi\f$, does not extend below the bathymetry.
+!! The mixed-layer depth \f$H\f$ itself is retained in the amplitude of the
+!! stream function.
+!!
+!! The parameterization is disabled at velocity points
+!! where either adjoining tracer cell is shallower than
+!! <code>ZHANG23%MIN_OCEAN_DEPTH</code>.
+!!
+!! \subsubsection section_zhang23_mld Mixed-layer depth
+!!
+!! If <code>MLE_USE_PBL_MLD=True</code>, the mixed-layer depth is taken from the
+!! active planetary boundary-layer parameterization. Otherwise, the mixed-layer
+!! depth is diagnosed using the density-difference criterion
+!! <code>MLE_DENSITY_DIFF</code>. In either case,
+!! <code>MLE_MLD_STRETCH</code> provides a multiplicative adjustment to the
+!! mixed-layer depth used by the parameterization.
+!!
+!! An optional running-mean filter can be applied to the mixed-layer depth:
+!! \f[
+!!   \bar{H}^{\,n}
+!!   =
+!!   \frac{
+!!     \Delta t\,H^{n}
+!!     + \tau_H\bar{H}^{\,n-1}
+!!   }{
+!!     \Delta t+\tau_H
+!!   },
+!! \f]
+!! where \f$\tau_H\f$ is
+!! <code>ZHANG23%MLD_DECAY_TIME</code>. Unlike the one-sided MLD filter used by
+!! the original mixed-layer eddy parameterization, this filter is applied
+!! symmetrically to both deepening and shoaling. A value of zero disables the
+!! filter.
+!!
+!! \subsubsection section_zhang23_strain_rate Mixed-layer strain rate
+!!
+!! An optional running-mean filter can be applied to the mixed-layer strain rate:
+!! \f[
+!!   \overline{SR}^{\,n}
+!!   =
+!!   \frac{
+!!     \Delta t\,{SR}^{\,n}
+!!     + \tau_{SR}\overline{SR}^{\,n-1}
+!!   }{
+!!     \Delta t+\tau_{SR}
+!!   },
+!! \f]
+!! where \f$\tau_{SR}\f$ is
+!! <code>ZHANG23%MSR_DECAY_TIME</code>. A value of zero disables this filter.
+!! When either Zhang23 time filter is enabled, its filtered field is registered
+!! as a restart field.
+!!
+!! | Symbol                       | Module parameter                |
+!! | ---------------------------- | ------------------------------- |
+!! |                              | USE_ZHANG23                     |
+!! | \f$ C_Z \f$                  | ZHANG23\%C_Z                    |
+!! | \f$ B_Z \f$                  | ZHANG23\%B_Z                    |
+!! | \f$ f_{\min} \f$             | ZHANG23\%F_MIN                  |
+!! | \f$ D_{\min} \f$             | ZHANG23\%MIN_OCEAN_DEPTH        |
+!! | \f$ \tau_H \f$               | ZHANG23\%MLD_DECAY_TIME         |
+!! | \f$ \tau_{SR} \f$            | ZHANG23\%MSR_DECAY_TIME         |
+!! | \f$ \alpha_H \f$             | MLE_MLD_STRETCH                 |
+!! | \f$ \Delta\rho \f$           | MLE_DENSITY_DIFF                |
+!! |                              | MLE_USE_PBL_MLD                 |
+!!
+!! The default Zhang23-specific parameter values are
+!! \f[
+!!   C_Z = 450,\qquad
+!!   B_Z = 4\ {\rm m}^{-1}{\rm s},\qquad
+!!   f_{\min}=1.27\times10^{-5}\ {\rm s}^{-1},
+!! \f]
+!! \f[
+!!   D_{\min}=50\ {\rm m},\qquad
+!!   \tau_H=0,\qquad
+!!   \tau_{SR}=0.
+!! \f]
+!! The default value of \f$C_Z\f$ is tuned for the OM4_025 configuration.
+!! The default \f$f_{\min}\f$ is approximately the Coriolis parameter at
+!! 5 degrees latitude. The default values of the two filter time scales disable
+!! time filtering.
+!!
+!! <code>ZHANG23%C_Z</code> and <code>ZHANG23%B_Z</code> must be non-negative,
+!! while <code>ZHANG23%F_MIN</code> must be strictly positive.
+!!
+!! \subsubsection section_zhang23_ref References
+!!
+!! J. Zhang, Z. Zhang, and B. Qiu, 2023:
+!! Parameterizing Submesoscale Vertical Buoyancy Flux by Simultaneously Considering
+!! Baroclinic Instability and Strain-Induced Frontogenesis.
+!! Geophys. Res. Lett., 50(8), e2022GL102292.
+!! https://doi.org/10.1029/2022GL102292
+!!
+!! D. Calvert, G. Nurser, M. J. Bell, and B. Fox-Kemper, 2020:
+!! The Impact of a Parameterisation of Submesoscale Mixed Layer Eddies on Mixed Layer
+!! Depths in the NEMO Ocean Model.
+!! Ocean Modell., 154, 101678.
+!! https://doi.org/10.1016/j.ocemod.2020.101678
+!!
+!! Z. Feng, Z. Zhang, J. Zhang, W. Zhang, M. Yuan, Z. Jing, W. Zhao, and J. Tian, 2026:
+!! Implementation and Evaluation of a New Parameterization of Submesoscale Vertical Flux
+!! in a Mesoscale-Resolving Model in the North Pacific.
+!! Ocean Modell., 199, 102655.
+!! https://doi.org/10.1016/j.ocemod.2025.102655
 
 end module MOM_mixed_layer_restrat
