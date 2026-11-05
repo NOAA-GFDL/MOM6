@@ -1298,6 +1298,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
     htot, &               ! The sum of the thicknesses of layers in the mixed layer [H ~> m or kg m-2]
     buoy_av               ! Negative g_Rho0 times the average mixed layer density or G_Earth
                           ! times the average specific volume [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2]
+  real, dimension(SZI_(G),SZJ_(G)) :: htot_col    ! Total thickness of the water column [H ~> m or kg m-2]
   real, dimension(SZI_(G),SZJ_(G)) :: sh_xx_int   ! Thickness-weighted integral of normal strain rate
                                                   ! in the mixed layer [H T-1 ~> m s-1 or kg m-2 s-1]
   real, dimension(SZIB_(G),SZJB_(G)) :: sh_xy_int ! Thickness-weighted integral of shear strain rate
@@ -1328,12 +1329,13 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
   real :: psi_mag         ! Magnitude of stream function [L2 H T-1 ~> m3 s-1 or kg s-1]
   real :: grd_b           ! The vertically average gradient of buoyancy [L H-1 T-2 ~> s-2 or m3 kg-1 s-2]
   real :: h_vel           ! The lesser of htot interpolated onto velocity points and 0.4 times
-                          ! the shallower adjacent ocean depth [H ~> m or kg m-2]
+                          ! the shallower adjacent htot_col [H ~> m or kg m-2]
   real :: absf            ! absolute value of f, interpolated to velocity points [T-1 ~> s-1]
   real :: h_min           ! The minimum layer thickness [H ~> m or kg m-2].  h_min could be 0.
   real :: h_neglect       ! tiny thickness usually lost in roundoff so can be neglected [H ~> m or kg m-2]
   real :: I4dt            ! 1/(4 dt) [T-1 ~> s-1]
-  real :: Ihtot           ! Inverses of the total mixed layer thickness [H-1 ~> m-1 or m2 kg-1]
+  real :: Ihtot           ! Inverse of the depth scale used to normalize depth 
+                          ! in the structure function [H-1 ~> m-1 or m2 kg-1]
   real :: hAtVel          ! Thickness at the velocity points [H ~> m or kg m-2]
   real :: mldAtVel        ! Mixed layer depth at the velocity points [H ~> m or kg m-2]
   real :: dh              ! Portion of the layer thickness that is in the mixed layer [H ~> m or kg m-2]
@@ -1411,6 +1413,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
   sh_xx_int(:,:) = 0.0
   sh_xx(:,:) = 0.0
   sh_xy(:,:) = 0.0
+  htot_col(:,:) = 0.0
 
   !$OMP parallel &
   !$OMP default(shared) &
@@ -1423,7 +1426,6 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
     rho_ml(:) = 0.0 ; SpV_ml(:) = 0.0
     do i=is-1,ie+1
       htot(i,j) = 0.0 ; Rml_int(i) = 0.0 ; SpV_int(i) = 0.0
-      sh_xx_int(i,j) = 0.0
     enddo
     keep_going = .true.
     do k=1,nz
@@ -1478,8 +1480,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
 
   ! Accumulate the thickness-weighted shear strain rate over the mixed layer at q-points.
   !$OMP do
-  do J=js-1,je
-    do I=is-1,ie
+  do J=js-1,je ; do I=is-1,ie
       sh_xy_int(I,J) = 0.0
       htot_q(I,J)    = 0.0
       mld_q(I) = 0.25 * ( (MLD(i,j) + MLD(i+1,j+1)) + (MLD(i+1,j) + MLD(i,j+1)) )
@@ -1503,8 +1504,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
 
   ! Calculate the mixed-layer averaged shear strain rate at q-points.
   !$OMP do
-  do J=js-1,je
-    do I=is-1,ie
+  do J=js-1,je ; do I=is-1,ie
       sh_xy_q(I,J) = sh_xy_int(I,J) / (htot_q(I,J) + h_neglect)
     enddo
   enddo
@@ -1512,12 +1512,18 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
 
   ! Move the mixed-layer averaged shear strain rate to h-points.
   !$OMP do
-  do j=js,je
-    do i=is,ie
+  do j=js,je ; do i=is,ie
       sh_xy(i,j) = 0.25 * ( (sh_xy_q(I,  J  ) + sh_xy_q(I-1,J-1)) + &
                             (sh_xy_q(I-1,J  ) + sh_xy_q(I,  J-1)) )
     enddo
   enddo
+  !$OMP end do
+
+  ! Accumulate the total layer thickness at h-points
+  !$OMP do
+  do j=js-1,je+1 ; do k=1,nz ; do i=is-1,ie+1
+    htot_col(i,j) = htot_col(i,j) + h(i,j,k)
+  enddo ; enddo ; enddo
   !$OMP end do
   !$OMP end parallel
 
@@ -1569,7 +1575,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
   !$OMP do
   do j=js,je ; do I=is-1,ie
     if ((G%OBCmaskCu(I,j) > 0.0) .and. &
-      (min(G%bathyT(i,j), G%bathyT(i+1,j)) > CS%Zhang23_min_depth)) then
+      (min(G%bathyT(i,j)+G%meanSL(i,j), G%bathyT(i+1,j)+G%meanSL(i+1,j)) > CS%Zhang23_min_depth)) then
 
       grid_scale = sqrt(0.5*( G%dxCu(I,j)**2 + G%dyCu(I,j)**2 ))              ! [L ~> m]
       absf = max(0.5*(abs(G%CoriolisBu(I,J-1)) + abs(G%CoriolisBu(I,J))), &   ! [T-1 ~> s-1]
@@ -1602,7 +1608,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
     ! Limit 1/MLD to ensure the closure of structure function xi(z) within the shallower column.
     ! Both arguments of min() are twice the corresponding depth, hence the 2.0 in the numerator.
     Ihtot = (2.0 / min( ((htot(i,j) + htot(i+1,j)) + h_neglect), &
-              (0.4 * GV%Z_to_H * (2.0*min(G%bathyT(i,j), G%bathyT(i+1,j))) + h_neglect) ) )
+              (0.4 * (2.0*min(htot_col(i,j), htot_col(i+1,j))) + h_neglect) ) )
     dxi(:) = 0.0
     z_h = 0.0
     reach_bottom = .false.
@@ -1637,7 +1643,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
   !$OMP do
   do J=js-1,je ; do i=is,ie
     if ((G%OBCmaskCv(i,J) > 0.0) .and. &
-        (min(G%bathyT(i,j), G%bathyT(i,j+1)) > CS%Zhang23_min_depth)) then
+        (min(G%bathyT(i,j)+G%meanSL(i,j), G%bathyT(i,j+1)+G%meanSL(i,j+1)) > CS%Zhang23_min_depth)) then
 
       grid_scale = sqrt(0.5*( G%dxCv(i,J)**2 + G%dyCv(i,J)**2 ))              ! [L ~> m]
       absf = max(0.5*(abs(G%CoriolisBu(I-1,J)) + abs(G%CoriolisBu(I,J))), &   ! [T-1 ~> s-1]
@@ -1670,7 +1676,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
     ! Limit 1/MLD to ensure the closure of structure function xi(z) within the shallower column.
     ! Both arguments of min() are twice the corresponding depth, hence the 2.0 in the numerator.
     Ihtot = (2.0 / min( ((htot(i,j) + htot(i,j+1)) + h_neglect), &
-              (0.4 * GV%Z_to_H * (2.0*min(G%bathyT(i,j), G%bathyT(i,j+1))) + h_neglect) ) )
+              (0.4 * (2.0*min(htot_col(i,j), htot_col(i,j+1))) + h_neglect) ) )
     dxi(:) = 0.0
     z_h = 0.0
     reach_bottom = .false.
@@ -1733,7 +1739,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
     if (CS%id_uml > 0) then
       do j=js,je ; do I=is-1,ie
         h_vel = min(0.5*((htot(i,j) + htot(i+1,j)) + h_neglect), &
-                0.4 * GV%Z_to_H * min(G%bathyT(i,j), G%bathyT(i+1,j)) + 0.5*h_neglect )
+                (0.4 * (min(htot_col(i,j), htot_col(i+1,j))) + h_neglect) )
         uDml_diag(I,j) = uDml_diag(I,j) / (0.01*h_vel) * G%IdyCu(I,j) * (xi(0.,.false.) - xi(-0.01,.false.))
       enddo ; enddo
       call post_data(CS%id_uml, uDml_diag, CS%diag)
@@ -1741,7 +1747,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
     if (CS%id_vml > 0) then
       do J=js-1,je ; do i=is,ie
         h_vel = min(0.5*((htot(i,j) + htot(i,j+1)) + h_neglect), &
-                0.4 * GV%Z_to_H * min(G%bathyT(i,j), G%bathyT(i,j+1)) + 0.5*h_neglect )
+                (0.4 * (min(htot_col(i,j), htot_col(i,j+1))) + h_neglect) )
         vDml_diag(i,J) = vDml_diag(i,J) / (0.01*h_vel) * G%IdxCv(i,J) * (xi(0.,.false.) - xi(-0.01,.false.))
       enddo ; enddo
       call post_data(CS%id_vml, vDml_diag, CS%diag)
@@ -2723,7 +2729,7 @@ subroutine mixedlayer_restrat_register_restarts(HI, GV, US, param_file, CS, rest
                                 units=mom_flux_units, conversion=US%L_to_m*GV%H_to_mks*US%s_to_T**2 )
   endif
   if (use_Zhang23 .and. CS%Zhang23_MLD_decay_time>0.) then
-    ! CS%MSR_filtered is used to keep a running mean of the MLD.
+    ! CS%MLD_filtered is used to keep a running mean of the MLD.
     allocate(CS%MLD_filtered(HI%isd:HI%ied,HI%jsd:HI%jed), source=0.)
     call register_restart_field(CS%MLD_filtered, "Zhang23_MLD_filtered", .false., restart_CS, &
                                 longname="Time-filtered MLD for use in Zhang23 parameterization", &
@@ -3071,7 +3077,7 @@ end function test_answer
 !! \f[
 !!   H_\xi = \min\left(H,\,0.4D\right),
 !! \f]
-!! where \f$D\f$ is the shallower local ocean depth. Because the structure
+!! where \f$D\f$ is the shallower total layer thickness. Because the structure
 !! function is set to zero at \f$\sigma=-2.5\f$, this choice ensures that its
 !! nominal lower limit, \f$2.5H_\xi\f$, does not extend below the bathymetry.
 !! The mixed-layer depth \f$H\f$ itself is retained in the amplitude of the
