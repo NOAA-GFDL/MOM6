@@ -22,6 +22,7 @@ use MOM_intrinsic_functions, only : cuberoot
 use MOM_io,            only : slasher, MOM_read_data
 use MOM_lateral_mixing_coeffs, only : VarMix_CS
 use MOM_restart,       only : register_restart_field, query_initialized, MOM_restart_CS
+use MOM_string_functions, only : uppercase
 use MOM_unit_scaling,  only : unit_scale_type
 use MOM_variables,     only : thermo_var_ptrs
 use MOM_verticalGrid,  only : verticalGrid_type, get_thickness_units
@@ -44,6 +45,7 @@ public mixedlayer_restrat_unit_tests
 !> Control structure for mom_mixed_layer_restrat
 type, public :: mixedlayer_restrat_CS ; private
   logical :: initialized = .false. !< True if this control structure has been initialized.
+  character(len=32) :: restrat_scheme = "FOX-KEMPER" !< Which MLE scheme to use
   real    :: ml_restrat_coef       !< A non-dimensional factor by which the instability is enhanced
                                    !! over what would be predicted based on the resolved gradients
                                    !! [nondim].  This increases with grid spacing^2, up to something
@@ -178,8 +180,8 @@ contains
 
 !> Driver for the mixed-layer restratification parameterization.
 !! With a bulk mixed layer (GV\%nkml>0) this calls mixedlayer_restrat_BML.
-!! In general coordinates it calls the OM4 (Fox-Kemper et al., 2008), Bodner et al. (2023),
-!! or Zhang et al. (2023) implementation, as selected by MLE\%USE_BODNER23 and USE_ZHANG23.
+!! In general coordinates it calls the OM4 (Fox-Kemper et al., 2008, 2011), Bodner et al. (2023),
+!! or Zhang et al. (2023) implementation, as selected by the RESTRAT_SCHEME parameter.
 subroutine mixedlayer_restrat(h, u, v, uhtr, vhtr, tv, forces, dt, MLD, h_MLD, bflux, VarMix, G, GV, US, CS, Lam2)
   type(ocean_grid_type),                      intent(inout) :: G      !< Ocean grid structure
   type(verticalGrid_type),                    intent(in)    :: GV     !< Ocean vertical grid structure
@@ -1334,7 +1336,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
   real :: h_min           ! The minimum layer thickness [H ~> m or kg m-2].  h_min could be 0.
   real :: h_neglect       ! tiny thickness usually lost in roundoff so can be neglected [H ~> m or kg m-2]
   real :: I4dt            ! 1/(4 dt) [T-1 ~> s-1]
-  real :: Ihtot           ! Inverse of the depth scale used to normalize depth 
+  real :: Ihtot           ! Inverse of the depth scale used to normalize depth
                           ! in the structure function [H-1 ~> m-1 or m2 kg-1]
   real :: hAtVel          ! Thickness at the velocity points [H ~> m or kg m-2]
   real :: mldAtVel        ! Mixed layer depth at the velocity points [H ~> m or kg m-2]
@@ -2205,19 +2207,6 @@ real function growth_time(u_star, hBL, absf, h_neg, vonKar, Kv_rest, restrat_coe
 
 end function growth_time
 
-!> Reject conflicting or unsupported mixed-layer restratification schemes.
-subroutine check_restrat_schemes(use_Bodner, use_Zhang23, nkml)
-  logical, intent(in) :: use_Bodner  !< Enable the Bodner et al. scheme.
-  logical, intent(in) :: use_Zhang23 !< Enable the Zhang et al. scheme.
-  integer, intent(in) :: nkml        !< Number of bulk mixed-layer levels.
-
-  if (use_Bodner .and. use_Zhang23) call MOM_error(FATAL, "mixedlayer_restrat: "// &
-      "MLE%USE_BODNER23 and USE_ZHANG23 cannot both be true.")
-  if ((nkml > 0) .and. (use_Bodner .or. use_Zhang23)) call MOM_error(FATAL, "mixedlayer_restrat: "// &
-      "MLE%USE_BODNER23 and USE_ZHANG23 require GV%nkml=0; "// &
-      "they cannot be combined with the bulk mixed-layer implementation.")
-end subroutine check_restrat_schemes
-
 !> Initialize the mixed layer restratification module
 logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, restart_CS)
   type(time_type), target,     intent(in)    :: Time       !< Current model time
@@ -2293,17 +2282,30 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   if (CS%use_Stanley_ML .and. .not.stoch_eos) then
     call MOM_error(FATAL, "mixedlayer_restrat_init: USE_STANLEY_ML requires STOCH_EOS")
   endif
-  call get_param(param_file, mdl, "USE_ZHANG23", CS%use_Zhang23, &
-           "If true, use the Zhang et al., 2023, formulation of the "//&
-           "mixed-layer restratification parameterization. This only works in ALE mode.", &
-           default=.false.)
+  call get_param(param_file, mdl, "RESTRAT_SCHEME", CS%restrat_scheme, &
+       "Mixed-layer restratification scheme:\n"//&
+       "\t FOX-KEMPER - Fox-Kemper et al. (2008, 2011)\n"//&
+       "\t BODNER23   - Bodner et al. (2023), ALE mode only\n"//&
+       "\t ZHANG23    - Zhang et al. (2023), ALE mode only", &
+       default="FOX-KEMPER")
+  CS%restrat_scheme = uppercase(CS%restrat_scheme)
+  select case (trim(CS%restrat_scheme))
+    case ("FOX-KEMPER")
+      CS%use_Bodner = .false.
+      CS%use_Zhang23 = .false.
+    case ("BODNER23")
+      if (GV%nkml>0) call MOM_error(FATAL, "mixedlayer_restrat_init: "//&
+          "RESTRAT_SCHEME=BODNER23 only works in ALE mode.")
+      CS%use_Bodner = .true.
+    case ("ZHANG23")
+      if (GV%nkml>0) call MOM_error(FATAL, "mixedlayer_restrat_init: "//&
+          "RESTRAT_SCHEME=ZHANG23 only works in ALE mode.")
+      CS%use_Zhang23 = .true.
+    case default
+      call MOM_error(FATAL, "mixedlayer_restrat_init: unrecognized RESTRAT_SCHEME = "//&
+          trim(CS%restrat_scheme))
+  end select
   call openParameterBlock(param_file,'MLE') ! Prepend MLE% to all parameters
-  if (GV%nkml==0) then
-    call get_param(param_file, mdl, "USE_BODNER23", CS%use_Bodner, &
-             "If true, use the Bodner et al., 2023, formulation of the re-stratifying "//&
-             "mixed-layer restratification parameterization. This only works in ALE mode.", &
-             default=.false.)
-  endif
   if (CS%use_Bodner) then
     call get_param(param_file, mdl, "CR", CS%Cr, &
              "The efficiency coefficient in eq 27 of Bodner et al., 2023.", &
@@ -2407,7 +2409,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
              "If true, the Bodner parameterization will use the mixed-layer depth "//&
              "detected via the density difference criterion MLE_DENSITY_DIFF.", default=.false.)
     if (.not.(CS%MLE_use_PBL_MLD.or.CS%Bodner_detect_MLD)) call MOM_error(FATAL, "mixedlayer_restrat_init: "// &
-             "To use MLE%USE_BODNER23=True then MLE_USE_PBL_MLD or BODNER_DETECT_MLD must be true.")
+             "RESTRAT_SCHEME=BODNER23 requires MLE_USE_PBL_MLD or BODNER_DETECT_MLD to be true.")
     if (CS%MLE_use_PBL_MLD.and.CS%Bodner_detect_MLD) call MOM_error(FATAL, "mixedlayer_restrat_init: "// &
              "MLE_USE_PBL_MLD and BODNER_DETECT_MLD cannot both be true.")
   else
@@ -2565,7 +2567,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
                  "restratification module.  This can be tiny, but if this is greater than 0, "//&
                  "it will prevent divisions by zero when f and KV_RESTRAT are zero.", &
                  units="m s-1", default=US%Z_to_m*US%s_to_T*ustar_min_dflt, scale=GV%m_to_H*US%T_to_s)
-  elseif ((CS%Bodner_detect_MLD) .and. (.not. CS%use_Zhang23)) then
+  elseif (CS%Bodner_detect_MLD) then
     call get_param(param_file, mdl, "MLE_DENSITY_DIFF", CS%MLE_density_diff, &
            "Density difference used to detect the mixed-layer "//&
            "depth used for the mixed-layer eddy parameterization "//&
@@ -2675,6 +2677,7 @@ subroutine mixedlayer_restrat_register_restarts(HI, GV, US, param_file, CS, rest
 
   ! Local variables
   character(len=64) :: mom_flux_units
+  character(len=32) :: restrat_scheme
   logical :: mixedlayer_restrat_init, use_Bodner, use_Zhang23
 
   ! Check to see if this module will be used
@@ -2682,13 +2685,11 @@ subroutine mixedlayer_restrat_register_restarts(HI, GV, US, param_file, CS, rest
              default=.false., do_not_log=.true.)
   if (.not. mixedlayer_restrat_init) return
 
-  call get_param(param_file, mdl, "USE_ZHANG23", use_Zhang23, &
-                 default=.false., do_not_log=.true.)
-  call openParameterBlock(param_file, 'MLE', do_not_log=.true.)
-  call get_param(param_file, mdl, "USE_BODNER23", use_Bodner, &
-                 default=.false., do_not_log=.true.)
-  call closeParameterBlock(param_file)
-  call check_restrat_schemes(use_Bodner, use_Zhang23, GV%nkml)
+  call get_param(param_file, mdl, "RESTRAT_SCHEME", restrat_scheme, &
+                 default="FOX-KEMPER", do_not_log=.true.)
+  restrat_scheme = uppercase(restrat_scheme)
+  use_Bodner  = (trim(restrat_scheme) == "BODNER23")
+  use_Zhang23 = (trim(restrat_scheme) == "ZHANG23")
 
   CS%MLE_MLD_decay_time = 0. ; CS%MLE_MLD_decay_time2 = 0.
   if (.not. use_Zhang23) then
@@ -2928,7 +2929,7 @@ end function test_answer
 !!
 !! \subsection The Bodner (2023) modification
 !!
-!! To use this variant of the parameterization, set MLE\%USE_BODNER23=True which then changes the
+!! To use this variant of the parameterization, set <code>RESTRAT_SCHEME = BODNER23</code> which then changes the
 !! available parameters.
 !! MLE_USE_PBL_MLD must be True to use the B23 modification.
 !!
@@ -3002,7 +3003,7 @@ end function test_answer
 !! https://doi.org/10.1175/JPO-D-21-0297.1
 !!
 !! \subsection section_zhang23 The Zhang et al. (2023) parameterization
-!! To use this parameterization, set <code>USE_ZHANG23=True</code>.
+!! To use this parameterization, set <code>RESTRAT_SCHEME = ZHANG23</code>.
 !!
 !! \cite Zhang2023 proposed a parameterization of submesoscale vertical buoyancy
 !! flux (VBF) that simultaneously accounts for submesoscale baroclinic instability and
@@ -3133,7 +3134,7 @@ end function test_answer
 !!
 !! | Symbol                       | Module parameter                |
 !! | ---------------------------- | ------------------------------- |
-!! |                              | USE_ZHANG23                     |
+!! |                              | RESTRAT_SCHEME                  |
 !! | \f$ C_Z \f$                  | ZHANG23\%C_Z                    |
 !! | \f$ B_Z \f$                  | ZHANG23\%B_Z                    |
 !! | \f$ f_{\min} \f$             | ZHANG23\%F_MIN                  |
