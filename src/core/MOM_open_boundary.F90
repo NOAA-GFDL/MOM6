@@ -6556,7 +6556,7 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment, fld, at_node)
       ! Do not extrapolate past the end of a global segment.
       ! ### For a concave corner between segments, perhaps we should do something more sophisticated.
       if (Js == segment%Js_obc) dz_tot(I,Js) = segment%dZtot(I,js+1)
-      if (Je == segment%Js_obc) dz_tot(I,Je) = segment%dZtot(I,je)
+      if (Je == segment%Je_obc) dz_tot(I,Je) = segment%dZtot(I,je)
     else
       J = Js
       do I=Is,Ie
@@ -6564,7 +6564,7 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment, fld, at_node)
       enddo
       ! Do not extrapolate past the end of a global segment.
       if (Is == segment%Is_obc) dz_tot(Is,J) = segment%dZtot(is+1,J)
-      if (Ie == segment%Is_obc) dz_tot(Ie,J) = segment%dZtot(ie,J)
+      if (Ie == segment%Ie_obc) dz_tot(Ie,J) = segment%dZtot(ie,J)
     endif
   else
     do j=js,je ; do i=is,ie
