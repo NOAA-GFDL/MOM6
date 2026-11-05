@@ -1595,10 +1595,12 @@ subroutine MARBL_forcing_from_data_override(fluxes, day, G, US, CS)
 
   ! Necessary null pointers for arguments to convert_driver_fields_to_forcings()
   ! Since they are null, MARBL will not use multiple ice categories
-  real, pointer, dimension(:,:)   :: afracr        =>NULL()
-  real, pointer, dimension(:,:)   :: swnet_afracr  =>NULL()
-  real, pointer, dimension(:,:,:) :: swpen_ifrac_n =>NULL()
-  real, pointer, dimension(:,:,:) :: ifrac_n       =>NULL()
+  real, pointer, dimension(:,:)   :: afracr        => NULL() ! Open ocean fraction (0 to 1) [nondim]
+  real, pointer, dimension(:,:)   :: swnet_afracr  => NULL() ! Shortwave flux times the open ocean
+                                                             ! fraction [Q R Z T-1 ~> W m-2]
+  real, pointer, dimension(:,:,:) :: swpen_ifrac_n => NULL() ! Shortwave flux times the fractional coverage
+                                                             ! for each ice thickness category [Q R Z T-1 ~> W m-2]
+  real, pointer, dimension(:,:,:) :: ifrac_n       => NULL() ! Per-category ice fractional coverage (0 to 1) [nondim]
 
   call callTree_enter("MARBL_forcing_from_data_override, MOM_surface_forcing.F90")
 

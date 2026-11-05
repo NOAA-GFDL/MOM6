@@ -327,7 +327,7 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, k_bounds
   real :: Fpx        ! The derivative of Fgx with x  [R Z ~> kg m-2]
   real :: Zr         ! An upper (lower) bound for the PE integration in surface (bottom) mixed layer mode [Z ~> m]
   integer :: k_Zr    ! Sets the index of Zr
-  real :: pe_dir     ! A factor that is used to generalize the iteration for upper and lower mixed layers
+  real :: pe_dir     ! A factor that is used to generalize the iteration for upper and lower mixed layers [nondim]
   integer :: k_int   ! Controls the direction of the loop to be forward or backward
   logical :: use_OM4_iteration ! A logical to use the OM4_iteration if the optional argument is present
 

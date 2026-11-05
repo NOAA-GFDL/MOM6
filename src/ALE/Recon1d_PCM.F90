@@ -132,8 +132,8 @@ end function x
 real function average(this, k, xa, xb)
   class(PCM), intent(in) :: this !< This reconstruction
   integer,    intent(in) :: k    !< Cell number
-  real,       intent(in) :: xa   !< Start of averaging interval on element (0 to 1)
-  real,       intent(in) :: xb   !< End of averaging interval on element (0 to 1)
+  real,       intent(in) :: xa   !< Start of averaging interval on element (0 to 1) [nondim]
+  real,       intent(in) :: xb   !< End of averaging interval on element (0 to 1) [nondim]
 
   average = xb + xa ! no-op to avoid compiler warnings about unused dummy argument
   average = this%u_mean(k)

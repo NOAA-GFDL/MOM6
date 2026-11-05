@@ -294,14 +294,16 @@ subroutine get_external_field_info(field, size, axes, missing)
   type(axis_info), optional, intent(inout) :: axes(4)
     !< Axis types for the input data
   real, optional, intent(inout) :: missing
-    !< Missing value for the input data
+    !< Missing value for the input data in the arbitrary axis units,
+    !! often [gridpoints], [degrees_N], [degrees_E], [km] or [m]
 
   type(axistype) :: axes_infra(4)
     ! Axis as represented in the infra
   character(len=256) :: axis_name
     ! Axis name
   real, allocatable :: ax_data(:)
-    ! Axis points
+    ! Axis point values in the arbitrary axis units, often [gridpoints], [degrees_N],
+    ! [degrees_E], [km] or [m]
 
   integer :: n
     ! Axis index

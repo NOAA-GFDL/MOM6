@@ -171,8 +171,8 @@ end subroutine set_vertical_extent
 !> Set the extents of a 2D buffer from the bounds of a 2D array
 subroutine set_extents_from_array_2d(this, array, fill_value_in)
   class(diag_buffer_2d), intent(inout) :: this !< The diagnostic buffer
-  real, dimension(:,:), intent(in)     :: array !< The array whose bounds define the buffer extents
-  real, optional,       intent(in)     :: fill_value_in !< Optional fill value
+  real, dimension(:,:), intent(in)     :: array !< The array whose bounds define the buffer extents [arbitrary]
+  real, optional,       intent(in)     :: fill_value_in !< Optional fill value [arbitrary]
 
   call this%set_horizontal_extents(lbound(array,1), ubound(array,1), &
                                    lbound(array,2), ubound(array,2))
@@ -182,8 +182,8 @@ end subroutine set_extents_from_array_2d
 !> Set the extents of a 3D buffer from the bounds of a 3D array
 subroutine set_extents_from_array_3d(this, array, fill_value_in)
   class(diag_buffer_3d), intent(inout) :: this !< The diagnostic buffer
-  real, dimension(:,:,:), intent(in)   :: array !< The array whose bounds define the buffer extents
-  real, optional,         intent(in)   :: fill_value_in !< Optional fill value
+  real, dimension(:,:,:), intent(in)   :: array !< The array whose bounds define the buffer extents [arbitrary]
+  real, optional,         intent(in)   :: fill_value_in !< Optional fill value [arbitrary]
 
   call this%set_horizontal_extents(lbound(array,1), ubound(array,1), &
                                    lbound(array,2), ubound(array,2))
@@ -321,7 +321,7 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
     type(diag_buffer_2d) :: buffer
     logical :: local_fail !< True if any of the unit tests fail
     integer, parameter :: is=1, ie=2, js=3, je=6
-    real, parameter :: fill_value = -123.456
+    real, parameter :: fill_value = -123.456 ! An arbitrary fill value [arbitrary]
 
 
     local_fail = .false.
@@ -340,7 +340,7 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
 
     integer, parameter :: is=1, ie=2, js=3, je=6, nlen=3
     integer :: i, slot
-    real, allocatable, dimension(:,:,:) :: test_2d
+    real, allocatable, dimension(:,:,:) :: test_2d  ! A test array [arbitrary]
 
     local_fail = .false.
 
@@ -369,7 +369,7 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
 
     integer, parameter :: is=1, ie=2, js=3, je=6, nlen=3
     integer :: i, new_i, id, new_id
-    real, dimension(nlen, is:ie, js:je) :: test_2d_first, test_2d_second
+    real, dimension(nlen, is:ie, js:je) :: test_2d_first, test_2d_second ! Two test arrays [arbitrary]
     integer, dimension(nlen) :: reorder = [2,1,3]
 
     local_fail = .false.
@@ -458,7 +458,7 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
     type(diag_buffer_3d) :: buffer
     logical :: local_fail !< True if any of the unit tests fail
     integer, parameter :: is=1, ie=2, js=3, je=6, ks=1, ke=10
-    real, parameter :: fill_value = -123.456
+    real, parameter :: fill_value = -123.456 ! An arbitrary fill value [arbitrary]
 
     local_fail = .false.
 
@@ -477,7 +477,7 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
 
     integer, parameter :: is=1, ie=2, js=3, je=6, ks=1, ke=10, nlen=3
     integer :: i, slot
-    real, dimension(nlen,is:ie,js:je,ks:ke) :: test_3d
+    real, dimension(nlen,is:ie,js:je,ks:ke) :: test_3d ! A test array [arbitrary]
 
     local_fail = .false.
     call random_number(test_3d)
@@ -506,7 +506,7 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
 
     integer, parameter :: is=1, ie=2, js=3, je=6, ks=1, ke=10, nlen=3
     integer :: i, new_i, id, new_id
-    real, dimension(nlen, is:ie, js:je, ks:ke) :: test_3d_first, test_3d_second
+    real, dimension(nlen, is:ie, js:je, ks:ke) :: test_3d_first, test_3d_second ! Two test arrays [arbitrary]
     integer, dimension(nlen) :: reorder = [2,1,3]
 
     local_fail = .false.

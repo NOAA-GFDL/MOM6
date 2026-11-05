@@ -63,8 +63,8 @@ public MARBL_tracers_stock, MARBL_tracers_get, MARBL_tracers_end
 !! Allocate exactly one of field_[23]d
 type :: temp_MARBL_diag
   integer :: id !< index into MOM diagnostic structure
-  real, allocatable :: field_2d(:,:)   !< memory for 2D field
-  real, allocatable :: field_3d(:,:,:) !< memory for 3D field
+  real, allocatable :: field_2d(:,:)   !< memory for 2D field [various]
+  real, allocatable :: field_3d(:,:,:) !< memory for 3D field [various]
 end type temp_MARBL_diag
 
 !> MOM6 needs to know the index of some MARBL tracers to properly apply river fluxes
@@ -93,8 +93,8 @@ type :: saved_state_for_MARBL_type
   character(len=200) :: short_name !< name of variable being saved
   character(len=200) :: file_varname !< name of variable in restart file
   character(len=200) :: units !< variable units
-  real, pointer :: field_2d(:,:) => NULL()   !< memory for 2D field
-  real, pointer :: field_3d(:,:,:) => NULL() !< memory for 3D field
+  real, pointer :: field_2d(:,:) => NULL()   !< memory for 2D field [various]
+  real, pointer :: field_3d(:,:,:) => NULL() !< memory for 3D field [various]
 end type saved_state_for_MARBL_type
 
 !> All calls to MARBL are done via the interface class
@@ -206,11 +206,11 @@ type, public :: MARBL_tracers_CS ; private
                                            !! (dims: i, j, tracer) [conc Z T-1 ~> conc m s-1]
   real, pointer :: SFO(:,:,:) => NULL()    !< surface flux output returned from MARBL for use in GCM
                                            !! e.g. CO2 flux to pass to atmosphere (dims: i, j, num_sfo)
-                                           !! Units vary based on index of num_sfo dimension
+                                           !! Units vary based on index of num_sfo dimension [various]
   real, pointer :: ITO(:,:,:,:) => NULL()  !< interior tendency output returned from MARBL for use in GCM
                                            !! e.g. total chlorophyll to use in shortwave penetration
                                            !! (dims: i, j, k, num_ito)
-                                           !! Units vary based on index of num_ito dimension
+                                           !! Units vary based on index of num_ito dimension [various]
 
   integer :: u10_sqr_ind   !< index of MARBL forcing field array to copy 10-m wind (squared) into
   integer :: sss_ind       !< index of MARBL forcing field array to copy sea surface salinity into
@@ -2167,7 +2167,7 @@ subroutine MARBL_tracers_get(name, G, GV, array, CS)
   type(ocean_grid_type),    intent(in)    :: G      !< The ocean's grid structure.
   type(verticalGrid_type),  intent(in)    :: GV     !< The ocean's vertical grid structure.
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                            intent(inout) :: array  !< Array filled by this routine.
+                            intent(inout) :: array  !< Array filled by this routine [arbitrary]
   type(MARBL_tracers_CS),   pointer       :: CS     !< Pointer to the control structure for this module.
 
   character(len=128), parameter :: sub_name = 'MARBL_tracers_get'

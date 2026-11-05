@@ -1989,7 +1989,7 @@ subroutine diagnose_mass_weight_Z(z_t, z_b, bathyT, SSH, dz_neglect, MassWghtInt
   real :: iDenom     ! The inverse of the denominator in the weights [Z-2 ~> m-2]
   logical :: do_massWeight  ! Indicates whether to do mass weighting near bathymetry
   logical :: top_massWeight ! Indicates whether to do mass weighting the sea surface
-  real :: massWeightNVonlyToggle    ! A non-dimensional toggle factor for only using mass weighting
+  real :: massWeightNVonlyToggle    ! A non-dimensional toggle factor for only using mass weighting [nondim]
   real :: h_nonvanished             ! nonvanished height [Z ~> m]
   integer :: Isq, Ieq, Jsq, Jeq, i, j
 

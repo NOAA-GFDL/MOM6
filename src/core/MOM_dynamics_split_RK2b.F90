@@ -120,8 +120,8 @@ type, public :: MOM_dyn_split_RK2b_CS ; private
               !! that were fed into the barotopic calculation [L T-2 ~> m s-2]
 
   ! The following variables are only used with the split time stepping scheme.
-  real ALLOCABLE_, dimension(NIMEM_,NJMEM_)             :: eta    !< Instantaneous free surface height (in Boussinesq
-                                                                  !! mode) or column mass anomaly (in non-Boussinesq
+  real ALLOCABLE_, dimension(NIMEM_,NJMEM_)             :: eta    !< Instantaneous free surface height anomaly (in
+                                                                  !! Boussinesq mode) or column mass (in non-Boussinesq
                                                                   !! mode) [H ~> m or kg m-2]
   real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_,NKMEM_) :: u_av   !< layer x-velocity with vertical mean replaced by
                                                                   !! time-mean barotropic velocity over a baroclinic
@@ -383,8 +383,8 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
     taux_bot => NULL(), &       ! A pointer to the zonal bottom stress in some cases [R L Z T-2 ~> Pa]
     tauy_bot => NULL(), &       ! A pointer to the meridional bottom stress in some cases [R L Z T-2 ~> Pa]
     ! This pointer is just used as shorthand for CS%eta.
-    eta => NULL()               ! A pointer to the instantaneous free surface height (in Boussinesq
-                                ! mode) or column mass anomaly (in non-Boussinesq mode) [H ~> m or kg m-2]
+    eta => NULL()               ! A pointer to the instantaneous free surface height anomaly (in Boussinesq
+                                ! mode) or column mass (in non-Boussinesq mode) [H ~> m or kg m-2]
 
   real, pointer, dimension(:,:,:) :: &
     ! These pointers are used to alter which fields are passed to btstep with various options:

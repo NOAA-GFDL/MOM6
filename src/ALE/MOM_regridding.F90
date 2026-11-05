@@ -243,7 +243,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   real :: maximum_depth ! The maximum depth of the ocean [m] (not in Z).
   real :: dz_extra      ! The thickness of an added layer to append to the woa09_dz profile when
                         ! maximum_depth is large [m] (not in Z).
-  real :: nominalDepth  ! Depth of ocean bottom in thickness units (positive downward) [H ~> m or kg m-2]
+  real :: nominalDepth  ! Depth of ocean bottom in mks units [m] (not in Z)
   real :: depth_q       ! A depth scale factor [nondim]
   real :: depth_s       ! The end of the shallow Z regime [m]
   real :: depth_d       ! The start of the deep Z regime [m]
@@ -268,24 +268,27 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   real, dimension(:), allocatable :: dz_max ! Thicknesses used to find maximum interface depths
                                             ! [H ~> m or kg m-2] or other units
   real, dimension(:), allocatable :: rho_target ! Target density used in HYBRID mode [kg m-3]
-  ! Thicknesses [m] that give level centers approximately corresponding to table 2 of WOA09
-  ! These are approximate because the WOA09 depths are not smoothly spaced. Levels
-  ! 1, 4, 5, 9, 12, 24, and 36 are 2.5, 2.5, 1.25 12.5, 37.5 and 62.5 m deeper than WOA09
-  ! but all others are identical.
+
+  !> Thicknesses [m] that give level centers approximately corresponding to table 2 of WOA09
+  !! These are approximate because the WOA09 depths are not smoothly spaced. Levels
+  !! 1, 4, 5, 9, 12, 24, and 36 are 2.5, 2.5, 1.25 12.5, 37.5 and 62.5 m deeper than WOA09
+  !! but all others are identical.
   real, dimension(40) :: woa09_dz_approx = (/ 5.,  10.,  10.,  15.,  22.5, 25.,  25.,  25.,  &
                                              37.5, 50.,  50.,  75., 100., 100., 100., 100., &
                                             100., 100., 100., 100., 100., 100., 100., 175., &
                                             250., 375., 500., 500., 500., 500., 500., 500., &
                                             500., 500., 500., 500., 500., 500., 500., 500. /)
-  ! These are the actual spacings [m] between WOA09 depths which, if used for layer thickness, places
-  ! the interfaces at the WOA09 depths.
+
+  !> These are the actual spacings [m] between WOA09 depths which, if used for layer thickness, places
+  !! the interfaces at the WOA09 depths.
   real, dimension(39) :: woa09_dzi = (/ 10.,  10.,  10.,  20.,  25.,  25.,  25.,  25.,  &
                                         50.,  50.,  50., 100., 100., 100., 100., 100., &
                                        100., 100., 100., 100., 100., 100., 100., 250., &
                                        250., 500., 500., 500., 500., 500., 500., 500., &
                                        500., 500., 500., 500., 500., 500., 500. /)
-  ! These are the spacings [m] between WOA23 depths from table 3 of
-  ! https://www.ncei.noaa.gov/data/oceans/woa/WOA13/DOC/woa13documentation.pdf
+
+  !> These are the spacings [m] between WOA23 depths from table 3 of
+  !! https://www.ncei.noaa.gov/data/oceans/woa/WOA13/DOC/woa13documentation.pdf
   real, dimension(136) :: woa23_dzi = (/ 5.,   5.,   5.,   5.,   5.,   5.,   5.,   5.,   5.,   5., &
                                          5.,   5.,   5.,   5.,   5.,   5.,   5.,   5.,   5.,   5., &
                                         25.,  25.,  25.,  25.,  25.,  25.,  25.,  25.,  25.,  25., &

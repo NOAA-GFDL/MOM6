@@ -166,9 +166,9 @@ end function dfdx
 real function average(this, k, xa, xb)
   class(PLM_WLS), intent(in) :: this !< This reconstruction
   integer,        intent(in) :: k    !< Cell number
-  real,           intent(in) :: xa   !< Start of averaging interval on element (0 to 1)
-  real,           intent(in) :: xb   !< End of averaging interval on element (0 to 1)
-  real :: xmab ! Mid-point between xa and xb (0 to 1)
+  real,           intent(in) :: xa   !< Start of averaging interval on element (0 to 1) [nondim]
+  real,           intent(in) :: xb   !< End of averaging interval on element (0 to 1) [nondim]
+  real :: xmab ! Mid-point between xa and xb (0 to 1) [nondim]
   real :: u_a, u_b ! Values at xa and xb [A]
 
   ! Mid-point between xa and xb

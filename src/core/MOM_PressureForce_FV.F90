@@ -1055,7 +1055,7 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, ADp, 
   real, dimension(SZI_(G),SZJ_(G)) :: &
     T_top, &    ! Temperature of top layer used with correction_intxpa [C ~> degC]
     S_top, &    ! Salinity of top layer used with correction_intxpa [S ~> ppt]
-    rho_top     ! Density anomaly of top layer used in calculating intx_pa_cor and inty_pa_cor
+    rho_top     ! Density anomaly of top layer used in calculating intx_pa_cor and inty_pa_cor [R ~> kg m-3]
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: &
     rho_pgf, rho_stanley_pgf ! Density [R ~> kg m-3] from EOS with and without SGS T variance
                              ! in Stanley parameterization.

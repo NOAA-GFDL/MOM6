@@ -7,7 +7,7 @@ module MOM_data_override_infra
 
 use MOM_domain_infra,  only : MOM_domain_type, domain2d
 use MOM_domain_infra,  only : get_simple_array_i_ind, get_simple_array_j_ind
-use MOM_time_manager,  only : time_type
+use MOM_time_manager_infra, only : time_type
 use data_override_mod, only : data_override_init
 use data_override_mod, only : data_override
 use data_override_mod, only : data_override_unset_domains

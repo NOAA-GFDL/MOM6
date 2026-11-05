@@ -21,9 +21,9 @@ interface
   !! Implemented in submodule MOM_exp
   elemental module function exp_repro(x) result(a)
     real, intent(in) :: x
-      !< Input value
+      !< Input value [nondim]
     real :: a
-      !< exp(x)
+      !< exp(x) [nondim]
   end function exp_repro
 end interface
 

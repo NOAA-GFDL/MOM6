@@ -30,7 +30,7 @@ integer(kind=int_kind), parameter :: neg_inf_bits &
 
 ! Fast integer rounding offset
 real, parameter :: round_bias = 1.5 * 2_int_kind**(digits(real_mold) - 1)
-  !< Binary offset used to trigger rounding of fractional values
+  !< Binary offset used to trigger rounding of fractional values [nondim]
 integer(int_kind), parameter :: round_bias_bits &
     = transfer(round_bias, int_mold)
   !< Bit representation of rounding bias
@@ -102,7 +102,7 @@ module procedure exp_repro
   integer(kind=int_kind) :: K
     ! Nearest IEEE-rounded integer to x/ln2 [nondim]
   real :: Z
-    ! Nearest integer to ndiv * K + idiv for ndiv subdivisions
+    ! Nearest integer to ndiv * K + idiv for ndiv subdivisions [nondim]
     ! NOTE: Z is stored as real to avoid int-real type conversions.
   integer(kind=int_kind) :: Zi
     ! Integer representation of Z

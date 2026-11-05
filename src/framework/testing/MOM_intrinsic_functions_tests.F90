@@ -84,7 +84,7 @@ end subroutine check_ieee_support
 
 !> Test that exp_repro(0) = 1 exactly
 subroutine test_exp_zero
-  real :: val
+  real :: val  ! A test input value [nondim]
 
   val = exp_repro(0.)
 
@@ -96,7 +96,7 @@ end subroutine test_exp_zero
 
 !> Test that exp_repro(-0) = 1 exactly
 subroutine test_exp_neg_zero
-  real :: val
+  real :: val  ! A test input value [nondim]
 
   val = exp_repro(-0.)
 
@@ -108,8 +108,9 @@ end subroutine test_exp_neg_zero
 
 !> Test exp_repro(1) against reference value
 subroutine test_exp_one
-  real :: val, err
-  real, parameter :: tol = 1.e-15
+  real :: val ! The result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-15  ! A tolerance for the accuracy of the exp function [nondim]
 
   val = exp_repro(1.)
   err = abs(val - exp1) / exp1
@@ -122,8 +123,9 @@ end subroutine test_exp_one
 
 !> Test exp_repro(-1) against reference value
 subroutine test_exp_neg_one
-  real :: val, err
-  real, parameter :: tol = 1.e-15
+  real :: val ! The result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-15  ! A tolerance for the accuracy of the exp function [nondim]
 
   val = exp_repro(-1.)
   err = abs(val - inv_e) / inv_e
@@ -136,8 +138,11 @@ end subroutine test_exp_neg_one
 
 !> Test exp_repro at a general value (0.33)
 subroutine test_exp_general
-  real :: x, val, ref, err
-  real, parameter :: tol = 1.e-15
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-15  ! A tolerance for the accuracy of the exp function [nondim]
 
   x = 0.33
   ref = exp_033
@@ -152,8 +157,9 @@ end subroutine test_exp_general
 
 !> Test exp_repro at range reduction boundary: ln(2)
 subroutine test_exp_ln2
-  real :: val, err
-  real, parameter :: tol = 1.e-15
+  real :: val ! The result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-15  ! A tolerance for the accuracy this test [nondim]
 
   val = exp_repro(ln2)
   err = abs(val - 2.0) / 2.0
@@ -166,8 +172,9 @@ end subroutine test_exp_ln2
 
 !> Test exp_repro at range reduction boundary: -ln(2)
 subroutine test_exp_neg_ln2
-  real :: val, err
-  real, parameter :: tol = 1.e-15
+  real :: val ! The result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-15  ! A tolerance for the accuracy of the exp function [nondim]
 
   val = exp_repro(-ln2)
   err = abs(val - 0.5) / 0.5
@@ -180,8 +187,9 @@ end subroutine test_exp_neg_ln2
 
 !> Test exp_repro at half the range reduction boundary: 0.5*ln(2)
 subroutine test_exp_half_ln2
-  real :: val, err
-  real, parameter :: tol = 1.e-15
+  real :: val ! The result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-15  ! A tolerance for the accuracy of the exp function [nondim]
 
   val = exp_repro(half_ln2)
   err = abs(val - sqrt2) / sqrt2
@@ -194,8 +202,11 @@ end subroutine test_exp_half_ln2
 
 !> Test exp_repro with tiny argument (tests 1 + x accuracy)
 subroutine test_exp_tiny_pos
-  real :: x, val, ref, err
-  real, parameter :: tol = 1.e-15
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-15  ! A tolerance for the accuracy of the exp function [nondim]
 
   x = 1.0e-15
   ref = exp_tiny_pos
@@ -210,8 +221,11 @@ end subroutine test_exp_tiny_pos
 
 !> Test exp_repro with tiny negative argument
 subroutine test_exp_tiny_neg
-  real :: x, val, ref, err
-  real, parameter :: tol = 1.e-15
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-15  ! A tolerance for this test [nondim]
 
   x = -1.0e-15
   ref = exp_tiny_neg
@@ -226,7 +240,9 @@ end subroutine test_exp_tiny_neg
 
 !> Test exp_repro overflow behavior: exp(1000)
 subroutine test_exp_overflow
-  real :: x, val, ref
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
 
   x = 1000.
   ref = ieee_value(0., ieee_positive_inf)
@@ -240,7 +256,9 @@ end subroutine test_exp_overflow
 
 !> Test exp_repro extreme overflow behavior: exp(10000)
 subroutine test_exp_extreme_overflow
-  real :: x, val, ref
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
 
   x = 10000.
   ref = ieee_value(0., ieee_positive_inf)
@@ -254,7 +272,9 @@ end subroutine test_exp_extreme_overflow
 
 !> Test exp_repro underflow behavior: exp(-1000)
 subroutine test_exp_underflow
-  real :: x, val, ref
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
 
   x = -1000.
   ref = 0.
@@ -268,7 +288,9 @@ end subroutine test_exp_underflow
 
 !> Test exp_repro extreme underflow behavior: exp(-10000)
 subroutine test_exp_extreme_underflow
-  real :: x, val, ref
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
 
   x = -10000.
   ref = 0.
@@ -282,8 +304,11 @@ end subroutine test_exp_extreme_underflow
 
 !> Test exp_repro near overflow boundary (709.78)
 subroutine test_exp_near_overflow
-  real :: x, val, ref, err
-  real, parameter :: tol = 1.e-14
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-14  ! A tolerance for the accuracy of the exp function [nondim]
 
   x = 709.78
   ref = exp_709_78
@@ -298,8 +323,11 @@ end subroutine test_exp_near_overflow
 
 !> Test exp_repro near underflow boundary (-708.39)
 subroutine test_exp_near_underflow
-  real :: x, val, ref, err
-  real, parameter :: tol = 1.e-14
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-14  ! A tolerance for the accuracy of the exp function [nondim]
 
   x = -708.39
   ref = exp_neg_708_39
@@ -314,8 +342,11 @@ end subroutine test_exp_near_underflow
 
 !> Test exp_repro in subnormal region (-745.13)
 subroutine test_exp_subnormal
-  real :: x, val, ref, err
-  real, parameter :: tol = 1.e-10  ! Relaxed for subnormals
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-10  ! Relaxed tolerance for subnormals [nondim]
 
   x = -745.13
   ref = nearest(0., 1.)
@@ -335,8 +366,11 @@ end subroutine test_exp_subnormal
 
 !> Test exp_repro at largest representable float boundary
 subroutine test_exp_largest_float
-  real :: x, val, ref, err
-  real, parameter :: tol = 1.e-13  ! Relaxed due to log/exp round-trip error
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-13  ! Relaxed tolerance due to log/exp round-trip error [nondim]
 
   x = log_huge
   ref = exp_log_huge
@@ -351,8 +385,10 @@ end subroutine test_exp_largest_float
 
 !> Test exp_repro at smallest normal float boundary
 subroutine test_exp_smallest_float
-  real :: val, ref, err
-  real, parameter :: tol = 5.e-14
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
+  real :: err ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 5.e-14  ! A tolerance for the accuracy of the exp function [nondim]
 
   ref = exp_log_tiny
   val = exp_repro(log_tiny)
@@ -366,7 +402,9 @@ end subroutine test_exp_smallest_float
 
 !> Test exp_repro(+Inf) = +Inf
 subroutine test_exp_pos_inf
-  real :: x, val, ref
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
+  real :: ref ! The expected result of the function [nondim]
 
   x = ieee_value(0., ieee_positive_inf)
   ref = ieee_value(0., ieee_positive_inf)
@@ -380,7 +418,8 @@ end subroutine test_exp_pos_inf
 
 !> Test exp_repro(-Inf) = 0
 subroutine test_exp_neg_inf
-  real :: x, val
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
 
   x = ieee_value(0., ieee_negative_inf)
   val = exp_repro(x)
@@ -393,7 +432,8 @@ end subroutine test_exp_neg_inf
 
 !> Test exp_repro(NaN) = NaN
 subroutine test_exp_nan
-  real :: x, val
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
 
   x = ieee_value(0., ieee_quiet_nan)
   val = exp_repro(x)
@@ -406,7 +446,8 @@ end subroutine test_exp_nan
 
 !> Test exp_repro(-NaN) = NaN
 subroutine test_exp_neg_nan
-  real :: x, val
+  real :: x   ! The input value for the function [nondim]
+  real :: val ! The result of the function [nondim]
 
   x = -ieee_value(0., ieee_quiet_nan)
   val = exp_repro(x)
@@ -424,16 +465,16 @@ end subroutine test_exp_neg_nan
 !! quad-precision reference.
 subroutine test_exp_ulp_accuracy
   integer, parameter :: npts = 100000
-  real, parameter :: xmin = -10.
-  real, parameter :: xmax = 10.
+  real, parameter :: xmin = -10. ! The upper limit of input values to test [nondim]
+  real, parameter :: xmax = 10.  ! The lower limit of input values to test [nondim]
 
   ! Input axis
-  real :: x(npts)
-  real :: I_npts
+  real :: x(npts)   ! An array of input values for the function [nondim]
+  real :: I_npts    ! The number of points being tested [nondim]
 
-  real :: val(npts), val_vec(npts)
-  real :: val_exp(npts), val_exp_vec(npts)
-  real(kind=realq) :: val_quad(npts), val_quad_vec(npts)
+  real :: val(npts), val_vec(npts)          ! Arrays of reproducing function results [nondim]
+  real :: val_exp(npts), val_exp_vec(npts)  ! Arrays of intrinsic function results [nondim]
+  real(kind=realq) :: val_quad(npts), val_quad_vec(npts) ! Arrays of quad precision results [nondim]
 
   integer :: i
 
@@ -488,21 +529,27 @@ end subroutine test_exp_ulp_accuracy
 !! optionally prescribed maximum ULP tolerance.
 subroutine check_ulp_accuracy(x, val, ref, max_ulp_tol)
   real, intent(in) :: x(:)
-    !< Input grid
+    !< Input grid [nondim]
   real, intent(in) :: val(:)
-    !< Output estimates
+    !< Output estimates [nondim]
   real(kind=realq), intent(in) :: ref(:)
-    !< Reference estimates in real128 precision
+    !< Reference estimates in real128 precision [nondim]
   real, optional, intent(in) :: max_ulp_tol
-    !< Maximum ULP tolerance
+    !< Maximum ULP tolerance [nondim]
 
   real(kind=realq) :: err, rel_err, ulp_err
-    ! Absolute, relative, and ULP error of val relative to ref.
+    ! Absolute, relative, and ULP error of val relative to ref [nondim]
 
-  real :: max_abs_err, max_rel_err, max_ulp
-  real :: sum_abs_err, sum_rel_err, sum_sq_err
-  real :: x_max_abs, x_max_rel, x_max_ulp
-  real :: ulp_val
+  real :: max_abs_err  ! The maximum absolute error [nondim]
+  real :: max_rel_err  ! The maximum relative error [nondim]
+  real :: max_ulp      ! The maximum error relative to the local ULP [nondim]
+  real :: sum_abs_err  ! The sum of the absolute errors [nondim]
+  real :: sum_rel_err  ! The sum of the relative errors [nondim]
+  real :: sum_sq_err   ! The sum of the squared errors [nondim]
+  real :: x_max_abs    ! The input value with the maximum absolute error [nondim]
+  real :: x_max_rel    ! The input value with the maximum relative error [nondim]
+  real :: x_max_ulp    ! The input value with the maximum ULP error [nondim]
+  real :: ulp_val      ! The ULP for a particular input value [nondim]
 
   integer :: count_exact, count_half_ulp, count_one_ulp
   integer :: i, npts
@@ -596,15 +643,16 @@ end subroutine check_ulp_accuracy
 !! of the sum, within floating-point tolerance.
 subroutine test_exp_product_property
   integer, parameter :: npts = 1000
-  real, parameter :: tol = 1.e-14
+  real, parameter :: tol = 1.e-14  ! A tolerance for the accuracy of this test [nondim]
 
-  real :: r1, r2
-  real :: exp_r1, exp_r2, exp_sum
-  real :: product_result, sum_result
-  real :: err, max_err
-  real :: r1_max, r2_max
+  real :: r1, r2  ! Two input values [nondim]
+  real :: exp_r1, exp_r2, exp_sum  ! The result with the two input values and with their sum [nondim]
+  real :: product_result  ! The product of the results with the two input values [nondim]
+  real :: sum_result      ! The result of the function applied to the sum of the two input values [nondim]
+  real :: err, max_err    ! The absolute fractional error and its max across tests [nondim]
+  real :: r1_max, r2_max  ! The input values where the error is maximum [nondim]
   integer :: i
-  real :: seed
+  real :: seed            ! A seed value used to generate the input values [nondim]
 
   max_err = 0.
 
@@ -651,14 +699,15 @@ end subroutine test_exp_product_property
 !! of exp_repro(x), within floating-point tolerance.
 subroutine test_exp_negation_property
   integer, parameter :: npts = 1000
-  real, parameter :: tol = 1.e-14
+  real, parameter :: tol = 1.e-14  ! A tolerance for the accuracy of this test [nondim]
 
-  real :: x
-  real :: exp_neg_x, inv_exp_x
-  real :: err, max_err
-  real :: x_max
+  real :: x            ! An input value [nondim]
+  real :: exp_neg_x    ! Exp(-x) [nondim]
+  real :: inv_exp_x    ! 1/exp(x) [nondim]
+  real :: err, max_err ! The absolute fractional error and its max across tests [nondim]
+  real :: x_max        ! The input value where the error is maximum [nondim]
   integer :: i
-  real :: seed
+  real :: seed         ! A seed value used to generate the input values [nondim]
 
   max_err = 0.
 
@@ -693,8 +742,11 @@ end subroutine test_exp_negation_property
 
 !> Test that exp_repro is elemental (works on arrays)
 subroutine test_exp_elemental
-  real :: x(5), val(5), ref(5), err
-  real, parameter :: tol = 1.e-14
+  real :: x(5)   ! An array of input values for the function [nondim]
+  real :: val(5) ! The results of the function [nondim]
+  real :: ref(5) ! The expected results of the function [nondim]
+  real :: err    ! The fractional error in the evaluated function [nondim]
+  real, parameter :: tol = 1.e-14  ! A tolerance for the accuracy of this test [nondim]
   integer :: i
 
   x(:) = [-2., -1., 0., 1., 2.]
@@ -713,7 +765,8 @@ end subroutine test_exp_elemental
 
 !> Test IEEE exception flags for normal input (should raise inexact only)
 subroutine test_exp_flags_normal
-  real, volatile :: x, val
+  real, volatile :: x   ! The input value for the function [nondim]
+  real, volatile :: val ! The result of the function [nondim]
   logical :: flag_invalid, flag_overflow, flag_underflow, flag_inexact
 
   if (.not. ieee_flags_supported) return
@@ -736,7 +789,8 @@ end subroutine test_exp_flags_normal
 
 !> Test IEEE exception flags for overflow (should raise overflow + inexact)
 subroutine test_exp_flags_overflow
-  real, volatile :: x, val
+  real, volatile :: x   ! The input value for the function [nondim]
+  real, volatile :: val ! The result of the function [nondim]
   logical :: flag_invalid, flag_overflow, flag_underflow, flag_inexact
 
   if (.not. ieee_flags_supported) return
@@ -759,7 +813,8 @@ end subroutine test_exp_flags_overflow
 
 !> Test IEEE exception flags for underflow (should raise underflow + inexact)
 subroutine test_exp_flags_underflow
-  real, volatile :: x, val
+  real, volatile :: x   ! The input value for the function [nondim]
+  real, volatile :: val ! The result of the function [nondim]
   logical :: flag_invalid, flag_overflow, flag_underflow, flag_inexact
 
   if (.not. ieee_flags_supported) return
@@ -782,7 +837,8 @@ end subroutine test_exp_flags_underflow
 
 !> Test IEEE exception flags for +Inf input (should raise no flags)
 subroutine test_exp_flags_pos_inf
-  real, volatile :: x, val
+  real, volatile :: x   ! The input value for the function [nondim]
+  real, volatile :: val ! The result of the function [nondim]
   logical :: flag_invalid, flag_overflow, flag_underflow, flag_inexact
 
   if (.not. ieee_flags_supported) return
@@ -805,7 +861,8 @@ end subroutine test_exp_flags_pos_inf
 
 !> Test IEEE exception flags for -Inf input (should raise no flags)
 subroutine test_exp_flags_neg_inf
-  real, volatile :: x, val
+  real, volatile :: x   ! The input value for the function [nondim]
+  real, volatile :: val ! The result of the function [nondim]
   logical :: flag_invalid, flag_overflow, flag_underflow, flag_inexact
 
   if (.not. ieee_flags_supported) return
@@ -828,7 +885,8 @@ end subroutine test_exp_flags_neg_inf
 
 !> Test IEEE exception flags for NaN input (should raise no flags for quiet NaN)
 subroutine test_exp_flags_nan
-  real, volatile :: x, val
+  real, volatile :: x   ! The input value for the function [nondim]
+  real, volatile :: val ! The result of the function [nondim]
   logical :: flag_invalid, flag_overflow, flag_underflow, flag_inexact
 
   if (.not. ieee_flags_supported) return
@@ -854,14 +912,16 @@ end subroutine test_exp_flags_nan
 !! This is informational only - it shows which flags are raised by exp() and
 !! exp_repro() for different input categories. Not enforced by assertions.
 subroutine print_ieee_flags_summary
-  real, volatile :: x, val_intrinsic, val_repro
+  real, volatile :: x   ! The input value for the function [nondim]
+  real, volatile :: val_intrinsic ! The result of the intrinsic function [nondim]
+  real, volatile :: val_repro     ! The result of the reproducing version of the function [nondim]
   logical :: flags_intrinsic(5), flags_repro(5)
   character(len=5) :: flag_str_intrinsic, flag_str_repro
   integer :: i
 
   ! Test cases: name, input value
   character(len=20) :: test_names(12)
-  real :: test_values(12)
+  real :: test_values(12)   ! An array of input values [nondim]
 
   if (.not. ieee_flags_supported) then
     print '(2x, "IEEE flags not supported on this platform")'

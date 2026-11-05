@@ -6966,9 +6966,10 @@ end function rotated_field_name
 
 !> Allocate an array of data for a field on a segment based on the size of a potentially rotated source array
 subroutine allocate_rotated_seg_data(src_array, HI_in, tgt_array, segment)
-  real, dimension(:,:,:), intent(in) :: src_array !< The segment data on the unrotated source grid
+  real, dimension(:,:,:), intent(in) :: src_array !< The segment data on the unrotated source grid [arbitrary]
   type(hor_index_type),   intent(in) :: HI_in !< Horizontal indices on the source grid
-  real, dimension(:,:,:), allocatable, intent(inout) :: tgt_array !< The segment data that is being allocated
+  real, dimension(:,:,:), allocatable, &
+                          intent(inout) :: tgt_array !< The segment data that is being allocated [arbitrary]
   type(OBC_segment_type), intent(inout) :: segment !< OBC segment on the target grid
 
   ! Local variables
@@ -7291,7 +7292,7 @@ subroutine chksum_OBC_segment_data(segment, GV, US, nk, nseg_out)
   !> Write out the values in a 3-d segment data array
   subroutine write_3d_array_vals(name, Array, seg_dir, nkp, unscale)
     character(len=*),       intent(in) :: name    !< The name of the variable
-    real, dimension(:,:,:), intent(in) :: Array   !< The 3-d array to write
+    real, dimension(:,:,:), intent(in) :: Array   !< The 3-d array to write in arbitrary units [A ~> a]
     integer,                intent(in) :: seg_dir !< The direction of the segment
     integer,                intent(in) :: nkp     !< The number of layers to print
     real,         optional, intent(in) :: unscale !< A factor that undoes the scaling of the array [a A-1 ~> 1]

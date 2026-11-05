@@ -297,10 +297,14 @@ subroutine create_MOM_file(IO_handle, filename, vars, novars, fields, &
   integer        :: var_periods, num_periods=0
   real, dimension(:), allocatable :: axis_val ! Axis label values [various]
   real, pointer, dimension(:) :: &
-    gridLatT => NULL(), & ! The latitude of T or B points for the purpose of labeling
-    gridLatB => NULL(), & ! the output axes, often in units of [degrees_N] or [km] or [m].
-    gridLonT => NULL(), & ! The longitude of T or B points for the purpose of labeling
-    gridLonB => NULL()    ! the output axes, often in units of [degrees_E] or [km] or [m].
+    gridLatT => NULL(), & ! The latitude of cell-center points for the purpose of labeling the
+                          ! output axes, often in units of [gridpoints], [degrees_N], [km] or [m].
+    gridLatB => NULL(), & ! The latitude of corner points for the purpose of labeling
+                          ! output axes, often in units of [gridpoints], [degrees_N], [km] or [m].
+    gridLonT => NULL(), & ! The longitude of cell-center points for the purpose of labeling
+                          ! output axes, often in units of [gridpoints], [degrees_E], [km] or [m].
+    gridLonB => NULL()    ! The longitude of corner points for the purpose of labeling.
+                          ! output axes, often in units of [gridpoints], [degrees_E], [km] or [m].
   character(len=40) :: time_units, x_axis_units, y_axis_units
   character(len=8)  :: t_grid, t_grid_read
   character(len=64) :: ax_name(5)  ! The axis names of a variable
@@ -2237,8 +2241,8 @@ subroutine read_netCDF_data_2d(filename, fieldname, values, MOM_Domain, &
   character(len=*), intent(in)  :: fieldname
     !< Field variable name
   real, intent(inout) :: values(:,:)
-    !< Field values read from the file.  It would be intent(out) but for the
-    !! need to preserve any initialized values in the halo regions.
+    !< Field values read from the file in arbitrary scaled or unscaled units [A ~> a] or [a].
+    !! It would be intent(out) but for the need to preserve any initialized values in the halo regions.
   type(MOM_domain_type), intent(in) :: MOM_Domain
     !< Model domain decomposition
   integer, optional, intent(in) :: timelevel
@@ -2246,7 +2250,7 @@ subroutine read_netCDF_data_2d(filename, fieldname, values, MOM_Domain, &
   integer, optional, intent(in) :: position
     !< Grid positioning flag
   real, optional, intent(in) :: rescale
-    !< Rescale factor, omitting this is the same as setting it to 1.
+    !< Rescaling factor [A a-1 ~> 1], omitting this is the same as setting it to 1.
   integer, optional, intent(in) :: turns
     !< Number of quarter-turns to rotate the data.  If absent the number of turns is taken
     !! from MOM_Domain.
@@ -2254,7 +2258,7 @@ subroutine read_netCDF_data_2d(filename, fieldname, values, MOM_Domain, &
   integer :: qturns
     ! Number of quarter-turns from input to model grid
   real, allocatable :: values_in(:,:)
-    ! Field array on the unrotated input grid
+    ! Field array on the unrotated input grid in arbitrary scaled or unscaled units [A ~> a] or [a]
   type(MOM_netcdf_file) :: handle
     ! netCDF file handle
 
@@ -2673,7 +2677,7 @@ subroutine MOM_write_field_legacy_2d(IO_handle, field_md, MOM_domain, field, tst
   real, dimension(:,:),   intent(inout) :: field      !< Unrotated field to write in arbitrary units [A ~> a]
   real,         optional, intent(in)    :: tstamp     !< Model timestamp, often in [days]
   integer,      optional, intent(in)    :: tile_count !< PEs per tile (default: 1)
-  real,         optional, intent(in)    :: fill_value !< Missing data fill value
+  real,         optional, intent(in)    :: fill_value !< Missing data fill value [a]
   integer,      optional, intent(in)    :: turns      !< Number of quarter-turns to rotate the data
   real,         optional, intent(in)    :: scale      !< A scaling factor that the field is multiplied by before
                                                       !! it is written [a A-1 ~> 1], for example to convert it

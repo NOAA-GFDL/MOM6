@@ -2,24 +2,24 @@
 ! See the LICENSE file for licensing information.
 ! SPDX-License-Identifier: Apache-2.0
 
-!> Wraps the FMS time manager functions
+!> Provides infrastructure-independent time utilities and the time manager interface
 module MOM_time_manager
 
-use time_manager_mod, only : time_type, get_time, set_time
-use time_manager_mod, only : time_type_to_real, real_to_time_type
-use time_manager_mod, only : operator(+), operator(-), operator(*), operator(/)
-use time_manager_mod, only : operator(>), operator(<), operator(>=), operator(<=)
-use time_manager_mod, only : operator(==), operator(/=), operator(//)
-use time_manager_mod, only : set_ticks_per_second , get_ticks_per_second
-use time_manager_mod, only : get_date, set_date, increment_date
-use time_manager_mod, only : days_in_month, month_name
-use time_manager_mod, only : set_calendar_type, get_calendar_type
-use time_manager_mod, only : JULIAN, NOLEAP, THIRTY_DAY_MONTHS, GREGORIAN
-use time_manager_mod, only : NO_CALENDAR
+use MOM_time_manager_infra, only : time_type, get_time, set_time
+use MOM_time_manager_infra, only : time_type_to_real, real_to_time_type
+use MOM_time_manager_infra, only : operator(+), operator(-), operator(*), operator(/)
+use MOM_time_manager_infra, only : operator(>), operator(<), operator(>=), operator(<=)
+use MOM_time_manager_infra, only : operator(==), operator(/=), operator(//)
+use MOM_time_manager_infra, only : set_ticks_per_second, get_ticks_per_second
+use MOM_time_manager_infra, only : get_date, set_date, increment_date
+use MOM_time_manager_infra, only : days_in_month, month_name
+use MOM_time_manager_infra, only : set_calendar_type, get_calendar_type
+use MOM_time_manager_infra, only : JULIAN, NOLEAP, THIRTY_DAY_MONTHS, GREGORIAN
+use MOM_time_manager_infra, only : NO_CALENDAR
 
 implicit none ; private
 
-! FMS re-exports
+! Infrastructure re-exports
 public :: time_type, get_time, set_time
 public :: time_type_to_real, real_to_time_type
 public :: set_ticks_per_second, get_ticks_per_second
@@ -28,7 +28,7 @@ public :: operator(>), operator(<), operator(>=), operator(<=)
 public :: operator(==), operator(/=), operator(//)
 public :: get_date, set_date, increment_date, month_name, days_in_month
 public :: JULIAN, NOLEAP, THIRTY_DAY_MONTHS, GREGORIAN, NO_CALENDAR
-public :: set_calendar_type, get_calendar_type
+public :: set_calendar_type, get_calendar_type, convert_date_to_string
 ! Module functions
 public :: real_to_time, time_minus_signed, time_to_real
 
@@ -80,9 +80,10 @@ end function time_to_real
 !! In contrast, this function returns a negative real number if time_b > time_a,
 !! and a positive real otherwise, as would be expected for subtraction.
 real function time_minus_signed(time_a, time_b, scale)
-  type(time_type), intent(in) :: time_a, time_b !< Two times for calculating time_a - time_b
-  real, optional,  intent(in) :: scale          !< A scaling factor that returned the time is
-                                                !! multiplied by, often in [T s-1 ~> nondim]
+  type(time_type), intent(in) :: time_a   !< First time in time_a - time_b [days, seconds, ticks]
+  type(time_type), intent(in) :: time_b   !< Second time in time_a - time_b [days, seconds, ticks]
+  real, optional,  intent(in) :: scale    !< A scaling factor that returned the time is
+                                          !! multiplied by, often in [T s-1 ~> nondim]
 
   ! Local variables
   real :: abs_diff ! The absolute value of the difference in times [s] or [T ~> s]
@@ -95,5 +96,36 @@ real function time_minus_signed(time_a, time_b, scale)
   time_minus_signed = merge(abs_diff, -abs_diff, time_a >= time_b)
 
 end function time_minus_signed
+
+
+!> This function converts a date into a string, valid with ticks and for dates up to year 99,999,999
+function convert_date_to_string(date) result(date_string)
+  type(time_type), intent(in) :: date !< The date to be translated into a string.
+  character(len=40) :: date_string    !< A date string in a format like YYYY-MM-DD HH:MM:SS.sss
+
+  ! Local variables
+  character(len=40) :: sub_string
+  real    :: real_secs
+  integer :: yrs, mons, days, hours, mins, secs, ticks, ticks_per_sec
+
+  call get_date(date, yrs, mons, days, hours, mins, secs, ticks)
+  write (date_string, '(i8.4)') yrs
+  write (sub_string, '("-", i2.2, "-", I2.2, " ", i2.2, ":", i2.2, ":")') &
+         mons, days, hours, mins
+  date_string = trim(adjustl(date_string)) // trim(sub_string)
+  if (ticks > 0) then
+    ticks_per_sec = get_ticks_per_second()
+    real_secs = secs + ticks/ticks_per_sec
+    if (ticks_per_sec <= 100) then
+      write (sub_string, '(F7.3)') real_secs
+    else
+      write (sub_string, '(F10.6)') real_secs
+    endif
+  else
+    write (sub_string, '(i2.2)') secs
+  endif
+  date_string = trim(date_string) // trim(adjustl(sub_string))
+
+end function convert_date_to_string
 
 end module MOM_time_manager

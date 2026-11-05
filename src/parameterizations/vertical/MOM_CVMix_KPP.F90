@@ -1128,7 +1128,7 @@ subroutine KPP_compute_BLD(CS, G, GV, US, h, Temp, Salt, u, v, tv, uStar, buoyFl
   real :: hcorr         ! A cumulative correction arising from inflation of vanished layers [Z ~> m]
 
   ! For Langmuir Calculations
-  real :: Vt_layer     ! non-dimensional extent contribution to unresolved shear
+  real :: Vt_layer     ! Non-dimensional extent contribution to unresolved shear [nondim]
   real :: LangEnhVt2   ! Langmuir enhancement for unresolved shear [nondim]
   real, dimension(GV%ke) :: U_H, V_H ! Velocities at tracer points [L T-1 ~> m s-1]
   real :: MLD_guess    ! A guess at the mixed layer depth for calculating the Langmuir number [Z ~> m]

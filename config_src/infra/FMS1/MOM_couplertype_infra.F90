@@ -15,7 +15,7 @@ use coupler_types_mod, only : ind_flux, ind_alpha, ind_csurf
 use coupler_types_mod, only : coupler_1d_bc_type, coupler_2d_bc_type, coupler_3d_bc_type
 use atmos_ocean_fluxes_mod, only : aof_set_coupler_flux
 use MOM_domain_infra,  only : domain2D
-use MOM_time_manager,  only : time_type
+use MOM_time_manager_infra, only : time_type
 
 implicit none ; private
 

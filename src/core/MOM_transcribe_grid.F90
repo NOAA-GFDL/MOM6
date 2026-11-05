@@ -48,7 +48,7 @@ subroutine copy_dyngrid_to_MOM_grid(dG, oG, US)
   IedB = min(oG%IedB, dG%IedB+ido) ; JedB = min(oG%JedB, dG%JedB+jdo)
 
   ! Check that the grids conform.
-  if ((isd > oG%isc) .or. (ied < oG%ied) .or. (jsd > oG%jsc) .or. (jed > oG%jed)) &
+  if ((isd > oG%isc) .or. (ied < oG%ied) .or. (jsd > oG%jsc) .or. (jed < oG%jed)) &
     call MOM_error(FATAL, "copy_dyngrid_to_MOM_grid called with incompatible grids.")
 
   do i=isd,ied ; do j=jsd,jed
@@ -211,8 +211,8 @@ subroutine copy_MOM_grid_to_dyngrid(oG, dG, US)
   IedB = min(dG%IedB, oG%IedB+ido) ; JedB = min(dG%JedB, oG%JedB+jdo)
 
   ! Check that the grids conform.
-  if ((isd > dG%isc) .or. (ied < dG%ied) .or. (jsd > dG%jsc) .or. (jed > dG%jed)) &
-    call MOM_error(FATAL, "copy_dyngrid_to_MOM_grid called with incompatible grids.")
+  if ((isd > dG%isc) .or. (ied < dG%ied) .or. (jsd > dG%jsc) .or. (jed < dG%jed)) &
+    call MOM_error(FATAL, "copy_MOM_grid_to_dyngrid called with incompatible grids.")
 
   do i=isd,ied ; do j=jsd,jed
     dG%geoLonT(i,j) = oG%geoLonT(i+ido,j+jdo)
@@ -254,9 +254,9 @@ subroutine copy_MOM_grid_to_dyngrid(oG, dG, US)
     dG%dyCv(i,J) = oG%dyCv(i+ido,J+jdo)
     dG%dx_Cv(i,J) = oG%dx_Cv(i+ido,J+jdo)
 
-    dG%porous_DminV(i,J) = oG%porous_DminU(i+ido,J+jdo) + oG%Z_ref
-    dG%porous_DmaxV(i,J) = oG%porous_DmaxU(i+ido,J+jdo) + oG%Z_ref
-    dG%porous_DavgV(i,J) = oG%porous_DavgU(i+ido,J+jdo) + oG%Z_ref
+    dG%porous_DminV(i,J) = oG%porous_DminV(i+ido,J+jdo) + oG%Z_ref
+    dG%porous_DmaxV(i,J) = oG%porous_DmaxV(i+ido,J+jdo) + oG%Z_ref
+    dG%porous_DavgV(i,J) = oG%porous_DavgV(i+ido,J+jdo) + oG%Z_ref
 
     dG%mask2dCv(i,J) = oG%mask2dCv(i+ido,J+jdo)
     dG%OBCmaskCv(i,J) = oG%OBCmaskCv(i+ido,J+jdo)

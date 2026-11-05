@@ -316,10 +316,11 @@ end function remove_spaces
 logical function string_functions_unit_tests(verbose)
   ! Arguments
   logical, intent(in) :: verbose !< If true, write results to stdout
+
   ! Local variables
   integer :: i(5) = (/ -1, 1, 3, 3, 0 /)
-  ! This is an array of real test values, in arbitrary units [A]
   real :: r(8) = (/ 0., 1., -2., 1.3, 3.E-11, 3.E-11, 3.E-11, -5.1E12 /)
+      ! This is an array of real test values, in arbitrary units [arbitrary]
   logical :: fail, v
   fail = .false.
   v = verbose

@@ -136,8 +136,8 @@ type, public :: VarMix_CS
   real, allocatable :: khth_struct(:,:,:) !< Vertical structure function used in thickness diffusivity [nondim]
   real, allocatable :: khtr_struct(:,:,:) !< Vertical structure function used in tracer diffusivity [nondim]
   real, allocatable :: kdgl90_struct(:,:,:) !< Vertical structure function used in GL90 diffusivity [nondim]
-  real :: BS_EBT_power                !< Power to raise EBT vertical structure to. Default 0.0.
-  real :: sqg_expo     !< Exponent for SQG vertical structure [nondim]. Default 1.0
+  real :: BS_EBT_power                !< Power to raise EBT vertical structure to [nondim]. Default 0.0.
+  real :: sqg_expo                    !< Exponent for SQG vertical structure [nondim]. Default 1.0
   logical :: interpolated_sqg_struct  !< If true, interpolate properties to velocity points and then
                                       !! interpolate the buoyancy frequencies and layer thicknesses
                                       !! back to tracer points when calculating the SQG vertical
@@ -393,7 +393,7 @@ subroutine calc_resoln_function(h, tv, G, GV, US, CS, MEKE, OBC, dt)
     !$OMP do
     do J=js-1,Jeq ; do I=is-1,Ieq
       if ((OBC%segnum_u(I,j) /= 0) .or. (OBC%segnum_u(I,j+1) /= 0) .or. &
-          (OBC%segnum_v(i,J) /= 0) .or. (OBC%segnum_u(i+1,J) /= 0)) then
+          (OBC%segnum_v(i,J) /= 0) .or. (OBC%segnum_v(i+1,J) /= 0)) then
         ! This is an OBC node, so use the fact that G%mask2dT is zero behind OBCs.  The nondimensional
         ! constant 1e-20 in the denominator makes this a de facto implementation of Adcroft's reciprocal
         ! rule with a value that works for either 64-bit or 32-bit real numbers.

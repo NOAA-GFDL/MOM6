@@ -446,7 +446,8 @@ interface
     type(domain1D), optional, intent(in) :: domain
       !< The domain decomposion for this axis
     real, dimension(:), optional, intent(in) :: data
-      !< The coordinate values of the points on this axis
+      !< The coordinate values of the points on this axis in the arbitrary axis
+      !! units, often [gridpoints], [degrees_N], [degrees_E], [km] or [m]
     logical, optional, intent(in) :: edge_axis
       !< If true, this axis marks an edge of the tracer cells
     character(len=*), optional, intent(in) :: calendar
@@ -507,13 +508,13 @@ interface
     type(MOM_domain_type), intent(in) :: MOM_domain
       !< The MOM_Domain that describes the decomposition
     real, intent(inout) :: field(:,:,:,:)
-      !< Field to write
+      !< Field to write in rescaled arbitrary units [A ~> a]
     real, optional, intent(in) :: tstamp
-      !< Model time of this field
+      !< Model time of this field in arbitrary time units, often [years]
     integer, optional, intent(in) :: tile_count
       !< PEs per tile (default: 1)
     real, optional, intent(in) :: fill_value
-      !< Missing data fill value
+      !< Missing data fill value in arbitrary unscaled units [a]
   end subroutine i_write_field_4d
 
 
@@ -528,13 +529,13 @@ interface
     type(MOM_domain_type), intent(in) :: MOM_domain
       !< The MOM_Domain that describes the decomposition
     real, intent(inout) :: field(:,:,:)
-      !< Field to write
+      !< Field to write in rescaled arbitrary units [A ~> a]
     real, optional, intent(in) :: tstamp
-      !< Model time of this field
+      !< Model time of this field in arbitrary time units, often [years]
     integer, optional, intent(in) :: tile_count
       !< PEs per tile (default: 1)
     real, optional, intent(in) :: fill_value
-      !< Missing data fill value
+      !< Missing data fill value in arbitrary unscaled units [a]
   end subroutine i_write_field_3d
 
 
@@ -549,13 +550,13 @@ interface
     type(MOM_domain_type), intent(in) :: MOM_domain
       !< The MOM_Domain that describes the decomposition
     real, dimension(:,:), intent(inout) :: field
-      !< Field to write
+      !< Field to write in rescaled arbitrary units [A ~> a]
     real, optional, intent(in) :: tstamp
-      !< Model time of this field
+      !< Model time of this field in arbitrary time units, often [years]
     integer, optional, intent(in) :: tile_count
       !< PEs per tile (default: 1)
     real, optional, intent(in) :: fill_value
-      !< Missing data fill value
+      !< Missing data fill value in arbitrary unscaled units [a]
   end subroutine i_write_field_2d
 
 
@@ -567,9 +568,9 @@ interface
     type(MOM_field), intent(in) :: field_md
       !< Field type with metadata
     real, dimension(:), intent(in) :: field
-      !< Field to write
+      !< Field to write in rescaled arbitrary units [A ~> a]
     real, optional, intent(in) :: tstamp
-      !< Model time of this field
+      !< Model time of this field in arbitrary time units, often [years]
   end subroutine i_write_field_1d
 
 
@@ -581,9 +582,9 @@ interface
     type(MOM_field), intent(in) :: field_md
       !< Field type with metadata
     real, intent(in) :: field
-      !< Field to write
+      !< Field to write in rescaled arbitrary units [A ~> a]
     real, optional, intent(in) :: tstamp
-      !< Model time of this field
+      !< Model time of this field in arbitrary time units, often [years]
   end subroutine i_write_field_0d
 
 
@@ -995,7 +996,8 @@ function register_axis_infra(handle, label, units, longname, &
   type(domain1D), optional, intent(in) :: domain
     !< The domain decomposion for this axis
   real, dimension(:), optional, intent(in) :: data
-    !< The coordinate values of the points on this axis
+    !< The coordinate values of the points on this axis in the arbitrary axis
+    !! units, often [gridpoints], [degrees_N], [degrees_E], [km] or [m]
   logical, optional, intent(in) :: edge_axis
     !< If true, this axis marks an edge of the tracer cells
   character(len=*), optional, intent(in) :: calendar
@@ -1069,13 +1071,13 @@ subroutine write_field_4d_infra(handle, field_md, MOM_domain, field, tstamp, &
   type(MOM_domain_type), intent(in) :: MOM_domain
     !< The MOM_Domain that describes the decomposition
   real, intent(inout) :: field(:,:,:,:)
-    !< Field to write
+    !< Field to write in rescaled arbitrary units [A ~> a]
   real, optional, intent(in) :: tstamp
-    !< Model time of this field
+    !< Model time of this field in arbitrary time units, often [years]
   integer, optional, intent(in) :: tile_count
     !< PEs per tile (default: 1)
   real, optional, intent(in) :: fill_value
-    !< Missing data fill value
+    !< Missing data fill value in arbitrary unscaled units [a]
 
   type(fieldtype) :: field_infra
   real, allocatable :: unscaled_field(:,:,:,:) ! An unscaled version of field for output [a]
@@ -1106,11 +1108,11 @@ subroutine write_field_3d_infra(handle, field_md, MOM_domain, field, tstamp, &
   real, intent(inout) :: field(:,:,:)
     !< Field to write, perhaps in arbitrary rescaled units [A ~> a]
   real, optional, intent(in) :: tstamp
-    !< Model time of this field
+    !< Model time of this field in arbitrary time units, often [years]
   integer, optional, intent(in) :: tile_count
     !< PEs per tile (default: 1)
   real, optional, intent(in) :: fill_value
-    !< Missing data fill value
+    !< Missing data fill value in arbitrary unscaled units [a]
 
   type(fieldtype) :: field_infra
   real, allocatable :: unscaled_field(:,:,:) ! An unscaled version of field for output [a]
@@ -1140,13 +1142,13 @@ subroutine write_field_2d_infra(handle, field_md, MOM_domain, field, tstamp, &
   type(MOM_domain_type), intent(in) :: MOM_domain
     !< The MOM_Domain that describes the decomposition
   real, dimension(:,:), intent(inout) :: field
-    !< Field to write
+    !< Field to write in rescaled arbitrary units [A ~> a]
   real, optional, intent(in) :: tstamp
-    !< Model time of this field
+    !< Model time of this field in arbitrary time units, often [years]
   integer, optional, intent(in) :: tile_count
     !< PEs per tile (default: 1)
   real, optional, intent(in) :: fill_value
-    !< Missing data fill value
+    !< Missing data fill value in arbitrary unscaled units [a]
 
   type(fieldtype) :: field_infra
   real, allocatable :: unscaled_field(:,:) ! An unscaled version of field for output [a]
@@ -1172,9 +1174,9 @@ subroutine write_field_1d_infra(handle, field_md, field, tstamp)
   type(MOM_field), intent(in) :: field_md
     !< Field type with metadata
   real, dimension(:), intent(in) :: field
-    !< Field to write
+    !< Field to write in rescaled arbitrary units [A ~> a]
   real, optional, intent(in) :: tstamp
-    !< Model time of this field
+    !< Model time of this field in arbitrary time units, often [years]
 
   type(fieldtype) :: field_infra
   real, allocatable :: unscaled_field(:) ! An unscaled version of field for output [a]
@@ -1198,9 +1200,9 @@ subroutine write_field_0d_infra(handle, field_md, field, tstamp)
   type(MOM_field), intent(in) :: field_md
     !< Field type with metadata
   real, intent(in) :: field
-    !< Field to write
+    !< Field to write in rescaled arbitrary units [A ~> a]
   real, optional, intent(in) :: tstamp
-    !< Model time of this field
+    !< Model time of this field in arbitrary time units, often [years]
 
   type(fieldtype) :: field_infra
   real :: unscaled_field ! An unscaled version of field for output [a]
@@ -1290,7 +1292,7 @@ subroutine get_file_times_infra(handle, time_values, ntime)
   class(MOM_infra_file), intent(in) :: handle
     !< Handle for a file that is open for I/O
   real, allocatable, dimension(:), intent(inout) :: time_values
-    !< The real times for the records in file.
+    !< The real times for the records in file in arbitrary time units, often [years]
   integer, optional, intent(out) :: ntime
     !< The number of time levels in the file
 
@@ -1429,7 +1431,8 @@ function register_axis_nc(handle, label, units, longname, cartesian, sense, &
   type(domain1D), optional, intent(in) :: domain
     !< The domain decomposion for this axis
   real, dimension(:), optional, intent(in) :: data
-    !< The coordinate values of the points on this axis
+    !< The coordinate values of the points on this axis in the arbitrary axis
+    !! units, often [gridpoints], [degrees_N], [degrees_E], [km] or [m]
   logical, optional, intent(in) :: edge_axis
     !< If true, this axis marks an edge of the tracer cells
   character(len=*), optional, intent(in) :: calendar
@@ -1516,13 +1519,13 @@ subroutine write_field_4d_nc(handle, field_md, MOM_domain, field, tstamp, &
   type(MOM_domain_type), intent(in) :: MOM_domain
     !< The MOM_Domain that describes the decomposition
   real, intent(inout) :: field(:,:,:,:)
-    !< Field to write
+    !< Field to write in rescaled arbitrary units [A ~> a]
   real, optional, intent(in) :: tstamp
-    !< Model time of this field
+    !< Model time of this field in arbitrary time units, often [years]
   integer, optional, intent(in) :: tile_count
     !< PEs per tile (default: 1)
   real, optional, intent(in) :: fill_value
-    !< Missing data fill value
+    !< Missing data fill value in arbitrary unscaled units [a]
 
   type(netcdf_field) :: field_nc
   real, allocatable :: unscaled_field(:,:,:,:) ! An unscaled version of field for output [a]
@@ -1551,13 +1554,13 @@ subroutine write_field_3d_nc(handle, field_md, MOM_domain, field, tstamp, &
   type(MOM_domain_type), intent(in) :: MOM_domain
     !< The MOM_Domain that describes the decomposition
   real, intent(inout) :: field(:,:,:)
-    !< Field to write
+    !< Field to write in rescaled arbitrary units [A ~> a]
   real, optional, intent(in) :: tstamp
-    !< Model time of this field
+    !< Model time of this field in arbitrary time units, often [years]
   integer, optional, intent(in) :: tile_count
     !< PEs per tile (default: 1)
   real, optional, intent(in) :: fill_value
-    !< Missing data fill value
+    !< Missing data fill value in arbitrary unscaled units [a]
 
   type(netcdf_field) :: field_nc
   real, allocatable :: unscaled_field(:,:,:) ! An unscaled version of field for output [a]
@@ -1586,13 +1589,13 @@ subroutine write_field_2d_nc(handle, field_md, MOM_domain, field, tstamp, &
   type(MOM_domain_type), intent(in) :: MOM_domain
     !< The MOM_Domain that describes the decomposition
   real, dimension(:,:), intent(inout) :: field
-    !< Field to write
+    !< Field to write in rescaled arbitrary units [A ~> a]
   real, optional, intent(in) :: tstamp
-    !< Model time of this field
+    !< Model time of this field in arbitrary time units, often [years]
   integer, optional, intent(in) :: tile_count
     !< PEs per tile (default: 1)
   real, optional, intent(in) :: fill_value
-    !< Missing data fill value
+    !< Missing data fill value in arbitrary unscaled units [a]
 
   type(netcdf_field) :: field_nc
   real, allocatable :: unscaled_field(:,:) ! An unscaled version of field for output [a]
@@ -1618,9 +1621,9 @@ subroutine write_field_1d_nc(handle, field_md, field, tstamp)
   type(MOM_field), intent(in) :: field_md
     !< Field type with metadata
   real, dimension(:), intent(in) :: field
-    !< Field to write
+    !< Field to write in rescaled arbitrary units [A ~> a]
   real, optional, intent(in) :: tstamp
-    !< Model time of this field
+    !< Model time of this field in arbitrary time units, often [years]
 
   type(netcdf_field) :: field_nc
   real, allocatable :: unscaled_field(:) ! An unscaled version of field for output [a]
@@ -1646,9 +1649,9 @@ subroutine write_field_0d_nc(handle, field_md, field, tstamp)
   type(MOM_field), intent(in) :: field_md
     !< Field type with metadata
   real, intent(in) :: field
-    !< Field to write
+    !< Field to write in rescaled arbitrary units [A ~> a]
   real, optional, intent(in) :: tstamp
-    !< Model time of this field
+    !< Model time of this field in arbitrary time units, often [years]
 
   type(netcdf_field) :: field_nc
   real :: unscaled_field ! An unscaled version of field for output [a]
@@ -1805,10 +1808,10 @@ subroutine get_field_nc(handle, label, values, rescale)
   character(len=*), intent(in) :: label
     !< Field variable name
   real, intent(inout) :: values(:,:)
-    !< Field values read from the file.  It would be intent(out) but for the
+    !< Field values read from the file [A ~> m].  It would be intent(out) but for the
     !! need to preserve any initialized values in the halo regions.
   real, optional, intent(in) :: rescale
-    !< A multiplicative rescaling factor for the values that are read.
+    !< A multiplicative rescaling factor for the values that are read [A a-1 ~> 1].
     !! Omitting this is the same as setting it to 1.
 
   logical :: data_domain
@@ -1826,7 +1829,7 @@ subroutine get_field_nc(handle, label, values, rescale)
   integer :: bounds(2,2)
     ! Index bounds of domain
   real, allocatable :: values_c(:,:)
-    ! Field values on the compute domain, used for copying to a data domain
+    ! Field values on the compute domain in arbitrary unscaled units [a], used for copying to a data domain
 
   isc = handle%HI%isc
   iec = handle%HI%iec

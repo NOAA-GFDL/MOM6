@@ -25,7 +25,7 @@ public dyed_obcs_set_OBC_data
 
 integer :: ntr = 0 !< Number of dye tracers
                    !! \todo This is a module variable. Move this variable into the control structure.
-real :: dye_obc_inflow = 0.0 !< Inflow value of obc dye concentration
+real :: dye_obc_inflow = 0.0 !< Inflow value of obc dye concentration [arbitrary]
 
 contains
 

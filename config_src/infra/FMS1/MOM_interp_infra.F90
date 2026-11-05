@@ -6,7 +6,7 @@
 module MOM_interp_infra
 
 use MOM_domain_infra,    only : MOM_domain_type, domain2d
-use MOM_time_manager,    only : time_type
+use MOM_time_manager_infra, only : time_type
 use horiz_interp_mod,    only : horiz_interp_new, horiz_interp, horiz_interp_init, horiz_interp_type
 use mpp_io_mod,          only : axistype, mpp_get_axis_data, mpp_get_atts
 use time_interp_external_mod, only : time_interp_external

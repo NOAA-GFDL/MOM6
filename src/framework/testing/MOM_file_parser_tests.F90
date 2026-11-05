@@ -330,10 +330,10 @@ end subroutine test_read_param_int_array_type_err
 
 subroutine test_read_param_real
   type(param_file_type) :: param
-  real :: sample
+  real :: sample  ! A test value [arbitrary]
   type(string) :: lines(1)
   character(len=*), parameter :: sample_input = '3.14'
-  real, parameter :: sample_result = 3.14
+  real, parameter :: sample_result = 3.14  ! The expected result [arbitrary]
 
   lines = string(sample_param_name // ' = ' // sample_input)
   call create_test_file(param_filename, lines)
@@ -348,7 +348,7 @@ end subroutine test_read_param_real
 
 subroutine test_read_param_real_missing
   type(param_file_type) :: param
-  real :: sample
+  real :: sample  ! A test value [arbitrary]
 
   call create_test_file(param_filename)
 
@@ -360,7 +360,7 @@ end subroutine test_read_param_real_missing
 
 subroutine test_read_param_real_undefined
   type(param_file_type) :: param
-  real :: sample
+  real :: sample  ! A test value [arbitrary]
   type(string) :: lines(1)
 
   lines = string('#undef ' // sample_param_name)
@@ -374,7 +374,7 @@ end subroutine test_read_param_real_undefined
 
 subroutine test_read_param_real_type_err
   type(param_file_type) :: param
-  real :: sample
+  real :: sample  ! A test value [arbitrary]
   type(string) :: lines(1)
 
   lines = string(sample_param_name // ' = not_a_real')
@@ -388,10 +388,10 @@ end subroutine test_read_param_real_type_err
 
 subroutine test_read_param_real_array
   type(param_file_type) :: param
-  real :: sample(3)
+  real :: sample(3)  ! An array of test values [arbitrary]
   type(string) :: lines(1)
   character(len=*), parameter :: sample_input = '1., 2., 3.'
-  real, parameter :: sample_result(3) = [1., 2., 3.]
+  real, parameter :: sample_result(3) = [1., 2., 3.]  ! The expected results [arbitrary]
 
   lines = string(sample_param_name // ' = ' // sample_input)
   call create_test_file(param_filename, lines)
@@ -406,7 +406,7 @@ end subroutine test_read_param_real_array
 
 subroutine test_read_param_real_array_missing
   type(param_file_type) :: param
-  real :: sample(3)
+  real :: sample(3)  ! An array of test values [arbitrary]
 
   call create_test_file(param_filename)
 
@@ -418,7 +418,7 @@ end subroutine test_read_param_real_array_missing
 
 subroutine test_read_param_real_array_undefined
   type(param_file_type) :: param
-  real :: sample(3)
+  real :: sample(3)  ! An array of test values [arbitrary]
   type(string) :: lines(1)
 
   lines = string('#undef ' // sample_param_name)
@@ -432,7 +432,7 @@ end subroutine test_read_param_real_array_undefined
 
 subroutine test_read_param_real_array_type_err
   type(param_file_type) :: param
-  real :: sample(3)
+  real :: sample(3)  ! An array of test values [arbitrary]
   type(string) :: lines(1)
 
   lines = string(sample_param_name // ' = not_a_real_array')
@@ -1354,7 +1354,7 @@ end subroutine test_log_param_int
 
 subroutine test_log_param_int_array
   type(param_file_type) :: param
-  integer, parameter :: sample(3) = [1, 2, 3]
+  integer, parameter :: sample(3) = [1, 2, 3]  ! An array of test values [arbitrary]
   character(len=*), parameter :: desc = "Parameter description"
 
   call create_test_file(param_filename)
@@ -1367,7 +1367,7 @@ end subroutine test_log_param_int_array
 
 subroutine test_log_param_real
   type(param_file_type) :: param
-  real, parameter :: sample = 1.
+  real, parameter :: sample = 1.  ! A test value [arbitrary]
   character(len=*), parameter :: desc = "Parameter description"
 
   call create_test_file(param_filename)
@@ -1380,7 +1380,7 @@ end subroutine test_log_param_real
 
 subroutine test_log_param_real_array
   type(param_file_type) :: param
-  real, parameter :: sample(3) = [1., 2., 3.]
+  real, parameter :: sample(3) = [1., 2., 3.]  ! An array of test values [arbitrary]
   character(len=*), parameter :: desc = "Parameter description"
 
   call create_test_file(param_filename)
@@ -1493,6 +1493,7 @@ subroutine test_log_param_time_with_timeunit
   integer :: i
   character(len=*), parameter :: desc = "Parameter description"
   real, parameter :: timeunits(5) = [1., 3600., 86400., 3.1e7, 1e8]
+      ! An array of test values specifying the values of the time unit [s]
 
   call set_calendar_type(NOLEAP)
   call create_test_file(param_filename)
@@ -1559,7 +1560,7 @@ end subroutine test_get_param_int_array_no_read_no_log
 
 subroutine test_get_param_real
   type(param_file_type) :: param
-  real :: sample
+  real :: sample  ! A test value [arbitrary]
 
   call create_test_file(param_filename)
 
@@ -1571,7 +1572,7 @@ end subroutine test_get_param_real
 
 subroutine test_get_param_real_no_read_no_log
   type(param_file_type) :: param
-  real :: sample
+  real :: sample  ! A test value [arbitrary]
 
   call create_test_file(param_filename)
 
@@ -1584,7 +1585,7 @@ end subroutine test_get_param_real_no_read_no_log
 
 subroutine test_get_param_real_array
   type(param_file_type) :: param
-  real :: sample(3)
+  real :: sample(3)  ! An array of test values [arbitrary]
 
   call create_test_file(param_filename)
 
@@ -1596,7 +1597,7 @@ end subroutine test_get_param_real_array
 
 subroutine test_get_param_real_array_no_read_no_log
   type(param_file_type) :: param
-  real :: sample(3)
+  real :: sample(3)  ! An array of test values [arbitrary]  ! An array of test values [arbitrary]
 
   call create_test_file(param_filename)
 

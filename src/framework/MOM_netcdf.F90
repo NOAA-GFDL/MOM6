@@ -45,7 +45,7 @@ public :: get_netcdf_filename
 public :: read_netcdf_field
 
 
-!> Internal time value used to indicate an uninitialized time
+!> Internal time value used to indicate an uninitialized time [arbitrary]
 real, parameter :: NULLTIME = -1
 ! NOTE: For now, we use the FMS-compatible value, but may change in the future.
 
@@ -62,7 +62,7 @@ type :: netcdf_file_type
   integer :: time_id
     !< Time axis variable ID
   real :: time
-    !< Current model time
+    !< Current model time in arbitrary units, often [years], [days] or [s]
   integer :: time_level
     !< Current time level for output
 end type netcdf_file_type
@@ -74,7 +74,8 @@ type :: netcdf_axis
   character(len=:), allocatable, public :: label
     !< Axis label name
   real, allocatable :: points(:)
-    !< Grid points along the axis
+    !< Grid points along the axis in the arbitrary axis units,
+    !! often [gridpoints], [degrees_N], [degrees_E], [km] or [m]
   integer :: dimid
     !< netCDF dimension ID associated with axis
   integer :: varid
@@ -264,7 +265,8 @@ function register_netcdf_axis(handle, label, units, longname, points, &
   character(len=*), intent(in), optional :: longname
     !< Long name of the axis
   real, intent(in), optional :: points(:)
-    !< Values of axis points (for fixed axes)
+    !< Values of axis points (for fixed axes) in the arbitrary axis units,
+    !! often [gridpoints], [degrees_N], [degrees_E], [km] or [m]
   character(len=*), intent(in), optional :: cartesian
     !< Character denoting axis direction: X, Y, Z, T, or N for none
   integer, intent(in), optional :: sense
@@ -385,9 +387,9 @@ subroutine write_netcdf_field_4d(handle, field, values, time)
   type(netcdf_field), intent(in) :: field
     !< Field metadata
   real, intent(in) :: values(:,:,:,:)
-    !< Field values
+    !< Field values to write [arbitrary]
   real, intent(in), optional :: time
-    !< Timestep index to write data
+    !< New model time in arbitrary units, often [years], [days] or [s]
 
   integer :: rc
     ! netCDF return code
@@ -418,9 +420,9 @@ subroutine write_netcdf_field_3d(handle, field, values, time)
   type(netcdf_field), intent(in) :: field
     !< Field metadata
   real, intent(in) :: values(:,:,:)
-    !< Field values
+    !< Field values to write [arbitrary]
   real, intent(in), optional :: time
-    !< Timestep index to write data
+    !< New model time in arbitrary units, often [years], [days] or [s]
 
   integer :: rc
     ! netCDF return code
@@ -451,9 +453,9 @@ subroutine write_netcdf_field_2d(handle, field, values, time)
   type(netcdf_field), intent(in) :: field
     !< Field metadata
   real, intent(in) :: values(:,:)
-    !< Field values
+    !< Field values to write [arbitrary]
   real, intent(in), optional :: time
-    !< Timestep index to write data
+    !< New model time in arbitrary units, often [years], [days] or [s]
 
   integer :: rc
     ! netCDF return code
@@ -484,9 +486,9 @@ subroutine write_netcdf_field_1d(handle, field, values, time)
   type(netcdf_field), intent(in) :: field
     !< Field metadata
   real, intent(in) :: values(:)
-    !< Field values
+    !< Field values to write [arbitrary]
   real, intent(in), optional :: time
-    !< Timestep index to write data
+    !< New model time in arbitrary units, often [years], [days] or [s]
 
   integer :: rc
     ! netCDF return code
@@ -517,9 +519,9 @@ subroutine write_netcdf_field_0d(handle, field, scalar, time)
   type(netcdf_field), intent(in) :: field
     !< Field metadata
   real, intent(in) :: scalar
-    !< Field values
+    !< Field value to write [arbitrary]
   real, intent(in), optional :: time
-    !< Timestep index to write data
+    !< New model time in arbitrary units, often [years], [days] or [s]
 
   integer :: rc
     ! netCDF return code
@@ -742,7 +744,7 @@ end function
 subroutine read_netcdf_field(handle, field, values, bounds)
   type(netcdf_file_type), intent(in) :: handle
   type(netcdf_field), intent(in) :: field
-  real, intent(out) :: values(:,:)
+  real, intent(out) :: values(:,:) ! Values that are read in [arbitrary]
   integer, optional, intent(in) :: bounds(2,2)
 
   integer :: rc
@@ -764,12 +766,12 @@ subroutine read_netcdf_field(handle, field, values, bounds)
 end subroutine read_netcdf_field
 
 
-!> Set the current timestep of an open netCDF file
+!> Set the current model time for an open netCDF file
 subroutine update_netcdf_timestep(handle, time)
   type(netcdf_file_type), intent(inout) :: handle
     !< netCDF file handle
   real, intent(in) :: time
-    !< New model time
+    !< New model time in arbitrary units, often [years], [days] or [s]
 
   integer :: start(1)
     !< Time axis start index array

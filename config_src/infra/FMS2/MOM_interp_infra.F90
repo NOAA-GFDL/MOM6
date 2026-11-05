@@ -8,7 +8,7 @@ module MOM_interp_infra
 use MOM_domain_infra,    only : MOM_domain_type, domain2d
 use MOM_io_infra, only : axistype
 use MOM_io_infra, only : set_axis_data
-use MOM_time_manager,    only : time_type
+use MOM_time_manager_infra, only : time_type
 use MOM_error_infra, only : MOM_error => MOM_err, FATAL
 use MOM_string_functions, only : lowercase
 use horiz_interp_mod, only : horiz_interp_new, horiz_interp, horiz_interp_init, horiz_interp_type

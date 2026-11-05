@@ -121,8 +121,8 @@ end subroutine reconstruct
 real function average(this, k, xa, xb)
   class(PPM_hybgen), intent(in) :: this !< This reconstruction
   integer,           intent(in) :: k    !< Cell number
-  real,              intent(in) :: xa   !< Start of averaging interval on element (0 to 1)
-  real,              intent(in) :: xb   !< End of averaging interval on element (0 to 1)
+  real,              intent(in) :: xa   !< Start of averaging interval on element (0 to 1) [nondim]
+  real,              intent(in) :: xb   !< End of averaging interval on element (0 to 1) [nondim]
   real :: u_lo, u_hi ! Bounds on the sub-cell average given by the edge values [A]
 
   average = this%PPM_CW%average(k, xa, xb)
@@ -393,8 +393,9 @@ subroutine bound_edge_values(N, h, u, edge_val, h_neglect, answer_date)
   real,                 intent(in)    :: h_neglect !< A negligibly small width [H]
   integer,    optional, intent(in)    :: answer_date !< The vintage of the expressions to use
 
-  real    :: sigma_l, sigma_c, sigma_r
-  real    :: slope_x_h
+  real :: sigma_l, sigma_c, sigma_r ! Estimates of the slopes at the left edge, center and right
+                                    ! edge, in [A H-1] for 2018 answers or [A] for later answers.
+  real :: slope_x_h  ! The change in value across the cell [A]
   logical :: use_2018_answers
   integer :: k, km1, kp1
 
@@ -437,7 +438,7 @@ subroutine check_discontinuous_edge_values(N, u, edge_val)
   real, dimension(N,2), intent(inout) :: edge_val !< Edge values [A]
 
   integer :: k
-  real    :: u0_avg
+  real    :: u0_avg ! The bounded average of the edge values [A]
 
   do k = 1,N-1
     if ( (edge_val(k+1,1) - edge_val(k,2)) * (u(k+1) - u(k)) < 0.0 ) then

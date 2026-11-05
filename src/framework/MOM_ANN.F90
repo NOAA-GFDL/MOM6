@@ -448,8 +448,8 @@ end subroutine ANN_apply_array_sio
 subroutine set_layer(ANN, layer, weights, biases, activation)
   type(ANN_CS), intent(inout) :: ANN !< ANN control structure
   integer,      intent(in)    :: layer !< The number of the layer being adjusted
-  real,         intent(in)    :: weights(:,:) !< The weights to assign
-  real,         intent(in)    :: biases(:) !< The biases to assign
+  real,         intent(in)    :: weights(:,:) !< The weights to assign [arbitrary]
+  real,         intent(in)    :: biases(:) !< The biases to assign [arbitrary]
   logical,      intent(in)    :: activation !< Turn on the activation function
 
   if ( layer >= ANN%num_layers ) &
@@ -473,8 +473,8 @@ end subroutine set_layer
 !> Sets input normalization
 subroutine set_input_normalization(ANN, means, norms)
   type(ANN_CS),   intent(inout) :: ANN !< ANN control structure
-  real, optional, intent(in)    :: means(:) !< The mean of each input
-  real, optional, intent(in)    :: norms(:) !< The standard deviation of each input
+  real, optional, intent(in)    :: means(:) !< The mean of each input [arbitrary]
+  real, optional, intent(in)    :: norms(:) !< The standard deviation of each input [arbitrary]
 
   if (present(means)) then
     if ( size(means) /= size(ANN%input_means) ) &
@@ -493,8 +493,8 @@ end subroutine set_input_normalization
 !> Sets output normalization
 subroutine set_output_normalization(ANN, means, norms)
   type(ANN_CS),   intent(inout) :: ANN !< ANN control structure
-  real, optional, intent(in)    :: means(:) !< The mean of each output
-  real, optional, intent(in)    :: norms(:) !< The standard deviation of each output
+  real, optional, intent(in)    :: means(:) !< The mean of each output [arbitrary]
+  real, optional, intent(in)    :: norms(:) !< The standard deviation of each output [arbitrary]
 
   if (present(means)) then
     if ( size(means) /= size(ANN%output_means) ) &
@@ -533,8 +533,8 @@ subroutine randomize_layer(ANN, nlayers, layer, widths)
   integer,      intent(in)    :: layer !< Layer number to randomize
   integer,      intent(in)    :: widths(nlayers) !< Width of each layer
   ! Local variables
-  real :: weights(widths(layer+1),widths(layer)) ! Weights
-  real :: biases(widths(layer+1)) ! Biases
+  real :: weights(widths(layer+1),widths(layer)) ! Weights [arbitrary]
+  real :: biases(widths(layer+1)) ! Biases [arbitrary]
 
   call random_number(weights)
   weights(:,:) = 2. * weights(:,:) - 1.

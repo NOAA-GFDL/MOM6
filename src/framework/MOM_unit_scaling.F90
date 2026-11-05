@@ -18,7 +18,7 @@ implicit none ; private
 ! notation would be something like "a dimensional scaling factor [Z m-1 ~> 1]".  If the units
 ! vary with the Boussinesq approximation, the Boussinesq variant is given first.
 
-public unit_scaling_init, unit_no_scaling_init, unit_scaling_end, fix_restart_unit_scaling
+public unit_scaling_init, unit_no_scaling_init, unit_scaling_end
 
 !> Describes various unit conversion factors
 type, public :: unit_scale_type
@@ -58,13 +58,6 @@ type, public :: unit_scale_type
   real :: RLZ_T2_to_Pa    !< Convert wind stresses from R L Z T-2 to Pa                       [Pa T2 R-1 L-1 Z-1 ~> 1]
   real :: Pa_to_RL2_T2    !< Convert pressures from Pa to R L2 T-2                                [R L2 T-2 Pa-1 ~> 1]
   real :: Pa_to_RLZ_T2    !< Convert wind stresses from Pa to R L Z T-2                          [R L Z T-2 Pa-1 ~> 1]
-
-  ! These are no longer used for changing scaling across restarts.
-  real :: m_to_Z_restart = 1.0 !< A copy of the m_to_Z that is used in restart files.
-  real :: m_to_L_restart = 1.0 !< A copy of the m_to_L that is used in restart files.
-  real :: s_to_T_restart = 1.0 !< A copy of the s_to_T that is used in restart files.
-  real :: kg_m3_to_R_restart = 1.0 !< A copy of the kg_m3_to_R that is used in restart files.
-  real :: J_kg_to_Q_restart = 1.0 !< A copy of the J_kg_to_Q that is used in restart files.
 end type unit_scale_type
 
 contains
@@ -77,9 +70,15 @@ subroutine unit_scaling_init( param_file, US )
   ! This routine initializes a unit_scale_type structure (US).
 
   ! Local variables
+  real :: Z_rescale_factor ! Translates distances in the units of depth to meters              [m Z-1 ~> 1]
+  real :: L_rescale_factor ! Translates lengths in the units of horizontal lengths to meters   [m L-1 ~> 1]
+  real :: T_rescale_factor ! Translates the units of time to seconds                           [s T-1 ~> 1]
+  real :: R_rescale_factor ! Translates the units of density to kilograms per meter cubed [kg m-3 R-1 ~> 1]
+  real :: Q_rescale_factor ! Translates the units of enthalpy to Joules per kilogram      [J kg-1 Q-1 ~> 1]
+  real :: C_rescale_factor ! Translates the units of temperature to degrees Celsius         [degC C-1 ~> 1]
+  real :: S_rescale_factor ! Translates the units of salinity to parts per thousand          [ppt S-1 ~> 1]
   integer :: Z_power, L_power, T_power, R_power, Q_power, C_power, S_power
-  real    :: Z_rescale_factor, L_rescale_factor, T_rescale_factor, R_rescale_factor, Q_rescale_factor
-  real    :: C_rescale_factor, S_rescale_factor
+
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=16) :: mdl = "MOM_unit_scaling"
@@ -231,30 +230,6 @@ subroutine set_unit_scaling_combos(US)
   US%RZL2_to_kg = US%R_to_kg_m3 * US%Z_to_m * US%L_to_m**2
 
 end subroutine set_unit_scaling_combos
-
-!> Set the unit scaling factors for output to restart files to the unit scaling
-!! factors for this run.
-subroutine fix_restart_unit_scaling(US, unscaled)
-  type(unit_scale_type), intent(inout) :: US !< A dimensional unit scaling type
-  logical,     optional, intent(in)    :: unscaled !< If true, set the restart factors as though the
-                                             !! model would be unscaled, which is appropriate if the
-                                             !! scaling is undone when writing a restart file.
-
-  US%m_to_Z_restart = 1.0 ! US%m_to_Z
-  US%m_to_L_restart = 1.0 ! US%m_to_L
-  US%s_to_T_restart = 1.0 ! US%s_to_T
-  US%kg_m3_to_R_restart = 1.0 ! US%kg_m3_to_R
-  US%J_kg_to_Q_restart = 1.0 ! US%J_kg_to_Q
-
-  if (present(unscaled)) then ; if (unscaled) then
-    US%m_to_Z_restart = 1.0
-    US%m_to_L_restart = 1.0
-    US%s_to_T_restart = 1.0
-    US%kg_m3_to_R_restart = 1.0
-    US%J_kg_to_Q_restart = 1.0
-  endif ; endif
-
-end subroutine fix_restart_unit_scaling
 
 !> Deallocates a unit scaling structure.
 subroutine unit_scaling_end( US )

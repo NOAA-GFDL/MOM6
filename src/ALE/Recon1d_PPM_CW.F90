@@ -243,8 +243,8 @@ end function dfdx
 real function average(this, k, xa, xb)
   class(PPM_CW), intent(in) :: this !< This reconstruction
   integer,       intent(in) :: k    !< Cell number
-  real,          intent(in) :: xa   !< Start of averaging interval on element (0 to 1)
-  real,          intent(in) :: xb   !< End of averaging interval on element (0 to 1)
+  real,          intent(in) :: xa   !< Start of averaging interval on element (0 to 1) [nondim]
+  real,          intent(in) :: xb   !< End of averaging interval on element (0 to 1) [nondim]
   real :: xapxb                      ! A sum of fracional positions [nondim]
   real :: mx, Ya, Yb, my             ! Various fractional positions [nondim]
   real :: u_a, u_b                   ! Values at xa and xb [A]

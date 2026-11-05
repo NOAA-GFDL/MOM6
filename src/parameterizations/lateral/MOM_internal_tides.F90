@@ -72,7 +72,9 @@ type, public :: int_tide_CS ; private
   logical :: init_forcing_only !< if True, add TKE forcing only at first step (for debugging)
   logical :: force_posit_En    !< if True, remove subroundoff negative values (needs enhancement)
   logical :: add_tke_forcing = .true. !< Whether to add forcing, used by init_forcing_only
-
+  logical :: use_slopeloss_bug = .false. !< If true, the calculation of the residual of tranmission
+                                         !! and reflection is wrong, leading to overestimation of
+                                         !! slope loss
   real, allocatable, dimension(:,:) :: fraction_tidal_input
                         !< how the energy from one tidal component is distributed
                         !! over the various vertical modes, 2d in frequency and mode [nondim]
@@ -2160,9 +2162,9 @@ subroutine propagate(En, cn, freq, dt, G, GV, US, CS, NAngle, test, halo_size, r
   real,                  intent(in)    :: freq !< Wave frequency [T-1 ~> s-1].
   real,                  intent(in)    :: dt   !< Time step [T ~> s].
   type(unit_scale_type), intent(in)    :: US   !< A dimensional unit scaling type
-  real, dimension(G%isd:G%ied,G%jsd:G%jed,2), intent(in) :: test !< test rotation vector
-  type(int_tide_CS),     intent(inout)    :: CS   !< Internal tide control structure
-  integer, intent(in) :: halo_size  !< halo size for correct rotation
+  real, dimension(G%isd:G%ied,G%jsd:G%jed,2), intent(in) :: test !< test rotation vector [nondim]
+  type(int_tide_CS),     intent(inout) :: CS   !< Internal tide control structure
+  integer,               intent(in)    :: halo_size  !< halo size for correct rotation
   real, dimension(G%isd:G%ied,G%jsd:G%jed,NAngle), &
                          intent(inout) :: residual_loss !< internal tide energy loss due
                                                         !! to the residual at slopes [H Z2 T-3 ~> m3 s-3 or W m-2].
@@ -2710,7 +2712,7 @@ subroutine turning_latitude(En, NAngle, freq2, CS, G, LB)
   real    :: TwoPi                         ! 2*pi = 6.2831853... [nondim]
   real    :: Angle_size                    ! size of beam wedge [rad]
   real    :: I_Angle_size                  ! inverse of size of beam wedge [rad-1]
-  real    :: f2
+  real    :: f2                            ! The squared Coriolis parameter [T-2 ~> s-2]
 
   integer :: angle_wall                    ! angle-bin of coast/ridge/shelf wrt equator
   integer :: angle_wall0                   ! angle-bin of coast/ridge/shelf wrt equator
@@ -3281,8 +3283,8 @@ subroutine minmod_limiter(h_in, h_L, h_R, G, iis, iie, jis, jie)
   integer,                          intent(in)     :: jis   !< Start j-index for computations
   integer,                          intent(in)     :: jie   !< End j-index for computations
   ! Local variables
-  real :: sign_h_L, sign_h_R, sign_h_in  ! the signs of the edge and center values
-  real :: sign_h_L_in, sign_h_R_in       ! products of signs, detect crossing the zero line
+  real :: sign_h_L, sign_h_R, sign_h_in  ! the signs of the edge and center values [nondim]
+  real :: sign_h_L_in, sign_h_R_in       ! products of signs, detect crossing the zero line [nondim]
   integer :: i, j
 
   do j=jis,jie ; do i=iis,iie
@@ -3464,6 +3466,8 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
                                                  ! lost to the interior ocean internal wave field [T-1 ~> s-1].
   logical :: use_int_tides, use_temperature
   logical :: om4_remap_via_sub_cells ! Use the OM4-era ramap_via_sub_cells for calculating the EBT structure
+  logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
+                          ! recreate the bugs, or if false bugs are only used if actively selected.
   real    :: IGW_c1_thresh ! A threshold first mode internal wave speed below which all higher
                  ! mode speeds are not calculated but simply assigned a speed of 0 [L T-1 ~> m s-1].
   real    :: kappa_h2_factor    ! A roughness scaling factor [nondim]
@@ -3622,6 +3626,11 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "INTERNAL_TIDES_FORCE_POS_EN", CS%force_posit_En, &
                  "If true, force energy to be positive by removing subroundoff negative values.", &
                  default=.true.)
+  call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+                 default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
+  call get_param(param_file, mdl, "INTTIDES_SLOPELOSS_BUG", CS%use_slopeloss_bug, &
+                 "If true, slope loss is overestimated because of wrong calculation of residual"//&
+                 "of the transmission and reflection", default=enable_bugs)
   call get_param(param_file, mdl, "KD_MIN", CS%Kd_min, &
                  "The minimum diapycnal diffusivity.", &
                  units="m2 s-1", default=2e-6, scale=GV%m2_s_to_HZ_T)
@@ -3928,7 +3937,11 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   if (CS%apply_residual_drag) then
     do j=G%jsc,G%jec ; do i=G%isc,G%iec
       if (CS%refl_pref_logical(i,j)) then
-        CS%residual(i,j) = 1. - (CS%refl_pref(i,j) - CS%trans(i,j))
+        if (CS%use_slopeloss_bug) then
+          CS%residual(i,j) = 1. - (CS%refl_pref(i,j) - CS%trans(i,j))
+        else
+          CS%residual(i,j) = (1. - CS%refl_pref(i,j)) - CS%trans(i,j)
+        endif
       endif
     enddo ; enddo
     call pass_var(CS%residual, G%domain)
