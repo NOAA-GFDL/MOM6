@@ -32,9 +32,9 @@ interface
   !! Implemented in submodule MOM_log
   elemental module function log_repro(x) result(a)
     real, intent(in) :: x
-      !< Input value
+      !< Input value [nondim]
     real :: a
-      !< log(x)
+      !< log(x) [nondim]
   end function log_repro
 end interface
 

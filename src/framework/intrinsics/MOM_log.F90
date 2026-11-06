@@ -68,12 +68,12 @@ pure function log_fallback(x) result(a)
     !< Upper endpoint bit pattern
   integer(kind=int_rsize) :: xb
     ! Bit representation of x
-  integer(kind=int_rsize) :: exponent_adjustment
-    ! Correction to the normalized exponent for subnormal inputs
-  integer(kind=int_rsize) :: raw_exp
-    ! Biased IEEE exponent field
   integer(kind=int_rsize) :: frac_bits
     ! Fraction bits of a subnormal input
+  integer(kind=int_rsize) :: normalized_exp
+    ! Biased exponent of the normalized subnormal value
+  integer(kind=int_rsize) :: normalized_frac
+    ! Fraction bits of the normalized subnormal value
   integer :: top_frac_bit
     ! Highest set fraction bit of a subnormal input
   real :: u
@@ -81,49 +81,60 @@ pure function log_fallback(x) result(a)
 
   xb = transfer(x, int_mold)
 
-  ! Handle exceptional values before arithmetic range reduction.  This gives
-  ! log(0) = -Inf with divide-by-zero, log(negative) = NaN with invalid,
-  ! log(+Inf) = +Inf, and NaNs pass through with the usual signaling behavior.
+  ! Handle exceptional values before arithmetic range reduction, with extra
+  ! arithmetic to ensure proper signaling behavior.
+
+  ! log(+0) and log(-0) return -Inf.
   if (iand(xb, not(signmask)) == 0_int_rsize) then
     a = -1. / abs(x)
     return
   endif
 
+  ! Any negative value (except -0), including -Inf and -NaN, returns NaN.
   if (iand(xb, signmask) /= 0_int_rsize) then
     a = (x - x) / (x - x)
     return
   endif
 
-  raw_exp = iand(ishft(xb, -expbit), expmax)
-
-  if (raw_exp == expmax) then
+  ! +Inf and +NaN return themselves.
+  if (xb >= expmask) then
     a = x + x
     return
   endif
 
-  ! Avoid table-reduction cancellation for values very close to 1.  The
-  ! x - 1 is exact throughout the near-one interval by Sterbenz's lemma.
+  ! Avoid table-reduction cancellation for values very close to 1.
   u = x - 1.
   if (xb >= near_lo_bits .and. xb <= near_hi_bits) then
     a = log1p_compensated_near(u)
     return
   endif
 
-  ! Normalize subnormals before entering the shared table solver.
-  exponent_adjustment = 0_int_rsize
-  if (raw_exp == 0_int_rsize) then
-    ! Normalize subnormal inputs using integer bit operations rather than
-    ! arithmetic scaling, which can be defeated by flush-to-zero modes.
-    frac_bits = iand(xb, expstep - 1_int_rsize)
-    do top_frac_bit = expbit - 1, 0, -1
-      if (btest(frac_bits, top_frac_bit)) exit
-    enddo
-    xb = ishft(int(expbias - expbit + top_frac_bit, int_rsize), expbit) + &
-        ishft(frac_bits - ishft(1_int_rsize, top_frac_bit), expbit - top_frac_bit)
-    exponent_adjustment = -Kbias
-  endif
+  ! At this point, x must be a positive subnormal.
 
-  a = log_table(xb, exponent_adjustment)
+  ! Extract the fractional (subnormal) bits.
+  frac_bits = iand(xb, expstep - 1_int_rsize)
+
+  ! Find the leading fractional bit
+  ! TODO: This might be doable with leadz()
+  do top_frac_bit=expbit-1, 0, -1
+    if (btest(frac_bits, top_frac_bit)) exit
+  enddo
+
+  ! Reconstruct the normalized xb
+  ! NOTE: This preserves the subnormal x, even if flush-to-zero is enabled.
+
+  ! Build the biased exponent for the normalized value.
+  normalized_exp = int(expbias - expbit + top_frac_bit, int_rsize)
+
+  ! Remove the leading 1, which becomes implicit, and align the fraction.
+  normalized_frac = frac_bits - ishft(1_int_rsize, top_frac_bit)
+  normalized_frac = ishft(normalized_frac, expbit - top_frac_bit)
+
+  ! Combine the exponent and fraction fields.
+  xb = ishft(normalized_exp, expbit) + normalized_frac
+
+  ! Compute log() of the normalized value.
+  a = log_table(xb, -Kbias)
 end function log_fallback
 
 
@@ -185,7 +196,7 @@ pure function log_table(xb, exponent_adjustment) result(a)
   w = real(K) * ln2_hi + log_c(idiv)
   hi = w + r
 
-  ! XXX: Prevent (w - (w + r)) ~> r optimization by adding a subroundoff term.
+  ! NOTE: Prevent (w - (w + r)) ~> r optimization by adding a subroundoff term.
   hi = hi + epsilon(real_mold) / 256.
 
   ! Recover the rounding residual of hi, and append K ln2_lo.
