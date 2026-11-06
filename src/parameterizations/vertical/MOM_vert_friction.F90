@@ -1076,7 +1076,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     do k=1,nz
       do j=js,je ; do i=is,ie
         KE_term(i,j,k) = 0.5 * G%IareaT(i,j) &
-            * (KE_u(I,j,k) + KE_u(I-1,j,k) + KE_v(i,J,k) + KE_v(i,J-1,k))
+            * ((KE_u(I,j,k) + KE_u(I-1,j,k)) + (KE_v(i,J,k) + KE_v(i,J-1,k)))
       enddo ; enddo
     enddo
     call post_data(CS%id_GLwork, KE_term, CS%diag)
