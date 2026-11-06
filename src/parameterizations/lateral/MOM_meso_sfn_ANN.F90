@@ -490,12 +490,21 @@ subroutine vel_gradients(u, v, G, GV, dudx, dudy, dvdx, dvdy, CS)
     enddo ; enddo
 
     ! interpolate corner grads to center points
-    do j = js-shift-1, je+shift+1; do i = is-shift-1, ie+shift+1
-      dvdx(i,j,k) =  0.25 * (((dvdx_q(I,J,k) + dvdx_q(I-1,J,k)) + dvdx_q(I,J-1,k)) + &
-                              dvdx_q(I-1,J-1,k)) * G%mask2dT(i,j)
-      dudy(i,j,k) =  0.25 * (((dudy_q(I,J,k) + dudy_q(I-1,J,k)) + dudy_q(I,J-1,k)) + &
-                              dudy_q(I-1,J-1,k)) * G%mask2dT(i,j)
-    enddo; enddo
+    if (CS%answer_date < 20260901) then
+      do j = js-shift-1, je+shift+1; do i = is-shift-1, ie+shift+1
+        dvdx(i,j,k) =  0.25 * (((dvdx_q(I,J,k) + dvdx_q(I-1,J,k)) + dvdx_q(I,J-1,k)) + &
+                                dvdx_q(I-1,J-1,k)) * G%mask2dT(i,j)
+        dudy(i,j,k) =  0.25 * (((dudy_q(I,J,k) + dudy_q(I-1,J,k)) + dudy_q(I,J-1,k)) + &
+                                dudy_q(I-1,J-1,k)) * G%mask2dT(i,j)
+      enddo; enddo
+    else
+      do j = js-shift-1, je+shift+1; do i = is-shift-1, ie+shift+1
+        dvdx(i,j,k) =  0.25 * ((dvdx_q(I,J,k) + dvdx_q(I-1,J-1,k)) + &
+                               (dvdx_q(I-1,J,k) + dvdx_q(I,J-1,k))) * G%mask2dT(i,j)
+        dudy(i,j,k) =  0.25 * ((dudy_q(I,J,k) + dudy_q(I-1,J-1,k)) + &
+                               (dudy_q(I-1,J,k) + dudy_q(I,J-1,k))) * G%mask2dT(i,j)
+      enddo; enddo
+    endif
   enddo
 end subroutine vel_gradients
 
