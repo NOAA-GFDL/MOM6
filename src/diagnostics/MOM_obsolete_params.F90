@@ -9,7 +9,6 @@ module MOM_obsolete_params
 
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : read_param, log_version, param_file_type
-use MOM_file_parser, only : openParameterBlock, closeParameterBlock
 
 implicit none ; private
 
@@ -172,12 +171,6 @@ subroutine find_obsolete_params(param_file)
 
   call obsolete_logical(param_file, "USE_GRID_SPACE_DIAGNOSTIC_AXES", &
                         hint="Instead use USE_INDEX_DIAGNOSTIC_AXIS.")
-
-  ! Test for obsolete MLE parameters.
-  call openParameterBlock(param_file, 'MLE')
-  call obsolete_logical(param_file, "USE_BODNER23", &
-       hint="MLE%USE_BODNER23 has been replaced by RESTRAT_SCHEME = BODNER23.")
-  call closeParameterBlock(param_file)
 
   ! Write the file version number to the model log.
   call log_version(param_file, mdl, version)

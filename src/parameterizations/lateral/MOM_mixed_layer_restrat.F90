@@ -45,7 +45,8 @@ public mixedlayer_restrat_unit_tests
 !> Control structure for mom_mixed_layer_restrat
 type, public :: mixedlayer_restrat_CS ; private
   logical :: initialized = .false. !< True if this control structure has been initialized.
-  character(len=32) :: restrat_scheme = "FOX-KEMPER" !< Which MLE scheme to use
+  character(len=32) :: restrat_scheme !< Mixed-layer restratification scheme from RESTRAT_SCHEME:
+                                   !! FOX-KEMPER, BODNER23 or ZHANG23.
   real    :: ml_restrat_coef       !< A non-dimensional factor by which the instability is enhanced
                                    !! over what would be predicted based on the resolved gradients
                                    !! [nondim].  This increases with grid spacing^2, up to something
@@ -2207,6 +2208,62 @@ real function growth_time(u_star, hBL, absf, h_neg, vonKar, Kv_rest, restrat_coe
 
 end function growth_time
 
+!> Determine which mixed-layer restratification scheme is selected by RESTRAT_SCHEME.
+!! The deprecated MLE%USE_BODNER flag is still honored for backward compatibility: when it
+!! is true it changes the default of RESTRAT_SCHEME to BODNER23, so that older input files
+!! keep running unchanged, and a deprecation warning is issued. Combining it with a
+!! different, explicitly set RESTRAT_SCHEME is a fatal error.
+subroutine get_restrat_scheme(param_file, caller, scheme, use_Bodner, use_Zhang23, log_params)
+  type(param_file_type), intent(in)  :: param_file  !< Parameter file to parse
+  character(len=*),      intent(in)  :: caller      !< Name of the calling routine, used in messages
+  character(len=*),      intent(out) :: scheme      !< The selected scheme name, in upper case
+  logical,               intent(out) :: use_Bodner  !< True if Bodner et al. (2023) is selected
+  logical,               intent(out) :: use_Zhang23 !< True if Zhang et al. (2023) is selected
+  logical,               intent(in)  :: log_params  !< If true, log RESTRAT_SCHEME and issue the
+                                                    !! deprecation warning.
+
+  ! Local variables
+  logical :: legacy_use_Bodner     ! The value of the deprecated MLE%USE_BODNER flag
+  character(len=32) :: scheme_dflt ! The default value for RESTRAT_SCHEME
+
+  ! Read the legacy MLE%USE_BODNER flag.
+  call openParameterBlock(param_file, 'MLE')
+  call get_param(param_file, mdl, "USE_BODNER", legacy_use_Bodner, default=.false., do_not_log=.true.)
+  call closeParameterBlock(param_file)
+
+  scheme_dflt = "FOX-KEMPER" ; if (legacy_use_Bodner) scheme_dflt = "BODNER23"
+  call get_param(param_file, mdl, "RESTRAT_SCHEME", scheme, &
+       "Mixed-layer restratification scheme:\n"//&
+       "\t FOX-KEMPER - Fox-Kemper et al. (2008, 2011)\n"//&
+       "\t BODNER23   - Bodner et al. (2023), ALE mode only\n"//&
+       "\t ZHANG23    - Zhang et al. (2023), ALE mode only", &
+       default=trim(scheme_dflt), do_not_log=.not.log_params)
+  scheme = uppercase(scheme)
+
+  use_Bodner = .false. ; use_Zhang23 = .false.
+  select case (trim(scheme))
+    case ("FOX-KEMPER")
+    case ("BODNER23") ; use_Bodner = .true.
+    case ("ZHANG23")  ; use_Zhang23 = .true.
+    case default
+      call MOM_error(FATAL, trim(caller)//": Unrecognized RESTRAT_SCHEME = """//trim(scheme)//&
+          """. Valid options are FOX-KEMPER, BODNER23 and ZHANG23.")
+  end select
+
+  if (legacy_use_Bodner) then
+    if (.not. use_Bodner) then
+      call MOM_error(FATAL, trim(caller)//": MLE%USE_BODNER = True conflicts with "//&
+          "RESTRAT_SCHEME = """//trim(scheme)//""". MLE%USE_BODNER is deprecated; "//&
+          "remove it from the input file and select the scheme with RESTRAT_SCHEME only.")
+    elseif (log_params) then
+      call MOM_error(WARNING, trim(caller)//": MLE%USE_BODNER is deprecated; "//&
+          "RESTRAT_SCHEME = ""BODNER23"" is in effect. "//&
+          "Set it explicitly and remove MLE%USE_BODNER from the input file.")
+    endif
+  endif
+
+end subroutine get_restrat_scheme
+
 !> Initialize the mixed layer restratification module
 logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, restart_CS)
   type(time_type), target,     intent(in)    :: Time       !< Current model time
@@ -2282,29 +2339,15 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   if (CS%use_Stanley_ML .and. .not.stoch_eos) then
     call MOM_error(FATAL, "mixedlayer_restrat_init: USE_STANLEY_ML requires STOCH_EOS")
   endif
-  call get_param(param_file, mdl, "RESTRAT_SCHEME", CS%restrat_scheme, &
-       "Mixed-layer restratification scheme:\n"//&
-       "\t FOX-KEMPER - Fox-Kemper et al. (2008, 2011)\n"//&
-       "\t BODNER23   - Bodner et al. (2023), ALE mode only\n"//&
-       "\t ZHANG23    - Zhang et al. (2023), ALE mode only", &
-       default="FOX-KEMPER")
-  CS%restrat_scheme = uppercase(CS%restrat_scheme)
-  select case (trim(CS%restrat_scheme))
-    case ("FOX-KEMPER")
-      CS%use_Bodner = .false.
-      CS%use_Zhang23 = .false.
-    case ("BODNER23")
-      if (GV%nkml>0) call MOM_error(FATAL, "mixedlayer_restrat_init: "//&
-          "RESTRAT_SCHEME=BODNER23 only works in ALE mode.")
-      CS%use_Bodner = .true.
-    case ("ZHANG23")
-      if (GV%nkml>0) call MOM_error(FATAL, "mixedlayer_restrat_init: "//&
-          "RESTRAT_SCHEME=ZHANG23 only works in ALE mode.")
-      CS%use_Zhang23 = .true.
-    case default
-      call MOM_error(FATAL, "mixedlayer_restrat_init: unrecognized RESTRAT_SCHEME = "//&
-          trim(CS%restrat_scheme))
-  end select
+
+  ! Get mixed-layer restratification scheme with backward compatibility
+  ! for the deprecated MLE%USE_BODNER flag.
+  call get_restrat_scheme(param_file, "mixedlayer_restrat_init", CS%restrat_scheme, &
+                          CS%use_Bodner, CS%use_Zhang23, log_params=.true.)
+  if ((CS%use_Bodner .or. CS%use_Zhang23) .and. (GV%nkml > 0)) call MOM_error(FATAL, &
+      "mixedlayer_restrat_init: RESTRAT_SCHEME = """//trim(CS%restrat_scheme)//&
+      """ only works in ALE mode.")
+
   call openParameterBlock(param_file,'MLE') ! Prepend MLE% to all parameters
   if (CS%use_Bodner) then
     call get_param(param_file, mdl, "CR", CS%Cr, &
@@ -2685,11 +2728,10 @@ subroutine mixedlayer_restrat_register_restarts(HI, GV, US, param_file, CS, rest
              default=.false., do_not_log=.true.)
   if (.not. mixedlayer_restrat_init) return
 
-  call get_param(param_file, mdl, "RESTRAT_SCHEME", restrat_scheme, &
-                 default="FOX-KEMPER", do_not_log=.true.)
-  restrat_scheme = uppercase(restrat_scheme)
-  use_Bodner  = (trim(restrat_scheme) == "BODNER23")
-  use_Zhang23 = (trim(restrat_scheme) == "ZHANG23")
+  ! Get mixed-layer restratification scheme with backward compatibility
+  ! for the deprecated MLE%USE_BODNER flag.
+  call get_restrat_scheme(param_file, "mixedlayer_restrat_register_restarts", restrat_scheme, &
+                          use_Bodner, use_Zhang23, log_params=.false.)
 
   CS%MLE_MLD_decay_time = 0. ; CS%MLE_MLD_decay_time2 = 0.
   if (.not. use_Zhang23) then
