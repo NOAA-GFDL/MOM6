@@ -4417,6 +4417,7 @@ subroutine read_OBC_field_data(G, GV, US, OBC, segment, m, Time)
   real :: scl_fac     ! A scaling factor to compensate for differences in total thicknesses [nondim]
   integer :: turns    ! Number of index quarter turns
   logical :: flip_buffer ! If true, the input buffer needs to be transposed
+  logical :: at_node  ! Flag passed to adjustEtaToFitBathymetry determining if point is at OBC node or faces
 
   if (segment%field(m)%required .and. (.not. allocated(segment%field(m)%buffer_dst))) &
     call MOM_error(FATAL, 'buffer_dst not allocated')
@@ -4597,14 +4598,9 @@ subroutine read_OBC_field_data(G, GV, US, OBC, segment, m, Time)
       endif
     endif
 
-    if ((.not.segment%field(m)%on_face) .and. (.not.OBC%hor_index_bug)) then
-      ! This point is at the OBC vorticity point nodes, rather than the OBC velocity point faces.
-      call adjustSegmentEtaToFitBathymetry(G, GV, US, segment, m, at_node=.true., &
-                                           end_dz_bug=OBC%segment_end_dz_bug)
-    else
-      call adjustSegmentEtaToFitBathymetry(G, GV, US, segment, m, at_node=.false., &
-                                           end_dz_bug=OBC%segment_end_dz_bug)
-    endif
+    at_node = (.not.segment%field(m)%on_face) .and. (.not.OBC%hor_index_bug)
+    call adjustSegmentEtaToFitBathymetry(G, GV, US, segment, m, at_node=at_node, &
+                                     end_dz_bug=(OBC%segment_end_dz_bug .and. at_node))
 
     if (segment%is_E_or_W) then
       I = IsdB
