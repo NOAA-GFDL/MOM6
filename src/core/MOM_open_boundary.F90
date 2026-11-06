@@ -473,6 +473,8 @@ type, public :: ocean_OBC_type
   type(group_pass_type) :: pass_oblique  !< Structure for group halo pass
   logical :: exterior_OBC_bug   !< If true, use incorrect form of tracers exterior to OBCs.
   logical :: hor_index_bug      !< If true, recover set of a horizontal indexing bugs in the OBC code.
+  logical :: segment_end_dz_bug !< If true, use the wrong total depth at the last vorticity point of
+                                !! each OBC segment when adjusting segment data to fit the bathymetry.
   logical :: reservoir_init_bug !< If true, set the OBC tracer reservoirs at the startup of a new
                                 !! run from the interior tracer concentrations regardless of
                                 !! properties that may be explicitly specified for the reservoir
@@ -739,6 +741,12 @@ subroutine open_boundary_config(G, US, param_file, OBC)
   call get_param(param_file, mdl, "OBC_HOR_INDEXING_BUG", OBC%hor_index_bug, &
                  "If true, recover set of a horizontal indexing bugs in the OBC code.", &
                  default=enable_bugs)
+  call get_param(param_file, mdl, "OBC_SEGMENT_END_DZ_BUG", OBC%segment_end_dz_bug, &
+                 "If true, recover a bug that uses the average of the total depths inside and "//&
+                 "beyond the end of an OBC segment at the last vorticity point of the segment, "//&
+                 "rather than the depth inside the segment, when fitting OBC data at vorticity "//&
+                 "points to the bathymetry.  This is only used if OBC_HOR_INDEXING_BUG is false.", &
+                 default=enable_bugs, do_not_log=OBC%hor_index_bug)
   call get_param(param_file, mdl, "OBC_RESERVOIR_INIT_BUG", OBC%reservoir_init_bug, &
                  "If true, set the OBC tracer reservoirs at the startup of a new run from the "//&
                  "interior tracer concentrations regardless of properties that may be explicitly "//&
@@ -4409,6 +4417,7 @@ subroutine read_OBC_field_data(G, GV, US, OBC, segment, m, Time)
   real :: scl_fac     ! A scaling factor to compensate for differences in total thicknesses [nondim]
   integer :: turns    ! Number of index quarter turns
   logical :: flip_buffer ! If true, the input buffer needs to be transposed
+  logical :: at_node  ! Flag passed to adjustEtaToFitBathymetry determining if point is at OBC node or faces
 
   if (segment%field(m)%required .and. (.not. allocated(segment%field(m)%buffer_dst))) &
     call MOM_error(FATAL, 'buffer_dst not allocated')
@@ -4589,12 +4598,9 @@ subroutine read_OBC_field_data(G, GV, US, OBC, segment, m, Time)
       endif
     endif
 
-    if ((.not.segment%field(m)%on_face) .and. (.not.OBC%hor_index_bug)) then
-      ! This point is at the OBC vorticity point nodes, rather than the OBC velocity point faces.
-      call adjustSegmentEtaToFitBathymetry(G, GV, US, segment, m, at_node=.true.)
-    else
-      call adjustSegmentEtaToFitBathymetry(G, GV, US, segment, m, at_node=.false.)
-    endif
+    at_node = (.not.segment%field(m)%on_face) .and. (.not.OBC%hor_index_bug)
+    call adjustSegmentEtaToFitBathymetry(G, GV, US, segment, m, at_node=at_node, &
+                                     end_dz_bug=(OBC%segment_end_dz_bug .and. at_node))
 
     if (segment%is_E_or_W) then
       I = IsdB
@@ -6508,13 +6514,15 @@ end subroutine remap_OBC_fields
 !! is dilated (expanded) to fill the void.
 !!   @remark{There is a (hard-wired) "tolerance" parameter such that the
 !! criteria for adjustment must equal or exceed 10cm.}
-subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment, fld, at_node)
+subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment, fld, at_node, end_dz_bug)
   type(ocean_grid_type),   intent(in)    :: G   !< The ocean's grid structure
   type(verticalGrid_type), intent(in)    :: GV  !< The ocean's vertical grid structure
   type(unit_scale_type),   intent(in)    :: US  !< A dimensional unit scaling type
   type(OBC_segment_type),  intent(inout) :: segment !< OBC segment
   integer,                 intent(in)    :: fld  !< field index to adjust thickness
   logical,                 intent(in)    :: at_node !< True this point is at the OBC nodes rather than the faces
+  logical,                 intent(in)    :: end_dz_bug !< If true, use the wrong total depth at the
+                                                 !! last node of the segment
 
   integer :: i, j, k, is, ie, js, je, nz, contractions, dilations
   real, allocatable, dimension(:,:,:) :: eta ! Segment source data interface heights [Z ~> m]
@@ -6556,7 +6564,11 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment, fld, at_node)
       ! Do not extrapolate past the end of a global segment.
       ! ### For a concave corner between segments, perhaps we should do something more sophisticated.
       if (Js == segment%Js_obc) dz_tot(I,Js) = segment%dZtot(I,js+1)
-      if (Je == segment%Js_obc) dz_tot(I,Je) = segment%dZtot(I,je)
+      if (end_dz_bug) then
+        if (Je == segment%Js_obc) dz_tot(I,Je) = segment%dZtot(I,je)
+      else
+        if (Je == segment%Je_obc) dz_tot(I,Je) = segment%dZtot(I,je)
+      endif
     else
       J = Js
       do I=Is,Ie
@@ -6564,7 +6576,11 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment, fld, at_node)
       enddo
       ! Do not extrapolate past the end of a global segment.
       if (Is == segment%Is_obc) dz_tot(Is,J) = segment%dZtot(is+1,J)
-      if (Ie == segment%Is_obc) dz_tot(Ie,J) = segment%dZtot(ie,J)
+      if (end_dz_bug) then
+        if (Ie == segment%Is_obc) dz_tot(Ie,J) = segment%dZtot(ie,J)
+      else
+        if (Ie == segment%Ie_obc) dz_tot(Ie,J) = segment%dZtot(ie,J)
+      endif
     endif
   else
     do j=js,je ; do i=is,ie
@@ -6743,6 +6759,7 @@ subroutine rotate_OBC_config(OBC_in, G_in, OBC, G, turns)
   OBC%remappingScheme = OBC_in%remappingScheme
   OBC%exterior_OBC_bug = OBC_in%exterior_OBC_bug
   OBC%hor_index_bug = OBC_in%hor_index_bug
+  OBC%segment_end_dz_bug = OBC_in%segment_end_dz_bug
   OBC%ignore_dt_obc_bgc = OBC_in%ignore_dt_obc_bgc
   OBC%tracer_dz_bug = OBC_in%tracer_dz_bug
   OBC%n_tide_constituents = OBC_in%n_tide_constituents
