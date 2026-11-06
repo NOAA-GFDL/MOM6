@@ -172,8 +172,6 @@ type, public :: int_tide_CS ; private
   real :: drag_min_depth !< The minimum total ocean thickness that will be used in the denominator
                         !! of the quadratic drag terms for internal tides when
                         !! INTERNAL_TIDE_QUAD_DRAG is true [H ~> m or kg m-2]
-  real :: gamma_osborn  !< Mixing efficiency from Osborn 1980 [nondim]
-  real :: Kd_min        !< The minimum diapycnal diffusivity. [L2 T-1 ~> m2 s-1]
   real :: max_TKE_to_Kd !< Maximum allowed value for TKE_to_kd [H Z2 T-3 ~> m3 s-3 or W m-2]
   real :: min_thick_layer_Kd !< minimum layer thickness allowed to use with TKE_to_kd [H ~> m or kg m-2]
   logical :: apply_background_drag
@@ -3364,6 +3362,9 @@ subroutine register_int_tide_restarts(G, GV, US, param_file, CS, restart_CS)
   call set_axis_info(axes_inttides(1), "angle", "", "angle direction", num_angle, angles, "N", 1)
   call set_axis_info(axes_inttides(2), "freq", "", "wave frequency", num_freq, freqs, "N", 1)
 
+  if (allocated(angles)) deallocate(angles)
+  if (allocated(freqs)) deallocate(freqs)
+
   ! full energy array
   allocate(CS%En(isd:ied, jsd:jed, num_angle, num_freq, num_mode), source=0.0)
 
@@ -3534,6 +3535,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   do fr=1,num_freq ; do m=1,num_mode
     CS%fraction_tidal_input(fr,m) = extract_real(energy_fractions(fr), " ,", m, 0.)
   enddo ; enddo
+  if (allocated(energy_fractions)) deallocate(energy_fractions)
 
   ! Allocate phase speed array
   allocate(CS%cp(isd:ied, jsd:jed, num_freq, num_mode), source=0.0)
@@ -3631,9 +3633,6 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "INTTIDES_SLOPELOSS_BUG", CS%use_slopeloss_bug, &
                  "If true, slope loss is overestimated because of wrong calculation of residual"//&
                  "of the transmission and reflection", default=enable_bugs)
-  call get_param(param_file, mdl, "KD_MIN", CS%Kd_min, &
-                 "The minimum diapycnal diffusivity.", &
-                 units="m2 s-1", default=2e-6, scale=GV%m2_s_to_HZ_T)
   call get_param(param_file, mdl, "MINTHICK_TKE_TO_KD", CS%min_thick_layer_Kd, &
                  "The minimum thickness allowed with TKE_to_Kd.", &
                  units="m", default=1e-6, scale=GV%m_to_H)
@@ -3752,9 +3751,6 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call get_param(param_file, mdl, "KAPPA_H2_FACTOR", kappa_h2_factor, &
                "A scaling factor for the roughness amplitude with "//&
                "INT_TIDE_DISSIPATION.",  units="nondim", default=1.0)
-  call get_param(param_file, mdl, "GAMMA_OSBORN", CS%gamma_osborn, &
-               "The mixing efficiency for internan tides from Osborn 1980 ", &
-               units="nondim", default=0.2)
   call get_param(param_file, mdl, "INT_TIDE_DECAY_SCALE", CS%Int_tide_decay_scale, &
                  "The decay scale away from the bottom for tidal TKE with "//&
                  "the new coding when INT_TIDE_DISSIPATION is used.", &
@@ -3820,6 +3816,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   do m=1,num_mode
     call pass_var(CS%decay_rate_2d(:,:,:,m), G%domain)
   enddo
+  if (allocated(tmp_decay)) deallocate(tmp_decay)
 
   ! Compute the fixed part of the bottom drag loss from baroclinic modes
   call get_param(param_file, mdl, "H2_FILE", h2_file, &
@@ -3913,8 +3910,9 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call pass_var(ridge_temp, G%domain)
   allocate(CS%refl_dbl(isd:ied,jsd:jed), source=.false.)
   do j=jsd,jed ; do i=isd,ied
-    CS%refl_dbl(i,j) = (ridge_temp(i,j) == 1)
+    CS%refl_dbl(i,j) = (ridge_temp(i,j) == 1.0)
   enddo ; enddo
+  if (allocated(ridge_temp)) deallocate(ridge_temp)
 
   ! Read in the transmission coefficient and infer the residual
   call get_param(param_file, mdl, "TRANS_FILE", trans_file, &
@@ -4051,6 +4049,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   id_ang = diag_axis_init("angle", angles, "Radians", "N", "Angular Orientation of Fluxes")
   call define_axes_group(diag, (/ diag%axesT1%handles(1), diag%axesT1%handles(2), id_ang /), &
                          axes_ang, is_h_point=.true.)
+  if (allocated(angles)) deallocate(angles)
   do fr=1,CS%nFreq ; write(freq_name(fr), '("freq",i1)') fr ; enddo
   do m=1,CS%nMode ; do fr=1,CS%nFreq
     ! Register 2-D energy density (summed over angles) for each frequency and mode
@@ -4182,9 +4181,78 @@ end subroutine internal_tides_init
 subroutine internal_tides_end(CS)
   type(int_tide_CS), intent(inout) :: CS  !<  Internal tide control structure
 
+  ! Primary energy & frequency arrays
   if (allocated(CS%En)) deallocate(CS%En)
   if (allocated(CS%frequency)) deallocate(CS%frequency)
+  if (allocated(CS%fraction_tidal_input)) deallocate(CS%fraction_tidal_input)
+  if (allocated(CS%cp)) deallocate(CS%cp)
+  if (allocated(CS%decay_rate_2d)) deallocate(CS%decay_rate_2d)
+
+  ! Topographic reflection, transmission & residual
+  if (allocated(CS%refl_angle)) deallocate(CS%refl_angle)
+  if (allocated(CS%refl_pref)) deallocate(CS%refl_pref)
+  if (allocated(CS%refl_pref_logical)) deallocate(CS%refl_pref_logical)
+  if (allocated(CS%refl_dbl)) deallocate(CS%refl_dbl)
+  if (allocated(CS%trans)) deallocate(CS%trans)
+  if (allocated(CS%residual)) deallocate(CS%residual)
+
+  ! Wave modal vertical structure arrays
+  if (allocated(CS%w_struct)) deallocate(CS%w_struct)
+  if (allocated(CS%u_struct)) deallocate(CS%u_struct)
+  if (allocated(CS%u_struct_max)) deallocate(CS%u_struct_max)
+  if (allocated(CS%u_struct_bot)) deallocate(CS%u_struct_bot)
+  if (allocated(CS%int_w2)) deallocate(CS%int_w2)
+  if (allocated(CS%int_U2)) deallocate(CS%int_U2)
+  if (allocated(CS%int_N2w2)) deallocate(CS%int_N2w2)
+
+  ! Loss arrays (5D and 2D)
+  if (allocated(CS%TKE_leak_loss)) deallocate(CS%TKE_leak_loss)
+  if (allocated(CS%TKE_quad_loss)) deallocate(CS%TKE_quad_loss)
+  if (allocated(CS%TKE_Froude_loss)) deallocate(CS%TKE_Froude_loss)
+  if (allocated(CS%TKE_itidal_loss_fixed)) deallocate(CS%TKE_itidal_loss_fixed)
+  if (allocated(CS%TKE_itidal_loss)) deallocate(CS%TKE_itidal_loss)
+  if (allocated(CS%TKE_residual_loss)) deallocate(CS%TKE_residual_loss)
+  if (allocated(CS%TKE_slope_loss)) deallocate(CS%TKE_slope_loss)
+
+  ! Total loss arrays (2D)
+  if (allocated(CS%tot_leak_loss)) deallocate(CS%tot_leak_loss)
+  if (allocated(CS%tot_quad_loss)) deallocate(CS%tot_quad_loss)
+  if (allocated(CS%tot_itidal_loss)) deallocate(CS%tot_itidal_loss)
+  if (allocated(CS%tot_Froude_loss)) deallocate(CS%tot_Froude_loss)
+  if (allocated(CS%tot_residual_loss)) deallocate(CS%tot_residual_loss)
+  if (allocated(CS%tot_allprocesses_loss)) deallocate(CS%tot_allprocesses_loss)
+
+  ! Global energy budget & diagnostic totals (2D)
+  if (allocated(CS%En_ini_glo)) deallocate(CS%En_ini_glo)
+  if (allocated(CS%En_end_glo)) deallocate(CS%En_end_glo)
+  if (allocated(CS%TKE_input_glo_dt)) deallocate(CS%TKE_input_glo_dt)
+  if (allocated(CS%TKE_leak_loss_glo_dt)) deallocate(CS%TKE_leak_loss_glo_dt)
+  if (allocated(CS%TKE_quad_loss_glo_dt)) deallocate(CS%TKE_quad_loss_glo_dt)
+  if (allocated(CS%TKE_Froude_loss_glo_dt)) deallocate(CS%TKE_Froude_loss_glo_dt)
+  if (allocated(CS%TKE_itidal_loss_glo_dt)) deallocate(CS%TKE_itidal_loss_glo_dt)
+  if (allocated(CS%TKE_residual_loss_glo_dt)) deallocate(CS%TKE_residual_loss_glo_dt)
+  if (allocated(CS%error_mode)) deallocate(CS%error_mode)
+
+  ! Restart mode arrays (4D)
+  if (allocated(CS%En_restart_mode1)) deallocate(CS%En_restart_mode1)
+  if (allocated(CS%En_restart_mode2)) deallocate(CS%En_restart_mode2)
+  if (allocated(CS%En_restart_mode3)) deallocate(CS%En_restart_mode3)
+  if (allocated(CS%En_restart_mode4)) deallocate(CS%En_restart_mode4)
+  if (allocated(CS%En_restart_mode5)) deallocate(CS%En_restart_mode5)
+
+  ! Diagnostic handles
+  if (allocated(CS%id_cn)) deallocate(CS%id_cn)
   if (allocated(CS%id_En_mode)) deallocate(CS%id_En_mode)
+  if (allocated(CS%id_En_ang_mode)) deallocate(CS%id_En_ang_mode)
+  if (allocated(CS%id_itidal_loss_mode)) deallocate(CS%id_itidal_loss_mode)
+  if (allocated(CS%id_itidal_loss_ang_mode)) deallocate(CS%id_itidal_loss_ang_mode)
+  if (allocated(CS%id_leak_loss_mode)) deallocate(CS%id_leak_loss_mode)
+  if (allocated(CS%id_quad_loss_mode)) deallocate(CS%id_quad_loss_mode)
+  if (allocated(CS%id_Froude_loss_mode)) deallocate(CS%id_Froude_loss_mode)
+  if (allocated(CS%id_residual_loss_mode)) deallocate(CS%id_residual_loss_mode)
+  if (allocated(CS%id_allprocesses_loss_mode)) deallocate(CS%id_allprocesses_loss_mode)
+  if (allocated(CS%id_itide_drag)) deallocate(CS%id_itide_drag)
+  if (allocated(CS%id_TKE_itidal_input)) deallocate(CS%id_TKE_itidal_input)
   if (allocated(CS%id_Ub_mode)) deallocate(CS%id_Ub_mode)
   if (allocated(CS%id_cp_mode)) deallocate(CS%id_cp_mode)
   if (allocated(CS%id_Ustruct_mode)) deallocate(CS%id_Ustruct_mode)
