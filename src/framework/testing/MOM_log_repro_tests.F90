@@ -83,6 +83,7 @@ subroutine test_log_elemental
   enddo
 end subroutine test_log_elemental
 
+
 !> Test that log_repro(1) = 0 exactly
 subroutine test_log_one
   real :: val
@@ -94,6 +95,7 @@ subroutine test_log_one
 
   call assert(val == 0., "log_repro(1) should equal 0 exactly")
 end subroutine test_log_one
+
 
 !> Test log_repro at a general value (0.33)
 subroutine test_log_general
@@ -112,6 +114,7 @@ subroutine test_log_general
   call assert(err < tol, "log_repro(0.33) relative error exceeds tolerance")
 end subroutine test_log_general
 
+
 !> Test log_repro(2) against ln(2)
 subroutine test_log_two
   real :: val, err
@@ -126,6 +129,7 @@ subroutine test_log_two
 
   call assert(err < tol, "log_repro(2) relative error exceeds tolerance")
 end subroutine test_log_two
+
 
 !> Test log_repro at range reduction boundary: 0.5
 subroutine test_log_half
@@ -142,6 +146,7 @@ subroutine test_log_half
   call assert(err < tol, "log_repro(0.5) should be close to -ln(2)")
 end subroutine test_log_half
 
+
 !> Test log_repro at half the range reduction boundary: sqrt(2)
 subroutine test_log_sqrt2
   real :: val, err
@@ -156,6 +161,7 @@ subroutine test_log_sqrt2
 
   call assert(err < tol, "log_repro(sqrt(2)) should be close to ln(2)/2")
 end subroutine test_log_sqrt2
+
 
 !> Test log_repro at half the range reduction boundary: 1 / sqrt(2)
 subroutine test_log_inv_sqrt2
@@ -172,6 +178,7 @@ subroutine test_log_inv_sqrt2
   call assert(err < tol, "log_repro(1/sqrt(2)) should be close to -ln(2)/2")
 end subroutine test_log_inv_sqrt2
 
+
 !> Test log_repro(10) against reference value
 subroutine test_log_ten
   real :: val, err
@@ -187,6 +194,7 @@ subroutine test_log_ten
   call assert(err < tol, "log_repro(10) relative error exceeds tolerance")
 end subroutine test_log_ten
 
+
 !> Test log_repro(+Inf) = +Inf
 subroutine test_log_pos_inf
   real :: x, val, ref
@@ -201,6 +209,7 @@ subroutine test_log_pos_inf
   call assert(val == ref, "log_repro(+Inf) should equal +Inf")
 end subroutine test_log_pos_inf
 
+
 !> Test log_repro(0) = -Inf
 subroutine test_log_zero
   real :: val, ref
@@ -213,6 +222,7 @@ subroutine test_log_zero
 
   call assert(val == ref, "log_repro(0) should equal -Inf")
 end subroutine test_log_zero
+
 
 !> Test log_repro(-0) = -Inf
 subroutine test_log_neg_zero
@@ -227,6 +237,7 @@ subroutine test_log_neg_zero
   call assert(val == ref, "log_repro(-0) should equal -Inf")
 end subroutine test_log_neg_zero
 
+
 !> Test log_repro(-Inf) = NaN
 subroutine test_log_neg_inf
   real :: x, val
@@ -240,6 +251,7 @@ subroutine test_log_neg_inf
   call assert(ieee_is_nan(val), "log_repro(-Inf) should be NaN")
 end subroutine test_log_neg_inf
 
+
 !> Test log_repro(negative) = NaN
 subroutine test_log_negative
   real :: val
@@ -251,6 +263,7 @@ subroutine test_log_negative
 
   call assert(ieee_is_nan(val), "log_repro(-1) should be NaN")
 end subroutine test_log_negative
+
 
 !> Test log_repro(NaN) = NaN
 subroutine test_log_nan
@@ -265,6 +278,7 @@ subroutine test_log_nan
   call assert(ieee_is_nan(val), "log_repro(NaN) should be NaN")
 end subroutine test_log_nan
 
+
 !> Test log_repro(-NaN) = NaN
 subroutine test_log_neg_nan
   real :: x, val
@@ -277,6 +291,7 @@ subroutine test_log_neg_nan
 
   call assert(ieee_is_nan(val), "log_repro(-NaN) should be NaN")
 end subroutine test_log_neg_nan
+
 
 !> Test log_repro(sNaN) = NaN
 subroutine test_log_signaling_nan
@@ -291,6 +306,7 @@ subroutine test_log_signaling_nan
   call assert(ieee_is_nan(val), "log_repro(sNaN) should be NaN")
 end subroutine test_log_signaling_nan
 
+
 !> Test log_repro(-sNaN) = NaN
 subroutine test_log_neg_signaling_nan
   real :: x, val
@@ -303,6 +319,7 @@ subroutine test_log_neg_signaling_nan
 
   call assert(ieee_is_nan(val), "log_repro(-sNaN) should be NaN")
 end subroutine test_log_neg_signaling_nan
+
 
 !> Test log_repro at largest representable float boundary
 subroutine test_log_largest_float
@@ -320,6 +337,7 @@ subroutine test_log_largest_float
   call assert(err < tol, "log_repro(huge) relative error exceeds tolerance")
 end subroutine test_log_largest_float
 
+
 !> Test log_repro at smallest normal float boundary
 subroutine test_log_smallest_float
   real :: val, ref, err
@@ -336,6 +354,7 @@ subroutine test_log_smallest_float
   call assert(err < tol, "log_repro(tiny) relative error exceeds tolerance")
 end subroutine test_log_smallest_float
 
+
 !> Test log_repro at smallest positive subnormal float boundary
 subroutine test_log_smallest_subnormal
   real :: val, ref, err
@@ -351,6 +370,7 @@ subroutine test_log_smallest_subnormal
 
   call assert(err < tol, "log_repro(nearest(0,1)) relative error exceeds tolerance")
 end subroutine test_log_smallest_subnormal
+
 
 !> Test log_repro near 1 from above
 subroutine test_log_near_one_above
@@ -369,6 +389,7 @@ subroutine test_log_near_one_above
   call assert(err < tol, "log_repro(1+eps) absolute error exceeds tolerance")
 end subroutine test_log_near_one_above
 
+
 !> Test log_repro near 1 from below
 subroutine test_log_near_one_below
   real :: x, val, ref, err
@@ -385,6 +406,7 @@ subroutine test_log_near_one_below
 
   call assert(err < tol, "log_repro(1-eps) absolute error exceeds tolerance")
 end subroutine test_log_near_one_below
+
 
 !> Test a near-one input that exposed a one-bit GCC/NVHPC difference.
 subroutine test_log_near_one_sensitive_bit
@@ -414,6 +436,7 @@ subroutine test_log_near_one_sensitive_bit
       "log_repro sensitive near-one result is not one of the observed adjacent bit patterns")
   call assert(ulp_err <= 1., "log_repro sensitive near-one ULP error exceeds tolerance")
 end subroutine test_log_near_one_sensitive_bit
+
 
 !> Print an informational accuracy sweep for log_repro near 1.
 !!
@@ -836,6 +859,7 @@ subroutine check_log_accuracy_comparison(x, val, val_log, ref, xmin, xmax, max_u
   endif
 end subroutine check_log_accuracy_comparison
 
+
 !> Compute the function accuracy relative to a real128-precision reference.
 !! Absolute, relative, and ULP error is computed, as well as the number of
 !! points above 0.5 and 1 ULP.  An error is raised if any point exceeds the
@@ -945,6 +969,7 @@ subroutine check_ulp_accuracy(x, val, ref, max_ulp_tol)
   endif
 end subroutine check_ulp_accuracy
 
+
 !> Test the logarithmic property: log(x*y) = log(x) + log(y)
 !!
 !! This property test verifies that log_repro produces consistent results
@@ -1028,6 +1053,7 @@ subroutine test_log_product_property
 
   call assert(max_err < tol, "log_repro product property test failed")
 end subroutine test_log_product_property
+
 
 !> Test the logarithmic property: log(1/x) = -log(x)
 !!
