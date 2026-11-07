@@ -1483,7 +1483,8 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
 
   ! Accumulate the thickness-weighted shear strain rate over the mixed layer at q-points.
   !$OMP do
-  do J=js-1,je ; do I=is-1,ie
+  do J=js-1,je
+    do I=is-1,ie
       sh_xy_int(I,J) = 0.0
       htot_q(I,J)    = 0.0
       mld_q(I) = 0.25 * ( (MLD(i,j) + MLD(i+1,j+1)) + (MLD(i+1,j) + MLD(i,j+1)) )
@@ -1509,8 +1510,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
   !$OMP do
   do J=js-1,je ; do I=is-1,ie
       sh_xy_q(I,J) = sh_xy_int(I,J) / (htot_q(I,J) + h_neglect)
-    enddo
-  enddo
+  enddo ; enddo
   !$OMP end do
 
   ! Move the mixed-layer averaged shear strain rate to h-points.
@@ -1518,13 +1518,12 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
   do j=js,je ; do i=is,ie
       sh_xy(i,j) = 0.25 * ( (sh_xy_q(I,  J  ) + sh_xy_q(I-1,J-1)) + &
                             (sh_xy_q(I-1,J  ) + sh_xy_q(I,  J-1)) )
-    enddo
-  enddo
+  enddo ; enddo
   !$OMP end do
 
   ! Accumulate the total layer thickness at h-points
   !$OMP do
-  do j=js-1,je+1 ; do k=1,nz ; do i=is-1,ie+1
+  do k=1,nz ; do j=js-1,je+1 ; do i=is-1,ie+1
     htot_col(i,j) = htot_col(i,j) + h(i,j,k)
   enddo ; enddo ; enddo
   !$OMP end do
@@ -1601,7 +1600,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
 
     ! Find the deepest valid layer.
     kb = 0
-    do k = nz, 1, -1
+    do k = nz,1,-1
       if ( min(h(i,j,k), h(i+1,j,k)) > (GV%Angstrom_H + GV%H_subroundoff) ) then
         kb = k
         exit
@@ -1669,7 +1668,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
 
     ! Find the deepest valid layer.
     kb = 0
-    do k = nz, 1, -1
+    do k = nz,1,-1
       if ( min(h(i,j,k), h(i,j+1,k)) > (GV%Angstrom_H + GV%H_subroundoff) ) then
         kb = k
         exit
@@ -1714,7 +1713,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
   !$OMP end parallel
 
   !$OMP parallel do default(shared) private(i, j, k)
-  do j=js,je ; do k=1,nz ; do i=is,ie
+  do k=1,nz ; do j=js,je ; do i=is,ie
     h(i,j,k) = h(i,j,k) - dt*G%IareaT(i,j) * &
         ((uhml(I,j,k) - uhml(I-1,j,k)) + (vhml(i,J,k) - vhml(i,J-1,k)))
     if (h(i,j,k) < h_min) h(i,j,k) = h_min
@@ -2209,7 +2208,7 @@ real function growth_time(u_star, hBL, absf, h_neg, vonKar, Kv_rest, restrat_coe
 end function growth_time
 
 !> Determine which mixed-layer restratification scheme is selected by RESTRAT_SCHEME.
-!! The deprecated MLE%USE_BODNER flag is still honored for backward compatibility: when it
+!! The deprecated MLE%USE_BODNER23 flag is still honored for backward compatibility: when it
 !! is true it changes the default of RESTRAT_SCHEME to BODNER23, so that older input files
 !! keep running unchanged, and a deprecation warning is issued. Combining it with a
 !! different, explicitly set RESTRAT_SCHEME is a fatal error.
@@ -2223,15 +2222,19 @@ subroutine get_restrat_scheme(param_file, caller, scheme, use_Bodner, use_Zhang2
                                                     !! deprecation warning.
 
   ! Local variables
-  logical :: legacy_use_Bodner     ! The value of the deprecated MLE%USE_BODNER flag
+  logical :: legacy_Bodner_true   ! True if the deprecated MLE%USE_BODNER23 flag is explicitly set to True
+  logical :: legacy_Bodner_false  ! True if the deprecated MLE%USE_BODNER23 flag is explicitly set to False
+  logical :: Bodner_true          ! MLE%USE_BODNER23 read with a default of True; only false if explicitly set to False
   character(len=32) :: scheme_dflt ! The default value for RESTRAT_SCHEME
 
-  ! Read the legacy MLE%USE_BODNER flag.
-  call openParameterBlock(param_file, 'MLE')
-  call get_param(param_file, mdl, "USE_BODNER", legacy_use_Bodner, default=.false., do_not_log=.true.)
+  ! Read the legacy MLE%USE_BODNER23 flag twice with opposite defaults to detect whether it is set.
+  call openParameterBlock(param_file, 'MLE', do_not_log=.true.)
+  call get_param(param_file, mdl, "USE_BODNER23", legacy_Bodner_true, default=.false., do_not_log=.true.)
+  call get_param(param_file, mdl, "USE_BODNER23", Bodner_true,   default=.true.,  do_not_log=.true.)
   call closeParameterBlock(param_file)
+  legacy_Bodner_false = .not.Bodner_true
 
-  scheme_dflt = "FOX-KEMPER" ; if (legacy_use_Bodner) scheme_dflt = "BODNER23"
+  scheme_dflt = "FOX-KEMPER" ; if (legacy_Bodner_true) scheme_dflt = "BODNER23"
   call get_param(param_file, mdl, "RESTRAT_SCHEME", scheme, &
        "Mixed-layer restratification scheme:\n"//&
        "\t FOX-KEMPER - Fox-Kemper et al. (2008, 2011)\n"//&
@@ -2250,15 +2253,21 @@ subroutine get_restrat_scheme(param_file, caller, scheme, use_Bodner, use_Zhang2
           """. Valid options are FOX-KEMPER, BODNER23 and ZHANG23.")
   end select
 
-  if (legacy_use_Bodner) then
+  if (legacy_Bodner_false .and. log_params) then
+    call MOM_error(WARNING, trim(caller)//": MLE%USE_BODNER23 is deprecated; "//&
+          "RESTRAT_SCHEME = """//trim(scheme)//""" is in effect. "//&
+          "Set it explicitly and remove MLE%USE_BODNER23 from the input file.")
+  endif
+
+  if (legacy_Bodner_true) then
     if (.not. use_Bodner) then
-      call MOM_error(FATAL, trim(caller)//": MLE%USE_BODNER = True conflicts with "//&
-          "RESTRAT_SCHEME = """//trim(scheme)//""". MLE%USE_BODNER is deprecated; "//&
+      call MOM_error(FATAL, trim(caller)//": MLE%USE_BODNER23 = True conflicts with "//&
+          "RESTRAT_SCHEME = """//trim(scheme)//""". MLE%USE_BODNER23 is deprecated; "//&
           "remove it from the input file and select the scheme with RESTRAT_SCHEME only.")
     elseif (log_params) then
-      call MOM_error(WARNING, trim(caller)//": MLE%USE_BODNER is deprecated; "//&
+      call MOM_error(WARNING, trim(caller)//": MLE%USE_BODNER23 is deprecated; "//&
           "RESTRAT_SCHEME = ""BODNER23"" is in effect. "//&
-          "Set it explicitly and remove MLE%USE_BODNER from the input file.")
+          "Set it explicitly and remove MLE%USE_BODNER23 from the input file.")
     endif
   endif
 
@@ -2318,13 +2327,6 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   CS%MLD_grid = .false.
   CS%Cr_grid = .false.
   CS%use_Zhang23 = .false.
-  CS%Zhang23_MLD_decay_time = -9.e9*US%s_to_T
-  CS%Zhang23_MSR_decay_time = -9.e9*US%s_to_T
-  CS%Zhang23_f_min = -9.e9*US%T_to_s
-  CS%Zhang23_min_depth = -9.e9*US%m_to_Z
-  CS%C_z = -9.e9
-  CS%B_z = -9.e9
-
 
   call get_param(param_file, mdl, "DEBUG", CS%debug, default=.false., do_not_log=.true.)
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
@@ -2341,12 +2343,18 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   endif
 
   ! Get mixed-layer restratification scheme with backward compatibility
-  ! for the deprecated MLE%USE_BODNER flag.
+  ! for the deprecated MLE%USE_BODNER23 flag.
   call get_restrat_scheme(param_file, "mixedlayer_restrat_init", CS%restrat_scheme, &
                           CS%use_Bodner, CS%use_Zhang23, log_params=.true.)
-  if ((CS%use_Bodner .or. CS%use_Zhang23) .and. (GV%nkml > 0)) call MOM_error(FATAL, &
-      "mixedlayer_restrat_init: RESTRAT_SCHEME = """//trim(CS%restrat_scheme)//&
-      """ only works in ALE mode.")
+
+  ! Retain the behavior of MLE%USE_BODNER23 when the model is not in ALE mode, but issue a warning.
+  if (GV%nkml>0) then
+    if (CS%use_Bodner .or. CS%use_Zhang23) then
+      call MOM_error(WARNING, "mixedlayer_restrat_init: RESTRAT_SCHEME = """//trim(CS%restrat_scheme)//&
+          """ only works in ALE mode. The FOX-KEMPER scheme for bulk mixed layer is used instead.")
+      CS%use_Bodner = .false. ; CS%use_Zhang23 = .false.
+    endif
+  endif
 
   call openParameterBlock(param_file,'MLE') ! Prepend MLE% to all parameters
   if (CS%use_Bodner) then
@@ -2483,13 +2491,13 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
             "The efficiency coefficient in Eq. 11 of Zhang et al., 2023. "//&
             "This may vary with the model's horizontal resolution because the resolved "//&
             "strain rate is underestimated at coarse resolution. Zhang et al. (2023) used "//&
-            "C_Z=8. The default value here is tuned for OM4_025.", &
-            units="nondim", default=450.0)
+            "C_Z=8. A recommended value tuned for OM4_025 is C_Z=450.", &
+            units="nondim", default=0.0)
     call get_param(param_file, mdl, "B_Z", CS%B_z, &
             "Tunable parameter used for Zhang23 parameterization. "//&
             "B_Z is equivalent to the inverse of the product of the "//&
             "reference mixed-layer Rossby radius and the reference Coriolis parameter. "//&
-            "More details about this parameter can be found in Calvert et al. 2020 and Feng et al. 2026.",&
+            "More details about this parameter can be found in Calvert et al. (2020) and Feng et al. (2026).",&
             units="s m-1", default=4.0, scale=US%L_to_m*US%s_to_T)
     call get_param(param_file, mdl, "F_MIN", CS%Zhang23_f_min, &
             "A hard floor on the absolute value of the Coriolis parameter used by the "//&
@@ -2510,8 +2518,9 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
             "strain rate used in the Zhang23 restratification parameterization.",&
             units="s", default=0.0, scale=US%s_to_T)
     call closeParameterBlock(param_file) ! The remaining parameters do not have ZHANG23% prepended
-    if (CS%C_z < 0.0) call MOM_error(FATAL, "mixedlayer_restrat_init: ZHANG23%C_Z must be >= 0.")
-    if (CS%B_z < 0.0) call MOM_error(FATAL, "mixedlayer_restrat_init: ZHANG23%B_Z must be >= 0.")
+    if (CS%C_z <= 0.0) call MOM_error(FATAL, &
+        "mixedlayer_restrat_init: ZHANG23%C_Z must be explicitly set to a positive value.")
+    if (CS%B_z <= 0.0) call MOM_error(FATAL, "mixedlayer_restrat_init: ZHANG23%B_Z must be positive.")
     if (CS%Zhang23_f_min <= 0.0) call MOM_error(FATAL, &
         "mixedlayer_restrat_init: ZHANG23%F_MIN must be > 0.")
   endif
@@ -2729,9 +2738,12 @@ subroutine mixedlayer_restrat_register_restarts(HI, GV, US, param_file, CS, rest
   if (.not. mixedlayer_restrat_init) return
 
   ! Get mixed-layer restratification scheme with backward compatibility
-  ! for the deprecated MLE%USE_BODNER flag.
+  ! for the deprecated MLE%USE_BODNER23 flag.
   call get_restrat_scheme(param_file, "mixedlayer_restrat_register_restarts", restrat_scheme, &
                           use_Bodner, use_Zhang23, log_params=.false.)
+  if (GV%nkml > 0) then
+    use_Bodner = .false. ; use_Zhang23 = .false.
+  endif
 
   CS%MLE_MLD_decay_time = 0. ; CS%MLE_MLD_decay_time2 = 0.
   if (.not. use_Zhang23) then
@@ -3189,7 +3201,6 @@ end function test_answer
 !!
 !! The default Zhang23-specific parameter values are
 !! \f[
-!!   C_Z = 450,\qquad
 !!   B_Z = 4\ {\rm m}^{-1}{\rm s},\qquad
 !!   f_{\min}=1.27\times10^{-5}\ {\rm s}^{-1},
 !! \f]
@@ -3198,13 +3209,13 @@ end function test_answer
 !!   \tau_H=0,\qquad
 !!   \tau_{SR}=0.
 !! \f]
-!! The default value of \f$C_Z\f$ is tuned for the OM4_025 configuration.
+!! A recommended value \f$C_Z=450\f$ is tuned for the OM4_025 configuration.
 !! The default \f$f_{\min}\f$ is approximately the Coriolis parameter at
 !! 5 degrees latitude. The default values of the two filter time scales disable
 !! time filtering.
 !!
-!! <code>ZHANG23%C_Z</code> and <code>ZHANG23%B_Z</code> must be non-negative,
-!! while <code>ZHANG23%F_MIN</code> must be strictly positive.
+!! <code>ZHANG23%C_Z</code>, <code>ZHANG23%B_Z</code> ,
+!! and <code>ZHANG23%F_MIN</code> must be strictly positive.
 !!
 !! \subsubsection section_zhang23_ref References
 !!
