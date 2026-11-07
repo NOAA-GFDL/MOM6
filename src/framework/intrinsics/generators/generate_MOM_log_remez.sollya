@@ -1,0 +1,9 @@
+/* Generate the coefficients in MOM_log.F90:log1p_tail_remez_4.
+   Run from intrinsics/: sollya generators/generate_MOM_log_remez.sollya
+   The interval includes the reduced arguments from the 128-bin [1, 2) table.
+   Approximate (log(1+x)-x)/x^2; multiplication by x^2 gives the log1p tail. */
+prec = 256!;
+f = (log(1+x)-x)/x^2;
+p = remez(f, 4, [-0.004;0.004]);
+for i from 0 to 4 do print(coeff(p,i));
+quit;
