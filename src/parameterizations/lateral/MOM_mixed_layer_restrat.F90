@@ -2230,7 +2230,7 @@ subroutine get_restrat_scheme(param_file, caller, scheme, use_Bodner, use_Zhang2
   ! Read the legacy MLE%USE_BODNER23 flag twice with opposite defaults to detect whether it is set.
   call openParameterBlock(param_file, 'MLE', do_not_log=.true.)
   call get_param(param_file, mdl, "USE_BODNER23", legacy_Bodner_true, default=.false., do_not_log=.true.)
-  call get_param(param_file, mdl, "USE_BODNER23", Bodner_true,   default=.true.,  do_not_log=.true.)
+  call get_param(param_file, mdl, "USE_BODNER23", Bodner_true, default=.true., do_not_log=.true.)
   call closeParameterBlock(param_file)
   legacy_Bodner_false = .not.Bodner_true
 
