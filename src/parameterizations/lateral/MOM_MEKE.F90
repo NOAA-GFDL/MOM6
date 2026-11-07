@@ -154,6 +154,9 @@ type, public :: MEKE_CS ; private
   character(len=5) :: model_key  = 'mleke'  !< Key where the ML-model is stored
   character(len=7) :: key_suffix !< Suffix appended to every key sent to Redis
   real :: eke_max !< The maximum value of EKE considered physically reasonable [L2 T-2 ~> m2 s-2]
+  integer :: answer_date !< The vintage of the order of arithmetic in the ML MEKE feature calculations.
+                         !! Values below 20261101 recover the original answers, while higher values
+                         !! use rotationally symmetric orders of arithmetic.
 
   ! Clock ids
   integer :: id_client_init   !< Clock id to time initialization of the client
@@ -1787,6 +1790,11 @@ subroutine ML_MEKE_init(diag, G, US, Time, param_file, dbcomms_CS, CS)
   call get_param(param_file, mdl, "EKE_MAX", CS%eke_max, &
                  "Maximum value of EKE allowed when inferring EKE", &
                  units="m2 s-2", default=2., scale=US%m_s_to_L_T**2)
+  call get_param(param_file, mdl, "MEKE_ANSWER_DATE", CS%answer_date, &
+                 "The vintage of the order of arithmetic in the ML MEKE feature calculations.  "//&
+                 "Values below 20261101 recover the original answers, while higher values use "//&
+                 "rotationally symmetric orders of arithmetic.", default=20261031, &
+                 do_not_log=.not.(CS%eke_src==EKE_DBCLIENT)) !### Change the default to default_answer_date
 
   ! Set the machine learning model
   if (dbcomms_CS%colocated) then
@@ -1927,9 +1935,15 @@ subroutine ML_MEKE_calculate_features(G, GV, US, CS, Rd_dx_h, u, v, tv, h, dt, f
     rv_z(I,J) = (2.0-G%mask2dBu(I,J)) * (dvdx - dudy) * G%IareaBu(I,J)
   enddo ; enddo
   ! Interpolate RV to t-point, revisit this calculation to include metrics
-  do j=js,je ; do i=is,ie
-    rv_z_t(i,j) = 0.25*(rv_z(i-1,j) + rv_z(i,j) + rv_z(i-1,j-1) + rv_z(i,j-1))
-  enddo ; enddo
+  if (CS%answer_date < 20261101) then
+    do j=js,je ; do i=is,ie
+      rv_z_t(i,j) = 0.25*(rv_z(i-1,j) + rv_z(i,j) + rv_z(i-1,j-1) + rv_z(i,j-1))
+    enddo ; enddo
+  else
+    do j=js,je ; do i=is,ie
+      rv_z_t(i,j) = 0.25*((rv_z(I,J) + rv_z(I-1,J-1)) + (rv_z(I-1,J) + rv_z(I,J-1)))
+    enddo ; enddo
+  endif
 
 
   ! Construct the feature array
