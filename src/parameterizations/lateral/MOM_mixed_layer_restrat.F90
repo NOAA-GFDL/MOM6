@@ -2488,7 +2488,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   if (CS%use_Zhang23) then
     call openParameterBlock(param_file, 'ZHANG23') ! Prepend ZHANG23% to parameters
     call get_param(param_file, mdl, "C_Z", CS%C_z, &
-            "The efficiency coefficient in Eq. 11 of Zhang et al., 2023. "//&
+            "The efficiency coefficient in Eq. 11 of Zhang et al. (2023). "//&
             "This may vary with the model's horizontal resolution because the resolved "//&
             "strain rate is underestimated at coarse resolution. Zhang et al. (2023) used "//&
             "C_Z=8. A recommended value tuned for OM4_025 is C_Z=450.", &
