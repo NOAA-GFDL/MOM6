@@ -1593,15 +1593,15 @@ subroutine clone_MD_to_MD(MD_in, MOM_dom, min_halo, halo_size, symmetric, domain
     MOM_dom%X_FLAGS = MD_in%Y_FLAGS ; MOM_dom%Y_FLAGS = MD_in%X_FLAGS
     ! Correct the position of a tripolar grid, assuming that flags are not additive.
     if (modulo(qturns, 4) == 1) then
-      if (MD_in%Y_FLAGS == FOLD_NORTH_EDGE) MOM_dom%X_FLAGS = FOLD_EAST_EDGE
-      if (MD_in%Y_FLAGS == FOLD_SOUTH_EDGE) MOM_dom%X_FLAGS = FOLD_WEST_EDGE
-      if (MD_in%X_FLAGS == FOLD_EAST_EDGE) MOM_dom%Y_FLAGS = FOLD_SOUTH_EDGE
-      if (MD_in%X_FLAGS == FOLD_WEST_EDGE) MOM_dom%Y_FLAGS = FOLD_NORTH_EDGE
-    elseif (modulo(qturns, 4) == 3) then
       if (MD_in%Y_FLAGS == FOLD_NORTH_EDGE) MOM_dom%X_FLAGS = FOLD_WEST_EDGE
       if (MD_in%Y_FLAGS == FOLD_SOUTH_EDGE) MOM_dom%X_FLAGS = FOLD_EAST_EDGE
       if (MD_in%X_FLAGS == FOLD_EAST_EDGE) MOM_dom%Y_FLAGS = FOLD_NORTH_EDGE
       if (MD_in%X_FLAGS == FOLD_WEST_EDGE) MOM_dom%Y_FLAGS = FOLD_SOUTH_EDGE
+    elseif (modulo(qturns, 4) == 3) then
+      if (MD_in%Y_FLAGS == FOLD_NORTH_EDGE) MOM_dom%X_FLAGS = FOLD_EAST_EDGE
+      if (MD_in%Y_FLAGS == FOLD_SOUTH_EDGE) MOM_dom%X_FLAGS = FOLD_WEST_EDGE
+      if (MD_in%X_FLAGS == FOLD_EAST_EDGE) MOM_dom%Y_FLAGS = FOLD_SOUTH_EDGE
+      if (MD_in%X_FLAGS == FOLD_WEST_EDGE) MOM_dom%Y_FLAGS = FOLD_NORTH_EDGE
     endif
 
     MOM_dom%layout(:) = MD_in%layout(2:1:-1)
