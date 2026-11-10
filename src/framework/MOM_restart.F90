@@ -1708,7 +1708,7 @@ subroutine save_restart(directory, time, G, CS, time_stamped, filename, GV, num_
     !Prepare the checksum of the restart fields to be written to restart files
     do m=start_var,next_var-1
 
-      call query_vardesc(vars(m), position=pos, name=var_name, caller="save_restart")
+      call query_vardesc(vars(m-start_var+1), position=pos, name=var_name, caller="save_restart")
       if (modulo(turns, 2) == 0) then
         call get_checksum_loop_ranges(G, CS, pos, isL, ieL, jsL, jeL)
       else   ! Note that G is always the unrotated grid as it is seen by the driver level.
