@@ -313,6 +313,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   real, dimension(SZI_(G),SZJ_(G),CS%nFreq,CS%nMode) :: &
     drag_scale     ! bottom drag scale [T-1 ~> s-1]
   real, dimension(SZI_(G),SZJ_(G)) :: &
+    f2_h, &        ! The squared Coriolis parameter interpolated to tracer points [T-2 ~> s-2]
     tot_vel_btTide2, & ! [L2 T-2 ~> m2 s-2]
     tot_En, &      ! energy summed over angles, modes, frequencies [H Z2 T-2 ~> m3 s-2 or J m-2]
     tot_leak_loss, tot_quad_loss, tot_itidal_loss, tot_Froude_loss, tot_residual_loss, tot_allprocesses_loss, &
@@ -326,6 +327,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     allprocesses_loss_mode  ! Total energy loss rates for a given mode and frequency (summed over
                             ! all angles) [H Z2 T-3 ~> m3 s-3 or W m-2]
   real :: frac_per_sector ! The inverse of the number of angular, modal and frequency bins [nondim]
+  real :: factor   ! Time step times tidal input fraction factor [T ~> s]
   real :: f2       ! The squared Coriolis parameter interpolated to a tracer point [T-2 ~> s-2]
   real :: Kmag2    ! A squared horizontal wavenumber [L-2 ~> m-2]
   real :: I_D_here ! The inverse of the local water column thickness [H-1 ~> m-1 or m2 kg-1]
@@ -474,33 +476,41 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       call hchksum(CS%En(:,:,:,1,1), "EnergyIntTides bf input", G%HI, haloshift=0, unscale=HZ2_T2_to_J_m2)
     endif
 
+    ! Precompute f2 at h-points once
+    do j=js,je ; do i=is,ie
+      f2_h(i,j) = 0.25*((G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J-1)) + &
+                        (G%Coriolis2Bu(I-1,J) + G%Coriolis2Bu(I,J-1)))
+    enddo ; enddo
+
+! this is the right thing to do but changes diags answers, save for later
+!    ! Pre-filter TKE input once per frequency
+!    do fr=1,CS%nFreq ; do j=js,je ; do i=is,ie
+!      if (CS%frequency(fr)**2 <= f2_h(i,j)) then
+!        TKE_itidal_input(i,j,fr) = 0.0
+!      endif
+!    enddo ; enddo ; enddo
+
     if (CS%energized_angle <= 0) then
       frac_per_sector = 1.0 / real(CS%nAngle)
-      do m=1,CS%nMode ; do fr=1,CS%nFreq ; do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
-        f2 = 0.25*((G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J-1)) + &
-                   (G%Coriolis2Bu(I-1,J) + G%Coriolis2Bu(I,J-1)))
-        if (CS%frequency(fr)**2 > f2) then
-          CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + (dt*frac_per_sector*(1.0-CS%q_itides) * &
-                              CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr))
-        else
-          ! zero out input TKE value to get correct diagnostics
-          TKE_itidal_input(i,j,fr) = 0.
-        endif
-      enddo ; enddo ; enddo ; enddo ; enddo
+      do m=1,CS%nMode ; do fr=1,CS%nFreq
+        factor = (dt*frac_per_sector*(1.0-CS%q_itides)) * CS%fraction_tidal_input(fr,m)
+        do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+          if (CS%frequency(fr)**2 > f2_h(i,j)) then
+            CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + factor * TKE_itidal_input(i,j,fr)
+          endif
+        enddo ; enddo ; enddo
+      enddo ; enddo
     elseif (CS%energized_angle <= CS%nAngle) then
       frac_per_sector = 1.0
       a = CS%energized_angle
-      do m=1,CS%nMode ; do fr=1,CS%nFreq ; do j=js,je ; do i=is,ie
-        f2 = 0.25*((G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J-1)) + &
-                   (G%Coriolis2Bu(I-1,J) + G%Coriolis2Bu(I,J-1)))
-        if (CS%frequency(fr)**2 > f2) then
-          CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + (dt*frac_per_sector*(1.0-CS%q_itides) * &
-                              CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr))
-        else
-          ! zero out input TKE value to get correct diagnostics
-          TKE_itidal_input(i,j,fr) = 0.
-        endif
-      enddo ; enddo ; enddo ; enddo
+      do m=1,CS%nMode ; do fr=1,CS%nFreq
+        factor = (dt*frac_per_sector*(1.0-CS%q_itides)) * CS%fraction_tidal_input(fr,m)
+        do j=js,je ; do i=is,ie
+          if (CS%frequency(fr)**2 > f2_h(i,j)) then
+            CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + factor * TKE_itidal_input(i,j,fr)
+          endif
+        enddo ; enddo
+      enddo ; enddo
     else
       call MOM_error(WARNING, "Internal tide energy is being put into a angular "//&
                               "band that does not exist.")
@@ -935,11 +945,11 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
       freq2 = CS%frequency(fr)**2
       do j=js,je ; do i=is,ie
-        id_g = i + G%idg_offset ; jd_g = j + G%jdg_offset ! for debugging
+        !id_g = i + G%idg_offset ; jd_g = j + G%jdg_offset ! for debugging
         ! Calculate horizontal phase velocity magnitudes
-        f2 = 0.25*((G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J-1)) + &
-                   (G%Coriolis2Bu(I-1,J) + G%Coriolis2Bu(I,J-1)))
-        Kmag2 = (freq2 - f2) / ((cn(i,j,m)**2) + (cn_subRO**2))
+        !f2 = 0.25*((G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J-1)) + &
+        !           (G%Coriolis2Bu(I-1,J) + G%Coriolis2Bu(I,J-1)))
+        Kmag2 = (freq2 - f2_h(i,j)) / ((cn(i,j,m)**2) + (cn_subRO**2))
         c_phase = 0.0
         CS%TKE_Froude_loss(i,j,:,fr,m) = 0. ! init for all angles
         if (Kmag2 > 0.0) then
