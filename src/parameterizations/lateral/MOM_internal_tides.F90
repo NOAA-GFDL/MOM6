@@ -493,10 +493,12 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
     if (CS%energized_angle <= 0) then
       frac_per_sector = 1.0 / real(CS%nAngle)
       do m=1,CS%nMode ; do fr=1,CS%nFreq
-        factor = (dt*frac_per_sector*(1.0-CS%q_itides)) * CS%fraction_tidal_input(fr,m)
+        !factor = (dt*frac_per_sector*(1.0-CS%q_itides)) * CS%fraction_tidal_input(fr,m)
         do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
           if (CS%frequency(fr)**2 > f2_h(i,j)) then
-            CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + factor * TKE_itidal_input(i,j,fr)
+            !CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + factor * TKE_itidal_input(i,j,fr)
+            CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + (dt*frac_per_sector*(1.0-CS%q_itides) * &
+                                CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr))
           endif
         enddo ; enddo ; enddo
       enddo ; enddo
@@ -504,10 +506,12 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
       frac_per_sector = 1.0
       a = CS%energized_angle
       do m=1,CS%nMode ; do fr=1,CS%nFreq
-        factor = (dt*frac_per_sector*(1.0-CS%q_itides)) * CS%fraction_tidal_input(fr,m)
+        !factor = (dt*frac_per_sector*(1.0-CS%q_itides)) * CS%fraction_tidal_input(fr,m)
         do j=js,je ; do i=is,ie
           if (CS%frequency(fr)**2 > f2_h(i,j)) then
-            CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + factor * TKE_itidal_input(i,j,fr)
+            !CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + factor * TKE_itidal_input(i,j,fr)
+            CS%En(i,j,a,fr,m) = CS%En(i,j,a,fr,m) + (dt*frac_per_sector*(1.0-CS%q_itides) * &
+                                CS%fraction_tidal_input(fr,m) * TKE_itidal_input(i,j,fr))
           endif
         enddo ; enddo
       enddo ; enddo
@@ -1185,31 +1189,57 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
 
     ! Output 2-D energy loss (summed over angles) for each frequency and mode
     do m=1,CS%nMode ; do fr=1,CS%Nfreq
-    if (CS%id_itidal_loss_mode(fr,m) > 0 .or. CS%id_allprocesses_loss_mode(fr,m) > 0) then
-      itidal_loss_mode(:,:) = 0.0 ! wave-drag processes (could do others as well)
-      leak_loss_mode(:,:) = 0.0
-      quad_loss_mode(:,:) = 0.0
-      Froude_loss_mode(:,:) = 0.0
-      residual_loss_mode(:,:) = 0.0
-      allprocesses_loss_mode(:,:) = 0.0 ! all processes summed together
-      do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
-        itidal_loss_mode(i,j)       = itidal_loss_mode(i,j) + CS%TKE_itidal_loss(i,j,a,fr,m)
-        leak_loss_mode(i,j) =  leak_loss_mode(i,j) + CS%TKE_leak_loss(i,j,a,fr,m)
-        quad_loss_mode(i,j) = quad_loss_mode(i,j) + CS%TKE_quad_loss(i,j,a,fr,m)
-        Froude_loss_mode(i,j) = Froude_loss_mode(i,j) + CS%TKE_Froude_loss(i,j,a,fr,m)
-        residual_loss_mode(i,j) = residual_loss_mode(i,j) +  CS%TKE_residual_loss(i,j,a,fr,m)
-        allprocesses_loss_mode(i,j) = allprocesses_loss_mode(i,j) + &
-                                 ((((CS%TKE_leak_loss(i,j,a,fr,m) + CS%TKE_quad_loss(i,j,a,fr,m)) + &
-                                 CS%TKE_itidal_loss(i,j,a,fr,m)) + CS%TKE_Froude_loss(i,j,a,fr,m)) + &
-                                 CS%TKE_residual_loss(i,j,a,fr,m))
-      enddo ; enddo ; enddo
-      call post_data(CS%id_itidal_loss_mode(fr,m), itidal_loss_mode, CS%diag)
-      call post_data(CS%id_leak_loss_mode(fr,m), leak_loss_mode, CS%diag)
-      call post_data(CS%id_quad_loss_mode(fr,m), quad_loss_mode, CS%diag)
-      call post_data(CS%id_Froude_loss_mode(fr,m), Froude_loss_mode, CS%diag)
-      call post_data(CS%id_residual_loss_mode(fr,m), residual_loss_mode, CS%diag)
-      call post_data(CS%id_allprocesses_loss_mode(fr,m), allprocesses_loss_mode, CS%diag)
-    endif ; enddo ; enddo
+      if (CS%id_itidal_loss_mode(fr,m) > 0) then
+        itidal_loss_mode(:,:) = 0.0
+        do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+          itidal_loss_mode(i,j) = itidal_loss_mode(i,j) + CS%TKE_itidal_loss(i,j,a,fr,m)
+        enddo ; enddo ; enddo
+        call post_data(CS%id_itidal_loss_mode(fr,m), itidal_loss_mode, CS%diag)
+      endif
+
+      if (CS%id_leak_loss_mode(fr,m) > 0) then
+        leak_loss_mode(:,:) = 0.0
+        do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+          leak_loss_mode(i,j) = leak_loss_mode(i,j) + CS%TKE_leak_loss(i,j,a,fr,m)
+        enddo ; enddo ; enddo
+        call post_data(CS%id_leak_loss_mode(fr,m), leak_loss_mode, CS%diag)
+      endif
+
+      if (CS%id_quad_loss_mode(fr,m) > 0) then
+        quad_loss_mode(:,:) = 0.0
+        do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+          quad_loss_mode(i,j) = quad_loss_mode(i,j) + CS%TKE_quad_loss(i,j,a,fr,m)
+        enddo ; enddo ; enddo
+        call post_data(CS%id_quad_loss_mode(fr,m), quad_loss_mode, CS%diag)
+      endif
+
+      if (CS%id_Froude_loss_mode(fr,m) > 0) then
+        Froude_loss_mode(:,:) = 0.0
+        do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+          Froude_loss_mode(i,j) = Froude_loss_mode(i,j) + CS%TKE_Froude_loss(i,j,a,fr,m)
+        enddo ; enddo ; enddo
+        call post_data(CS%id_Froude_loss_mode(fr,m), Froude_loss_mode, CS%diag)
+      endif
+
+      if (CS%id_residual_loss_mode(fr,m) > 0) then
+        residual_loss_mode(:,:) = 0.0
+        do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+          residual_loss_mode(i,j) = residual_loss_mode(i,j) + CS%TKE_residual_loss(i,j,a,fr,m)
+        enddo ; enddo ; enddo
+        call post_data(CS%id_residual_loss_mode(fr,m), residual_loss_mode, CS%diag)
+      endif
+
+      if (CS%id_allprocesses_loss_mode(fr,m) > 0) then
+        allprocesses_loss_mode(:,:) = 0.0
+        do a=1,CS%nAngle ; do j=js,je ; do i=is,ie
+          allprocesses_loss_mode(i,j) = allprocesses_loss_mode(i,j) + &
+                                   ((((CS%TKE_leak_loss(i,j,a,fr,m) + CS%TKE_quad_loss(i,j,a,fr,m)) + &
+                                   CS%TKE_itidal_loss(i,j,a,fr,m)) + CS%TKE_Froude_loss(i,j,a,fr,m)) + &
+                                   CS%TKE_residual_loss(i,j,a,fr,m))
+        enddo ; enddo ; enddo
+        call post_data(CS%id_allprocesses_loss_mode(fr,m), allprocesses_loss_mode, CS%diag)
+      endif
+    enddo ; enddo
 
     ! Output 3-D (i,j,a) energy loss for each frequency and mode
     do m=1,CS%nMode ; do fr=1,CS%Nfreq ; if (CS%id_itidal_loss_ang_mode(fr,m) > 0) then
@@ -3491,13 +3521,14 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
                                 ! to mks [T3 kg H-1 Z-2 s-3 ~> kg m-3 or 1]
   real    :: J_m2_to_HZ2_T2     ! unit conversion factor for Energy from mks to internal
                                 ! units [H Z2 s2 T-2 kg-1 ~> m3 kg-1 or 1]
+  integer :: max_vertical_modes ! maximum number of vertical modes allowed
   integer :: num_angle, num_freq, num_mode, m, fr
   integer :: isd, ied, jsd, jed, a, id_ang, i, j, nz
   type(axes_grp) :: axes_ang
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_internal_tides" ! This module's name.
-  character(len=16), dimension(8) :: freq_name
+  !character(len=16), dimension(8) :: freq_name
   character(len=40)  :: var_name
   character(len=160) :: var_descript
   character(len=200) :: filename
@@ -3537,9 +3568,14 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   if (.not.((num_freq > 0) .and. (num_angle > 0) .and. (num_mode > 0))) return
   CS%nFreq = num_freq ; CS%nAngle = num_angle ; CS%nMode = num_mode
 
+  ! Fail if max number of modes exceeded
+  max_vertical_modes = 5 ! this is dictated by the restart implementation.
+  if (CS%nMode > max_vertical_modes ) call MOM_error(FATAL, "Number of vertical modes cannot exceed 5")
+
   allocate(energy_fractions(num_freq))
   allocate(CS%fraction_tidal_input(num_freq,num_mode))
 
+  energy_fractions = "1.0"
   call read_param(param_file, "ENERGY_FRACTION_PER_MODE", energy_fractions)
 
   do fr=1,num_freq ; do m=1,num_mode
@@ -3784,6 +3820,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   allocate(CS%tot_itidal_loss(isd:ied,jsd:jed), source=0.0)
   allocate(CS%tot_Froude_loss(isd:ied,jsd:jed), source=0.0)
   allocate(CS%tot_residual_loss(isd:ied,jsd:jed), source=0.0)
+  allocate(CS%tot_allprocesses_loss(isd:ied,jsd:jed), source=0.0)
   allocate(CS%u_struct_bot(isd:ied,jsd:jed,num_mode), source=0.0)
   allocate(CS%u_struct_max(isd:ied,jsd:jed,num_mode), source=0.0)
   allocate(CS%int_w2(isd:ied,jsd:jed,num_mode), source=0.0)
@@ -4060,7 +4097,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   call define_axes_group(diag, (/ diag%axesT1%handles(1), diag%axesT1%handles(2), id_ang /), &
                          axes_ang, is_h_point=.true.)
   if (allocated(angles)) deallocate(angles)
-  do fr=1,CS%nFreq ; write(freq_name(fr), '("freq",i1)') fr ; enddo
+  !do fr=1,CS%nFreq ; write(freq_name(fr), '("freq",i1)') fr ; enddo
   do m=1,CS%nMode ; do fr=1,CS%nFreq
     ! Register 2-D energy density (summed over angles) for each frequency and mode
     write(var_name, '("Itide_En_freq",i1,"_mode",i1)') fr, m
