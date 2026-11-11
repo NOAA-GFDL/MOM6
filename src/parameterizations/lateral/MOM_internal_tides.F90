@@ -2988,6 +2988,19 @@ subroutine correct_halo_rotation(En, test, G, NAngle, halo)
   character(len=160) :: mesg  ! The text of an error message
   ish = G%isc-halo ; ieh = G%iec+halo ; jsh = G%jsc-halo ; jeh = G%jec+halo
 
+  if ((ish < G%isd) .or. (ieh > G%ied)) then
+    write(mesg,'("In MOM_internal_tides, correct_halo_rotation called with a ", &
+               & "x-halo that needs to be increased by ",I0,".")') &
+               max(G%isd-ish,ieh-G%ied)
+    call MOM_error(FATAL,mesg)
+  endif
+  if ((jsh < G%jsd) .or. (jeh > G%jed)) then
+    write(mesg,'("In MOM_internal_tides, correct_halo_rotation called with a ", &
+               & "y-halo that needs to be increased by ",I0,".")') &
+               max(G%jsd-jsh,jeh-G%jed)
+    call MOM_error(FATAL,mesg)
+  endif
+
   do j=jsh,jeh
     i_first = ieh+1 ; i_last = ish-1
     do i=ish,ieh
