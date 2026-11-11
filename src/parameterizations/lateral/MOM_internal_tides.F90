@@ -371,7 +371,7 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
   en_subRO = 1e-30*J_m2_to_HZ2_T2
 
   I_dt = 1.0 / dt
-  En_restart_factor = 2**CS%En_restart_power
+  En_restart_factor = 2.0**CS%En_restart_power
   I_En_restart_factor = 1.0 / En_restart_factor
 
   if (CS%dt_itides <= 0.) then
@@ -1392,9 +1392,9 @@ subroutine itidal_lowmode_loss(G, GV, US, CS, Nb, Rho_bot, Ub, En, TKE_loss_fixe
 
     ! Calculate TKE loss rate; units of [H Z2 T-3 ~> m3 s-3 or W m-2] here.
     if (GV%Boussinesq .or. GV%semi_Boussinesq) then
-      TKE_loss_tot = q_itides * GV%RZ_to_H*GV%Z_to_H*TKE_loss_fixed(i,j)*Nb(i,j)*Ub(i,j,fr,m)**2
+      TKE_loss_tot = q_itides * GV%RZ_to_H*GV%Z_to_H*TKE_loss_fixed(i,j)*max(Nb(i,j),0.)*Ub(i,j,fr,m)**2
     else
-      TKE_loss_tot = q_itides * (GV%RZ_to_H*GV%RZ_to_H*Rho_bot(i,j))*TKE_loss_fixed(i,j)*Nb(i,j)*Ub(i,j,fr,m)**2
+      TKE_loss_tot = q_itides * (GV%RZ_to_H*GV%RZ_to_H*Rho_bot(i,j))*TKE_loss_fixed(i,j)*max(Nb(i,j),0.)*Ub(i,j,fr,m)**2
     endif
 
     ! Update energy remaining (this is a pseudo implicit calc)
@@ -3588,7 +3588,7 @@ subroutine internal_tides_init(Time, G, GV, US, param_file, diag, CS)
   allocate(energy_fractions(num_freq))
   allocate(CS%fraction_tidal_input(num_freq,num_mode))
 
-  energy_fractions = "1.0"
+  energy_fractions(:) = "1.0"
   call read_param(param_file, "ENERGY_FRACTION_PER_MODE", energy_fractions)
 
   do fr=1,num_freq ; do m=1,num_mode
