@@ -865,8 +865,8 @@ subroutine propagate_int_tide(h, tv, Nb, Rho_bot, dt, G, GV, US, inttide_input_C
         ! Calculate wavenumber magnitude
         freq2 = CS%frequency(fr)**2
 
-        f2 = (0.25*(G%CoriolisBu(I,J) + G%CoriolisBu(max(I-1,1),max(J-1,1)) + &
-                    G%CoriolisBu(I,max(J-1,1)) + G%CoriolisBu(max(I-1,1),J)))**2
+        f2 = (0.25*(G%CoriolisBu(I,J) + G%CoriolisBu(I-1,J-1) + &
+                    G%CoriolisBu(I,J-1) + G%CoriolisBu(I-1,J)))**2
         Kmag2 = (freq2 - f2) / ((cn(i,j,m)**2) + (cn_subRO**2))
 
 
