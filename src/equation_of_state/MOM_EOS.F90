@@ -168,7 +168,7 @@ integer, parameter, public :: EOS_ROQUET_RHO = 7 !< A named integer specifying a
 integer, parameter, public :: EOS_ROQUET_SPV = 8 !< A named integer specifying an equation of state
 integer, parameter, public :: EOS_JACKETT06 = 9 !< A named integer specifying an equation of state
 !> A list of all the available EOS
-integer, dimension(9), public :: list_of_EOS = (/ EOS_LINEAR, EOS_UNESCO, &
+integer, parameter, public :: list_of_EOS(9) = (/ EOS_LINEAR, EOS_UNESCO, &
             EOS_WRIGHT, EOS_WRIGHT_FULL, EOS_WRIGHT_REDUCED, &
             EOS_TEOS10, EOS_ROQUET_RHO, EOS_ROQUET_SPV, EOS_JACKETT06 /)
 
