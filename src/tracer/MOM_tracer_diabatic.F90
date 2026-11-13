@@ -239,7 +239,7 @@ subroutine tracer_vertdiff_Eulerian(h_old, ent, dt, tr, G, GV, &
                                                                      !! [CU H ~> CU m or CU kg m-2] if
                                                                      !! convert_flux_in is .false.
   real, dimension(SZI_(G),SZJ_(G)), optional,intent(in)    :: btm_flux !< The (negative upward) bottom flux of the
-                                                                     !! tracer in [CU kg m-2 T-1 ~> CU kg m-2 s-1] or
+                                                                     !! tracer in [CU R Z T-1 ~> CU kg m-2 s-1] or
                                                                      !! [CU H ~> CU m or CU kg m-2] if
                                                                      !! convert_flux_in is .false.
   real, dimension(SZI_(G),SZJ_(G)), optional,intent(inout) :: btm_reservoir !< amount of tracer in a bottom reservoir
