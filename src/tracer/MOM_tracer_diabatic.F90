@@ -71,7 +71,7 @@ subroutine tracer_vertdiff(h_old, ea, eb, dt, tr, G, GV, &
                     !! ensure positive definiteness [H ~> m or kg m-2].
   real :: h_neglect !< A thickness that is so small it is usually lost
                     !! in roundoff and can be neglected [H ~> m or kg m-2].
-  logical :: convert_flux = .true.
+  logical :: convert_flux !< Local logical to hold value of optional convert_flux_in.
 
   integer :: i, j, k, is, ie, js, je, nz
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
@@ -82,6 +82,7 @@ subroutine tracer_vertdiff(h_old, ea, eb, dt, tr, G, GV, &
     return
   endif
 
+  convert_flux = .true.
   if (present(convert_flux_in)) convert_flux = convert_flux_in
   h_neglect = GV%H_subroundoff
   sink_dist = 0.0
@@ -238,7 +239,7 @@ subroutine tracer_vertdiff_Eulerian(h_old, ent, dt, tr, G, GV, &
                                                                      !! [CU H ~> CU m or CU kg m-2] if
                                                                      !! convert_flux_in is .false.
   real, dimension(SZI_(G),SZJ_(G)), optional,intent(in)    :: btm_flux !< The (negative upward) bottom flux of the
-                                                                     !! tracer in [CU kg m-2 T-1 ~> CU kg m-2 s-1] or
+                                                                     !! tracer in [CU R Z T-1 ~> CU kg m-2 s-1] or
                                                                      !! [CU H ~> CU m or CU kg m-2] if
                                                                      !! convert_flux_in is .false.
   real, dimension(SZI_(G),SZJ_(G)), optional,intent(inout) :: btm_reservoir !< amount of tracer in a bottom reservoir
@@ -304,7 +305,7 @@ subroutine tracer_vertdiff_Eulerian(h_old, ent, dt, tr, G, GV, &
     if (convert_flux) then
       !$OMP do
       do j=js,je ; do i=is,ie
-        btm_src(i,j) = (btm_flux(i,j)*dt) * GV%kg_m2_to_H
+        btm_src(i,j) = (btm_flux(i,j)*dt) * GV%RZ_to_H
       enddo ; enddo
     else
       !$OMP do
