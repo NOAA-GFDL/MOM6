@@ -140,7 +140,7 @@ subroutine initialize_oda_incupd( G, GV, US, param_file, CS, data_h, nz_data, re
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_oda"  ! This module's name.
   logical :: use_oda_incupd
-  logical :: bndExtrapolation = .true.   ! If true, extrapolate boundaries
+  logical :: bndExtrapolation ! If true, extrapolate boundaries
   logical :: reset_ncount
   integer :: i, j, k
   real    :: incupd_timescale ! The amount of timer over which to apply the full update [T ~> s]

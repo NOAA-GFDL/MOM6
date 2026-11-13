@@ -502,7 +502,7 @@ subroutine writeMessageAndDesc(doc, vmesg, desc, valueWasDefault, indent, &
   ! Local variables
   character(len=mLen) :: mesg          ! A full line of a message including indents.
   character(len=mLen) :: mesg_text     ! A line of message text without preliminary indents.
-  integer :: start_ind = 1             ! The starting index in the description for the next line.
+  integer :: start_ind                 ! The starting index in the description for the next line.
   integer :: nl_ind, tab_ind, end_ind  ! The indices of new-lines, tabs, and the end of a line.
   integer :: len_text, len_tab, len_nl ! The lengths of the text string, tabs and new-lines.
   integer :: len_cor                   ! The permitted length corrected for tab sizes in a line.

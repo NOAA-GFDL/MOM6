@@ -578,10 +578,10 @@ function simplifyWhiteSpace(string)
 
   ! Local variables
   integer :: i, j
-  logical :: nonBlank = .false., insideString = .false.
+  logical :: nonBlank, insideString
   character(len=1) :: quoteChar=" "
 
-  nonBlank  = .false. ; insideString = .false. ! NOTE: For some reason this line is needed??
+  nonBlank  = .false. ; insideString = .false.
   i = 0
   simplifyWhiteSpace = repeat(" ", len(string)+16)
   do j=1,len_trim(string)

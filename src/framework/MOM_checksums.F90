@@ -115,7 +115,7 @@ logical :: calculateStatistics=.true. !< If true, report min, max and mean.
 logical :: writeChksums=.true. !< If true, report the bitcount checksum
 logical :: checkForNaNs=.true. !< If true, checks array for NaNs and cause
                                !! FATAL error if any are found
-logical :: writeHash = .false. !< If true, report the murmur hash
+logical, parameter :: writeHash = .false. !< If true, report the murmur hash
   !! NOTE: writeHash is currently disabled due to non-compliant diagnostics.
 
 contains

@@ -6516,7 +6516,7 @@ subroutine adjustSegmentEtaToFitBathymetry(G, GV, US, segment, fld, at_node, end
   integer :: i, j, k, is, ie, js, je, nz, contractions, dilations
   real, allocatable, dimension(:,:,:) :: eta ! Segment source data interface heights [Z ~> m]
   real, allocatable, dimension(:,:)   :: dz_tot ! Segment total thicknesses [Z ~> m]
-  real :: hTolerance = 0.1 !<  Tolerance to exceed adjustment criteria [Z ~> m]
+  real :: hTolerance    !<  Tolerance to exceed adjustment criteria [Z ~> m]
   ! real :: dilate      ! A factor by which to dilate the water column [nondim]
   !character(len=100) :: mesg
 

@@ -68,7 +68,7 @@ subroutine MOM_initialize_tracer_from_Z(h, tr, G, GV, US, PF, src_file, src_var_
                                                             !! only extrapolation is performed by
                                                             !! horiz_interp_and_extrap_tracer()
   ! Local variables
-  real :: land_fill = 0.0  ! A value to use to replace missing values [CU ~> conc]
+  real, parameter :: land_fill = 0.0  ! A value to use to replace missing values [CU ~> conc]
   real :: convert ! A conversion factor into the model's internal units [CU conc-1 ~> 1]
   integer            :: recnum
   character(len=64)  :: remapScheme

@@ -72,7 +72,7 @@ end interface vec_chksum_A
 
 ! Note: these parameters are module data but ONLY used when debugging and
 !       so can violate the thread-safe requirement of no module/global data.
-integer :: max_redundant_prints = 100 !< Maximum number of times to write redundant messages
+integer, parameter :: max_redundant_prints = 100 !< Maximum number of times to write redundant messages
 integer :: redundant_prints(3) = 0 !< Counters for controlling redundant printing
 logical :: debug = .false. !< Write out verbose debugging data
 logical :: debug_chksums = .true. !< Perform checksums on arrays

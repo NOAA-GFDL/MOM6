@@ -1641,12 +1641,12 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   integer :: Iscq, Iecq, Jscq, Jecq, isc, iec, jsc, jec
   real    :: err_max, err_tempu, err_tempv, err_init ! Errors in [R L3 Z T-2 ~> kg m s-2] or [L T-1 ~> m s-1]
   real    :: norm_tau, err_rr ! Errors in [R L3 Z T-2 ~> kg m s-2] for relative residual
-  real    :: ew_resid       = 0.0  ! L2 norm of stress residual ||A(u)u - tau|| for Eisenstat-Walker [kg m s-2]
-  real    :: ew_prev_resid  = 0.0  ! Previous ew_resid; 0.0 flags first Newton call [kg m s-2]
-  real    :: ew_eta         = 0.0  ! Current EW inner tolerance [nondim]
-  real    :: ew_eta_prev    = 0.0  ! Previous EW inner tolerance for Chacon 2008 sharp-decrease safeguard [nondim]
-  real    :: ew_stol                ! Temporary safeguard tolerance [nondim]
-  real    :: max_vel  ! The maximum velocity magnitude [L T-1 ~> m s-1]
+  real    :: ew_resid         ! L2 norm of stress residual ||A(u)u - tau|| for Eisenstat-Walker [kg m s-2]
+  real    :: ew_prev_resid    ! Previous ew_resid; 0.0 flags first Newton call [kg m s-2]
+  real    :: ew_eta           ! Current EW inner tolerance [nondim]
+  real    :: ew_eta_prev      ! Previous EW inner tolerance for Chacon 2008 sharp-decrease safeguard [nondim]
+  real    :: ew_stol          ! Temporary safeguard tolerance [nondim]
+  real    :: max_vel          ! The maximum velocity magnitude [L T-1 ~> m s-1]
   real    :: tempu, tempv   ! Temporary variables with velocity magnitudes [L T-1 ~> m s-1]
   real    :: Norm, PrevNorm ! Velocities used to assess convergence [L T-1 ~> m s-1]
   real    :: newton_after_tol_loc ! Working Picard-to-Newton switch threshold for this solve,

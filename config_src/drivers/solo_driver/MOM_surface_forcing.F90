@@ -662,8 +662,8 @@ subroutine scurve_wind_forcing(sfc_state, forces, day, G, US, CS)
   integer :: i, j, kseg
   real :: y_curve       ! The latitude relative to the southern end of a curve segment [degreesN]
   real :: L_curve       ! The latitudinal extent of a curve segment [degreesN]
-! real :: ydata(7) = (/ -70., -45., -15., 0., 15., 45., 70. /)
-! real :: taudt(7) = (/ 0., 0.2, -0.1, -0.02, -0.1, 0.1, 0. /)
+! real, parameter :: ydata(7) = (/ -70., -45., -15., 0., 15., 45., 70. /)
+! real, parameter :: taudt(7) = (/ 0., 0.2, -0.1, -0.02, -0.1, 0.1, 0. /)
 
   ! Allocate the forcing arrays, if necessary.
   call allocate_mech_forcing(G, forces, stress=.true.)

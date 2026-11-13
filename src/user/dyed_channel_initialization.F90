@@ -29,9 +29,9 @@ public register_dyed_channel_OBC, dyed_channel_update_flow
 
 !> Control structure for dyed-channel open boundaries.
 type, public :: dyed_channel_OBC_CS ; private
-  real :: zonal_flow = 8.57         !< Mean inflow [L T-1 ~> m s-1]
-  real :: tidal_amp = 0.0           !< Sloshing amplitude [L T-1 ~> m s-1]
-  real :: frequency  = 0.0          !< Sloshing frequency [T-1 ~> s-1]
+  real :: zonal_flow                !< Mean inflow [L T-1 ~> m s-1]
+  real :: tidal_amp                 !< Sloshing amplitude [L T-1 ~> m s-1]
+  real :: frequency                 !< Sloshing frequency [T-1 ~> s-1]
   logical :: OBC_transport_bug      !< If true and specified open boundary conditions are being
                                     !! used, use a 1 m (if Boussienesq) or 1 kg m-2 layer thickness
                                     !! instead of the actual thickness.
