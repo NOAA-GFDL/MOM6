@@ -595,7 +595,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
   real :: bbl_time_int    ! The amount of time over which the calculated BBL
                           ! properties will apply, for use in diagnostics, or 0
                           ! if it is not to be calculated anew [T ~> s].
-  real :: rel_time = 0.0  ! relative time since start of this call [T ~> s].
+  real :: rel_time        ! relative time since start of this call [T ~> s].
 
   logical :: do_advection    ! If true, do tracer advection.
   logical :: do_diabatic     ! If true, do diabatic update.
@@ -2395,7 +2395,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   logical :: save_IC           ! If true, save the initial conditions.
   logical :: do_unit_tests     ! If true, call unit tests.
   logical :: fpmix             ! Needed to decide if BLD should be passed to RK2.
-  logical :: test_grid_copy = .false.
+  logical, parameter :: test_grid_copy = .false.
 
   logical :: bulkmixedlayer    ! If true, a refined bulk mixed layer scheme is used
                                ! with nkml sublayers and nkbl buffer layer.

@@ -370,7 +370,7 @@ function diag_buffer_unit_tests_2d(verbose) result(fail)
     integer, parameter :: is=1, ie=2, js=3, je=6, nlen=3
     integer :: i, new_i, id, new_id
     real, dimension(nlen, is:ie, js:je) :: test_2d_first, test_2d_second ! Two test arrays [arbitrary]
-    integer, dimension(nlen) :: reorder = [2,1,3]
+    integer, parameter :: reorder(3) = [2,1,3]
 
     local_fail = .false.
     call random_number(test_2d_first)
@@ -507,7 +507,7 @@ function diag_buffer_unit_tests_3d(verbose) result(fail)
     integer, parameter :: is=1, ie=2, js=3, je=6, ks=1, ke=10, nlen=3
     integer :: i, new_i, id, new_id
     real, dimension(nlen, is:ie, js:je, ks:ke) :: test_3d_first, test_3d_second ! Two test arrays [arbitrary]
-    integer, dimension(nlen) :: reorder = [2,1,3]
+    integer, parameter :: reorder(3) = [2,1,3]
 
     local_fail = .false.
     call random_number(test_3d_first)

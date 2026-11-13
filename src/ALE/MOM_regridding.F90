@@ -273,7 +273,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   !! These are approximate because the WOA09 depths are not smoothly spaced. Levels
   !! 1, 4, 5, 9, 12, 24, and 36 are 2.5, 2.5, 1.25 12.5, 37.5 and 62.5 m deeper than WOA09
   !! but all others are identical.
-  real, dimension(40) :: woa09_dz_approx = (/ 5.,  10.,  10.,  15.,  22.5, 25.,  25.,  25.,  &
+  real, parameter :: woa09_dz_approx(40) = (/ 5.,  10.,  10.,  15.,  22.5, 25.,  25.,  25., &
                                              37.5, 50.,  50.,  75., 100., 100., 100., 100., &
                                             100., 100., 100., 100., 100., 100., 100., 175., &
                                             250., 375., 500., 500., 500., 500., 500., 500., &
@@ -281,7 +281,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
 
   !> These are the actual spacings [m] between WOA09 depths which, if used for layer thickness, places
   !! the interfaces at the WOA09 depths.
-  real, dimension(39) :: woa09_dzi = (/ 10.,  10.,  10.,  20.,  25.,  25.,  25.,  25.,  &
+  real, parameter :: woa09_dzi(39) = (/ 10.,  10.,  10.,  20.,  25.,  25.,  25.,  25., &
                                         50.,  50.,  50., 100., 100., 100., 100., 100., &
                                        100., 100., 100., 100., 100., 100., 100., 250., &
                                        250., 500., 500., 500., 500., 500., 500., 500., &
@@ -289,7 +289,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
 
   !> These are the spacings [m] between WOA23 depths from table 3 of
   !! https://www.ncei.noaa.gov/data/oceans/woa/WOA13/DOC/woa13documentation.pdf
-  real, dimension(136) :: woa23_dzi = (/ 5.,   5.,   5.,   5.,   5.,   5.,   5.,   5.,   5.,   5., &
+  real, parameter :: woa23_dzi(136) = (/ 5.,   5.,   5.,   5.,   5.,   5.,   5.,   5.,   5.,   5., &
                                          5.,   5.,   5.,   5.,   5.,   5.,   5.,   5.,   5.,   5., &
                                         25.,  25.,  25.,  25.,  25.,  25.,  25.,  25.,  25.,  25., &
                                         25.,  25.,  25.,  25.,  25.,  25.,  50.,  50.,  50.,  50., &
@@ -1491,7 +1491,7 @@ subroutine filtered_grid_motion( CS, nk, z_old, z_new, dz_g )
 ! For debugging:
   real, dimension(nk+1) :: z_act ! The final grid positions after the filtered movement [H ~> m or kg m-2]
 !  real, dimension(nk+1) :: ddz_g_s, ddz_g_d
-  logical :: debug = .false.
+  logical, parameter :: debug = .false.
   integer :: k
 
   if ((z_old(nk+1) - z_old(1)) * (z_new(CS%nk+1) - z_new(1)) < 0.0) then

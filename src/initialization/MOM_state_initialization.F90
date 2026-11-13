@@ -183,7 +183,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
                           ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: debug      ! If true, write debugging output.
-  logical :: debug_layers = .false.
+  logical, parameter :: debug_layers = .false.
   logical :: use_ice_shelf
   character(len=80) :: mesg
   ! This include declares and sets the variable "version".
@@ -2605,7 +2605,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
   character(len=40) :: potemp_var, salin_var
 
   integer, parameter :: niter=10   ! number of iterations for t/s adjustment to layer density
-  logical            :: adjust_temperature = .true.  ! fit t/s to target densities
+  logical :: adjust_temperature  ! fit t/s to target densities
   real    :: temp_land_fill  ! A temperature value to use for land points [C ~> degC]
   real    :: salt_land_fill  ! A salinity value to use for land points [C ~> degC]
 
@@ -2821,10 +2821,11 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
                  default=.true., do_not_log=.true.)
 
   if (just_read) then
-    if ((.not.useALEremapping) .and. adjust_temperature) &
+    if (.not.useALEremapping) then ; if (adjust_temperature) then
       ! This call is just here to read and log the determine_temperature parameters
       call determine_temperature(tv%T, tv%S, GV%Rlay(1:nz), eos, tv%P_Ref, 0, &
                                  0, G, GV, US, PF, just_read=.true.)
+    endif ; endif
     call cpu_clock_end(id_clock_routine)
     return ! All run-time parameters have been read, so return.
   endif

@@ -327,7 +327,7 @@ subroutine oil_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, GV, US
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: h_work ! Used so that h can be modified [H ~> m or kg m-2]
-  real :: Isecs_per_year = 1.0 / (365.0*86400.0) ! Conversion factor from seconds to year [year s-1]
+  real, parameter :: Isecs_per_year = 1.0 / (365.0*86400.0) ! Conversion factor from seconds to year [year s-1]
   real :: vol_scale ! A conversion factor for volumes into m3 [m3 H-1 L-2 ~> 1 or m3 kg-1]
   real :: year      ! Time in fractional years [years]
   real :: h_total   ! A running sum of thicknesses [H ~> m or kg m-2]

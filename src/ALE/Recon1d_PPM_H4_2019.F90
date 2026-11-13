@@ -298,7 +298,7 @@ subroutine end_value_h4(dz, u, Csys)
   real :: I_h1234         ! The inverse of the sum of all four thicknesses [H-1]
   real :: I_denom         ! The inverse of the denominator some expressions [H-3]
   real :: I_denB3         ! The inverse of the product of three sums of thicknesses [H-3]
-  real :: min_frac = 1.0e-6  ! The square of min_frac should be much larger than roundoff [nondim]
+  real, parameter :: min_frac = 1.0e-6  ! The square of min_frac should be much larger than roundoff [nondim]
   real, parameter :: C1_3 = 1.0 / 3.0   ! A rational parameter [nondim]
 
  ! if ((dz(1) == dz(2)) .and. (dz(1) == dz(3)) .and. (dz(1) == dz(4))) then

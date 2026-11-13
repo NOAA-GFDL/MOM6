@@ -1234,7 +1234,7 @@ subroutine add_shelf_forces(Ocn_grid, US, CS, forces_in, do_shelf_area, external
   real :: kv_rho_ice ! The viscosity of ice divided by its density [L4 T-1 R-1 Z-2 ~> m5 kg-1 s-1].
   real :: press_ice  ! The pressure of the ice shelf per unit area of ocean (not ice) [R L2 T-2 ~> Pa].
   logical :: find_area ! If true find the shelf areas at u & v points.
-  logical :: rotate = .false.
+  logical :: rotate
   type(ice_shelf_state), pointer :: ISS => NULL() ! A structure with elements that describe
                                           ! the ice-shelf state
 

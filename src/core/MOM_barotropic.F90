@@ -713,7 +713,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
 
   real :: dyn_coef_max ! The maximum stable value of dyn_coef_eta
                       ! [L2 T-2 H-1 ~> m s-2 or m4 s-2 kg-1].
-  real :: ice_strength = 0.0  ! The effective strength of the ice [L2 Z-1 T-2 ~> m s-2].
+  real :: ice_strength ! The effective strength of the ice [L2 Z-1 T-2 ~> m s-2].
   real :: H_to_Z      ! A local unit conversion factor used with rigid ice [Z H-1 ~> nondim or m3 kg-1]
   real :: Idt_max2    ! The squared inverse of the local maximum stable
                       ! barotropic time step [T-2 ~> s-2].
@@ -4873,7 +4873,8 @@ function uhbt_to_ubt(uhbt, BTC) result(ubt)
   real :: uherr_min, uherr_max   ! The bounding values of the transport error [H L2 T-1 ~> m3 s-1 or kg s-1]
                                  ! or [H L2 ~> m3 or kg].
   real, parameter :: tol = 1.0e-10 ! A fractional match tolerance [nondim]
-  integer :: itt, max_itt = 20
+  integer, parameter :: max_itt = 20
+  integer :: itt
 
   ! Find the value of ubt that gives uhbt.
   if (uhbt == 0.0) then
@@ -5003,7 +5004,8 @@ function vhbt_to_vbt(vhbt, BTC) result(vbt)
   real :: vherr_min, vherr_max   ! The bounding values of the transport error [H L2 T-1 ~> m3 s-1 or kg s-1]
                                  ! or [H L2 ~> m3 or kg].
   real, parameter :: tol = 1.0e-10 ! A fractional match tolerance [nondim]
-  integer :: itt, max_itt = 20
+  integer, parameter :: max_itt = 20
+  integer :: itt
 
   ! Find the value of vbt that gives vhbt.
   if (vhbt == 0.0) then
