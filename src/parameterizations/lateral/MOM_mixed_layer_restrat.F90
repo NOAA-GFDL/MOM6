@@ -1600,7 +1600,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
 
     ! Find the deepest valid layer.
     kb = 0
-    do k = nz,1,-1
+    do k=nz,1,-1
       if ( min(h(i,j,k), h(i+1,j,k)) > (GV%Angstrom_H + GV%H_subroundoff) ) then
         kb = k
         exit
@@ -1668,7 +1668,7 @@ subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV,
 
     ! Find the deepest valid layer.
     kb = 0
-    do k = nz,1,-1
+    do k=nz,1,-1
       if ( min(h(i,j,k), h(i,j+1,k)) > (GV%Angstrom_H + GV%H_subroundoff) ) then
         kb = k
         exit
