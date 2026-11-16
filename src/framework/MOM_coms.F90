@@ -66,9 +66,7 @@ real, parameter :: max_efp_float = pr(1) * real(huge(1_int64))
 
 logical :: overflow_error = .false.
   !< This becomes true if an overflow is encountered.
-logical :: NaN_error = .false.
-  !< This becomes true if a NaN is encountered.
-logical :: debug = .false.
+logical, parameter :: debug = .false.
   !< Making this true enables debugging output.
 
 ! This module provides interfaces to the non-domain-oriented communication subroutines.
@@ -147,6 +145,7 @@ function reproducing_EFP_sum_2d(array, isr, ier, jsr, jer, overflow_check, err, 
   real    :: rs ! The remaining value to add, in arbitrary units [a]
   real    :: max_mag_term ! A running maximum magnitude of the values in arbitrary units [a]
   real    :: descale    ! A local copy of unscale if it is present [a A-1 ~> 1] or 1
+  logical :: NaN_error  ! This becomes true if a NaN is encountered.
   logical :: over_check, do_sum_across_PEs, do_unscale
   character(len=256) :: mesg
   integer :: i, j, n, is, ie, js, je, sgn
@@ -185,7 +184,7 @@ function reproducing_EFP_sum_2d(array, isr, ier, jsr, jer, overflow_check, err, 
   ints_sum(:) = 0
   if (over_check) then
     call increment_block_ints(array, is, ie, js, je, descale, ints_sum, &
-        max_mag_term, prec_error)
+        max_mag_term, prec_error, NaN_error)
   else
     do j=js,je ; do i=is,ie
       sgn = 1 ; if (array(i,j)<0.0) sgn = -1
@@ -201,15 +200,11 @@ function reproducing_EFP_sum_2d(array, isr, ier, jsr, jer, overflow_check, err, 
 
   if (present(err)) then
     err = 0
-    if (overflow_error) &
-      err = err+2
-    if (NaN_error) &
-      err = err+4
+    if (overflow_error) err = err+2
+    if (NaN_error) err = err + 4
     if (err > 0) then ; do n=1,efp_digits ; ints_sum(n) = 0 ; enddo ; endif
   else
-    if (NaN_error) then
-      call MOM_error(FATAL, "NaN in input field of reproducing_EFP_sum(_2d).")
-    endif
+    if (NaN_error) call MOM_error(FATAL, "NaN in input field of reproducing_EFP_sum(_2d).")
     if (abs(max_mag_term) >= prec_error*pr(1)) then
       write(mesg, '(ES13.5)') max_mag_term
       call MOM_error(FATAL,"Overflow in reproducing_EFP_sum(_2d) conversion of "//trim(mesg))
@@ -267,6 +262,7 @@ function reproducing_sum_2d(array, isr, ier, jsr, jer, EFP_sum, reproducing, &
   real    :: rsum(1)    ! The running sum, in arbitrary units [a]
   real    :: descale    ! A local copy of unscale if it is present [a A-1 ~> 1] or 1
   real    :: I_unscale  ! The reciprocal of unscale [A a-1 ~> 1]
+  logical :: NaN_error  ! This becomes true if a NaN is encountered.
   logical :: repro, do_sum_across_PEs, do_unscale
   character(len=256) :: mesg
   type(EFP_type) :: EFP_val ! An extended fixed point version of the sum
@@ -321,12 +317,14 @@ function reproducing_sum_2d(array, isr, ier, jsr, jer, EFP_sum, reproducing, &
     if (present(err)) then ; err = 0 ; endif
 
     if (debug .or. present(EFP_sum)) then
-      overflow_error = .false.
-      ints_sum = real_to_ints(sum, prec_error, overflow_error)
-      if (overflow_error) then
-        if (present(err)) then
-          err = err + 2
-        else
+      overflow_error = .false. ; NaN_error = .false.
+      ints_sum = real_to_ints(sum, prec_error, overflow_error, NaN_error)
+      if (present(err)) then
+        if (overflow_error) err = err + 2
+        if (NaN_error) err = err + 4
+      else
+        if (NaN_error) call MOM_error(FATAL, "NaN in input field of reproducing_sum(_2d).")
+        if (overflow_error) then
           write(mesg, '(ES13.5)') sum
           call MOM_error(FATAL,"Repro_sum_2d: Overflow in real_to_ints conversion of "//trim(mesg))
         endif
@@ -382,6 +380,7 @@ function reproducing_sum_3d(array, isr, ier, jsr, jer, sums, EFP_sum, EFP_lay_su
   integer(kind=int64), dimension(efp_digits,size(array,3))  :: ints_sums
   integer(kind=int64) :: prec_error
   character(len=256) :: mesg
+  logical :: NaN_error  ! This becomes true if a NaN is encountered.
   logical :: do_sum_across_PEs, do_unscale
   integer :: i, j, k, is, ie, js, je, ke, isz, jsz, n
 
@@ -428,14 +427,14 @@ function reproducing_sum_3d(array, isr, ier, jsr, jer, sums, EFP_sum, EFP_lay_su
     ints_sums(:,:) = 0
     do k=1,ke
       call increment_block_ints(array(:,:,k), is, ie, js, je, descale, &
-          ints_sums(:,k), max_mag_term, prec_error)
+          ints_sums(:,k), max_mag_term, prec_error, NaN_error)
     enddo
 
     if (present(err)) then
       err = 0
       if (abs(max_mag_term) >= prec_error*pr(1)) err = err+1
       if (overflow_error) err = err+2
-      if (NaN_error) err = err+2
+      if (NaN_error) err = err + 4
       if (err > 0) then ; do k=1,ke ; do n=1,efp_digits ; ints_sums(n,k) = 0 ; enddo ; enddo ; endif
     else
       if (NaN_error) call MOM_error(FATAL, "NaN in input field of reproducing_sum(_3d).")
@@ -476,14 +475,14 @@ function reproducing_sum_3d(array, isr, ier, jsr, jer, sums, EFP_sum, EFP_lay_su
     ints_sum(:) = 0
     do k=1,ke
       call increment_block_ints(array(:,:,k), is, ie, js, je, descale, &
-          ints_sum, max_mag_term, prec_error)
+          ints_sum, max_mag_term, prec_error, NaN_error)
     enddo
 
     if (present(err)) then
       err = 0
       if (abs(max_mag_term) >= prec_error*pr(1)) err = err+1
       if (overflow_error) err = err+2
-      if (NaN_error) err = err+2
+      if (NaN_error) err = err + 4
       if (err > 0) then ; do n=1,efp_digits ; ints_sum(n) = 0 ; enddo ; endif
     else
       if (NaN_error) call MOM_error(FATAL, "NaN in input field of reproducing_sum(_3d).")
@@ -519,7 +518,7 @@ function reproducing_sum_3d(array, isr, ier, jsr, jer, sums, EFP_sum, EFP_lay_su
 end function reproducing_sum_3d
 
 !> Convert a real number into the array of integers constitute its extended-fixed-point representation
-function real_to_ints(r, prec_error, overflow) result(ints)
+function real_to_ints(r, prec_error, overflow, is_NaN) result(ints)
   real,                      intent(in) :: r  !< The real number being converted in arbitrary units [a]
   integer(kind=int64), optional, intent(in) :: prec_error  !< The PE-count dependent precision of the
                                               !! integers that is safe from overflows during global
@@ -527,6 +526,8 @@ function real_to_ints(r, prec_error, overflow) result(ints)
                                               !! precision parameter, and is used to detect overflows.
   logical,         optional, intent(inout) :: overflow !< Returns true if the conversion is being
                                               !! done on a value that is too large to be represented
+  logical,         optional, intent(inout) :: is_NaN  !< Returns true if the conversion is being
+                                              !! done to a NaN.
   integer(kind=int64), dimension(efp_digits)  :: ints
 
   !   This subroutine converts a real number to an equivalent representation
@@ -540,7 +541,10 @@ function real_to_ints(r, prec_error, overflow) result(ints)
 
   prec_err = prec ; if (present(prec_error)) prec_err = prec_error
   ints(:) = 0
-  if ((r >= 1e30) .eqv. (r < 1e30)) then ; NaN_error = .true. ; return ; endif
+  if ((r >= 1e30) .eqv. (r < 1e30)) then
+    if (present(is_NaN)) is_NaN = .true.
+    return
+  endif
 
   sgn = 1 ; if (r<0.0) sgn = -1
   rs = abs(r)
@@ -612,7 +616,7 @@ end subroutine increment_ints
 !> Sum the elements of an array in EFP form and append the result to an
 !! existing EFP array.
 subroutine increment_block_ints(array, is, ie, js, je, descale, ints_sum, &
-    max_mag_term, prec_error)
+    max_mag_term, prec_error, is_NaN)
   real, intent(in) :: array(:,:)
     !< The field being added, in arbitrary units [A ~> a]
   integer, intent(in) :: is
@@ -631,6 +635,8 @@ subroutine increment_block_ints(array, is, ie, js, je, descale, ints_sum, &
     !< A running maximum magnitude of the r's, in arbitrary units [a]
   integer(kind=int64), intent(in) :: prec_error
     !< The maximum resolvable value for a given number of PEs
+  logical, intent(inout) :: is_NaN
+    !< A flag that indicates whether a NaN has been encountered.
 
   integer :: i, j, ib, jb, ibs, ibe, jbs, jbe
     ! Loop indices
@@ -759,7 +765,7 @@ subroutine increment_block_ints(array, is, ie, js, je, descale, ints_sum, &
   endif
 
   ! Transfer error/warning signals to module flags
-  if (inan /= 0) NaN_error = .true.
+  if (inan /= 0) is_NaN = .true.
   if (iovf /= 0) overflow_error = .true.
 end subroutine increment_block_ints
 
@@ -949,24 +955,32 @@ function EFP_real_diff(EFP1, EFP2)
 end function EFP_real_diff
 
 !> Return the extended-fixed-point number that a real number corresponds with
-function real_to_EFP(val, overflow)
+function real_to_EFP(val, overflow, is_NaN)
   real,              intent(in)    :: val !< The real number being converted in arbitrary units [a]
   logical, optional, intent(inout) :: overflow !< Returns true if the conversion is being
                                           !! done on a value that is too large to be represented
+  logical, optional, intent(inout) :: is_NaN !< Returns true if the conversion is being done on a NaN
   type(EFP_type) :: real_to_EFP
 
-  logical :: over
+  logical :: over  ! A flag that indicates the presence of an overflow error
+  logical :: NaN_error  ! This becomes true if a NaN is encountered.
   character(len=80) :: mesg
 
+  over = .false. ; if (present(overflow)) over = overflow
+  NaN_error = .false. ; if (present(is_NaN)) NaN_error = is_NaN
+  real_to_EFP%v(:) = real_to_ints(val, overflow=over, is_NaN=NaN_error)
+
   if (present(overflow)) then
-    real_to_EFP%v(:) = real_to_ints(val, overflow=overflow)
-  else
-    over = .false.
-    real_to_EFP%v(:) = real_to_ints(val, overflow=over)
-    if (over) then
-      write(mesg, '(ES13.5)') val
-      call MOM_error(FATAL,"Overflow in real_to_EFP conversion of "//trim(mesg))
-    endif
+    overflow = over
+  elseif (over) then
+    write(mesg, '(ES13.5)') val
+    call MOM_error(FATAL, "Overflow in real_to_EFP conversion of "//trim(mesg))
+  endif
+
+  if (present(is_NaN)) then
+    is_NaN = NaN_error
+  elseif (NaN_error) then
+    call MOM_error(FATAL, "NaN encountered in real_to_EFP conversion")
   endif
 
 end function real_to_EFP
