@@ -987,13 +987,15 @@ end function real_to_EFP
 
 !>   This subroutine does a sum across PEs of a list of EFP variables,
 !! returning the sums in place, with all overflows carried.
-subroutine EFP_list_sum_across_PEs(EFPs, nval, errors)
+subroutine EFP_list_sum_across_PEs(EFPs, nval, errors, overflow)
   type(EFP_type), dimension(:), &
               intent(inout) :: EFPs   !< The list of extended fixed point numbers
                                       !! being summed across PEs.
   integer,    intent(in)    :: nval   !< The number of values being summed.
   logical, dimension(:), &
            optional, intent(out)   :: errors !< A list of error flags for each sum
+  logical, optional, intent(inout) :: overflow !< Set to true if the sum becomes too large to be
+                                          !! represented, but otherwise retains its input value
 
   !   This subroutine does a sum across PEs of a list of EFP variables,
   ! returning the sums in place, with all overflows carried.
@@ -1030,7 +1032,9 @@ subroutine EFP_list_sum_across_PEs(EFPs, nval, errors)
     endif
     error_found = error_found .or. overflow_error
   enddo
-  if (error_found .and. .not.(present(errors))) then
+  if (present(overflow) .and. error_found) overflow = .true.
+
+  if (error_found .and. .not.(present(errors) .or. present(overflow))) then
     call MOM_error(FATAL, "Overflow in EFP_list_sum_across_PEs.")
   endif
 
@@ -1038,17 +1042,18 @@ end subroutine EFP_list_sum_across_PEs
 
 !>   This subroutine does a sum across PEs of an EFP variable,
 !! returning the sums in place, with all overflows carried.
-subroutine EFP_val_sum_across_PEs(EFP, error)
+subroutine EFP_val_sum_across_PEs(EFP, error, overflow)
   type(EFP_type),  intent(inout) :: EFP   !< The extended fixed point numbers
                                           !! being summed across PEs.
   logical, optional, intent(out) :: error !< An error flag for this sum
+  logical, optional, intent(inout) :: overflow !< Set to true if the sum becomes too large to be
+                                          !! represented, but otherwise retains its input value
 
   !   This subroutine does a sum across PEs of a list of EFP variables,
   ! returning the sums in place, with all overflows carried.
 
   integer(kind=int64), dimension(efp_digits) :: ints
   integer(kind=int64) :: prec_error
-  logical :: error_found
   character(len=256) :: mesg
   integer :: n
 
@@ -1059,7 +1064,7 @@ subroutine EFP_val_sum_across_PEs(EFP, error)
   prec_error = huge(1_int64) / num_PEs()
 
   ! overflow_error is an overflow error flag for the whole module.
-  overflow_error = .false. ; error_found = .false.
+  overflow_error = .false.
 
   do n=1,efp_digits ; ints(n) = EFP%v(n) ; enddo
 
@@ -1076,9 +1081,9 @@ subroutine EFP_val_sum_across_PEs(EFP, error)
            EFP_to_real(EFP), real(prec_error)
     call MOM_error(WARNING, mesg)
   endif
-  error_found = error_found .or. overflow_error
+  if (present(overflow) .and. overflow_error) overflow = .true.
 
-  if (error_found .and. .not.(present(error))) then
+  if (overflow_error .and. .not.(present(error) .or. present(overflow))) then
     call MOM_error(FATAL, "Overflow in EFP_val_sum_across_PEs.")
   endif
 
