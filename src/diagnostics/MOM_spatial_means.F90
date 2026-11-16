@@ -8,7 +8,6 @@ module MOM_spatial_means
 use MOM_coms, only : EFP_type, operator(+), operator(-), assignment(=)
 use MOM_coms, only : EFP_to_real, real_to_EFP, EFP_sum_across_PEs
 use MOM_coms, only : reproducing_sum, reproducing_sum_EFP, EFP_to_real
-use MOM_coms, only : query_EFP_overflow_error, reset_EFP_overflow_error
 use MOM_coms, only : max_across_PEs, min_across_PEs
 use MOM_error_handler, only : MOM_error, NOTE, WARNING, FATAL, is_root_pe
 use MOM_file_parser, only : get_param, log_version, param_file_type
@@ -564,6 +563,7 @@ subroutine global_i_mean(array, i_mean, G, mask, scale, tmp_scale, unscale)
   real :: scalefac   ! A scaling factor for the variable [a A-1 ~> 1]
   real :: rescale    ! A factor for redoing any internal rescaling before output [A a-1 ~> 1]
   real :: mask_sum_r ! The sum of the mask values in a row [nondim]
+  logical :: overflow  ! This becomes true when there is an overflow error.
   integer :: is, ie, js, je, idg_off, jdg_off
   integer :: i, j
 
@@ -578,7 +578,6 @@ subroutine global_i_mean(array, i_mean, G, mask, scale, tmp_scale, unscale)
   if (present(tmp_scale)) then ; if (tmp_scale /= 0.0) then
     scalefac = scalefac * tmp_scale ; rescale = 1.0 / tmp_scale
   endif ; endif
-  call reset_EFP_overflow_error()
 
   allocate(asum(G%jsg:G%jeg))
   if (present(mask)) then
@@ -588,19 +587,22 @@ subroutine global_i_mean(array, i_mean, G, mask, scale, tmp_scale, unscale)
       asum(j) = real_to_EFP(0.0) ; mask_sum(j) = real_to_EFP(0.0)
     enddo
 
+    overflow = .false.
     do j=js,je ; do i=is,ie
-      asum(j+jdg_off) = asum(j+jdg_off) + real_to_EFP(scalefac*array(i,j)*mask(i,j))
-      mask_sum(j+jdg_off) = mask_sum(j+jdg_off) + real_to_EFP(mask(i,j))
+      asum(j+jdg_off) = asum(j+jdg_off) + real_to_EFP(scalefac*array(i,j)*mask(i,j), overflow)
+      mask_sum(j+jdg_off) = mask_sum(j+jdg_off) + real_to_EFP(mask(i,j), overflow)
     enddo ; enddo
-
-    if (query_EFP_overflow_error()) call MOM_error(FATAL, &
+    if (overflow) call MOM_error(FATAL, &
       "global_i_mean overflow error occurred before sums across PEs.")
 
-    call EFP_sum_across_PEs(asum(G%jsg:G%jeg), G%jeg-G%jsg+1)
-    call EFP_sum_across_PEs(mask_sum(G%jsg:G%jeg), G%jeg-G%jsg+1)
-
-    if (query_EFP_overflow_error()) call MOM_error(FATAL, &
+    overflow = .false.
+    call EFP_sum_across_PEs(asum(G%jsg:G%jeg), G%jeg-G%jsg+1, overflow=overflow)
+    if (overflow) call MOM_error(FATAL, &
       "global_i_mean overflow error occurred during sums across PEs.")
+    overflow = .false.
+    call EFP_sum_across_PEs(mask_sum(G%jsg:G%jeg), G%jeg-G%jsg+1, overflow=overflow)
+    if (overflow) call MOM_error(FATAL, &
+      "global_i_mean overflow error occurred during sums of masks across PEs.")
 
     do j=js,je
       mask_sum_r = EFP_to_real(mask_sum(j+jdg_off))
@@ -613,17 +615,17 @@ subroutine global_i_mean(array, i_mean, G, mask, scale, tmp_scale, unscale)
   else
     do j=G%jsg,G%jeg ; asum(j) = real_to_EFP(0.0) ; enddo
 
+    overflow = .false.
     do j=js,je ; do i=is,ie
-      asum(j+jdg_off) = asum(j+jdg_off) + real_to_EFP(scalefac*array(i,j))
+      asum(j+jdg_off) = asum(j+jdg_off) + real_to_EFP(scalefac*array(i,j), overflow)
     enddo ; enddo
+    if (overflow) call MOM_error(FATAL, &
+      "global_i_mean overflow error occurred before unmasked sum across PEs.")
 
-    if (query_EFP_overflow_error()) call MOM_error(FATAL, &
-      "global_i_mean overflow error occurred before sum across PEs.")
-
-    call EFP_sum_across_PEs(asum(G%jsg:G%jeg), G%jeg-G%jsg+1)
-
-    if (query_EFP_overflow_error()) call MOM_error(FATAL, &
-      "global_i_mean overflow error occurred during sum across PEs.")
+    overflow = .false.
+    call EFP_sum_across_PEs(asum(G%jsg:G%jeg), G%jeg-G%jsg+1, overflow=overflow)
+    if (overflow) call MOM_error(FATAL, &
+      "global_i_mean overflow error occurred during unmasked sum across PEs.")
 
     do j=js,je
       i_mean(j) = EFP_to_real(asum(j+jdg_off)) / real(G%ieg-G%isg+1)
@@ -665,6 +667,7 @@ subroutine global_j_mean(array, j_mean, G, mask, scale, tmp_scale, unscale)
   real :: mask_sum_r ! The sum of the mask values in a row [nondim]
   real :: scalefac   ! A scaling factor for the variable [a A-1 ~> 1]
   real :: rescale    ! A factor for redoing any internal rescaling before output [A a-1 ~> 1]
+  logical :: overflow  ! This becomes true when there is an overflow error.
   integer :: is, ie, js, je, idg_off, jdg_off
   integer :: i, j
 
@@ -679,7 +682,6 @@ subroutine global_j_mean(array, j_mean, G, mask, scale, tmp_scale, unscale)
   if (present(tmp_scale)) then ; if (tmp_scale /= 0.0) then
     scalefac = scalefac * tmp_scale ; rescale = 1.0 / tmp_scale
   endif ; endif
-  call reset_EFP_overflow_error()
 
   allocate(asum(G%isg:G%ieg))
   if (present(mask)) then
@@ -689,19 +691,22 @@ subroutine global_j_mean(array, j_mean, G, mask, scale, tmp_scale, unscale)
       asum(i) = real_to_EFP(0.0) ; mask_sum(i) = real_to_EFP(0.0)
     enddo
 
+    overflow = .false.
     do i=is,ie ; do j=js,je
-      asum(i+idg_off) = asum(i+idg_off) + real_to_EFP(scalefac*array(i,j)*mask(i,j))
-      mask_sum(i+idg_off) = mask_sum(i+idg_off) + real_to_EFP(mask(i,j))
+      asum(i+idg_off) = asum(i+idg_off) + real_to_EFP(scalefac*array(i,j)*mask(i,j), overflow)
+      mask_sum(i+idg_off) = mask_sum(i+idg_off) + real_to_EFP(mask(i,j), overflow)
     enddo ; enddo
-
-    if (query_EFP_overflow_error()) call MOM_error(FATAL, &
+    if (overflow) call MOM_error(FATAL, &
       "global_j_mean overflow error occurred before sums across PEs.")
 
-    call EFP_sum_across_PEs(asum(G%isg:G%ieg), G%ieg-G%isg+1)
-    call EFP_sum_across_PEs(mask_sum(G%isg:G%ieg), G%ieg-G%isg+1)
-
-    if (query_EFP_overflow_error()) call MOM_error(FATAL, &
+    overflow = .false.
+    call EFP_sum_across_PEs(asum(G%isg:G%ieg), G%ieg-G%isg+1, overflow=overflow)
+    if (overflow) call MOM_error(FATAL, &
       "global_j_mean overflow error occurred during sums across PEs.")
+    overflow = .false.
+    call EFP_sum_across_PEs(mask_sum(G%isg:G%ieg), G%ieg-G%isg+1, overflow=overflow)
+    if (overflow) call MOM_error(FATAL, &
+      "global_j_mean overflow error occurred during sums of masks across PEs.")
 
     do i=is,ie
       mask_sum_r = EFP_to_real(mask_sum(i+idg_off))
@@ -714,17 +719,17 @@ subroutine global_j_mean(array, j_mean, G, mask, scale, tmp_scale, unscale)
   else
     do i=G%isg,G%ieg ; asum(i) = real_to_EFP(0.0) ; enddo
 
+    overflow = .false.
     do i=is,ie ; do j=js,je
-      asum(i+idg_off) = asum(i+idg_off) + real_to_EFP(scalefac*array(i,j))
+      asum(i+idg_off) = asum(i+idg_off) + real_to_EFP(scalefac*array(i,j), overflow)
     enddo ; enddo
+    if (overflow) call MOM_error(FATAL, &
+      "global_j_mean overflow error occurred before unmasked sum across PEs.")
 
-    if (query_EFP_overflow_error()) call MOM_error(FATAL, &
-      "global_j_mean overflow error occurred before sum across PEs.")
-
-    call EFP_sum_across_PEs(asum(G%isg:G%ieg), G%ieg-G%isg+1)
-
-    if (query_EFP_overflow_error()) call MOM_error(FATAL, &
-      "global_j_mean overflow error occurred during sum across PEs.")
+    overflow = .false.
+    call EFP_sum_across_PEs(asum(G%isg:G%ieg), G%ieg-G%isg+1, overflow=overflow)
+    if (overflow) call MOM_error(FATAL, &
+      "global_j_mean overflow error occurred during unmasked sum across PEs.")
 
     do i=is,ie
       j_mean(i) = EFP_to_real(asum(i+idg_off)) / real(G%jeg-G%jsg+1)
