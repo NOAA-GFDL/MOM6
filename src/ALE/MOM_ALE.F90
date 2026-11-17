@@ -1144,6 +1144,7 @@ subroutine ALE_remap_velocities(CS, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u
   real, dimension(SZI_(G),SZJB_(G)) :: dv2h_tot  ! The rate of change of vertically integrated
                                                  ! 0.5 * rho0 *  v**2 [R Z L2 T-3 ~> W m-2]
   real :: u2h_tot, v2h_tot   ! The vertically integrated u**2 and v**2 [H L2 T-2 ~> m3 s-2 or kg s-2]
+  real :: h2_tot             ! The vertical sum of the target grid layer thicknesses [H ~> m or kg m-2]
   real :: I_dt               ! 1 / dt [T-1 ~> s-1]
   logical :: variance_option ! Contains the value of allow_preserve_variance when present, else false
   logical :: show_call_tree
@@ -1193,11 +1194,12 @@ subroutine ALE_remap_velocities(CS, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u
     ! Assumes total depth doesn't change during remap, and
     ! that \int u(z) dz doesn't change during remap.
       ! First get barotropic component
-      u_bt = 0.0
+      u_bt = 0.0 ; h2_tot = 0.0
       do k=1,nz
         u_bt = u_bt + h2(k) * u_tgt(k) ! Dimensions [H L T-1 ~> m2 s-1 or kg m-1 s-1]
+        h2_tot = h2_tot + h2(k)
       enddo
-      u_bt = u_bt / (sum(h2(1:nz)) + GV%H_subroundoff) ! Dimensions return to [L T-1 ~> m s-1]
+      u_bt = u_bt / (h2_tot + GV%H_subroundoff) ! Dimensions return to [L T-1 ~> m s-1]
       ! Next get baroclinic ke = \int (u-u_bt)^2 from source and target
       ke_c_src = 0.0
       ke_c_tgt = 0.0
@@ -1255,7 +1257,7 @@ subroutine ALE_remap_velocities(CS, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u
     enddo
 
     if (CS%id_remap_delta_integ_v2>0) then
-      v2h_tot = 0.
+      v2h_tot = 0. ; h2_tot = 0.0
       do k=1,nz
         v2h_tot = v2h_tot - h1(k) * (v_src(k)**2)
       enddo
@@ -1271,8 +1273,9 @@ subroutine ALE_remap_velocities(CS, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u
       v_bt = 0.0
       do k=1,nz
         v_bt = v_bt + h2(k) * v_tgt(k) ! Dimensions [H L T-1 ~> m2 s-1 or kg m-1 s-1]
+        h2_tot = h2_tot + h2(k)
       enddo
-      v_bt = v_bt / (sum(h2(1:nz)) + GV%H_subroundoff) ! Dimensions return to [L T-1 ~> m s-1]
+      v_bt = v_bt / (h2_tot + GV%H_subroundoff) ! Dimensions return to [L T-1 ~> m s-1]
       ! Next get baroclinic ke = \int (u-u_bt)^2 from source and target
       ke_c_src = 0.0
       ke_c_tgt = 0.0

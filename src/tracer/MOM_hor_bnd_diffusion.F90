@@ -639,15 +639,16 @@ subroutine boundary_k_range(boundary, nk, h, hbl, k_top, zeta_top, k_bot, zeta_b
   if ( boundary == SURFACE ) then
     k_top = 1
     zeta_top = 0.
-    htot = 0.
     k_bot = 1
     zeta_bot = 0.
     if (hbl == 0.) return
-    if (hbl >= SUM(h(:))) then
+    htot = 0. ; do k=1,nk ; htot = htot + h(k) ; enddo
+    if (hbl >= htot) then
       k_bot = nk
       zeta_bot = 1.
       return
     endif
+    htot = 0.
     do k=1,nk
       htot = htot + h(k)
       if ( htot >= hbl) then
@@ -663,13 +664,14 @@ subroutine boundary_k_range(boundary, nk, h, hbl, k_top, zeta_top, k_bot, zeta_b
     zeta_top = 1.
     k_bot = nk
     zeta_bot = 0.
-    htot = 0.
     if (hbl == 0.) return
-    if (hbl >= SUM(h(:))) then
+    htot = 0. ; do k=1,nk ; htot = htot + h(k) ; enddo
+    if (hbl >= htot) then
       k_top = 1
       zeta_top = 1.
       return
     endif
+    htot = 0.
     do k=nk,1,-1
       htot = htot + h(k)
       if (htot >= hbl) then

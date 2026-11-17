@@ -240,6 +240,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   integer :: remap_answer_date    ! The vintage of the remapping expressions to use.
   integer :: regrid_answer_date   ! The vintage of the regridding expressions to use.
   real :: tmpReal  ! A temporary variable used in setting other variables [various]
+  real :: dz_tot   ! The sum of the layer thicknesses in units of coordinate, which may be [m]
+                   ! or [Z ~> m] or [H ~> m or kg m-2] or [R ~> kg m-3] or other units.
   real :: P_Ref    ! The coordinate variable reference pression [R L2 T-2 ~> Pa]
   real :: maximum_depth ! The maximum depth of the ocean [m] (not in Z).
   real :: dz_extra      ! The thickness of an added layer to append to the woa09_dz profile when
@@ -591,9 +593,9 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       allocate(dz(ke))
       call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz )
       ! Adjust target grid to be consistent with maximum_depth
-      tmpReal = sum( dz(:) )
-      if (tmpReal < maximum_depth) then
-        dz(ke) = dz(ke) + ( maximum_depth - tmpReal )
+      dz_tot = 0.0 ; do k=1,ke ; dz_tot = dz_tot + dz(k) ; enddo
+      if (dz_tot < maximum_depth) then
+        dz(ke) = dz(ke) + ( maximum_depth - dz_tot )
       endif
       do i=G%isc-1,G%iec+1 ; do j=G%jsc-1,G%jec+1
         if (G%mask2dT(i,j)>0.) then
@@ -689,9 +691,9 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
       allocate(dz(ke))
       call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz )
       ! Adjust target grid to be consistent with maximum_depth
-      tmpReal = sum( dz(:) )
-      if (tmpReal < maximum_depth) then
-        dz(ke) = dz(ke) + ( maximum_depth - tmpReal )
+      dz_tot = 0.0 ; do k=1,ke ; dz_tot = dz_tot + dz(k) ; enddo
+      if (dz_tot < maximum_depth) then
+        dz(ke) = dz(ke) + ( maximum_depth - dz_tot )
       endif
       do i=G%isc-1,G%iec+1 ; do j=G%jsc-1,G%jec+1
         if (G%mask2dT(i,j)>0.) then
@@ -715,9 +717,9 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                 trim(message), units=coordinateUnits(coord_mode))
       endif
       do i=1,np
-        tmpReal = sum( dz_2d(:,i) )
-        if (tmpReal < maximum_depth) then
-          dz_2d(ke,i) = dz_2d(ke,i) + ( maximum_depth - tmpReal )
+        dz_tot = 0.0 ; do k=1,ke ; dz_tot = dz_tot + dz_2d(k,i) ; enddo
+        if (dz_tot < maximum_depth) then
+          dz_2d(ke,i) = dz_2d(ke,i) + ( maximum_depth - dz_tot )
         endif
       enddo
       allocate(dz(ke))
@@ -829,12 +831,12 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
         coordinateMode(coord_mode) == REGRIDDING_ADAPTIVE) then
       if (allocated(dz)) then
         ! Adjust target grid to be consistent with maximum_depth
-        tmpReal = sum( dz(:) )
-        if (tmpReal < maximum_depth) then
-          dz(ke) = dz(ke) + ( maximum_depth - tmpReal )
-        elseif (tmpReal > maximum_depth) then
-          if ( dz(ke) + ( maximum_depth - tmpReal ) > 0. ) then
-            dz(ke) = dz(ke) + ( maximum_depth - tmpReal )
+        dz_tot = 0.0 ; do k=1,ke ; dz_tot = dz_tot + dz(k) ; enddo
+        if (dz_tot < maximum_depth) then
+          dz(ke) = dz(ke) + ( maximum_depth - dz_tot )
+        elseif (dz_tot > maximum_depth) then
+          if ( dz(ke) + ( maximum_depth - dz_tot ) > 0. ) then
+            dz(ke) = dz(ke) + ( maximum_depth - dz_tot )
           else
             call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
                 "MAXIMUM_DEPTH was too shallow to adjust bottom layer of DZ!"//trim(string))
@@ -3052,6 +3054,7 @@ subroutine dz_function1( string, dz )
   ! Local variables
   integer :: nk, k
   real    :: dz_min  ! minimum grid spacing [m] or other units
+  real    :: dz_tot  ! The vertical sum of dz in [m] or other units
   real    :: power   ! A power to raise the relative position in index space [nondim]
   real    :: prec    ! The precision with which positions are returned [m] or other units
   real    :: H_total ! The sum of the nominal thicknesses [m] or other units
@@ -3065,11 +3068,17 @@ subroutine dz_function1( string, dz )
   do k = 1, nk
     dz(k) = (real(k-1)/real(nk-1))**power
   enddo
-  dz(:) = ( H_total - real(nk) * dz_min ) * ( dz(:) / sum(dz) ) ! Rescale to so total is H_total
+
+  dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + dz(k) ; enddo
+  ! Revising this code to multiply by I_dztot = 1.0 / dz_tot would be more efficient.
+  ! Also, this code should be revised to avoid array syntax math.
+  dz(:) = ( H_total - real(nk) * dz_min ) * ( dz(:) / dz_tot ) ! Rescale so total is H_total
   dz(:) = anint( dz(:) / prec ) * prec ! Rounds to precision prec
-  dz(:) = ( H_total - real(nk) * dz_min ) * ( dz(:) / sum(dz) ) ! Rescale to so total is H_total
+  dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + dz(k) ; enddo
+  dz(:) = ( H_total - real(nk) * dz_min ) * ( dz(:) / dz_tot ) ! Rescale so total is H_total
   dz(:) = anint( dz(:) / prec ) * prec ! Rounds to precision prec
-  dz(nk) = dz(nk) + ( H_total - sum( dz(:) + dz_min ) ) ! Adjust bottommost layer
+  dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + (dz(k) + dz_min) ; enddo
+  dz(nk) = dz(nk) + ( H_total - dz_tot ) ! Adjust bottommost layer
   dz(:) = anint( dz(:) / prec ) * prec ! Rounds to precision prec
   dz(:) = dz(:) + dz_min ! Finally add in the constant dz_min
 
