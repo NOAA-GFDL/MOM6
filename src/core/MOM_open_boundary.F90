@@ -4404,7 +4404,7 @@ subroutine read_OBC_field_data(G, GV, US, OBC, segment, m, Time)
   type(time_type),         intent(in) :: Time !< Model time
 
   ! Local variables
-  integer :: i, j
+  integer :: i, j, k
   integer :: IsdB, IedB, JsdB, JedB
   real, dimension(:,:,:), pointer :: tmp_buffer_in => NULL()  ! Unrotated input [various units]
   real, dimension(:,:,:), allocatable, target :: tmp_buffer ! A buffer for input data [various units]
@@ -4616,8 +4616,14 @@ subroutine read_OBC_field_data(G, GV, US, OBC, segment, m, Time)
           ! Pretty sure we need to check for source/target grid consistency here
           segment%field(m)%buffer_dst(I,j,:) = 0.0  ! initialize remap destination buffer
           if (G%mask2dCu(I,j)>0.) then
-            net_dz_src = sum( segment%field(m)%dz_src(I,j,:) )
-            net_dz_int = sum( segment%dz(I,j,:) )
+            net_dz_src = 0.0
+            do k=1,segment%field(m)%nk_src
+              net_dz_src = net_dz_src + segment%field(m)%dz_src(I,j,k)
+            enddo
+            net_dz_int = 0.0
+            do k=1,GV%ke
+              net_dz_int = net_dz_int + segment%dz(I,j,k)
+            enddo
             scl_fac = net_dz_int / net_dz_src
             call remapping_core_h(OBC%remap_z_CS, &
                   segment%field(m)%nk_src,  scl_fac*segment%field(m)%dz_src(I,j,:), &
@@ -4649,8 +4655,14 @@ subroutine read_OBC_field_data(G, GV, US, OBC, segment, m, Time)
         ! Pretty sure we need to check for source/target grid consistency here
           segment%field(m)%buffer_dst(i,J,:) = 0.0  ! initialize remap destination buffer
           if (G%mask2dCv(i,J)>0.) then
-            net_dz_src = sum( segment%field(m)%dz_src(i,J,:) )
-            net_dz_int = sum( segment%dz(i,J,:) )
+            net_dz_src = 0.0
+            do k=1,segment%field(m)%nk_src
+              net_dz_src = net_dz_src + segment%field(m)%dz_src(i,J,k)
+            enddo
+            net_dz_int = 0.0
+            do k=1,GV%ke
+              net_dz_int = net_dz_int + segment%dz(i,J,k)
+            enddo
             scl_fac = net_dz_int / net_dz_src
             call remapping_core_h(OBC%remap_z_CS, &
                   segment%field(m)%nk_src, scl_fac* segment%field(m)%dz_src(i,J,:), &

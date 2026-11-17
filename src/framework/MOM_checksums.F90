@@ -252,17 +252,20 @@ subroutine zchksum(array, mesg, scale, logunit, unscale)
     real, intent(out) :: aMin !< Array minimum [a]
     real, intent(out) :: aMax !< Array maximum [a]
 
+    real :: aSum ! The sum of the elements of the array [a]
     integer :: k, n
 
     aMin = array(1)
     aMax = array(1)
+    aSum = 0.0
     n = 0
     do k=LBOUND(array,1), UBOUND(array,1)
       aMin = min(aMin, array(k))
       aMax = max(aMax, array(k))
+      aSum = aSum + array(k)
       n = n + 1
     enddo
-    aMean = sum(array(:)) / real(n)
+    aMean = aSum / real(n)
   end subroutine subStats
 end subroutine zchksum
 

@@ -294,7 +294,7 @@ subroutine edge_values_explicit_h4( N, h, u, edge_val, h_neglect, answer_date )
 
   ! Determine first two edge values
   if (use_2018_answers) then
-    h_min = max( h_neglect, hMinFrac*sum(h(1:4)) )
+    h_min = max( h_neglect, hMinFrac * (((h(1) + h(2)) + h(3)) + h(4)) )
     x(1) = 0.0
     do i = 1,4
       dx = max(h_min, h(i) )
@@ -320,7 +320,7 @@ subroutine edge_values_explicit_h4( N, h, u, edge_val, h_neglect, answer_date )
 
   ! Determine two edge values of the last cell
   if (use_2018_answers) then
-    h_min = max( h_neglect, hMinFrac*sum(h(N-3:N)) )
+    h_min = max( h_neglect, hMinFrac * (((h(N-3) + h(N-2)) + h(N-1)) + h(N)) )
 
     x(1) = 0.0
     do i = 1,4
@@ -565,7 +565,7 @@ subroutine edge_values_implicit_h4( N, h, u, edge_val, h_neglect, answer_date )
 
   ! Boundary conditions: set the first boundary value
   if (use_2018_answers) then
-    h_min = max( h_neglect, hMinFrac*sum(h(1:4)) )
+    h_min = max( h_neglect, hMinFrac * (((h(1) + h(2)) + h(3)) + h(4)) )
     x(1) = 0.0
     do i = 1,4
       dx = max(h_min, h(i) )
@@ -589,7 +589,7 @@ subroutine edge_values_implicit_h4( N, h, u, edge_val, h_neglect, answer_date )
 
   ! Boundary conditions: set the last boundary value
   if (use_2018_answers) then
-    h_min = max( h_neglect, hMinFrac*sum(h(N-3:N)) )
+    h_min = max( h_neglect, hMinFrac * (((h(N-3) + h(N-2)) + h(N-1)) + h(N)) )
     x(1) = 0.0
     do i=1,4
       dx = max(h_min, h(N-4+i) )

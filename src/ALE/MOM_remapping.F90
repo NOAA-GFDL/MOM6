@@ -2028,8 +2028,10 @@ subroutine compare_two_schemes(test, CS1, CS2, n0, n1, niter, msg)
   ! Local
   real :: h0(n0), h1(n1) ! Source and target grids [H but really nondim]
   real :: u0(n0), u1(n1), u2(n1)  ! Source and two target values [A]
+  real :: h0_tot, h1_tot ! Sum of thicknesses on source and target grids [H but really nondim]
   logical :: error ! Indicates a divergence
   integer :: iter ! Loop counter
+  integer :: k
   integer :: seed_size ! Number of integers used by seed
   integer, allocatable :: seed(:) ! Random number seed
   character(len=16) :: label ! Generated label
@@ -2043,15 +2045,18 @@ subroutine compare_two_schemes(test, CS1, CS2, n0, n1, niter, msg)
   do iter = 1, niter
     call random_number( h0 ) ! In range 0-1
     h0(:) = max(0., h0(:) - 0.00) ! Make 5% of values equal to zero
-    h0(:) = h0(:) / sum( h0 ) ! Approximately normalize to total depth of 1
+    h0_tot = 0.0 ; do k=1,n0 ; h0_tot = h0_tot + h0(k) ; enddo
+    h0(:) = h0(:) / h0_tot ! Approximately normalize to total depth of 1
     call random_number(h1) ! In range 0-1
     h1(:) = max(0., h1(:) - 0.00) ! Make 5% of values equal to zero
-    h1(:) = h1(:) / sum( h1 ) ! Approximately normalize to total depth of 1
+    h1_tot = 0.0 ; do k=1,n1 ; h1_tot = h1_tot + h1(k) ; enddo
+    h1(:) = h1(:) / h1_tot ! Approximately normalize to total depth of 1
     call random_number( u0 ) ! In range 0-1
 
     call remapping_core_h( CS1, n0, h0, u0, n1, h1, u1 )
     call remapping_core_h( CS2, n0, h0, u0, n1, h1, u2 )
-    error = sum( abs( u2(:) - u1(:) ) ) > 0.
+    error = .false.
+    do k=1,n1 ; if (abs( u2(k) - u1(k) ) > 0.) error = .true. ; enddo
     if (error) then
       print *,'iter=',iter
       print *,'h1',h1

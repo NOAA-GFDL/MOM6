@@ -111,7 +111,7 @@ subroutine reconstruct(this, h, u)
   enddo ! end loop on interior cells
 
   ! Determine first two edge values
-  h_min = max( this%h_neglect, hMinFrac*sum(h(1:4)) )
+  h_min = max( this%h_neglect, hMinFrac * (((h(1) + h(2)) + h(3)) + h(4)) )
   x(1) = 0.0
   do k = 1,4
     dx = max(h_min, h(k) )
@@ -136,7 +136,7 @@ subroutine reconstruct(this, h, u)
   edge_values(2,1) = edge_values(1,2)
 
   ! Determine two edge values of the last cell
-  h_min = max( this%h_neglect, hMinFrac*sum(h(n-3:n)) )
+  h_min = max( this%h_neglect, hMinFrac * (((h(n-3) + h(n-2)) + h(n-1)) + h(n)) )
   x(1) = 0.0
   do k = 1,4
     dx = max(h_min, h(n-4+k) )
