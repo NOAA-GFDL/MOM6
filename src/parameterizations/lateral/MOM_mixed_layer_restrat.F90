@@ -3105,7 +3105,7 @@ end function test_answer
 !! \f$(\overline{SR}/f)^2\f$, from becoming singular near the equator.
 !!
 !!
-!! The vertical structure function is adapted from Eq. 10 of \cite Zhang2023:
+!! The vertical structure function is adapted from Eq. 10 of \cite Zhang2023
 !! \f[
 !!   \xi(\sigma)
 !!   =
