@@ -23,10 +23,6 @@ implicit none ; private
 
 public dyed_obcs_set_OBC_data
 
-integer :: ntr = 0 !< Number of dye tracers
-                   !! \todo This is a module variable. Move this variable into the control structure.
-real :: dye_obc_inflow = 0.0 !< Inflow value of obc dye concentration [arbitrary]
-
 contains
 
 !> This subroutine sets the dye properties at open boundary conditions.
@@ -46,7 +42,9 @@ subroutine dyed_obcs_set_OBC_data(OBC, G, GV, param_file, tr_Reg)
   integer :: is, ie, js, je, isd, ied, jsd, jed, m, n, nz, ntr_id
   integer :: IsdB, IedB, JsdB, JedB
   integer :: n_dye ! Number of regionsl dye tracers
-  real :: dye ! Inflow dye concentration [arbitrary]
+  real :: dye      ! Inflow dye concentration [arbitrary]
+  real :: dye_obc_inflow  ! Inflow value of obc dye concentration [arbitrary]
+  integer :: ntr   ! Number of dye tracers
   type(tracer_type), pointer      :: tr_ptr => NULL()
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke

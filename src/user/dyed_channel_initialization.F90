@@ -37,9 +37,6 @@ type, public :: dyed_channel_OBC_CS ; private
                                     !! instead of the actual thickness.
 end type dyed_channel_OBC_CS
 
-integer :: ntr = 0 !< Number of dye tracers
-                   !! \todo This is a module variable. Move this variable into the control structure.
-
 contains
 
 !> Add dyed channel to OBC registry.
@@ -103,6 +100,7 @@ subroutine dyed_channel_set_OBC_tracer_data(OBC, G, GV, param_file, tr_Reg)
   character(len=40)  :: mdl = "dyed_channel_set_OBC_tracer_data" ! This subroutine's name.
   character(len=80)  :: name, longname
   integer :: m, n, ntr_id
+  integer :: ntr  ! Number of dye tracers
   real :: dye  ! Inflow dye concentrations [arbitrary]
   type(tracer_type), pointer      :: tr_ptr => NULL()
 
@@ -119,8 +117,8 @@ subroutine dyed_channel_set_OBC_tracer_data(OBC, G, GV, param_file, tr_Reg)
     return   !!! Need a better error message here
   endif
 
-! ! Set the inflow values of the dyes, one per segment.
-! ! We know the order: north, south, east, west
+  ! Set the inflow values of the dyes, one per segment.
+  ! We know the order: north, south, east, west
   do m=1,ntr
     write(name,'("dye_",I2.2)') m
     write(longname,'("Concentration of dyed_obc Tracer ",I2.2, " on segment ",I2.2)') m, m
