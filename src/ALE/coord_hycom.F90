@@ -40,6 +40,10 @@ type, public :: hycom_CS ; private
   !> If true, use 3-D control fields
   logical :: use_3d = .false.
 
+  !> If true, recover a bug in which the nominal z* depths and the maximum interface depths
+  !! are measured from the sea surface instead of the top of the water column under ice shelves
+  logical :: shelf_depth_bug = .true.
+
   !> Nominal density of interfaces [R ~> kg m-3]
   real, allocatable, dimension(:,:,:) :: target_density_3d
 
@@ -129,12 +133,14 @@ subroutine end_coord_hycom(CS)
 end subroutine end_coord_hycom
 
 !> This subroutine can be used to set the parameters for the coord_hycom module
-subroutine set_hycom_params(CS, max_interface_depths, max_layer_thickness, only_improves, interp_CS)
+subroutine set_hycom_params(CS, max_interface_depths, max_layer_thickness, only_improves, interp_CS, shelf_depth_bug)
   type(hycom_CS),                 pointer    :: CS !< Coordinate control structure
   real, dimension(:),   optional, intent(in) :: max_interface_depths !< Maximum depths of interfaces [H ~> m or kg m-2]
   real, dimension(:),   optional, intent(in) :: max_layer_thickness  !< Maximum thicknesses of layers [H ~> m or kg m-2]
   logical, optional, intent(in) :: only_improves !< If true, an interface only moves if it improves the density fit
   type(interp_CS_type), optional, intent(in) :: interp_CS !< Controls for interpolation
+  logical, optional, intent(in) :: shelf_depth_bug !< If true, measure the nominal z* depths and the maximum
+                                                   !! interface depths from the sea surface under ice shelves
 
   if (.not. associated(CS)) call MOM_error(FATAL, "set_hycom_params: CS not associated")
 
@@ -153,6 +159,7 @@ subroutine set_hycom_params(CS, max_interface_depths, max_layer_thickness, only_
   endif
 
   if (present(only_improves)) CS%only_improves = only_improves
+  if (present(shelf_depth_bug)) CS%shelf_depth_bug = shelf_depth_bug
 
   if (present(interp_CS)) CS%interp_CS = interp_CS
 end subroutine set_hycom_params
@@ -198,6 +205,7 @@ subroutine build_hycom1_column(CS, remapCS, eqn_of_state, nz, ix, jy, depth, h, 
                      ! perhaps 1 or a factor in [H Z-1 ~> 1 or kg m-3]
   real :: stretching ! z* stretching, converts z* to z [nondim].
   real :: nominal_z ! Nominal depth of interface when using z* [H ~> m or kg m-2]
+  real :: z_off     ! The depth of the top of the water column, which is nonzero under ice shelves [H ~> m or kg m-2]
   logical :: maximum_depths_set ! If true, the maximum depths of interface have been set.
   logical :: maximum_h_set      ! If true, the maximum layer thicknesses have been set.
 
@@ -251,7 +259,8 @@ subroutine build_hycom1_column(CS, remapCS, eqn_of_state, nz, ix, jy, depth, h, 
 
   ! Sweep down the interfaces and make sure that the interface is at least
   ! as deep as a nominal target z* grid
-  nominal_z = 0.
+  z_off = 0.0 ; if (.not.CS%shelf_depth_bug) z_off = z_col(1)
+  nominal_z = z_off
   stretching = z_col(nz+1) / depth ! Stretches z* to z
   if (CS%use_3d) then
     do k = 2, CS%nk+1
@@ -270,10 +279,10 @@ subroutine build_hycom1_column(CS, remapCS, eqn_of_state, nz, ix, jy, depth, h, 
   if (maximum_depths_set .and. maximum_h_set) then ; do k=2,CS%nk
     ! The loop bounds are 2 & nz so the top and bottom interfaces do not move.
     ! Recall that z_col_new is positive downward.
-    z_col_new(K) = min(z_col_new(K), CS%max_interface_depths(K), &
+    z_col_new(K) = min(z_col_new(K), z_off + CS%max_interface_depths(K), &
                        z_col_new(K-1) + CS%max_layer_thickness(k-1))
   enddo ; elseif (maximum_depths_set) then ; do K=2,CS%nk
-    z_col_new(K) = min(z_col_new(K), CS%max_interface_depths(K))
+    z_col_new(K) = min(z_col_new(K), z_off + CS%max_interface_depths(K))
   enddo ; elseif (maximum_h_set) then ; do k=2,CS%nk
     z_col_new(K) = min(z_col_new(K), z_col_new(K-1) + CS%max_layer_thickness(k-1))
   enddo ; endif
