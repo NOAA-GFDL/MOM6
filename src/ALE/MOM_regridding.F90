@@ -234,7 +234,6 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   character(len=320) :: message ! Temporary strings
   character(len=12) :: expected_units, alt_units ! Temporary strings
   logical :: tmpLogical, do_sum, main_parameters
-  logical :: enable_bugs ! The default value for answer-changing bug flags
   logical :: coord_is_state_dependent, ierr
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   integer :: remap_answer_date    ! The vintage of the remapping expressions to use.
