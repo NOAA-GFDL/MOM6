@@ -135,6 +135,7 @@ public ALE_regrid
 public ALE_offline_inputs
 public ALE_regrid_accelerated
 public ALE_remap_scalar
+public ALE_remap_scalar_from_ALE
 public ALE_remap_tracers
 public ALE_remap_velocities
 public ALE_remap_set_h_vel, ALE_remap_set_h_vel_via_dz
@@ -1505,6 +1506,25 @@ subroutine ALE_remap_scalar(CS, G, GV, nk_src, h_src, s_src, h_dst, s_dst, all_c
   enddo ; enddo
 
 end subroutine ALE_remap_scalar
+
+!> Remaps a scalar between grids using the remapping configuration in ALE_CS.
+subroutine ALE_remap_scalar_from_ALE(CS, G, GV, nk_src, h_src, s_src, h_dst, s_dst)
+  type(ALE_CS),                          intent(in)    :: CS       !< ALE control structure
+  type(ocean_grid_type),                 intent(in)    :: G        !< Ocean grid structure
+  type(verticalGrid_type),               intent(in)    :: GV       !< Ocean vertical grid structure
+  integer,                               intent(in)    :: nk_src   !< Number of source layers
+  real, dimension(SZI_(G),SZJ_(G),nk_src), &
+                                         intent(in)    :: h_src    !< Source layer thickness [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),nk_src), &
+                                         intent(in)    :: s_src    !< Scalar on source grid [A]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                                         intent(in)    :: h_dst    !< Destination layer thickness [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                                         intent(inout) :: s_dst    !< Scalar on destination grid [A]
+
+  call ALE_remap_scalar(CS%remapCS, G, GV, nk_src, h_src, s_src, h_dst, s_dst)
+
+end subroutine ALE_remap_scalar_from_ALE
 
 
 !> Calculate edge values (top and bottom of layer) for T and S consistent with a PLM reconstruction

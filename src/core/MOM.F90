@@ -1958,7 +1958,8 @@ subroutine ALE_regridding_and_remapping(CS, G, GV, US, u, v, h, tv, dtdia, Time_
       call remap_dyn_split_RK2b_aux_vars(G, GV, CS%dyn_split_RK2b_CSp, h_old_u, h_old_v, &
                                          h_new_u, h_new_v, CS%ALE_CSp)
     elseif (CS%split) then
-      call remap_dyn_split_RK2_aux_vars(G, GV, CS%dyn_split_RK2_CSp, h_old_u, h_old_v, h_new_u, h_new_v, CS%ALE_CSp)
+      call remap_dyn_split_RK2_aux_vars(G, GV, CS%dyn_split_RK2_CSp, h, h_old_u, h_old_v, h_new, &
+                                        h_new_u, h_new_v, CS%ALE_CSp)
     endif
 
     if (associated(CS%OBC) .or. associated(CS%visc%Kv_shear_Bu)) then
