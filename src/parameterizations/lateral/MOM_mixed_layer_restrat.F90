@@ -1267,7 +1267,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
 
 end subroutine mixedlayer_restrat_Bodner
 
-!> Calculates a restratifying flow following the formulation of \cite Zhang2023 (Zhang23),
+!> Calculates a restratifying flow following the formulation of Zhang et al., 2023 (Zhang23),
 !! which simultaneously considers submesoscale baroclinic instability and strain-induced frontogenesis
 !! with an improved vertical structure function.
 subroutine mixedlayer_restrat_Zhang23(h, u, v, uhtr, vhtr, tv, dt, h_MLD, G, GV, US, CS)
@@ -1760,7 +1760,7 @@ end subroutine mixedlayer_restrat_Zhang23
 
 !> Stream function shape as a function of non-dimensional position
 !! normalized by the mixed-layer depth [nondim]
-!! Formulation adapted with modifications from Eq. 10 of \cite Zhang2023.
+!! Formulation adapted with modifications from eq.10 of Zhang et al., (2023).
 real function xi(sigma, reach_bottom)
   real, intent(in) :: sigma !< Fractional position normalized by the mixed-layer depth [nondim]
                             !! sigma=0 is surface
@@ -3140,7 +3140,7 @@ end function test_answer
 !!
 !! The parameterization is disabled at velocity points
 !! where either adjoining tracer cell is shallower than
-!! <code>ZHANG23%MIN_OCEAN_DEPTH</code>.
+!! <code>ZHANG23\%MIN_OCEAN_DEPTH</code>.
 !!
 !! \subsubsection section_zhang23_mld Mixed-layer depth
 !!
@@ -3163,7 +3163,7 @@ end function test_answer
 !!   },
 !! \f]
 !! where \f$\tau_H\f$ is
-!! <code>ZHANG23%MLD_DECAY_TIME</code>. Unlike the one-sided MLD filter used by
+!! <code>ZHANG23\%MLD_DECAY_TIME</code>. Unlike the one-sided MLD filter used by
 !! the original mixed-layer eddy parameterization, this filter is applied
 !! symmetrically to both deepening and shoaling. A value of zero disables the
 !! filter.
@@ -3182,7 +3182,7 @@ end function test_answer
 !!   },
 !! \f]
 !! where \f$\tau_{SR}\f$ is
-!! <code>ZHANG23%MSR_DECAY_TIME</code>. A value of zero disables this filter.
+!! <code>ZHANG23\%MSR_DECAY_TIME</code>. A value of zero disables this filter.
 !! When either Zhang23 time filter is enabled, its filtered field is registered
 !! as a restart field.
 !!
@@ -3214,8 +3214,8 @@ end function test_answer
 !! 5 degrees latitude. The default values of the two filter time scales disable
 !! time filtering.
 !!
-!! <code>ZHANG23%C_Z</code>, <code>ZHANG23%B_Z</code> ,
-!! and <code>ZHANG23%F_MIN</code> must be strictly positive.
+!! <code>ZHANG23\%C_Z</code>, <code>ZHANG23\%B_Z</code> ,
+!! and <code>ZHANG23\%F_MIN</code> must be strictly positive.
 !!
 !! \subsubsection section_zhang23_ref References
 !!
