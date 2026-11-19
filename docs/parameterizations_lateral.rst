@@ -30,12 +30,12 @@ Backscatter
 A parameterization of the upscale unresolved cascade utilizes MOM_MEKE
 and negative Laplacian viscosity in MOM_hor_visc.
 
-Mixed layer restratification by sub-mesoscale eddies
-----------------------------------------------------
+Mixed layer restratification by submesoscale processes
+------------------------------------------------------
 
-Mixed layer restratification from :cite:`fox-kemper2008` and
-:cite:`fox-kemper2008-2` is implemented in MOM_mixed_layer_restrat,
-which now also contains the mixed layer restratication comes from :cite: Bodner2023.
+Mixed layer restratification parameterizations from :cite:`fox-kemper2008` and
+:cite:`fox-kemper2008-2` (FOX-KEMPER), :cite:`Bodner2023` (BODNER23), and
+:cite:`Zhang2023` (ZHANG23) are implemented as options in MOM_mixed_layer_restrat.
 
     :ref:`namespacemom__mixed__layer__restrat_1section_mle`
 
