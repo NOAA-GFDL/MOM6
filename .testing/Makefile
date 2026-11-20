@@ -698,6 +698,9 @@ test.summary:
 
 # NOTE: Using file parser gcov report as a proxy for test completion
 .PHONY: run.cov.unit
+# Unit tests share input.nml in $(WORK)/unit and the .gcda/.gcov files in
+# $(BUILD)/unit, so they should be run serially
+.NOTPARALLEL: run.cov.unit run.unit report.cov.unit
 run.cov.unit: $(foreach t,$(UNIT_EXECS),$(BUILD)/unit/$(t).F90.gcov)
 
 .PHONY: build.unit
@@ -758,9 +761,6 @@ $(WORK)/unit/%.out: $(BUILD)/unit/%
 
 # The file parser uses a separate rule to support two-core tests.
 $(WORK)/unit/test_MOM_file_parser.out: $(BUILD)/unit/test_MOM_file_parser
-	if [ $(REPORT_COVERAGE) ]; then \
-	  find $(BUILD)/unit -name *.gcda -exec rm -f '{}' \; ; \
-	fi
 	mkdir -p $(@D)
 	cd $(@D) \
 	  && rm -f input.nml logfile.0000*.out *_input MOM_parameter_doc.* \
@@ -776,7 +776,7 @@ $(WORK)/unit/test_MOM_file_parser.out: $(BUILD)/unit/test_MOM_file_parser
 	    cat p2.test_MOM_file_parser.err | tail -n 100 ; \
 	  )
 
-$(BUILD)/unit/test_%.F90.gcov: $(WORK)/unit/test_%.out
+$(foreach t,$(UNIT_EXECS),$(BUILD)/unit/$(t).F90.gcov): $(BUILD)/unit/%.F90.gcov: $(WORK)/unit/%.out
 	cd $(@D) \
 	  && gcov -b *.gcda > gcov.unit.out
 	find $(@D) -name "*.gcov" -exec sed -i -r 's/^( *[0-9]*)\*:/ \1:/g' {} \;
