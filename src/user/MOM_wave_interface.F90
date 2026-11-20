@@ -173,6 +173,7 @@ type, public :: wave_parameters_CS ; private
   logical :: LA_Misalignment = .false. !< Flag to use misalignment in Langmuir number
   logical :: LA_misalign_bug = .false. !< Flag to use code with a sign error when calculating the
                        !! misalignment between the shear and waves in the Langmuir number calculation.
+  real :: max_kphil_z0 = -1.0 !< Maximum value of kphil*z0; negative values disable the limit [nondim]
   real :: g_Earth      !< The gravitational acceleration, equivalent to GV%g_Earth but with
                        !! different dimensional rescaling appropriate for deep-water gravity
                        !! waves [Z T-2 ~> m s-2]
@@ -330,7 +331,6 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
-
   call get_param(param_file, mdl, "WAVE_INTERFACE_ANSWER_DATE", CS%answer_date, &
                  "The vintage of the order of arithmetic and expressions in the surface wave "//&
                  "calculations.  Values below 20230101 recover the answers from the end of 2022, "//&
@@ -548,6 +548,10 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
          "If true, use a code with a sign error when calculating the misalignment between "//&
          "the shear and waves when LA_MISALIGNMENT is true.", &
          default=.false., do_not_log=.not.CS%LA_Misalignment)
+  call get_param(param_file, mdl, "MAX_KPHIL_Z0", CS%max_kphil_z0, &
+         "Maximum value of the product of the Phillips peak wavenumber and the boundary-layer depth. "//&
+         "If negative, do not limit this product.", units="nondim", default=-1.0, &
+         do_not_log=(CS%WaveMethod/=LF17))
   call get_param(param_file, mdl, "MIN_LANGMUIR", CS%La_min,    &
          "A minimum value for all Langmuir numbers that is not physical, "//&
          "but is likely only encountered when the wind is very small and "//&
@@ -1368,6 +1372,7 @@ subroutine get_StokesSL_LiFoxKemper(ustar, hbl, GV, US, CS, UStokes_SL, LA)
   real :: fm       ! The mean wave frequency [T-1 ~> s-1]
   real :: fp       ! The peak wave frequency [T-1 ~> s-1]
   real :: kphil    ! A peak wavenumber in the Phillips spectrum [Z-1 ~> m-1]
+  real :: kphil_x_z0 ! The peak wavenumber times the boundary layer depth [nondim]
   real :: kstar    ! A rescaled wavenumber? [Z-1 ~> m-1]
   real :: vstokes  ! The total Stokes transport [Z L T-1 ~> m2 s-1]
   real :: z0       ! The boundary layer depth [Z ~> m]
@@ -1404,21 +1409,19 @@ subroutine get_StokesSL_LiFoxKemper(ustar, hbl, GV, US, CS, UStokes_SL, LA)
     !  and the use of PM peak frequency and PM significant wave height
     !  on estimating the Stokes transport)
     vstokes = 0.125 * PI * r_loss * US%Z_to_L * fm * hm0**2
-    !
-    ! the general peak wavenumber for Phillips' spectrum
-    ! (Breivik et al., 2016) with correction of directional spreading
-    kphil = 0.176 * UStokes / vstokes
-
-    ! Combining all of the expressions above gives kPhil as the following
-    ! where the first two lines are just a constant:
-    ! kphil = ((0.176 * us_to_u10 * u19p5_to_u10) / &
-    !          (0.5*0.125 * r_loss * fm_into_fp * 0.877 * CS%SWH_from_u10sq**2)) / &
-    !         (GV%g_Earth * u10**2)
-
-    ! surface layer
     z0 = abs(hbl)
+    if ((CS%max_kphil_z0 >= 0.0) .and. (z0 <= 0.0)) return
 
     if (CS%answer_date < 20230102) then
+      if ((CS%max_kphil_z0 < 0.0) .or. &
+          (z0 * 0.176 * UStokes < vstokes * CS%max_kphil_z0)) then
+        kphil = 0.176 * UStokes / vstokes
+      elseif (z0 > 0.0) then
+        kphil = CS%max_kphil_z0 / z0
+      else
+        return
+      endif
+
       z0i = 1.0 / z0
 
       ! Surface layer averaged Stokes drift with Stokes drift profile
@@ -1439,11 +1442,26 @@ subroutine get_StokesSL_LiFoxKemper(ustar, hbl, GV, US, CS, UStokes_SL, LA)
            erfc( sqrt( 2.0 * kstar * z0 ) )
       UStokes_sl = UStokes * (0.715 + r1 + r2 + r3 + r4)
     else
-      ! The following is equivalent to the code above, but avoids singularities
-      r1 = ( 0.302 - 1.68*(kphil*z0) ) * one_minus_exp_x(2.0 * (kphil * z0))
-      r3 = ( 0.1264 + 0.64*(kphil*z0) ) * one_minus_exp_x(5.12 * (kphil * z0))
+      if (CS%max_kphil_z0 < 0.0) then
+        kphil = 0.176 * UStokes / vstokes
+        kphil_x_z0 = kphil * z0
+      elseif (z0 * 0.176 * UStokes < vstokes * CS%max_kphil_z0) then
+        kphil_x_z0 = z0 * (0.176 * UStokes / vstokes)
+      elseif (z0 > 0.0) then
+        kphil_x_z0 = CS%max_kphil_z0
+      else
+        return
+      endif
 
-      root_2kz = sqrt(2.0 * kphil * z0)
+      ! The following is equivalent to the code above, but avoids singularities
+      r1 = ( 0.302 - 1.68*kphil_x_z0 ) * one_minus_exp_x(2.0 * kphil_x_z0)
+      r3 = ( 0.1264 + 0.64*kphil_x_z0 ) * one_minus_exp_x(5.12 * kphil_x_z0)
+
+      if (CS%max_kphil_z0 < 0.0) then
+        root_2kz = sqrt(2.0 * kphil * z0)
+      else
+        root_2kz = sqrt(2.0 * kphil_x_z0)
+      endif
       ! r2 = -( 0.84 + 0.0591*2.0 / (root_2kz**2) ) * sqrt(PI) * root_2kz * erfc( root_2kz )
       ! r4 = ( 0.2 + 0.059125*2.0 / (root_2kz**2) ) * sqrt(PI) * root_2kz * erfc( 1.6 * root_2kz )
 
