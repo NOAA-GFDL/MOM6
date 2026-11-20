@@ -104,9 +104,6 @@ jobs:
           retention-days: 1
 
   build-repro:
-    # Temporarily disabled pending investigation of GCC 15 optimization differences on Ubuntu 26 x86.
-    # Remove this condition and the one on test-repro to re-enable REPRO.
-    if: ${{ false }}
     runs-on: ubuntu-latest
 
     steps:
@@ -513,8 +510,6 @@ jobs:
           test.openmp
 
   test-repro:
-    # Re-enable together with build-repro above.
-    if: ${{ false }}
     runs-on: ubuntu-latest
     needs:
       - build-symmetric
