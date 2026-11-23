@@ -14,7 +14,7 @@ jobs:
   # Documentation
 
   check-style-and-docstrings:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -48,7 +48,7 @@ jobs:
   # Executables
 
   build-symmetric:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +74,7 @@ jobs:
           retention-days: 1
 
   build-asymmetric:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +100,7 @@ jobs:
           retention-days: 1
 
   build-repro:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -126,7 +126,7 @@ jobs:
           retention-days: 1
 
   build-openmp:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -153,7 +153,7 @@ jobs:
 
   build-target:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -184,7 +184,7 @@ jobs:
           retention-days: 1
 
   build-opt:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -218,7 +218,7 @@ jobs:
 
   build-opt-target:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -259,7 +259,7 @@ jobs:
           retention-days: 1
 
   build-coverage:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -296,7 +296,7 @@ jobs:
           retention-days: 1
 
   build-coupled-api:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -315,7 +315,7 @@ jobs:
   # Tests
 
   test-grid:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs:
       - build-symmetric
       - build-asymmetric
@@ -348,7 +348,7 @@ jobs:
           test.grid
 
   test-layout:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: build-symmetric
 
     steps:
@@ -371,7 +371,7 @@ jobs:
           test.layout
 
   test-rotate:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: build-symmetric
 
     steps:
@@ -394,7 +394,7 @@ jobs:
           test.rotate
 
   test-restart:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: build-symmetric
 
     steps:
@@ -417,7 +417,7 @@ jobs:
           test.restart
 
   test-nan:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: build-symmetric
 
     steps:
@@ -440,7 +440,7 @@ jobs:
           test.nan
 
   test-dim:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: build-symmetric
 
     strategy:
@@ -473,7 +473,7 @@ jobs:
           test.dim.${{ matrix.dim.id }}
 
   test-openmp:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs:
       - build-symmetric
       - build-openmp
@@ -506,7 +506,7 @@ jobs:
           test.openmp
 
   test-repro:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs:
       - build-symmetric
       - build-repro
@@ -540,7 +540,7 @@ jobs:
 
   test-regression:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs:
       - build-symmetric
       - build-target
@@ -574,7 +574,7 @@ jobs:
           test.regression
 
   run-coverage:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: build-coverage
 
     steps:
@@ -617,7 +617,7 @@ jobs:
   # These are most likely nonsense on a GitHub node, but someday it could work.
   run-timings:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs:
       - build-opt
 
@@ -646,7 +646,7 @@ jobs:
   # These are most likely nonsense on a GitHub node, but someday it could work.
   compare-timings:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs:
       - build-opt
       - build-opt-target
@@ -723,7 +723,7 @@ jobs:
   # Cleanup
 
   cleanup-common:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
     needs:
@@ -746,7 +746,7 @@ jobs:
 
   cleanup-push:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
     needs:
@@ -769,7 +769,7 @@ jobs:
 
   cleanup-pr:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
     needs:

@@ -85,9 +85,9 @@ type, public :: hor_visc_CS ; private
   logical :: use_beta_in_Leith !< If true, includes the beta term in the Leith viscosity
   logical :: Leith_Ah        !< If true, use a biharmonic form of 2D Leith
                              !! nonlinear eddy viscosity. AH is the background.
-  logical :: use_leithy      !< if true, use a biharmonic form of 2d leith
+  logical :: use_Leithy      !< If true, use a biharmonic form of 2d Leith
                              !! nonlinear eddy viscosity with harmonic backscatter.
-                             !! ah is the background. leithy = leith+e
+                             !! ah is the background. Leithy = Leith+E
   logical :: div_damp        !< If true, apply a separate shear-based Smagorinsky viscosity to damp
                              !! the divergent component of flows, on top of any other viscosity.
   real    :: c_K             !< Fraction of energy dissipated by the biharmonic term
@@ -1328,7 +1328,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
     endif
 
     if (CS%div_damp) then
-      ! Determine the divergence damping viscosity at h points and the isotropic
+      ! Determine the divergence damping viscosity at h points, which determine the isotropic
       ! divergence damping stress, str_div.  The sum of the Laplacian and divergence
       ! damping viscosities is subject to the Laplacian stability bound.
       do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
@@ -1341,24 +1341,46 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
       endif
 
       if ((CS%bound_Kh) .and. (CS%bound_Ah)) then
-        do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
-          Kh_lap_here = 0.0 ; if (CS%Laplacian) Kh_lap_here = Kh(i,j)
-          if (.not.CS%Laplacian) visc_bound_rem(i,j) = 1.0
-          Kh_max_here = hrat_min(i,j) * CS%Kh_Max_xx(i,j)
-          if (Kh_lap_here + Kh_div(i,j) >= Kh_max_here) then
-            visc_bound_rem(i,j) = 0.0
-            Kh_div(i,j) = max(Kh_max_here - max(Kh_lap_here, 0.0), 0.0)
-          elseif ((Kh_lap_here + Kh_div(i,j) > 0.0) .or. &
+        if (CS%Laplacian) then
+          do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
+            Kh_lap_here = Kh(i,j)
+            Kh_max_here = hrat_min(i,j) * CS%Kh_Max_xx(i,j)
+            if (Kh_lap_here + Kh_div(i,j) >= Kh_max_here) then
+              visc_bound_rem(i,j) = 0.0
+              Kh_div(i,j) = max(Kh_max_here - max(Kh_lap_here, 0.0), 0.0)
+            elseif ((Kh_lap_here + Kh_div(i,j) > 0.0) .or. &
                   (CS%backscatter_underbound .and. (Kh_max_here > 0.0))) then
-            visc_bound_rem(i,j) = 1.0 - (Kh_lap_here + Kh_div(i,j)) / Kh_max_here
-          endif
-        enddo ; enddo
+              visc_bound_rem(i,j) = 1.0 - (Kh_lap_here + Kh_div(i,j)) / Kh_max_here
+            endif
+          enddo ; enddo
+        else
+          do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
+            Kh_lap_here = 0.0
+            visc_bound_rem(i,j) = 1.0
+            Kh_max_here = hrat_min(i,j) * CS%Kh_Max_xx(i,j)
+            if (Kh_lap_here + Kh_div(i,j) >= Kh_max_here) then
+              visc_bound_rem(i,j) = 0.0
+              Kh_div(i,j) = max(Kh_max_here - max(Kh_lap_here, 0.0), 0.0)
+            elseif ((Kh_lap_here + Kh_div(i,j) > 0.0) .or. &
+                  (CS%backscatter_underbound .and. (Kh_max_here > 0.0))) then
+              visc_bound_rem(i,j) = 1.0 - (Kh_lap_here + Kh_div(i,j)) / Kh_max_here
+            endif
+          enddo ; enddo
+        endif
       elseif (CS%bound_Kh) then
-        do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
-          Kh_lap_here = 0.0 ; if (CS%Laplacian) Kh_lap_here = Kh(i,j)
-          Kh_max_here = hrat_min(i,j) * CS%Kh_Max_xx(i,j)
-          Kh_div(i,j) = min(Kh_div(i,j), max(Kh_max_here - max(Kh_lap_here, 0.0), 0.0))
-        enddo ; enddo
+        if (CS%Laplacian) then
+          do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
+            Kh_lap_here = Kh(i,j)
+            Kh_max_here = hrat_min(i,j) * CS%Kh_Max_xx(i,j)
+            Kh_div(i,j) = min(Kh_div(i,j), max(Kh_max_here - max(Kh_lap_here, 0.0), 0.0))
+          enddo ; enddo
+        else
+          do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
+            Kh_lap_here = 0.0
+            Kh_max_here = hrat_min(i,j) * CS%Kh_Max_xx(i,j)
+            Kh_div(i,j) = min(Kh_div(i,j), max(Kh_max_here - max(Kh_lap_here, 0.0), 0.0))
+          enddo ; enddo
+        endif
       endif
 
       if (CS%id_Kh_div_h>0) then
@@ -1367,10 +1389,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
         enddo ; enddo
       endif
 
-      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-        str_div(i,j) = -Kh_div(i,j) * div_xx(i,j)
-      enddo ; enddo
-    endif ! Get Kh_div at h points and the divergence damping stress str_div
+    endif ! Get Kh_div at h points
 
     if (CS%biharmonic) then
       ! Determine the biharmonic viscosity at h points, using the
@@ -1808,19 +1827,34 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
     if (CS%div_damp .and. CS%bound_Kh .and. CS%bound_Ah) then
       ! Divergence damping has no stress at q points, but its viscosity estimated at q points
       ! reduces the remaining stability bound that is available to the biharmonic viscosity.
-      do J=js-1,Jeq ; do I=is-1,Ieq
-        Kh_lap_here = 0.0 ; if (CS%Laplacian) Kh_lap_here = Kh(I,J)
-        if (.not.CS%Laplacian) visc_bound_rem(I,J) = 1.0
-        Kh_div_here = CS%Laplac_div_const_xy(I,J) * Shear_mag(I,J)
-        if (rescale_Kh_div) Kh_div_here = VarMix%Res_fn_q(I,J) * Kh_div_here
-        Kh_max_here = hrat_min(I,J) * CS%Kh_Max_xy(I,J)
-        if (Kh_lap_here + Kh_div_here >= Kh_max_here) then
-          visc_bound_rem(I,J) = 0.0
-        elseif ((Kh_lap_here + Kh_div_here > 0.0) .or. &
+      if (CS%Laplacian) then
+        do J=js-1,Jeq ; do I=is-1,Ieq
+          Kh_lap_here = Kh(I,J)
+          Kh_div_here = CS%Laplac_div_const_xy(I,J) * Shear_mag(I,J)
+          if (rescale_Kh_div) Kh_div_here = VarMix%Res_fn_q(I,J) * Kh_div_here
+          Kh_max_here = hrat_min(I,J) * CS%Kh_Max_xy(I,J)
+          if (Kh_lap_here + Kh_div_here >= Kh_max_here) then
+            visc_bound_rem(I,J) = 0.0
+          elseif ((Kh_lap_here + Kh_div_here > 0.0) .or. &
                 (CS%backscatter_underbound .and. (Kh_max_here > 0.0))) then
-          visc_bound_rem(I,J) = 1.0 - (Kh_lap_here + Kh_div_here) / Kh_max_here
-        endif
-      enddo ; enddo
+            visc_bound_rem(I,J) = 1.0 - (Kh_lap_here + Kh_div_here) / Kh_max_here
+          endif
+        enddo ; enddo
+      else
+        do J=js-1,Jeq ; do I=is-1,Ieq
+          Kh_lap_here = 0.0
+          visc_bound_rem(I,J) = 1.0
+          Kh_div_here = CS%Laplac_div_const_xy(I,J) * Shear_mag(I,J)
+          if (rescale_Kh_div) Kh_div_here = VarMix%Res_fn_q(I,J) * Kh_div_here
+          Kh_max_here = hrat_min(I,J) * CS%Kh_Max_xy(I,J)
+          if (Kh_lap_here + Kh_div_here >= Kh_max_here) then
+            visc_bound_rem(I,J) = 0.0
+          elseif ((Kh_lap_here + Kh_div_here > 0.0) .or. &
+                (CS%backscatter_underbound .and. (Kh_max_here > 0.0))) then
+            visc_bound_rem(I,J) = 1.0 - (Kh_lap_here + Kh_div_here) / Kh_max_here
+          endif
+        enddo ; enddo
+      endif
     endif
 
     if (CS%biharmonic) then
@@ -1979,12 +2013,6 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
       do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
         str_xx(i,j) = (str_xx(i,j) + str_xx_GME(i,j)) * (h(i,j,k) * CS%reduction_xx(i,j))
       enddo ; enddo
-      ! This changes the units of str_div from [L2 T-2 ~> m2 s-2] to [H L2 T-2 ~> m3 s-2 or kg s-2].
-      if (CS%div_damp) then
-        do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-          str_div(i,j) = str_div(i,j) * (h(i,j,k) * CS%reduction_xx(i,j))
-        enddo ; enddo
-      endif
 
       ! This adds in GME and changes the units of str_xx from [L2 T-2 ~> m2 s-2] to [H L2 T-2 ~> m3 s-2 or kg s-2].
       if (CS%no_slip) then
@@ -2002,12 +2030,6 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
       do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
         str_xx(i,j) = str_xx(i,j) * (h(i,j,k) * CS%reduction_xx(i,j))
       enddo ; enddo
-      ! This changes the units of str_div from [L2 T-2 ~> m2 s-2] to [H L2 T-2 ~> m3 s-2 or kg s-2].
-      if (CS%div_damp) then
-        do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-          str_div(i,j) = str_div(i,j) * (h(i,j,k) * CS%reduction_xx(i,j))
-        enddo ; enddo
-      endif
 
       ! This changes the units of str_xy from [L2 T-2 ~> m2 s-2] to [H L2 T-2 ~> m3 s-2 or kg s-2].
       if (CS%no_slip) then
@@ -2020,6 +2042,13 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
         enddo ; enddo
       endif
     endif ! use_GME
+
+    ! Get the divergence damping stress [H L2 T-2 ~> m3 s-2 or kg s-2].
+    if (CS%div_damp) then
+      do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+        str_div(i,j) = (-Kh_div(i,j) * div_xx(i,j)) * (h(i,j,k) * CS%reduction_xx(i,j))
+      enddo ; enddo
+    endif
 
     ! Evaluate 1/h x.Div(h Grad u) or the biharmonic equivalent.
     do j=js,je ; do I=Isq,Ieq
@@ -2131,22 +2160,15 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
 
       if (CS%div_damp) then
         ! Add the work done by the isotropic divergence damping stress, str_div*(d_x u + d_y v)
-        if (CS%FrictWork_bug) then
-          do j=js,je ; do i=is,ie
-            FrictWork(i,j,k) = FrictWork(i,j,k) + GV%H_to_RZ * str_div(i,j) * &
-                  (((u(I,j,k)-u(I-1,j,k))*G%IdxT(i,j)) + ((v(i,J,k)-v(i,J-1,k))*G%IdyT(i,j)))
-          enddo ; enddo
-        else
-          do j=js,je ; do i=is,ie
-            FrictWork(i,j,k) = FrictWork(i,j,k) + GV%H_to_RZ * G%IareaT(i,j) * str_div(i,j) * ( &
-                (CS%dy2h(i,j) * ( &
-                    (uh(I,j,k)*G%dxCu(I,j)*G%IdyCu(I,j)*G%IareaCu(I,j)/(h_u(I,j)+h_neglect)) &
-                  - (uh(I-1,j,k)*G%dxCu(I-1,j)*G%IdyCu(I-1,j)*G%IareaCu(I-1,j)/(h_u(I-1,j)+h_neglect)) )) &
-              + (CS%dx2h(i,j) * ( &
-                    (vh(i,J,k)*G%dyCv(i,J)*G%IdxCv(i,J)*G%IareaCv(i,J)/(h_v(i,J)+h_neglect)) &
-                  - (vh(i,J-1,k)*G%dyCv(i,J-1)*G%IdxCv(i,J-1)*G%IareaCv(i,J-1)/(h_v(i,J-1)+h_neglect)) )) )
-          enddo ; enddo
-        endif
+        do j=js,je ; do i=is,ie
+          FrictWork(i,j,k) = FrictWork(i,j,k) + GV%H_to_RZ * G%IareaT(i,j) * str_div(i,j) * ( &
+              (CS%dy2h(i,j) * ( &
+                  (uh(I,j,k)*G%dxCu(I,j)*G%IdyCu(I,j)*G%IareaCu(I,j)/(h_u(I,j)+h_neglect)) &
+                - (uh(I-1,j,k)*G%dxCu(I-1,j)*G%IdyCu(I-1,j)*G%IareaCu(I-1,j)/(h_u(I-1,j)+h_neglect)) )) &
+            + (CS%dx2h(i,j) * ( &
+                  (vh(i,J,k)*G%dyCv(i,J)*G%IdxCv(i,J)*G%IareaCv(i,J)/(h_v(i,J)+h_neglect)) &
+                - (vh(i,J-1,k)*G%dyCv(i,J-1)*G%IdxCv(i,J-1)*G%IareaCv(i,J-1)/(h_v(i,J-1)+h_neglect)) )) )
+        enddo ; enddo
       endif
 
       if (CS%EY24_EBT_BS) then
