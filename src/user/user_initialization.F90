@@ -32,10 +32,6 @@ public USER_initialize_sponges, USER_set_OBC_data, USER_set_rotation
 ! their mks counterparts with notation like "a velocity [Z T-1 ~> m s-1]".  If the units
 ! vary with the Boussinesq approximation, the Boussinesq variant is given first.
 
-!> A module variable that should not be used.
-!! \todo Move this module variable into a control structure.
-logical :: first_call = .true.
-
 contains
 
 !> Set vertical coordinates.
@@ -55,7 +51,7 @@ subroutine USER_set_coord(Rlay, g_prime, GV, US, param_file)
   Rlay(:) = 0.0
   g_prime(:) = 0.0
 
-  if (first_call) call write_user_log(param_file)
+  call write_user_log(param_file)
 
 end subroutine USER_set_coord
 
@@ -74,7 +70,7 @@ subroutine USER_initialize_topography(D, G, param_file, max_depth, US)
 
   D(:,:) = 0.0
 
-  if (first_call) call write_user_log(param_file)
+  call write_user_log(param_file)
 
 end subroutine USER_initialize_topography
 
@@ -98,7 +94,7 @@ subroutine USER_initialize_thickness(h, G, GV, param_file, just_read)
   h(:,:,1:GV%ke) = 0.0 ! h should be set in [Z ~> m].  It will be converted to thickness units
                        ! [H ~> m or kg m-2] once the temperatures and salinities are known.
 
-  if (first_call) call write_user_log(param_file)
+  call write_user_log(param_file)
 
 end subroutine USER_initialize_thickness
 
@@ -124,7 +120,7 @@ subroutine USER_initialize_velocity(u, v, G, GV, US, param_file, just_read)
   u(:,:,1) = 0.0
   v(:,:,1) = 0.0
 
-  if (first_call) call write_user_log(param_file)
+  call write_user_log(param_file)
 
 end subroutine USER_initialize_velocity
 
@@ -150,7 +146,7 @@ subroutine USER_init_temperature_salinity(T, S, G, GV, param_file, just_read)
   T(:,:,1) = 0.0
   S(:,:,1) = 0.0
 
-  if (first_call) call write_user_log(param_file)
+  call write_user_log(param_file)
 
 end subroutine USER_init_temperature_salinity
 
@@ -174,7 +170,7 @@ subroutine USER_initialize_sponges(G, GV, use_temp, tv, param_file, CSp, h)
     "USER_initialization.F90, USER_initialize_sponges: " // &
     "Unmodified user routine called - you must edit the routine to use it")
 
-  if (first_call) call write_user_log(param_file)
+  call write_user_log(param_file)
 
 end subroutine USER_initialize_sponges
 
@@ -197,7 +193,7 @@ subroutine USER_set_OBC_data(OBC, tv, G, GV, param_file, tr_Reg)
 !   "USER_initialization.F90, USER_set_OBC_data: " // &
 !   "Unmodified user routine called - you must edit the routine to use it")
 
-  if (first_call) call write_user_log(param_file)
+  call write_user_log(param_file)
 
 end subroutine USER_set_OBC_data
 
@@ -208,7 +204,7 @@ subroutine USER_set_rotation(G, param_file)
     "USER_initialization.F90, USER_set_rotation: " // &
     "Unmodified user routine called - you must edit the routine to use it")
 
-  if (first_call) call write_user_log(param_file)
+  call write_user_log(param_file)
 
 end subroutine USER_set_rotation
 
@@ -221,8 +217,9 @@ subroutine write_user_log(param_file)
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "user_initialization" ! This module's name.
+  logical, save :: first_call = .true.  ! Only the log this module's version once.
 
-  call log_version(param_file, mdl, version)
+  if (first_call) call log_version(param_file, mdl, version)
   first_call = .false.
 
 end subroutine write_user_log

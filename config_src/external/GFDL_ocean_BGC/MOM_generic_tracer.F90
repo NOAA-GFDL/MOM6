@@ -7,16 +7,6 @@ module MOM_generic_tracer
 
 #include <MOM_memory.h>
 
-! The following macro is usually defined in <fms_platform.h> but since MOM6 should not directly
-! include files from FMS we replicate the macro lines here:
-#ifdef NO_F2000
-#define _ALLOCATED associated
-#else
-#define _ALLOCATED allocated
-#endif
-
-! ### These imports should not reach into FMS directly ###
-
 use MOM_ALE_sponge, only : ALE_sponge_CS
 use MOM_coms, only : EFP_type, real_to_EFP
 use MOM_diag_mediator, only : diag_ctrl
@@ -35,10 +25,6 @@ use MOM_variables, only : surface, thermo_var_ptrs
 use MOM_verticalGrid, only : verticalGrid_type
 
 implicit none ; private
-
-!> A state hidden in module data that is very much not allowed in MOM6
-! ### This needs to be fixed
-logical :: g_registered = .false.
 
 public register_MOM_generic_tracer, initialize_MOM_generic_tracer
 public MOM_generic_tracer_column_physics, MOM_generic_tracer_surface_state

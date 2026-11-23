@@ -53,7 +53,6 @@ type, public :: MESO_surface_forcing_CS ; private
                              !! timing of diagnostic output.
 end type MESO_surface_forcing_CS
 
-logical :: first_call = .true. !< True until after the first call to the MESO forcing routines
 
 contains
 
@@ -114,27 +113,8 @@ subroutine MESO_buoyancy_forcing(sfc_state, fluxes, day, dt, G, US, CS)
     call safe_alloc_ptr(fluxes%buoy, isd, ied, jsd, jed)
   endif
 
-
-  ! MODIFY THE CODE IN THE FOLLOWING LOOPS TO SET THE BUOYANCY FORCING TERMS.
-  if (CS%restorebuoy .and. first_call) then !#CTRL# .or. associated(CS%ctrl_forcing_CSp)) then
-    call safe_alloc_ptr(CS%T_Restore, isd, ied, jsd, jed)
-    call safe_alloc_ptr(CS%S_Restore, isd, ied, jsd, jed)
-    call safe_alloc_ptr(CS%Heat, isd, ied, jsd, jed)
-    call safe_alloc_ptr(CS%PmE, isd, ied, jsd, jed)
-    call safe_alloc_ptr(CS%Solar, isd, ied, jsd, jed)
-
-    call MOM_read_data(trim(CS%inputdir)//trim(CS%SSTrestore_file), "SST", &
-             CS%T_Restore(:,:), G%Domain, scale=US%degC_to_C)
-    call MOM_read_data(trim(CS%inputdir)//trim(CS%salinityrestore_file), "SAL", &
-             CS%S_Restore(:,:), G%Domain, scale=US%ppt_to_S)
-    call MOM_read_data(trim(CS%inputdir)//trim(CS%heating_file), "Heat", &
-             CS%Heat(:,:), G%Domain, scale=US%W_m2_to_QRZ_T)
-    call MOM_read_data(trim(CS%inputdir)//trim(CS%PmE_file), "PmE", &
-             CS%PmE(:,:), G%Domain, scale=US%m_to_Z*US%T_to_s)
-    call MOM_read_data(trim(CS%inputdir)//trim(CS%Solar_file), "NET_SOL", &
-             CS%Solar(:,:), G%Domain, scale=US%W_m2_to_QRZ_T)
-    first_call = .false.
-  endif
+  ! If the forcing is time_varying, the fields in CS%T_Restore, CS%S_Restore, CS%Heat,
+  ! CS%PmE and CS%Solar might need to be modified here.
 
   if ( CS%use_temperature ) then
     ! Set whichever fluxes are to be used here.  Any fluxes that
@@ -220,6 +200,7 @@ subroutine MESO_surface_forcing_init(Time, G, US, param_file, diag, CS)
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MESO_surface_forcing" ! This module's name.
+  integer :: isd, ied, jsd, jed
 
   if (associated(CS)) then
     call MOM_error(WARNING, "MESO_surface_forcing_init called with an associated "// &
@@ -281,6 +262,26 @@ subroutine MESO_surface_forcing_init(Time, G, US, param_file, diag, CS)
                  "fluxes with RESTORE_SALINITY or RESTORE_TEMPERATURE.", &
                  units="kg m-3", default=CS%Rho0*US%R_to_kg_m3, scale=US%kg_m3_to_R, &
                  do_not_log=(CS%Flux_const==0.0).or.(.not.CS%restorebuoy))
+  endif
+
+  if (CS%restorebuoy) then !#CTRL# .or. associated(CS%ctrl_forcing_CSp)) then
+    isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
+    call safe_alloc_ptr(CS%T_Restore, isd, ied, jsd, jed)
+    call safe_alloc_ptr(CS%S_Restore, isd, ied, jsd, jed)
+    call safe_alloc_ptr(CS%Heat, isd, ied, jsd, jed)
+    call safe_alloc_ptr(CS%PmE, isd, ied, jsd, jed)
+    call safe_alloc_ptr(CS%Solar, isd, ied, jsd, jed)
+
+    call MOM_read_data(trim(CS%inputdir)//trim(CS%SSTrestore_file), "SST", &
+             CS%T_Restore(:,:), G%Domain, scale=US%degC_to_C)
+    call MOM_read_data(trim(CS%inputdir)//trim(CS%salinityrestore_file), "SAL", &
+             CS%S_Restore(:,:), G%Domain, scale=US%ppt_to_S)
+    call MOM_read_data(trim(CS%inputdir)//trim(CS%heating_file), "Heat", &
+             CS%Heat(:,:), G%Domain, scale=US%W_m2_to_QRZ_T)
+    call MOM_read_data(trim(CS%inputdir)//trim(CS%PmE_file), "PmE", &
+             CS%PmE(:,:), G%Domain, scale=US%m_to_Z*US%T_to_s)
+    call MOM_read_data(trim(CS%inputdir)//trim(CS%Solar_file), "NET_SOL", &
+             CS%Solar(:,:), G%Domain, scale=US%W_m2_to_QRZ_T)
   endif
 
 end subroutine MESO_surface_forcing_init
