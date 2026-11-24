@@ -1824,39 +1824,6 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
       enddo ; enddo
     endif
 
-    if (CS%div_damp .and. CS%bound_Kh .and. CS%bound_Ah) then
-      ! Divergence damping has no stress at q points, but its viscosity estimated at q points
-      ! reduces the remaining stability bound that is available to the biharmonic viscosity.
-      if (CS%Laplacian) then
-        do J=js-1,Jeq ; do I=is-1,Ieq
-          Kh_lap_here = Kh(I,J)
-          Kh_div_here = CS%Laplac_div_const_xy(I,J) * Shear_mag(I,J)
-          if (rescale_Kh_div) Kh_div_here = VarMix%Res_fn_q(I,J) * Kh_div_here
-          Kh_max_here = hrat_min(I,J) * CS%Kh_Max_xy(I,J)
-          if (Kh_lap_here + Kh_div_here >= Kh_max_here) then
-            visc_bound_rem(I,J) = 0.0
-          elseif ((Kh_lap_here + Kh_div_here > 0.0) .or. &
-                (CS%backscatter_underbound .and. (Kh_max_here > 0.0))) then
-            visc_bound_rem(I,J) = 1.0 - (Kh_lap_here + Kh_div_here) / Kh_max_here
-          endif
-        enddo ; enddo
-      else
-        do J=js-1,Jeq ; do I=is-1,Ieq
-          Kh_lap_here = 0.0
-          visc_bound_rem(I,J) = 1.0
-          Kh_div_here = CS%Laplac_div_const_xy(I,J) * Shear_mag(I,J)
-          if (rescale_Kh_div) Kh_div_here = VarMix%Res_fn_q(I,J) * Kh_div_here
-          Kh_max_here = hrat_min(I,J) * CS%Kh_Max_xy(I,J)
-          if (Kh_lap_here + Kh_div_here >= Kh_max_here) then
-            visc_bound_rem(I,J) = 0.0
-          elseif ((Kh_lap_here + Kh_div_here > 0.0) .or. &
-                (CS%backscatter_underbound .and. (Kh_max_here > 0.0))) then
-            visc_bound_rem(I,J) = 1.0 - (Kh_lap_here + Kh_div_here) / Kh_max_here
-          endif
-        enddo ; enddo
-      endif
-    endif
-
     if (CS%biharmonic) then
       ! Determine the biharmonic viscosity at q points, using the
       ! largest value from several parameterizations. Also get the
