@@ -295,6 +295,10 @@ type, public :: barotropic_CS ; private
                              !! are large enough for a CFL number to exceed
                              !! CFL_trunc.  This should only be used as a
                              !! desperate debugging measure.
+  logical :: asymmetric_clip_bug !< If clip_velocity is true and this is true, clip large barotropic
+                             !! u-velocities to 95 percent of the maximum velocity but clip large
+                             !! v-velocities to 90 percent of the maximum, thereby breaking rotational
+                             !! symmetry.  If false, both are clipped to 90 percent.
   logical :: debug           !< If true, write verbose checksums for debugging purposes.
   logical :: debug_bt        !< If true, write verbose checksums from within the barotropic
                              !! time-stepping loop for debugging purposes.
@@ -3131,17 +3135,19 @@ subroutine truncate_velocities(ubt, vbt, dt, G, CS, isv, iev, jsv, jev)
   integer, intent(in)    :: jsv !< The starting valid tracer array j-index that is being worked on
   integer, intent(in)    :: jev !< The ending valid tracer array j-index being that is worked on
 
+  real :: ubt_clip_frac  ! The fraction of the maximum u-velocity to use for the clipped value [nondim]
   integer :: i, j
 
-  !### Note the inconsistent clipping for u- and v-velocity truncations
+  ubt_clip_frac = 0.9*CS%CFL_trunc ; if (CS%asymmetric_clip_bug) ubt_clip_frac = 0.95*CS%CFL_trunc
+
   if (CS%clip_velocity) then
     do j=jsv,jev ; do I=isv-1,iev
       if ((ubt(I,j) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
         ! Add some error reporting later.
-        ubt(I,j) = (-0.95*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
+        ubt(I,j) = (-ubt_clip_frac) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
       elseif ((ubt(I,j) * (dt * G%dy_Cu(I,j))) * G%IareaT(i,j) > CS%CFL_trunc) then
         ! Add some error reporting later.
-        ubt(I,j) = (0.95*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dy_Cu(I,j)))
+        ubt(I,j) = ubt_clip_frac * (G%areaT(i,j) / (dt * G%dy_Cu(I,j)))
       endif
     enddo ; enddo
     do J=jsv-1,jev ; do i=isv,iev
@@ -5885,6 +5891,12 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                  "The maximum velocity allowed before the velocity "//&
                  "components are truncated.", units="m s-1", default=3.0e8, scale=US%m_s_to_L_T, &
                  do_not_log=.not.CS%clip_velocity)
+  call get_param(param_file, mdl, "ASYMMETRIC_CLIP_BT_BUG", CS%asymmetric_clip_bug, &
+                 "If true, clip large barotropic u-velocities to 95 percent of the maximum "//&
+                 "velocity but clip large v-velocities to 90 percent of the maximum, thereby "//&
+                 "breaking rotational symmetry.  If false, both are clipped to 90 percent.  "//&
+                 "This only applies if CLIP_BT_VELOCITY is true.", &
+                 default=enable_bugs, do_not_log=.not.CS%clip_velocity)
   call get_param(param_file, mdl, "MAXCFL_BT_CONT", CS%maxCFL_BT_cont, &
                  "The maximum permitted CFL number associated with the "//&
                  "barotropic accelerations from the summed velocities "//&
