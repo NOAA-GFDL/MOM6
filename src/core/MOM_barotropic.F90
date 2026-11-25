@@ -2016,7 +2016,22 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   call btstep_layer_accel(dt, u_accel_bt, v_accel_bt, pbce, gtot_E, gtot_W, gtot_N, gtot_S, &
                           e_anom, G, GV, CS, accel_layer_u, accel_layer_v)
 
-  if (apply_OBCs) then
+  if (apply_OBCs) then ; if (CS%answer_date >= 20270101) then
+    ! Correct the accelerations at OBC velocity points, but only in the
+    ! symmetric-memory computational domain, not in the wide halo regions.
+    if (CS%BT_OBC%u_OBCs_on_PE) then ; do j=js,je ; do I=is-1,ie
+      if (CS%BT_OBC%u_OBC_type(I,j) /= 0) then
+        u_accel_bt(I,j) = (ubt_wtd(I,j) - ubt_st(I,j)) * Idt
+        do k=1,nz ; accel_layer_u(I,j,k) = u_accel_bt(I,j) ; enddo
+      endif
+    enddo ; enddo ; endif
+    if (CS%BT_OBC%v_OBCs_on_PE) then ; do J=js-1,je ; do i=is,ie
+      if (CS%BT_OBC%v_OBC_type(i,J) /= 0) then
+        v_accel_bt(i,J) = (vbt_wtd(i,J) - vbt_st(i,J)) * Idt
+        do k=1,nz ; accel_layer_v(i,J,k) = v_accel_bt(i,J) ; enddo
+      endif
+    enddo ; enddo ; endif
+  else
     ! Correct the accelerations at OBC velocity points, but only in the
     ! symmetric-memory computational domain, not in the wide halo regions.
     if (CS%BT_OBC%u_OBCs_on_PE) then ; do j=js,je ; do I=is-1,ie
@@ -2031,7 +2046,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
         do k=1,nz ; accel_layer_v(i,J,k) = v_accel_bt(i,J) ; enddo
       endif
     enddo ; enddo ; endif
-  endif
+  endif ; endif
 
   if (id_clock_calc_post > 0) call cpu_clock_end(id_clock_calc_post)
 
@@ -3051,7 +3066,7 @@ subroutine btstep_find_Cor(q, DCor_u, DCor_v, f_4_u, f_4_v, isvf, ievf, jsvf, je
   integer, intent(in) :: jsvf  !< The starting j-index of the largest valid range for tracer points
   integer, intent(in) :: jevf  !< The ending j-index of the largest valid range for tracer points
 
-  ! real :: C1_3 ! One third [nondim]
+  real, parameter :: C1_3 = 1.0 / 3.0 ! One third [nondim]
   integer :: i, j
 
   if (CS%Sadourny) then
@@ -3069,7 +3084,7 @@ subroutine btstep_find_Cor(q, DCor_u, DCor_v, f_4_u, f_4_v, isvf, ievf, jsvf, je
       f_4_u(1,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J-1) * q(I,J-1)
       f_4_u(2,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J-1) * q(I,J-1)
     enddo ; enddo
-  else  !### if (CS%answer_date < 20250601) then  ! Uncomment this later.
+  elseif (CS%answer_date < 20270101) then
     !$OMP parallel do default(shared)
     do J=jsvf-1,jevf ; do i=isvf-1,ievf+1
       f_4_v(1,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j) * ((q(I,J) + q(I-1,J-1)) + q(I-1,J)) / 3.0
@@ -3084,27 +3099,26 @@ subroutine btstep_find_Cor(q, DCor_u, DCor_v, f_4_u, f_4_v, isvf, ievf, jsvf, je
       f_4_u(1,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J-1) * ((q(I,J) + q(I-1,J-1)) + q(I,J-1)) / 3.0
       f_4_u(2,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J-1) * ((q(I,J) + q(I+1,J-1)) + q(I,J-1)) / 3.0
     enddo ; enddo
-  ! else
-  !   C1_3 = 1.0 / 3.0
-  !   !$OMP parallel do default(shared)
-  !   do J=jsvf-1,jevf ; do i=isvf-1,ievf+1
-  !     f_4_v(1,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j) * ((q(I,J) + q(I-1,J-1)) + q(I-1,J)) * C1_3
-  !     f_4_v(2,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j) * (q(I,J) + (q(I-1,J) + q(I,J-1))) * C1_3
-  !     f_4_v(4,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j+1) * (q(I,J) + (q(I-1,J) + q(I,J+1))) * C1_3
-  !     f_4_v(3,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j+1) * ((q(I,J) + q(I-1,J+1)) + q(I-1,J)) * C1_3
-  !   enddo ; enddo
-  !   !$OMP parallel do default(shared)
-  !   do j=jsvf-1,jevf+1 ; do I=isvf-1,ievf
-  !     f_4_u(4,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J) * (q(I,J) + (q(I+1,J) + q(I,J-1))) * C1_3
-  !     f_4_u(3,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J) * (q(I,J) + (q(I-1,J) + q(I,J-1))) * C1_3
-  !     f_4_u(1,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J-1) * ((q(I,J) + q(I-1,J-1)) + q(I,J-1)) * C1_3
-  !     f_4_u(2,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J-1) * ((q(I,J) + q(I+1,J-1)) + q(I,J-1)) * C1_3
-  !   enddo ; enddo
+  else
+    !$OMP parallel do default(shared)
+    do J=jsvf-1,jevf ; do i=isvf-1,ievf+1
+      f_4_v(1,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j) * ((q(I,J) + q(I-1,J-1)) + q(I-1,J)) * C1_3
+      f_4_v(2,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j) * (q(I,J) + (q(I-1,J) + q(I,J-1))) * C1_3
+      f_4_v(4,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j+1) * (q(I,J) + (q(I-1,J) + q(I,J+1))) * C1_3
+      f_4_v(3,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j+1) * ((q(I,J) + q(I-1,J+1)) + q(I-1,J)) * C1_3
+    enddo ; enddo
+    !$OMP parallel do default(shared)
+    do j=jsvf-1,jevf+1 ; do I=isvf-1,ievf
+      f_4_u(4,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J) * (q(I,J) + (q(I+1,J) + q(I,J-1))) * C1_3
+      f_4_u(3,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J) * (q(I,J) + (q(I-1,J) + q(I,J-1))) * C1_3
+      f_4_u(1,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J-1) * ((q(I,J) + q(I-1,J-1)) + q(I,J-1)) * C1_3
+      f_4_u(2,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J-1) * ((q(I,J) + q(I+1,J-1)) + q(I,J-1)) * C1_3
+    enddo ; enddo
   endif
 
 end subroutine btstep_find_Cor
 
-!> Do a CFL-based truncation of any excessively large batotropic velocities.
+!> Do a CFL-based truncation of any excessively large barotropic velocities.
 !! This should only be used as desperate debugging measure.
 subroutine truncate_velocities(ubt, vbt, dt, G, CS, isv, iev, jsv, jev)
   type(ocean_grid_type), intent(inout) :: G  !< The ocean's grid structure.
@@ -3119,6 +3133,7 @@ subroutine truncate_velocities(ubt, vbt, dt, G, CS, isv, iev, jsv, jev)
 
   integer :: i, j
 
+  !### Note the inconsistent clipping for u- and v-velocity truncations
   if (CS%clip_velocity) then
     do j=jsv,jev ; do I=isv-1,iev
       if ((ubt(I,j) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
@@ -5732,10 +5747,12 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
+  default_answer_date = min(default_answer_date, 20261231)  !### Remove this line later.
   call get_param(param_file, mdl, "BAROTROPIC_ANSWER_DATE", CS%answer_date, &
                  "The vintage of the expressions in the barotropic solver. "//&
-                 "Values below 20190101 recover the answers from the end of 2018, "//&
-                 "while higher values use more efficient or general expressions.", &
+                 "Values below 20190101 recover the answers from the end of 2018, while higher "//&
+                 "values use more efficient or general expressions.  Values of 20270101 or "//&
+                 "higher replace several divisions by multiplication by their reciprocal.", &
                  default=default_answer_date, do_not_log=.not.GV%Boussinesq)
   if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
