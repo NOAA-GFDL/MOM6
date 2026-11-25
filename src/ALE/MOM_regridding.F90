@@ -239,6 +239,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   integer :: remap_answer_date    ! The vintage of the remapping expressions to use.
   integer :: regrid_answer_date   ! The vintage of the regridding expressions to use.
+  integer :: regrid_init_answer_date   ! The vintage of the regrid initialization expressions to use.
   real :: tmpReal  ! A temporary variable used in setting other variables [various]
   real :: dz_tot   ! The sum of the layer thicknesses in units of coordinate, which may be [m]
                    ! or [Z ~> m] or [H ~> m or kg m-2] or [R ~> kg m-3] or other units.
@@ -255,6 +256,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
   real :: adaptZoom  ! The thickness of the near-surface zooming region with the adaptive coordinate [H ~> m or kg m-2]
   real :: adaptDrho0 ! Reference density difference for stratification-dependent diffusion. [R ~> kg m-3]
   logical :: enable_bugs ! If true, keep answer-changing bugs enabled by default.
+  logical :: log_regrid_init_answer_date ! Indicates whether to write a log-file entry for 
   integer :: i, j, k, nzf(4)
   real, dimension(:), allocatable :: dz     ! Resolution (thickness) in units of coordinate, which may be [m]
                                             ! or [Z ~> m] or [H ~> m or kg m-2] or [R ~> kg m-3] or other units.
@@ -329,6 +331,9 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     coord_units=coordinateUnits(coord_mode)
   endif
 
+  call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
+               "This sets the default value for the various _ANSWER_DATE parameters.", &
+               default=99991231, do_not_log=.true.)
   if (coord_is_state_dependent) then
     if (main_parameters) then
       param_name = "INTERPOLATION_SCHEME"
@@ -346,9 +351,6 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                  trim(regriddingInterpSchemeDoc), default=trim(string2))
     call set_regrid_params(CS, interp_scheme=string)
 
-    call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
-                 "This sets the default value for the various _ANSWER_DATE parameters.", &
-                 default=99991231)
     call get_param(param_file, mdl, "REMAPPING_ANSWER_DATE", remap_answer_date, &
                  "The vintage of the expressions and order of arithmetic to use for remapping.  "//&
                  "Values below 20190101 result in the use of older, less accurate expressions "//&
@@ -366,6 +368,14 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     if (.not.GV%Boussinesq) regrid_answer_date = max(regrid_answer_date, 20230701)
     call set_regrid_params(CS, regrid_answer_date=regrid_answer_date)
   endif
+
+  call get_param(param_file, mdl, "REGRID_INIT_ANSWER_DATE", regrid_init_answer_date, &
+                "Values of 20270101 or higher use a refactored form of "//&
+                "some of the grid generation code that is more likely to give consistent "//&
+                "answers across optimization levels.", &
+                default=default_answer_date, do_not_log=.true.)
+  ! REGRID_INIT_ANSWER_DATE is logged later if it is used.
+  log_regrid_init_answer_date = .false.
 
   if (main_parameters .and. coord_is_state_dependent) then
     call get_param(param_file, mdl, "BOUNDARY_EXTRAPOLATION", tmpLogical, &
@@ -528,7 +538,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                trim(message), units=coordinateUnits(coord_mode))
   elseif (index(trim(string),'FNC1:')==1) then
     ke = GV%ke ; allocate(dz(ke))
-    call dz_function1( trim(string(6:)), dz )
+    call dz_function1( trim(string(6:)), dz, regrid_init_answer_date )
+    log_regrid_init_answer_date = .true.
     if (main_parameters) call log_param(param_file, mdl, "!"//coord_res_param, dz, &
                trim(message), units=coordinateUnits(coord_mode))
   elseif (index(trim(string),'RFNC1:')==1) then
@@ -555,7 +566,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     call MOM_read_data(trim(fileName), trim(varName), rho_target)
     varName = trim( extractWord(trim(string(8:)), 3) )
     if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz
-      call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz )
+      call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz, regrid_init_answer_date )
+      log_regrid_init_answer_date = .true.
     else ! Read dz from file
       if (.not. field_exists(fileName, varName)) call MOM_error(FATAL, &
           trim(mdl)//", initialize_regridding: HYBRID "// &
@@ -591,7 +603,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     varName = trim( extractWord(trim(string(11:)), 3) )
     if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz_3d
       allocate(dz(ke))
-      call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz )
+      call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz, regrid_init_answer_date )
+      log_regrid_init_answer_date = .true.
       ! Adjust target grid to be consistent with maximum_depth
       dz_tot = 0.0 ; do k=1,ke ; dz_tot = dz_tot + dz(k) ; enddo
       if (dz_tot < maximum_depth) then
@@ -689,7 +702,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     varName = trim( extractWord(trim(string(12:)), 4) )
     if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz_3d
       allocate(dz(ke))
-      call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz )
+      call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz, regrid_init_answer_date )
+      log_regrid_init_answer_date = .true.
       ! Adjust target grid to be consistent with maximum_depth
       dz_tot = 0.0 ; do k=1,ke ; dz_tot = dz_tot + dz(k) ; enddo
       if (dz_tot < maximum_depth) then
@@ -860,7 +874,7 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                    units="m", default=0.0)
     n_sigma = ke
     depth_s = 0.0
-    do k= 1,ke
+    do k=1,ke
       depth_s = depth_s + dz_shallow(k)
       if (dz_shallow(k) == 0.0) then
         n_sigma = k-1
@@ -889,24 +903,24 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
         if (G%mask2dT(i,j)>0.) then
           nominalDepth = max(G%meanSL(i,j) + G%bathyT(i,j), 0.0) * US%Z_to_m
           if (nominalDepth <= depth_s) then
-            do k= 1,n_sigma
+            do k=1,n_sigma
               dz_3d(i,j,k) = dz_shallow(k)
             enddo
-            do k= n_sigma+1,ke
+            do k=n_sigma+1,ke
               dz_3d(i,j,k) = dz_shallow(n_sigma)
             enddo
           else ! >depth_s
             depth_d = 0.0
-            do k= 1,n_sigma
+            do k=1,n_sigma
               depth_d = depth_d + dz_3d(i,j,k)
             enddo
             ! do nothing if nominalDepth >= depth_d
             if (nominalDepth < depth_d) then
               depth_q = (nominalDepth - depth_s) / (depth_d - depth_s)
-              do k= 1,n_sigma
+              do k=1,n_sigma
                 dz_3d(i,j,k) = (1.0-depth_q)*dz_shallow(k) + depth_q*dz_3d(i,j,k)
               enddo
-              do k= n_sigma+1,ke
+              do k=n_sigma+1,ke
                 dz_3d(i,j,k) = (1.0-depth_q)*dz_shallow(n_sigma) + depth_q*dz_3d(i,j,k)
               enddo
             endif !<depth_d and >depth_s
@@ -1113,7 +1127,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                  trim(message), units=coordinateUnits(coord_mode))
       call set_regrid_max_depths(CS, z_max, GV%m_to_H)
     elseif (index(trim(longString),'FNC1:')==1) then
-      call dz_function1( trim(longString(6:)), dz_max )
+      call dz_function1( trim(longString(6:)), dz_max, regrid_init_answer_date )
+      log_regrid_init_answer_date = .true.
       z_max(1) = 0.0 ; do K=1,ke ; z_max(K+1) = z_max(K) + dz_max(K) ; enddo
       call log_param(param_file, mdl, "!MAXIMUM_INT_DEPTHS", z_max, &
                  trim(message), units=coordinateUnits(coord_mode))
@@ -1173,7 +1188,8 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
                  trim(message), units=coordinateUnits(coord_mode))
       call set_regrid_max_thickness(CS, h_max, GV%m_to_H)
     elseif (index(trim(longString),'FNC1:')==1) then
-      call dz_function1( trim(longString(6:)), h_max )
+      call dz_function1( trim(longString(6:)), h_max, regrid_init_answer_date )
+      log_regrid_init_answer_date = .true.
       call log_param(param_file, mdl, "!MAX_LAYER_THICKNESS", h_max, &
                  trim(message), units=coordinateUnits(coord_mode))
       call set_regrid_max_thickness(CS, h_max, GV%m_to_H)
@@ -1183,6 +1199,14 @@ subroutine initialize_regridding(CS, G, GV, US, max_depth, param_file, mdl, &
     endif
     deallocate(h_max)
   endif
+
+  if (log_regrid_init_answer_date) &
+    call log_param(param_file, mdl, "REGRID_INIT_ANSWER_DATE", regrid_init_answer_date, &
+                "Values of 20270101 or higher use a refactored form for the initialization "//&
+                "of the vertical grid generation code that is more likely to give consistent "//&
+                "answers across optimization levels by explicitly multiplying by reciprocals "//&
+                "in place of repeated divisions inside of do loops.", &
+                default=default_answer_date)
 
   if (allocated(dz)) deallocate(dz)
 end subroutine initialize_regridding
@@ -1396,7 +1420,7 @@ subroutine calc_h_new_by_dz(CS, G, GV, h, dzInterface, h_new)
           h_new(i,j,k) = max( 0., h(i,j,k) + ( dzInterface(i,j,k) - dzInterface(i,j,k+1) ) )
         enddo
         if (CS%nk > GV%ke) then
-          do k=nki+1, CS%nk
+          do k=nki+1,CS%nk
             h_new(i,j,k) = max( 0., dzInterface(i,j,k) - dzInterface(i,j,k+1) )
           enddo
         endif
@@ -3047,40 +3071,81 @@ function getStaticThickness( CS, SSH, depth )
 end function getStaticThickness
 
 !> Parses a string and generates a dz(:) profile that goes like k**power.
-subroutine dz_function1( string, dz )
+subroutine dz_function1(string, dz, answer_date)
   character(len=*),   intent(in)    :: string !< String with list of parameters in form
                                               !! dz_min, H_total, power, precision
   real, dimension(:), intent(inout) :: dz     !< Profile of nominal thicknesses [m] or other units
+  integer,            intent(in)    :: answer_date !< Values of 20270101 or higher use mathematically
+                                              !! equivalent expressions that are less prone to being
+                                              !! altered at roundoff by optimization.
   ! Local variables
   integer :: nk, k
   real    :: dz_min  ! minimum grid spacing [m] or other units
   real    :: dz_tot  ! The vertical sum of dz in [m] or other units
+  real    :: I_dztot ! The Adcroft reciprocal of dz_tot, in [m-1] or other units
   real    :: power   ! A power to raise the relative position in index space [nondim]
   real    :: prec    ! The precision with which positions are returned [m] or other units
+  real    :: I_prec  ! The inverse of prec, in [m-1] or other units
   real    :: H_total ! The sum of the nominal thicknesses [m] or other units
+  real    :: I_nkm1  ! The real inverse of nk - 1 [nondim]
 
   nk = size(dz) ! Number of cells
+  if (nk < 2) return  ! There is not adjustment with a single layer
+
   prec = -1024.
-  read( string, *) dz_min, H_total, power, prec
+  read(string, *) dz_min, H_total, power, prec
   if (prec == -1024.) call MOM_error(FATAL,"dz_function1: "// &
           "Problem reading FNC1: string  ="//trim(string))
-  ! Create profile of ( dz - dz_min )
-  do k = 1, nk
-    dz(k) = (real(k-1)/real(nk-1))**power
-  enddo
 
-  dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + dz(k) ; enddo
-  ! Revising this code to multiply by I_dztot = 1.0 / dz_tot would be more efficient.
-  ! Also, this code should be revised to avoid array syntax math.
-  dz(:) = ( H_total - real(nk) * dz_min ) * ( dz(:) / dz_tot ) ! Rescale so total is H_total
-  dz(:) = anint( dz(:) / prec ) * prec ! Rounds to precision prec
-  dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + dz(k) ; enddo
-  dz(:) = ( H_total - real(nk) * dz_min ) * ( dz(:) / dz_tot ) ! Rescale so total is H_total
-  dz(:) = anint( dz(:) / prec ) * prec ! Rounds to precision prec
-  dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + (dz(k) + dz_min) ; enddo
-  dz(nk) = dz(nk) + ( H_total - dz_tot ) ! Adjust bottommost layer
-  dz(:) = anint( dz(:) / prec ) * prec ! Rounds to precision prec
-  dz(:) = dz(:) + dz_min ! Finally add in the constant dz_min
+  if (answer_date >= 20270101) then
+    if (prec > 0.0) I_prec = 1.0 / prec
+    ! Create profile of ( dz - dz_min )
+    I_nkm1 = 1.0 / real(nk-1)
+    do k=1,nk
+      dz(k) = (real(k-1) * I_nkm1)**power
+    enddo
+
+    dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + dz(k) ; enddo
+    I_dztot = 0.0 ; if (abs(dz_tot) > 0.0) I_dztot = 1.0 / dz_tot
+    do k=1,nk
+      dz(k) = ( H_total - real(nk) * dz_min ) * ( dz(k) * I_dztot ) ! Rescale so total is H_total
+      if (prec > 0.0) dz(k) = anint( dz(k) * I_prec ) * prec ! Rounds to precision prec
+    enddo
+    dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + dz(k) ; enddo
+    I_dztot = 0.0 ; if (abs(dz_tot) > 0.0) I_dztot = 1.0 / dz_tot
+    do k=1,nk
+      dz(k) = ( H_total - real(nk) * dz_min ) * ( dz(k) * I_dztot ) ! Rescale so total is H_total
+      if (prec > 0.0) dz(k) = anint( dz(k) * I_prec ) * prec ! Rounds to precision prec
+    enddo
+    dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + (dz(k) + dz_min) ; enddo
+    dz(nk) = dz(nk) + ( H_total - dz_tot ) ! Adjust bottommost layer
+    do k=1,nk
+      if (prec > 0.0) dz(k) = anint( dz(k) * I_prec ) * prec ! Rounds to precision prec
+      dz(k) = dz(k) + dz_min ! Finally add in the constant dz_min
+    enddo
+  else
+    ! Create profile of ( dz - dz_min )
+    do k=1,nk
+      dz(k) = (real(k-1)/real(nk-1))**power
+    enddo
+ 
+    dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + dz(k) ; enddo
+    do k=1,nk
+      dz(k) = ( H_total - real(nk) * dz_min ) * ( dz(k) / dz_tot ) ! Rescale so total is H_total
+      if (prec > 0.0) dz(k) = anint( dz(k) / prec ) * prec ! Rounds to precision prec
+    enddo
+    dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + dz(k) ; enddo
+    do k=1,nk
+      dz(k) = ( H_total - real(nk) * dz_min ) * ( dz(k) / dz_tot ) ! Rescale so total is H_total
+      if (prec > 0.0) dz(k) = anint( dz(k) / prec ) * prec ! Rounds to precision prec
+    enddo
+    dz_tot = 0.0 ; do k=1,nk ; dz_tot = dz_tot + (dz(k) + dz_min) ; enddo
+    dz(nk) = dz(nk) + ( H_total - dz_tot ) ! Adjust bottommost layer
+    do k=1,nk
+      if (prec > 0.0) dz(k) = anint( dz(k) / prec ) * prec ! Rounds to precision prec
+      dz(k) = dz(k) + dz_min ! Finally add in the constant dz_min
+    enddo
+  endif
 
 end subroutine dz_function1
 
