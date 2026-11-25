@@ -39,7 +39,7 @@ use MOM_restart,           only : restart_init, is_new_run, MOM_restart_CS
 use MOM_time_manager,      only : time_type, real_to_time, operator(+)
 use MOM_time_manager,      only : operator(-), operator(>), operator(*), operator(/)
 
-use MOM_ALE,                   only : ALE_CS, ALE_remap_velocities
+use MOM_ALE,                   only : ALE_CS, ALE_remap_scalar_from_ALE, ALE_remap_velocities
 use MOM_barotropic,            only : barotropic_init, btstep, btcalc, bt_mass_source
 use MOM_barotropic,            only : register_barotropic_restarts, set_dtbt, barotropic_CS
 use MOM_barotropic,            only : barotropic_end
@@ -176,6 +176,7 @@ type, public :: MOM_dyn_split_RK2_CS ; private
   logical :: calculate_SAL        !< If true, calculate self-attraction and loading.
   logical :: use_tides            !< If true, tidal forcing is enabled.
   logical :: use_HA               !< If true, perform inline harmonic analysis.
+  logical :: aux_restart_bug      !< If true, retain incomplete split-RK2 auxiliary restart handling.
   logical :: remap_aux            !< If true, apply ALE remapping to all of the auxiliary 3-D
                                   !! variables that are needed to reproduce across restarts,
                                   !! similarly to what is done with the primary state variables.
@@ -1237,6 +1238,7 @@ subroutine register_restarts_dyn_split_RK2(HI, GV, US, param_file, CS, restart_C
   character(len=48) :: thickness_units, flux_units
 
   integer :: isd, ied, jsd, jed, nz, IsdB, IedB, JsdB, JedB
+  logical :: remap_aux, bt_use_layer_fluxes, enable_bugs
 
   isd  = HI%isd  ; ied  = HI%ied  ; jsd  = HI%jsd  ; jed  = HI%jed ; nz = GV%ke
   IsdB = HI%IsdB ; IedB = HI%IedB ; JsdB = HI%JsdB ; JedB = HI%JedB
@@ -1273,6 +1275,16 @@ subroutine register_restarts_dyn_split_RK2(HI, GV, US, param_file, CS, restart_C
                  "If true, calculate the Coriolis accelerations at the end of each "//&
                  "timestep for use in the predictor step of the next split RK2 timestep.", &
                  default=.true., do_not_log=.true.)
+  call get_param(param_file, mdl, "REMAP_AUXILIARY_VARS", remap_aux, &
+                 default=.false., do_not_log=.true.)
+  call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+                 default=.true., do_not_log=.true.)
+  call get_param(param_file, mdl, "SPLIT_RK2_AUX_RESTART_BUG", CS%aux_restart_bug, &
+                 default=enable_bugs, do_not_log=.true.)
+  call get_param(param_file, mdl, "BT_USE_LAYER_FLUXES", bt_use_layer_fluxes, &
+                 "If true, use the summed layered fluxes plus an "//&
+                 "adjustment due to the change in the barotropic velocity "//&
+                 "in the barotropic continuity equation.", default=.true., do_not_log=.true.)
 
   if (GV%Boussinesq) then
     call register_restart_field(CS%eta, "sfc", .false., restart_CS, &
@@ -1290,10 +1302,19 @@ subroutine register_restarts_dyn_split_RK2(HI, GV, US, param_file, CS, restart_C
                              conversion=US%L_T_to_m_s)
 
   if (CS%store_CAu) then
+    if (remap_aux .and. .not.CS%aux_restart_bug) &
+      call register_restart_field(CS%h_av, "h2", .false., restart_CS, &
+           longname="Auxiliary Layer Thickness", units=thickness_units, conversion=GV%H_to_mks)
     vd(1) = var_desc("CAu", "m s-2", "Zonal Coriolis and advactive acceleration", 'u', 'L')
     vd(2) = var_desc("CAv", "m s-2", "Meridional Coriolis and advactive  acceleration", 'v', 'L')
     call register_restart_pair(CS%CAu_pred, CS%CAv_pred, vd(1), vd(2), .false., restart_CS, &
                                conversion=US%L_T2_to_m_s2)
+    if (bt_use_layer_fluxes .and. .not.CS%aux_restart_bug) then
+      vd(1) = var_desc("uh", flux_units, "Zonal thickness flux", 'u', 'L')
+      vd(2) = var_desc("vh", flux_units, "Meridional thickness flux", 'v', 'L')
+      call register_restart_pair(uh, vh, vd(1), vd(2), .false., restart_CS, &
+                                 conversion=GV%H_to_MKS*US%L_to_m**2*US%s_to_T)
+    endif
   else
     call register_restart_field(CS%h_av, "h2", .false., restart_CS, &
            longname="Auxiliary Layer Thickness", units=thickness_units, conversion=GV%H_to_mks)
@@ -1327,16 +1348,20 @@ end subroutine register_restarts_dyn_split_RK2
 
 !> This subroutine does remapping for the auxiliary restart variables that are used
 !! with the split RK2 time stepping scheme.
-subroutine remap_dyn_split_RK2_aux_vars(G, GV, CS, h_old_u, h_old_v, h_new_u, h_new_v, ALE_CSp)
+subroutine remap_dyn_split_RK2_aux_vars(G, GV, CS, h_old, h_old_u, h_old_v, h_new, h_new_u, h_new_v, ALE_CSp)
   type(ocean_grid_type),            intent(inout) :: G        !< ocean grid structure
   type(verticalGrid_type),          intent(in)    :: GV       !< ocean vertical grid structure
   type(MOM_dyn_split_RK2_CS),       pointer       :: CS       !< module control structure
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                                    intent(in)    :: h_old    !< Source grid thickness [H ~> m or kg m-2]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), &
                                     intent(in)    :: h_old_u  !< Source grid thickness at zonal
                                                               !! velocity points [H ~> m or kg m-2]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), &
                                     intent(in)    :: h_old_v  !< Source grid thickness at meridional
                                                               !! velocity points [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                                    intent(in)    :: h_new    !< Destination grid thickness [H ~> m or kg m-2]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), &
                                     intent(in)    :: h_new_u  !< Destination grid thickness at zonal
                                                               !! velocity points [H ~> m or kg m-2]
@@ -1345,7 +1370,17 @@ subroutine remap_dyn_split_RK2_aux_vars(G, GV, CS, h_old_u, h_old_v, h_new_u, h_
                                                               !! velocity points [H ~> m or kg m-2]
   type(ALE_CS),                     pointer       :: ALE_CSp  !< ALE control structure to use when remapping
 
+  real, dimension(:,:,:), allocatable :: h_av_src !< Source auxiliary layer thickness [H ~> m or kg m-2]
+
   if (.not.CS%remap_aux) return
+
+  if (.not.CS%aux_restart_bug) then
+    allocate(h_av_src(SZI_(G),SZJ_(G),SZK_(GV)))
+    h_av_src(:,:,:) = CS%h_av(:,:,:)
+    call ALE_remap_scalar_from_ALE(ALE_CSp, G, GV, GV%ke, h_old, h_av_src, h_new, CS%h_av)
+    call pass_var(CS%h_av, G%Domain, complete=.true.)
+    deallocate(h_av_src)
+  endif
 
   if (CS%store_CAu) then
     call ALE_remap_velocities(ALE_CSp, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, CS%u_av, CS%v_av)
@@ -1529,6 +1564,12 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
                  default=.false.)
   call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
                  default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
+  call get_param(param_file, mdl, "SPLIT_RK2_AUX_RESTART_BUG", CS%aux_restart_bug, &
+                 "If true, recover a bug that omits auxiliary thickness and transports from "//&
+                 "split-RK2 restart state with stored Coriolis accelerations, leaves restored "//&
+                 "transport halos unrefreshed, and does not remap auxiliary thickness. "//&
+                 "If false, preserve this state across restarts and remap auxiliary thickness "//&
+                 "when REMAP_AUXILIARY_VARS is enabled.", default=enable_bugs)
   call get_param(param_file, mdl, "VISC_REM_BUG", visc_rem_bug, &
                  "If true, visc_rem_[uv] in split mode is incorrectly calculated or accounted "//&
                  "for in two places. This parameter controls the defaults of two individual "//&
@@ -1662,6 +1703,18 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
     if (query_initialized(CS%CAu_pred, "CAu", restart_CS) .and. &
         query_initialized(CS%CAv_pred, "CAv", restart_CS)) then
       CS%CAu_pred_stored = .true.
+      if (CS%BT_use_layer_fluxes .and. .not.CS%aux_restart_bug) then
+        if (.not.query_initialized(uh, "uh", restart_CS) .or. &
+            .not.query_initialized(vh, "vh", restart_CS)) then
+          ! Estimate transports only for older restart files that did not save them.
+          call pass_vector(CS%u_av, CS%v_av, G%Domain, clock=id_clock_pass_init)
+          do k=1,nz ; do j=jsd,jed ; do i=isd,ied ; h_tmp(i,j,k) = h(i,j,k) ; enddo ; enddo ; enddo
+          call continuity(CS%u_av, CS%v_av, h, h_tmp, uh, vh, dt, G, GV, US, &
+                          CS%continuity_CSp, CS%OBC, pbv)
+          call set_initialized(uh, "uh", restart_CS)
+          call set_initialized(vh, "vh", restart_CS)
+        endif
+      endif
     else
       call only_read_from_restarts(uh, vh, 'uh', 'vh', G, restart_CS, stagger=CGRID_NE, &
                    filename=dirs%input_filename, directory=dirs%restart_input_dir, &
@@ -1678,6 +1731,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
         do k=1,nz ; do j=jsd,jed ; do i=isd,ied
           CS%h_av(i,j,k) = 0.5*(h(i,j,k) + h_tmp(i,j,k))
         enddo ; enddo ; enddo
+        if (.not.CS%aux_restart_bug) call set_initialized(CS%h_av, "h2", restart_CS)
       endif
       call pass_vector(CS%u_av, CS%v_av, G%Domain, halo=cor_stencil, clock=id_clock_pass_init, complete=.false.)
       call pass_vector(uh, vh, G%Domain, halo=cor_stencil, clock=id_clock_pass_init, complete=.true.)
@@ -1712,10 +1766,18 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
       endif
     endif
   endif
+  if (CS%remap_aux .and. .not.CS%aux_restart_bug) then
+    if (.not.query_initialized(CS%h_av, "h2", restart_CS)) then
+      CS%h_av(:,:,:) = h(:,:,:)
+      call set_initialized(CS%h_av, "h2", restart_CS)
+    endif
+  endif
   call cpu_clock_begin(id_clock_pass_init)
   call create_group_pass(pass_av_h_uvh, CS%u_av, CS%v_av, G%Domain, halo=2)
   if (CS%CAu_pred_stored) then
     call create_group_pass(pass_av_h_uvh, CS%CAu_pred, CS%CAv_pred, G%Domain, halo=2)
+    if (CS%BT_use_layer_fluxes .and. .not.CS%aux_restart_bug) &
+      call create_group_pass(pass_av_h_uvh, uh, vh, G%Domain, halo=2)
   else
     call create_group_pass(pass_av_h_uvh, CS%h_av, G%Domain, halo=2)
     call create_group_pass(pass_av_h_uvh, uh, vh, G%Domain, halo=2)
