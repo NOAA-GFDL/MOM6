@@ -28,7 +28,7 @@ PLM_HYBGEN | Piecewise Linear Method, ported from Hycom \cite colella1984 | mom_
 PPM_H4 | Piecewise Parabolic Method with explicit 4th order edge values \cite white2008 | regrid_edge_values::edge_values_explicit_h4() ppm_functions::ppm_reconstruction() (opt. ppm_functions::ppm_boundary_extrapolation())
 PPM_IH4 | Piecewise Parabolic Method with implicit 4th order edge values \cite white2008 | regrid_edge_values::edge_values_implicit_h4() ppm_functions::ppm_reconstruction() (opt. ppm_functions::ppm_boundary_extrapolation())
 PPM_HYBGEN | Piecewise Parabolic Method with quasi-4th order edge values using PLM \cite colella1984 | mom_hybgen_remap::hybgen_ppm_coefs() (opt. ppm_functions::ppm_boundary_extrapolation())
-PPM_CW | (should be equivalent to PPM_HYBGEN) | regrid_edge_values::edge_values_explicit_h4cw() ppm_functions::ppm_monotonicity() ppm_functions::ppm_reconstruction() (calls ppm_functions::ppm_limiter_standard()) (opt. ppm_functions::ppm_boundary_extrapolation())
+PPM_CW | Piecewise Parabolic Method \cite colella1984 (equivalent to PPM_HYBGEN except where adjacent layers are vanished) | regrid_edge_values::edge_values_explicit_h4cw() ppm_functions::ppm_monotonicity() ppm_functions::ppm_reconstruction() (calls ppm_functions::ppm_limiter_standard()) (opt. ppm_functions::ppm_boundary_extrapolation())
 WENO_HYBGEN | Piecewise Parabolic Method with WENO edge values, ported from Hycom | mom_hybgen_remap::hybgen_weno_coefs() ppm_functions::ppm_reconstruction() (calls ppm_functions::ppm_limiter_standard()) (opt. ppm_functions::ppm_boundary_extrapolation())
 PQM_IH4IH3 | Piecewise Quartic Method with implicit quasi-4th order edge values and 3rd order edge slopes \cite white2008 | regrid_edge_values::edge_values_implicit_h4() regrid_edge_values::edge_slopes_implicit_h3() pqm_functions::pqm_reconstruction() (calls pqm_functions::pqm_limiter()) (opt. pqm_functions::pqm_boundary_extrapolation_v1())
 PQM_IH6IH5 | Piecewise Quartic Method with implicit quasi-6th order edge values and 5rd order edge slopes \cite white2008 | regrid_edge_values::edge_values_implicit_h6() regrid_edge_values::edge_slopes_implicit_h5() pqm_functions::pqm_reconstruction() (calls pqm_functions::pqm_limiter()) (opt. pqm_functions::pqm_boundary_extrapolation_v1())
@@ -40,7 +40,8 @@ REMAPPING_SCHEME | Description | Module
 :--------------: | :---------- | :-----
 C_PCM | Piecewise Constant Method (equivalent to PCM) | recon1d_pcm
 C_PLM_CW | Piecewise Linear Method (faithful to Colella and Woodward \cite colella1984) | recon1d_plm_cw
-C_PLM_HYBGEN | PLM (equivalent to PLM_HYBGEN) | recon1d_plm_hybgen
+C_PLM_HYBGEN | PLM ported from Hycom (equivalent to PLM_HYBGEN except for vanished intervals) | recon1d_plm_hybgen
+C_PLM_HYBGEN_POLY | PLM ported from Hycom (equivalent to PLM_HYBGEN) | recon1d_plm_hybgen_poly (extends recon1d_plm_hybgen)
 C_MPLM_WA | Monotonized Piecewise Linear Method (faithful to White and Adcroft \cite white2008) | recon1d_mplm_wa
 C_MPLM_WA_POLY | MPLM using polynomial representation (euivalent to PLM) | recon1d_mplm_wa_poly
 C_EMPLM_WA | Boundary extrapolation of MPLM_WA (faithful to White and Adcroft \cite white2008) | recon1d_emplm_wa
@@ -72,6 +73,7 @@ PQM_IH6IH5       | Polynomial     |                    |            | Yes       
 C_PCM            | Single scalar  | Yes                | Yes        | No             | Pass
 C_PLM_CW         | Edge values    | No                 | Yes        | Yes            | Pass
 C_PLM_HYBGEN     | Edge values    | No                 | Yes        | Yes            | Pass
+C_PLM_HYBGEN_POLY| Edge values    | No                 | Yes        | Yes            | Pass
 C_MPLM_WA        | Edge values    | Yes                | No         | Yes            | Pass
 C_MPLM_WA_POLY   | Polynomial     | Yes                | *          | Yes            | Pass
 C_EMPLM_WA       | Edge values    | Yes                | No         | Yes            | Pass

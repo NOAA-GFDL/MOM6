@@ -249,8 +249,16 @@ real function average(this, k, xa, xb)
   real,           intent(in) :: xa   !< Start of averaging interval on element (0 to 1) [nondim]
   real,           intent(in) :: xb   !< End of averaging interval on element (0 to 1) [nondim]
 
-  average = this%poly_coef(k,1) &
-          + this%poly_coef(k,2) * 0.5 * ( xb + xa )
+  if (xb > xa) then
+    average = this%poly_coef(k,1) &
+            + this%poly_coef(k,2) * 0.5 * ( xb + xa )
+  else ! Point value, using the same expressions as the OM4-era average_value_ppoly()
+    if (xa < 0.5) then
+      average = this%ul(k) + xa * ( this%ur(k) - this%ul(k) )
+    else
+      average = this%ur(k) + ( 1. - xa ) * ( this%ul(k) - this%ur(k) )
+    endif
+  endif
 
 end function average
 

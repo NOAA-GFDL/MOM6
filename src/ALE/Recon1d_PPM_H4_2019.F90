@@ -431,6 +431,13 @@ real function average(this, k, xa, xb)
   real :: xa2pxb2,  xa2b2ab, Ya2b2ab  ! Sums of squared fractional positions [nondim]
   real :: a_L, a_R, u_c, a_c    ! Values of the polynomial at various locations [A]
 
+  if (xb <= xa) then
+    ! For a vanishing interval, use the point value. The expressions in f() are the same as
+    ! those used for this case in the OM4-era average_value_ppoly().
+    average = this%f(k, xa)
+    return
+  endif
+
   mx = 0.5 * ( xa + xb )
   a_L = this%ul(k)
   a_R = this%ur(k)
