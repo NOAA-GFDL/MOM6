@@ -50,7 +50,7 @@ C_PLM_CWK | Piecewise Linear Method in index space (grid independent) | recon1d_
 C_MPLM_CWK | Monotonized Piecewise Linear Method in index space (grid independent) | recon1d_mplm_cwk
 C_EMPLM_CWK | Boundary extrapolatino of Monotonized Piecewise Linear Method in index space (grid independent) | recon1d_emplm_cwk
 C_PPM_CW | Piecewise Linear Method (faithful to Colella and Woodward \cite colella1984) | recon1d_ppm_cw
-C_PPM_HYBGEN | PPM (equivalent to PPM_HYBGEN) | recon1d_ppm_hybgen
+C_PPM_HYBGEN | PPM following hybgen, with reflection symmetric evaluation | recon1d_ppm_hybgen
 C_PPM_HYBGEN_V1 | PPM (equivalent to PPM_HYBGEN) | recon1d_ppm_hybgen_v1 (extends recon1d_ppm_hybgen)
 C_PPM_H4_2018 | (equivalent to PPM_H4 with answers circa 2018) | recon1d_ppm_h4_2018
 C_PPM_H4_2019 | (equivalent to PPM_H4 with answers post 2019) | recon1d_ppm_h4_2019

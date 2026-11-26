@@ -9,11 +9,16 @@
 !! first ported from Hycom as hybgen_ppm_coefs() in the mom_hybgen_remap module. This module is
 !! a refactor to facilitate more complete testing and evaluation.
 !!
-!! This implementation (reached with "C_PPM_HYBGEN") is equivalent to the
+!! The reconstruction in this implementation (reached with "C_PPM_HYBGEN") is equivalent to the
 !! mom_hybgen_remap.hybgen_ppm_coefs() function (reached with "PPM_HYBGEN"). The
 !! regrid_edge_values.edge_values_explicit_h4cw() function followed by ppm_functions.ppm_reconstruction()
 !! (reached with "PPM_CW") is also equivalent except where two or more adjacent layers are vanished,
 !! because "PPM_HYBGEN" uses PCM for vanished layers whereas "PPM_CW" does not.
+!!
+!! f() and average() are inherited from recon1d_ppm_cw and are reflection symmetric, so they differ
+!! from those of "PPM_HYBGEN" for a point value at x=1/2, or an average over an interval centered on
+!! x=1/2. The first version, recon1d_ppm_hybgen_v1 (reached with "C_PPM_HYBGEN_V1"), retains the
+!! expressions of "PPM_HYBGEN" so as to reproduce it bitwise.
 module Recon1d_PPM_hybgen
 
 use Recon1d_type, only : testing

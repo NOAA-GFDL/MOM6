@@ -216,8 +216,9 @@ real function f(this, k, x)
   ! This expression for u_b can overshoot u_l but is good for 1-x<<1
   u_b = this%ur(k) + lmx * ( - du + a6 * xc )
 
-  ! Since u_a and u_b are both side-bounded, using weights=0 or 1 will preserve uniformity
-  wb = 0.5 + sign(0.5, xc - 0.5 ) ! = 1 @ x=0, = 0 @ x=1
+  ! Since u_a and u_b are both side-bounded, using weights=0 or 1 will preserve uniformity.
+  ! The weight is 0 for x<1/2, 1 for x>1/2, and 1/2 at x=1/2 so that f is reflection symmetric.
+  wb = 0.5 + 0.25 * ( sign(1., xc - 0.5) - sign(1., 0.5 - xc) )
   f = ( ( 1. - wb ) * u_a ) + ( wb * u_b )
 
 end function f
@@ -250,25 +251,36 @@ real function average(this, k, xa, xb)
   real :: u_a, u_b                   ! Values at xa and xb [A]
   real :: xa2pxb2,  xa2b2ab, Ya2b2ab ! Sums of squared fractional positions [nondim]
   real :: a_L, a_R, u_c, a_c         ! Values of the polynomial at various locations [A]
+  real :: u_L, u_R                   ! Averages expressed from the left and right edges [A]
 
   mx = 0.5 * ( xa + xb )
   a_L = this%ul(k)
   a_R = this%ur(k)
   u_c = this%u_mean(k)
   a_c = 0.5 * ( ( u_c - a_L ) + ( u_c - a_R ) ) ! a_6 / 6
-  if (mx<0.5) then
+  ! Both forms are used for intervals centered on x=1/2 so that the average is reflection symmetric
+  u_L = 0. ; u_R = 0.
+  if (mx<=0.5) then
     ! This integration of the PPM reconstruction is expressed in distances from the left edge
     xa2b2ab = (xa * xa + xb * xb) + xa * xb
-    average = a_L + ( ( a_R - a_L ) * mx &
-                    + a_c * ( 3. * ( xb + xa ) - 2. * xa2b2ab ) )
-  else
+    u_L = a_L + ( ( a_R - a_L ) * mx &
+                + a_c * ( 3. * ( xb + xa ) - 2. * xa2b2ab ) )
+  endif
+  if (mx>=0.5) then
     ! This integration of the PPM reconstruction is expressed in distances from the right edge
     Ya = 1. - xa
     Yb = 1. - xb
     my = 0.5 * ( Ya + Yb )
     Ya2b2ab = (Ya * Ya + Yb * Yb) + Ya * Yb
-    average = a_R  + ( ( a_L - a_R ) * my &
-                     + a_c * ( 3. * ( Yb + Ya ) - 2. * Ya2b2ab ) )
+    u_R = a_R + ( ( a_L - a_R ) * my &
+                + a_c * ( 3. * ( Yb + Ya ) - 2. * Ya2b2ab ) )
+  endif
+  if (mx<0.5) then
+    average = u_L
+  elseif (mx>0.5) then
+    average = u_R
+  else
+    average = 0.5 * ( u_L + u_R )
   endif
 
 end function average
