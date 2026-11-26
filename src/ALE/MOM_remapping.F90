@@ -291,8 +291,8 @@ subroutine remapping_core_h(CS, n0, h0, u0, n1, h1, u1, net_err, PCM_cell)
     ! Uses: itgt_start, itgt_end, h1, h_sub, uh_sub, u_sub
     ! Sets: u1, uh_err
     call remap_sub_to_tgt_grid(n0, n1, h1, h_sub, u_sub, uh_sub, itgt_start, itgt_end, &
-                               CS%force_bounds_in_target, CS%offset_tgt_summation, &
-                               CS%better_force_bounds_in_target, u1, uh_err)
+                               CS%force_bounds_in_target, CS%better_force_bounds_in_target, &
+                               CS%offset_tgt_summation, u1, uh_err)
 
     ! Include the error remapping from source to sub-cells in the estimate of total remapping error
     uh_err = uh_err + u02_err
