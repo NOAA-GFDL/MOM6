@@ -2020,7 +2020,9 @@ subroutine test_unchanged_grid(test, scheme, n0, niter, h_neglect)
 end subroutine test_unchanged_grid
 
 !> Test class-based remapping bitwise reproduces original implementation
-subroutine compare_two_schemes(test, CS1, CS2, n0, n1, niter, msg)
+!!
+!! The source and target grids are random and, by default, 5% of the layers in each are vanished.
+subroutine compare_two_schemes(test, CS1, CS2, n0, n1, niter, msg, frac_vanished)
   type(testing),      intent(inout) :: test  !< Unit testing convenience functions
   type(remapping_CS), intent(inout) :: CS1   !< Remapping control structure configured for
                                              !! original implementation
@@ -2030,8 +2032,11 @@ subroutine compare_two_schemes(test, CS1, CS2, n0, n1, niter, msg)
   integer,            intent(in)    :: n1    !< Number of destination cells
   integer,            intent(in)    :: niter !< Number of randomized columns to try
   character(len=*),   intent(in)    :: msg   !< Message to label test
+  real,     optional, intent(in)    :: frac_vanished !< The fraction of source and target layers that
+                                             !! are vanished, 0.05 by default [nondim]
   ! Local
   real :: h0(n0), h1(n1) ! Source and target grids [H but really nondim]
+  real :: f_van ! The fraction of source and target layers that are vanished [nondim]
   real :: u0(n0), u1(n1), u2(n1)  ! Source and two target values [A]
   real :: h0_tot, h1_tot ! Sum of thicknesses on source and target grids [H but really nondim]
   logical :: error ! Indicates a divergence
@@ -2046,14 +2051,16 @@ subroutine compare_two_schemes(test, CS1, CS2, n0, n1, niter, msg)
   seed(:) = 102030405 ! Repeatable sequences
   call random_seed(put=seed)
 
+  f_van = 0.05 ; if (present(frac_vanished)) f_van = frac_vanished
+
   error = .false.
   do iter = 1, niter
     call random_number( h0 ) ! In range 0-1
-    h0(:) = max(0., h0(:) - 0.00) ! Make 5% of values equal to zero
+    h0(:) = max(0., h0(:) - f_van) ! Make a fraction f_van of values equal to zero
     h0_tot = 0.0 ; do k=1,n0 ; h0_tot = h0_tot + h0(k) ; enddo
     h0(:) = h0(:) / h0_tot ! Approximately normalize to total depth of 1
     call random_number(h1) ! In range 0-1
-    h1(:) = max(0., h1(:) - 0.00) ! Make 5% of values equal to zero
+    h1(:) = max(0., h1(:) - f_van) ! Make a fraction f_van of values equal to zero
     h1_tot = 0.0 ; do k=1,n1 ; h1_tot = h1_tot + h1(k) ; enddo
     h1(:) = h1(:) / h1_tot ! Approximately normalize to total depth of 1
     call random_number( u0 ) ! In range 0-1
@@ -2854,13 +2861,14 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   ! PPM_CW and PPM_HYBGEN are different options in build_reconstructions_1d() that give identical
   ! answers except where two or more adjacent layers are vanished, because PPM_HYBGEN uses PCM for
   ! vanished layers whereas PPM_CW does not.
+  ! These comparisons are therefore made without vanished layers.
   call initialize_remapping(CS, 'PPM_CW', answer_date=99990101, boundary_extrapolation=.false., &
                             om4_remap_via_sub_cells=.false., force_bounds_in_subcell=.false., &
                             h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
   call initialize_remapping(CS2, 'PPM_HYBGEN', answer_date=99990101, boundary_extrapolation=.false., &
                             om4_remap_via_sub_cells=.false., force_bounds_in_subcell=.false., &
                             h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
-  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_CW <-> PPM_HYBGEN')
+  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_CW <-> PPM_HYBGEN', frac_vanished=0.)
 
   ! PPM_CW <-> PPM_HYBGEN, as above but with OM4 subcells
   call initialize_remapping(CS, 'PPM_CW', answer_date=99990101, boundary_extrapolation=.false., &
@@ -2869,7 +2877,7 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   call initialize_remapping(CS2, 'PPM_HYBGEN', answer_date=99990101, boundary_extrapolation=.false., &
                             om4_remap_via_sub_cells=.true., force_bounds_in_subcell=.false., &
                             h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
-  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_CW <-> PPM_HYBGEN OM4')
+  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_CW <-> PPM_HYBGEN OM4', frac_vanished=0.)
 
   ! PPM_CW <-> PPM_HYBGEN, as above but with extrapolation
   call initialize_remapping(CS, 'PPM_CW', answer_date=99990101, boundary_extrapolation=.true., &
@@ -2878,7 +2886,7 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   call initialize_remapping(CS2, 'PPM_HYBGEN', answer_date=99990101, boundary_extrapolation=.true., &
                             om4_remap_via_sub_cells=.false., force_bounds_in_subcell=.false., &
                             h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
-  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_CW <-> PPM_HYBGEN Extrap')
+  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_CW <-> PPM_HYBGEN Extrap', frac_vanished=0.)
 
   ! PPM_CW <-> PPM_HYBGEN, as above but with OM4 subcells and subcell bounds
   call initialize_remapping(CS, 'PPM_CW', answer_date=99990101, boundary_extrapolation=.false., &
@@ -2887,7 +2895,7 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   call initialize_remapping(CS2, 'PPM_HYBGEN', answer_date=99990101, boundary_extrapolation=.false., &
                             om4_remap_via_sub_cells=.true., force_bounds_in_subcell=.true., &
                             h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
-  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_CW <-> PPM_HYBGEN OM4 bounded')
+  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_CW <-> PPM_HYBGEN OM4 bounded', frac_vanished=0.)
 
   ! PCM <-> C_PCM
   call initialize_remapping(CS, 'PCM', answer_date=99990101, om4_remap_via_sub_cells=.false., &
