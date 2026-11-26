@@ -335,10 +335,15 @@ type, public :: barotropic_CS ; private
   logical :: exterior_OBC_bug = .true. !< If true, recover a bug with boundary conditions
                              !! inside the domain.
   logical :: interior_OBC_PV !< If true, use only interior ocean points at OBCs to specify the PV
-                             !!  used in the barotropic Coriolis anomalies.  Otherwise the
+                             !! used in the barotropic Coriolis anomalies.  Otherwise the
                              !! calculation relies on bathymetry and eta being projected outward
                              !! across OBCs.  Unfortunately, this option does change answers near
                              !! convex (peninsula-type) pairs of OBC segments.
+  logical :: OBC_gtot_edge_weights  !< If true, use the fractional thickness weights at OBC velocity
+                             !! points when projecting the effective gravitational acceleration out
+                             !! past OBC faces.  If false, the thickness weights are taken from the
+                             !! velocity point opposite the OBC face, although the same values of
+                             !! pbce (akin to reduced gravities) are used in both cases.
   type(time_type), pointer :: Time  => NULL() !< A pointer to the ocean models clock.
   type(diag_ctrl), pointer :: diag => NULL()  !< A structure that is used to regulate
                              !! the timing of diagnostic output.
@@ -1179,20 +1184,30 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   enddo
 
   if (CS%BT_OBC%u_OBCs_on_PE) then
-    do j=js,je ; do I=is-1,ie
-      if (CS%BT_OBC%u_OBC_type(I,j) > 0) & ! Eastern boundary condition
-        gtot_W(i+1,j) = gtot_W(i,j)  ! Perhaps this should be gtot_E(i,j)?
-      if (CS%BT_OBC%u_OBC_type(I,j) < 0) & ! Western boundary condition
-        gtot_E(i,j) = gtot_E(i+1,j)  ! Perhaps this should be gtot_W(i+1,j)?
-    enddo ; enddo
+    if (CS%OBC_gtot_edge_weights) then
+      do j=js,je ; do I=is-1,ie
+        if (CS%BT_OBC%u_OBC_type(I,j) > 0) gtot_W(i+1,j) = gtot_E(i,j)  ! Eastern boundary condition
+        if (CS%BT_OBC%u_OBC_type(I,j) < 0) gtot_E(i,j) = gtot_W(i+1,j)  ! Western boundary condition
+      enddo ; enddo
+    else
+      do j=js,je ; do I=is-1,ie
+        if (CS%BT_OBC%u_OBC_type(I,j) > 0) gtot_W(i+1,j) = gtot_W(i,j)  ! Eastern boundary condition
+        if (CS%BT_OBC%u_OBC_type(I,j) < 0) gtot_E(i,j) = gtot_E(i+1,j)  ! Western boundary condition
+      enddo ; enddo
+    endif
   endif
   if (CS%BT_OBC%v_OBCs_on_PE) then
-    do J=js-1,je ; do i=is,ie
-      if (CS%BT_OBC%v_OBC_type(i,J) > 0) & ! Northern boundary condition
-        gtot_S(i,j+1) = gtot_S(i,j)  !### Should this be gtot_N(i,j) to use wt_v at the same point?
-      if (CS%BT_OBC%v_OBC_type(i,J) < 0) & ! Southern boundary condition
-        gtot_N(i,j) = gtot_N(i,j+1)  ! Perhaps this should be gtot_S(i,j+1)?
-    enddo ; enddo
+    if (CS%OBC_gtot_edge_weights) then
+      do J=js-1,je ; do i=is,ie
+        if (CS%BT_OBC%v_OBC_type(i,J) > 0) gtot_S(i,j+1) = gtot_N(i,j)  ! Northern boundary condition
+        if (CS%BT_OBC%v_OBC_type(i,J) < 0) gtot_N(i,j) = gtot_S(i,j+1)  ! Southern boundary condition
+      enddo ; enddo
+    else
+      do J=js-1,je ; do i=is,ie
+        if (CS%BT_OBC%v_OBC_type(i,J) > 0) gtot_S(i,j+1) = gtot_S(i,j)  ! Northern boundary condition
+        if (CS%BT_OBC%v_OBC_type(i,J) < 0) gtot_N(i,j) = gtot_N(i,j+1)  ! Southern boundary condition
+      enddo ; enddo
+    endif
   endif
 
   if (CS%calculate_SAL) then
@@ -5593,6 +5608,8 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                           ! land, coastal or OBC points.
   logical :: use_tides
   logical :: OBC_projection_bug
+  logical :: use_OBCs     ! If true, OBCs are used somewhere in the domain.
+  integer :: number_of_OBC_segments ! The number of active OBC segments, used to determine if OBCs are in use.
   logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
                           ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: visc_rem_bug ! Stores the value of runtime paramter VISC_REM_BUG.
@@ -5769,6 +5786,9 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                  "If true, recover a bug in barotropic solver that uses an unnormalized weight "//&
                  "function for vertical averages of baroclinic velocity and forcing. Default "//&
                  "of this flag is set by VISC_REM_BUG.", default=visc_rem_bug)
+  call get_param(param_file, mdl, "OBC_NUMBER_OF_SEGMENTS", number_of_OBC_segments, &
+                 default=0, do_not_log=.true.)
+  use_OBCs = (number_of_OBC_segments > 0)
   call get_param(param_file, mdl, "EXTERIOR_OBC_BUG", CS%exterior_OBC_bug, &
                  "If true, recover a bug in barotropic solver and other routines when "//&
                  "boundary contitions interior to the domain are used.", &
@@ -5782,6 +5802,15 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                  "answers for some configurations that use OBCs.", &
                  default=enable_bugs, do_not_log=.true.)
   CS%interior_OBC_PV = .not.OBC_projection_bug
+  call get_param(param_file, mdl, "OBC_GTOT_EDGE_WEIGHTS", CS%OBC_gtot_edge_weights, &
+                 "If true, use the fractional thickness weights at OBC velocity points when "//&
+                 "projecting the effective gravitational acceleration out past OBC faces.  "//&
+                 "If false, the thickness weights are taken from the velocity point opposite "//&
+                 "the OBC face, although the same values of pbce (akin to reduced gravities) "//&
+                 "are used in both cases.  Because pressure gradient forces are zeroed out at "//&
+                 "OBC points, this option only changes estimates of the maximum stable timestep "//&
+                 "and the strength of rigid ice when DYNAMIC_SURFACE_PRESSURE is true.", &
+                 default=.false., do_not_log=.not.use_OBCs) !### Consider setting default to true.
   call get_param(param_file, mdl, "TIDES", use_tides, &
                  "If true, apply tidal momentum forcing.", default=.false.)
   if (use_tides .and. present(HA_CSp)) CS%HA_CSp => HA_CSp
