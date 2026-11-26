@@ -112,9 +112,15 @@ def parse_perf_report(perf_data_path):
                 # Strip any whitespace tokens
                 record = [rec for rec in record if not rec.isspace()]
 
+                # The symbol is every record between the symbol type (e.g.
+                # '[.]') and the period, the first integer record after it.
+                # Some symbols contain spaces outside of any brackets, such
+                # as 'operator delete(void*, unsigned long)'.
                 try:
-                    symbol = record[2]
-                    period = int(record[3])
+                    i = next(i for i, rec in enumerate(record)
+                             if i > 2 and rec.isdigit())
+                    symbol = ' '.join(record[2:i])
+                    period = int(record[i])
                 except:
                     print("parse_perf.py: Error extracting symbol count",
                           file=sys.stderr)
