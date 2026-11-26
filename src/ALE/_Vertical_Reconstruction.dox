@@ -40,7 +40,8 @@ REMAPPING_SCHEME | Description | Module
 :--------------: | :---------- | :-----
 C_PCM | Piecewise Constant Method (equivalent to PCM) | recon1d_pcm
 C_PLM_CW | Piecewise Linear Method (faithful to Colella and Woodward \cite colella1984) | recon1d_plm_cw
-C_PLM_HYBGEN | PLM (equivalent to PLM_HYBGEN) | recon1d_plm_hybgen
+C_PLM_HYBGEN | PLM ported from Hycom (equivalent to PLM_HYBGEN except for vanished intervals) | recon1d_plm_hybgen
+C_PLM_HYBGEN_POLY | PLM ported from Hycom (equivalent to PLM_HYBGEN) | recon1d_plm_hybgen_poly (extends recon1d_plm_hybgen)
 C_MPLM_WA | Monotonized Piecewise Linear Method (faithful to White and Adcroft \cite white2008) | recon1d_mplm_wa
 C_MPLM_WA_POLY | MPLM using polynomial representation (euivalent to PLM) | recon1d_mplm_wa_poly
 C_EMPLM_WA | Boundary extrapolation of MPLM_WA (faithful to White and Adcroft \cite white2008) | recon1d_emplm_wa
@@ -72,6 +73,7 @@ PQM_IH6IH5       | Polynomial     |                    |            | Yes       
 C_PCM            | Single scalar  | Yes                | Yes        | No             | Pass
 C_PLM_CW         | Edge values    | No                 | Yes        | Yes            | Pass
 C_PLM_HYBGEN     | Edge values    | No                 | Yes        | Yes            | Pass
+C_PLM_HYBGEN_POLY| Edge values    | No                 | Yes        | Yes            | Pass
 C_MPLM_WA        | Edge values    | Yes                | No         | Yes            | Pass
 C_MPLM_WA_POLY   | Polynomial     | Yes                | *          | Yes            | Pass
 C_EMPLM_WA       | Edge values    | Yes                | No         | Yes            | Pass

@@ -25,6 +25,7 @@ use Recon1d_type, only : Recon1d
 use Recon1d_PCM, only : PCM
 use Recon1d_PLM_CW, only : PLM_CW
 use Recon1d_PLM_hybgen, only : PLM_hybgen
+use Recon1d_PLM_hybgen_poly, only : PLM_hybgen_poly
 use Recon1d_PLM_CWK, only : PLM_CWK
 use Recon1d_MPLM_CWK, only : MPLM_CWK
 use Recon1d_EMPLM_CWK, only : EMPLM_CWK
@@ -1757,6 +1758,9 @@ subroutine setReconstructionType(string,CS)
     case ("C_PLM_HYBGEN")
       allocate( PLM_hybgen :: CS%reconstruction )
       CS%remapping_scheme = REMAPPING_VIA_CLASS
+    case ("C_PLM_HYBGEN_POLY")
+      allocate( PLM_hybgen_poly :: CS%reconstruction )
+      CS%remapping_scheme = REMAPPING_VIA_CLASS
     case ("C_MPLM_WA")
       allocate( MPLM_WA :: CS%reconstruction )
       CS%remapping_scheme = REMAPPING_VIA_CLASS
@@ -2110,6 +2114,7 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   type(PCM) :: PCM_instance
   type(PLM_CW) :: PLM_CW_instance
   type(PLM_hybgen) :: PLM_hybgen_instance
+  type(PLM_hybgen_poly) :: PLM_hybgen_poly_instance
   type(MPLM_WA) :: MPLM_WA_instance
   type(EMPLM_WA) :: EMPLM_WA_instance
   type(MPLM_WA_poly) :: MPLM_WA_poly_instance
@@ -2743,6 +2748,8 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   call test%test( MPLM_WA_poly_instance%unit_tests(verbose, test%stdout, test%stderr), 'MPLM_WA_poly unit test')
   call test%test( EMPLM_WA_poly_instance%unit_tests(verbose, test%stdout, test%stderr), 'EMPLM_WA_poly unit test')
   call test%test( PLM_hybgen_instance%unit_tests(verbose, test%stdout, test%stderr), 'PLM_hybgen unit test')
+  call test%test( PLM_hybgen_poly_instance%unit_tests(verbose, test%stdout, test%stderr), &
+                  'PLM_hybgen_poly unit test')
   call test%test( PLM_CW_instance%unit_tests(verbose, test%stdout, test%stderr), 'PLM_CW unit test')
   call test%test( PLM_CWK_instance%unit_tests(verbose, test%stdout, test%stderr), 'PLM_CWK unit test')
   call test%test( MPLM_CWK_instance%unit_tests(verbose, test%stdout, test%stderr), 'MPLM_CWK unit test')
@@ -2770,6 +2777,7 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   call test_recon_consistency(test, 'C_PCM', n0, ntests, h_neglect)
   call test_recon_consistency(test, 'C_PLM_CW', n0, ntests, h_neglect)
   call test_recon_consistency(test, 'C_PLM_HYBGEN', n0, ntests, h_neglect)
+  call test_recon_consistency(test, 'C_PLM_HYBGEN_POLY', n0, ntests, h_neglect)
   call test_recon_consistency(test, 'C_MPLM_WA', n0, ntests, h_neglect)
   call test_recon_consistency(test, 'C_EMPLM_WA', n0, ntests, h_neglect)
   call test_recon_consistency(test, 'C_MPLM_WA_poly', n0, ntests, h_neglect)
@@ -2797,6 +2805,7 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
 ! call test_preserve_uniform(test, 'PQM_IH4IH3', n0, ntests, h_neglect) ! Fails
   call test_preserve_uniform(test, 'C_PLM_CW', n0, ntests, h_neglect)
   call test_preserve_uniform(test, 'C_PLM_HYBGEN', n0, ntests, h_neglect)
+  call test_preserve_uniform(test, 'C_PLM_HYBGEN_POLY', n0, ntests, h_neglect)
   call test_preserve_uniform(test, 'C_MPLM_WA', n0, ntests, h_neglect)
   call test_preserve_uniform(test, 'C_EMPLM_WA', n0, ntests, h_neglect)
   call test_preserve_uniform(test, 'C_MPLM_WA_poly', n0, ntests, h_neglect) ! Surprised this passes -AJA
@@ -2815,6 +2824,7 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   call test_unchanged_grid(test, 'C_PCM', n0, ntests, h_neglect)
   call test_unchanged_grid(test, 'C_PLM_CW', n0, ntests, h_neglect)
   call test_unchanged_grid(test, 'C_PLM_HYBGEN', n0, ntests, h_neglect)
+  call test_unchanged_grid(test, 'C_PLM_HYBGEN_POLY', n0, ntests, h_neglect)
   call test_unchanged_grid(test, 'C_PLM_CWK', n0, ntests, h_neglect)
   call test_unchanged_grid(test, 'C_MPLM_CWK', n0, ntests, h_neglect)
   call test_unchanged_grid(test, 'C_EMPLM_CWK', n0, ntests, h_neglect)
@@ -2938,12 +2948,12 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   call initialize_remapping(CS2, 'C_PPM_H4_2019', nk=n0, h_neglect=h_neglect)
   call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_H4 bounded <-> C_PPM_H4_2019')
 
-  ! PLM_HYBGEN (latest answers with subcell bounds) <-> C_PLM_hybgen
+  ! PLM_HYBGEN (latest answers with subcell bounds) <-> C_PLM_hybgen_poly
   call initialize_remapping(CS, 'PLM_HYBGEN', answer_date=99990101, boundary_extrapolation=.false., &
                             om4_remap_via_sub_cells=.false., force_bounds_in_subcell=.true., &
                             h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
-  call initialize_remapping(CS2, 'C_PLM_hybgen', nk=n0, h_neglect=h_neglect)
-  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PLM_HYBGEN bounded <-> C_PLM_hygen')
+  call initialize_remapping(CS2, 'C_PLM_hybgen_poly', nk=n0, h_neglect=h_neglect)
+  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PLM_HYBGEN bounded <-> C_PLM_hybgen_poly')
 
   ! PPM_HYBGEN (latest answers with subcell bounds) <-> C_PPM_hybgen
   call initialize_remapping(CS, 'PPM_HYBGEN', answer_date=99990101, boundary_extrapolation=.false., &
