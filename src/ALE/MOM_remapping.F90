@@ -2019,6 +2019,111 @@ subroutine test_unchanged_grid(test, scheme, n0, niter, h_neglect)
 
 end subroutine test_unchanged_grid
 
+!> Test that remapping a reflected (inverted) column gives the reflected result, bitwise
+!!
+!! The remapping itself is not symmetric in floating point: intersect_src_tgt_grids() and
+!! remap_to_sub_grid() accumulate sub-cell widths and positions from the top of the column, and
+!! the sums over sub-cells in each source and target cell are taken in increasing index, so for
+!! general grids the round-off depends on the direction (even PCM fails for most random columns).
+!! The grids here are chosen so that this arithmetic is exact: the source thicknesses are either
+!! zero or powers of two, and each target interface lies at a dyadic fraction (other than 1/2, to
+!! avoid ties in choosing the thickest sub-cell) of a thick source cell. All widths and positions
+!! are then exact, and no source or target cell has more than two non-vanished sub-cells, so each
+!! sum is exact or a single commutative addition. Any difference then arises from an asymmetry in
+!! the reconstruction or in its evaluation.
+subroutine test_reflection(test, scheme, n0, niter, h_neglect)
+  type(testing),      intent(inout) :: test    !< Unit testing convenience functions
+  character(len=*),   intent(in)    :: scheme  !< Name of scheme to use
+  integer,            intent(in)    :: n0      !< Number of source cells
+  integer,            intent(in)    :: niter   !< Number of randomized columns to try
+  real,               intent(in)    :: h_neglect !< A negligibly small width used in cell reconstructions [H]
+  ! Local
+  type(remapping_CS) :: remapCS !< Remapping control structure
+  real :: h0(n0), h0r(n0) ! Source grid and its reflection [H but really nondim]
+  real :: u0(n0), u0r(n0) ! Source values and their reflection [A]
+  real :: h1(2*n0+1), h1r(2*n0+1) ! Target grid and its reflection [H but really nondim]
+  real :: u1(2*n0+1), u1r(2*n0+1) ! Target values, and the values remapped from the reflected column [A]
+  real :: r ! A random number [nondim]
+  real :: z_top ! Position of the top of a source cell [H but really nondim]
+  real :: z_int, z_prev ! Positions of a target interface and the previous one [H but really nondim]
+  real, parameter :: frac(6) = (/0.125, 0.25, 0.375, 0.625, 0.75, 0.875/) ! Dyadic fractions of a
+                                         ! source cell at which a target interface can lie [nondim]
+  logical :: error ! Indicates a divergence
+  integer :: iter ! Loop counter
+  integer :: k, n1
+  integer :: seed_size ! Number of integers used by seed
+  integer, allocatable :: seed(:) ! Random number seed
+  character(len=16) :: label ! Generated label
+
+  call initialize_remapping(remapCS, scheme, nk=n0, h_neglect=h_neglect, &
+                            force_bounds_in_subcell=.false., &
+                            force_bounds_in_target=.false., &
+                            better_force_bounds_in_target=.true., &
+                            offset_tgt_summation=.false., &
+                            om4_remap_via_sub_cells=.false.)
+
+  call random_seed(size=seed_size)
+  allocate( seed(seed_size) )
+  seed(:) = 102030405 ! Repeatable sequences
+  call random_seed(put=seed)
+
+  error = .false.
+  do iter = 1, niter
+    ! Source cells are vanished (5%) or have widths of 1, 1/2, 1/4 or 1/8
+    do k = 1, n0
+      call random_number( r ) ! In range 0-1
+      if (r < 0.05) then
+        h0(k) = 0.
+      else
+        h0(k) = 2.**(-int(4.*r))
+      endif
+    enddo
+    if (maxval(h0) == 0.) h0(1) = 1.
+    call random_number( u0 ) ! In range 0-1
+
+    ! One target interface within each thick source cell, sometimes with a vanished target cell
+    n1 = 0 ; z_top = 0. ; z_prev = 0.
+    do k = 1, n0
+      if (h0(k) > 0.) then
+        call random_number( r ) ! In range 0-1
+        z_int = z_top + frac(1+int(6.*r)) * h0(k)
+        n1 = n1 + 1 ; h1(n1) = z_int - z_prev ; z_prev = z_int
+        call random_number( r ) ! In range 0-1
+        if (r < 0.1) then ; n1 = n1 + 1 ; h1(n1) = 0. ; endif ! A vanished target cell
+      endif
+      z_top = z_top + h0(k)
+    enddo
+    n1 = n1 + 1 ; h1(n1) = z_top - z_prev
+
+    ! The reflected column
+    h0r(:) = h0(n0:1:-1)
+    u0r(:) = u0(n0:1:-1)
+    h1r(1:n1) = h1(n1:1:-1)
+
+    call remapping_core_h( remapCS, n0, h0, u0, n1, h1(1:n1), u1(1:n1) )
+    call remapping_core_h( remapCS, n0, h0r, u0r, n1, h1r(1:n1), u1r(1:n1) )
+    if ( any( u1(1:n1) /= u1r(n1:1:-1) ) ) then
+      if ( .not. error ) then ! Only dump first error
+        print *,'iter=',iter
+        print *,'h0',h0
+        print *,'u0',u0
+        print *,'h1',h1(1:n1)
+        print *,'u1',u1(1:n1)
+        print *,'u1r reflected',u1r(n1:1:-1)
+        print *,'difference',u1(1:n1) - u1r(n1:1:-1)
+      endif
+      error = .true.
+    endif
+
+  enddo
+
+  write(label,'(I0)') niter
+  call test%test( error, trim(label)//' reflection tests of '//scheme )
+
+  call remapCS%reconstruction%destroy()
+
+end subroutine test_reflection
+
 !> Test class-based remapping bitwise reproduces original implementation
 !!
 !! The source and target grids are random and, by default, 5% of the layers in each are vanished.
@@ -2841,6 +2946,25 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   call test_unchanged_grid(test, 'C_PPM_CWK', n0, ntests, h_neglect)
   call test_unchanged_grid(test, 'C_EPPM_CWK', n0, ntests, h_neglect)
   call test_unchanged_grid(test, 'C_PLM_WLS', n0, ntests, h_neglect)
+
+  call test_reflection(test, 'C_PCM', n0, ntests, h_neglect)
+  call test_reflection(test, 'C_PLM_CW', n0, ntests, h_neglect)
+! call test_reflection(test, 'C_PLM_HYBGEN', n0, ntests, h_neglect) ! Fails: asymmetric average()
+! call test_reflection(test, 'C_PLM_HYBGEN_POLY', n0, ntests, h_neglect) ! Fails by design: reproduces PLM_HYBGEN
+! call test_reflection(test, 'C_MPLM_WA', n0, ntests, h_neglect) ! Fails: see NOAA-GFDL/MOM6#1239
+! call test_reflection(test, 'C_EMPLM_WA', n0, ntests, h_neglect) ! Fails: see NOAA-GFDL/MOM6#1239
+! call test_reflection(test, 'C_MPLM_WA_POLY', n0, ntests, h_neglect) ! Fails by design: reproduces OM4-era PLM
+! call test_reflection(test, 'C_EMPLM_WA_POLY', n0, ntests, h_neglect) ! Fails by design: reproduces OM4-era PLM
+  call test_reflection(test, 'C_PLM_CWK', n0, ntests, h_neglect)
+  call test_reflection(test, 'C_MPLM_CWK', n0, ntests, h_neglect)
+  call test_reflection(test, 'C_EMPLM_CWK', n0, ntests, h_neglect)
+  call test_reflection(test, 'C_PPM_CW', n0, ntests, h_neglect)
+  call test_reflection(test, 'C_PPM_HYBGEN', n0, ntests, h_neglect)
+  call test_reflection(test, 'C_PPM_CWK', n0, ntests, h_neglect)
+  call test_reflection(test, 'C_EPPM_CWK', n0, ntests, h_neglect)
+  call test_reflection(test, 'C_PPM_H4_2019', n0, ntests, h_neglect)
+! call test_reflection(test, 'C_PPM_H4_2018', n0, ntests, h_neglect) ! Fails by design: reproduces OM4-era PPM_H4
+  call test_reflection(test, 'C_PLM_WLS', n0, ntests, h_neglect)
 
   ! Check that remapping to the exact same grid leaves values unchanged
   allocate( h0(8), u0(8) )
