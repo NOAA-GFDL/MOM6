@@ -115,9 +115,9 @@ end subroutine reconstruct
 
 !> Average between xa and xb for cell k of a PPM_hybgen reconstruction [A]
 !!
-!! Calls the parent PPM_CW average and then clamps the result to [min(ul,ur), max(ul,ur)].
-!! This replicates the force_bounds_in_subcell behavior of the equivalent old-style PPM_HYBGEN
-!! scheme.
+!! Calls the parent PPM_CW average, or the point value f() when xa=xb, and then clamps the
+!! result to [min(ul,ur), max(ul,ur)]. This replicates the evaluation and the
+!! force_bounds_in_subcell behavior of the equivalent old-style PPM_HYBGEN scheme.
 real function average(this, k, xa, xb)
   class(PPM_hybgen), intent(in) :: this !< This reconstruction
   integer,           intent(in) :: k    !< Cell number
@@ -125,7 +125,12 @@ real function average(this, k, xa, xb)
   real,              intent(in) :: xb   !< End of averaging interval on element (0 to 1) [nondim]
   real :: u_lo, u_hi ! Bounds on the sub-cell average given by the edge values [A]
 
-  average = this%PPM_CW%average(k, xa, xb)
+  if (xb > xa) then
+    average = this%PPM_CW%average(k, xa, xb)
+  else ! For a vanishing interval, use the point value. The expressions in f() are the same as
+       ! those used for this case in the OM4-era average_value_ppoly().
+    average = this%f(k, xa)
+  endif
   u_lo = min(this%ul(k), this%ur(k))
   u_hi = max(this%ul(k), this%ur(k))
   average = max(u_lo, min(u_hi, average))
