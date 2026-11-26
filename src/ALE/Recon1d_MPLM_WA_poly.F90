@@ -14,6 +14,7 @@
 module Recon1d_MPLM_WA_poly
 
 use Recon1d_MPLM_WA, only : MPLM_WA, testing
+use Recon1d_type, only : claim_is_unsupported
 
 implicit none ; private
 
@@ -48,6 +49,8 @@ contains
   procedure :: average => average
   !> Implementation of check reconstruction for the MPLM_WA_poly reconstruction
   procedure :: check_reconstruction => check_reconstruction
+  !> Not reflection symmetric because this scheme reproduces the OM4-era PLM
+  procedure, nopass :: claims_reflection => claim_is_unsupported
   !> Implementation of unit tests for the MPLM_WA_poly reconstruction
   procedure :: unit_tests => unit_tests
 

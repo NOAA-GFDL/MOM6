@@ -12,7 +12,7 @@
 !! The first and last cells are always limited to PCM.
 module Recon1d_PPM_H4_2019
 
-use Recon1d_type, only : Recon1d, testing
+use Recon1d_type, only : Recon1d, testing, claim_is_unsupported
 
 implicit none ; private
 
@@ -52,6 +52,9 @@ contains
   procedure :: destroy => destroy
   !> Implementation of check reconstruction for the PPM_H4_2019 reconstruction
   procedure :: check_reconstruction => check_reconstruction
+  !> Not reflection symmetric because, to reproduce PPM_H4, f() at x=1/2, and
+  !! average() over intervals centered on x=1/2, use the form based on the right edge value
+  procedure, nopass :: claims_reflection => claim_is_unsupported
   !> Implementation of unit tests for the PPM_H4_2019 reconstruction
   procedure :: unit_tests => unit_tests
 

@@ -2881,6 +2881,46 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   call test%test( EPPM_CWK_instance%unit_tests(verbose, test%stdout, test%stderr), 'EPPM_CWK unit test')
   call test%test( PLM_WLS_instance%unit_tests(verbose, test%stdout, test%stderr), 'PLM_WLS unit test')
 
+  if (verbose) write(test%stdout,*) '- - - - - - - - - - Recon1d property tests  - - - - - - - - -'
+  call test%test( PCM_instance%check_properties(verbose, test%stdout, test%stderr, 'PCM'), &
+                   'PCM properties')
+  call test%test( MPLM_WA_instance%check_properties(verbose, test%stdout, test%stderr, 'MPLM_WA'), &
+                   'MPLM_WA properties')
+  call test%test( EMPLM_WA_instance%check_properties(verbose, test%stdout, test%stderr, 'EMPLM_WA'), &
+                   'EMPLM_WA properties')
+  call test%test( MPLM_WA_poly_instance%check_properties(verbose, test%stdout, test%stderr, 'MPLM_WA_poly'), &
+                   'MPLM_WA_poly properties')
+  call test%test( EMPLM_WA_poly_instance%check_properties(verbose, test%stdout, test%stderr, 'EMPLM_WA_poly'), &
+                   'EMPLM_WA_poly properties')
+  call test%test( PLM_hybgen_instance%check_properties(verbose, test%stdout, test%stderr, 'PLM_hybgen'), &
+                   'PLM_hybgen properties')
+  call test%test( PLM_hybgen_poly_instance%check_properties(verbose, test%stdout, test%stderr, 'PLM_hybgen_poly'), &
+                   'PLM_hybgen_poly properties')
+  call test%test( PLM_CW_instance%check_properties(verbose, test%stdout, test%stderr, 'PLM_CW'), &
+                   'PLM_CW properties')
+  call test%test( PLM_CWK_instance%check_properties(verbose, test%stdout, test%stderr, 'PLM_CWK'), &
+                   'PLM_CWK properties')
+  call test%test( MPLM_CWK_instance%check_properties(verbose, test%stdout, test%stderr, 'MPLM_CWK'), &
+                   'MPLM_CWK properties')
+  call test%test( EMPLM_CWK_instance%check_properties(verbose, test%stdout, test%stderr, 'EMPLM_CWK'), &
+                   'EMPLM_CWK properties')
+  call test%test( PPM_H4_2019_instance%check_properties(verbose, test%stdout, test%stderr, 'PPM_H4_2019'), &
+                   'PPM_H4_2019 properties')
+  call test%test( PPM_H4_2018_instance%check_properties(verbose, test%stdout, test%stderr, 'PPM_H4_2018'), &
+                   'PPM_H4_2018 properties')
+  call test%test( PPM_hybgen_instance%check_properties(verbose, test%stdout, test%stderr, 'PPM_hybgen'), &
+                   'PPM_hybgen properties')
+  call test%test( PPM_hybgen_v1_instance%check_properties(verbose, test%stdout, test%stderr, 'PPM_hybgen_v1'), &
+                   'PPM_hybgen_v1 properties')
+  call test%test( PPM_CW_instance%check_properties(verbose, test%stdout, test%stderr, 'PPM_CW'), &
+                   'PPM_CW properties')
+  call test%test( PPM_CWK_instance%check_properties(verbose, test%stdout, test%stderr, 'PPM_CWK'), &
+                   'PPM_CWK properties')
+  call test%test( EPPM_CWK_instance%check_properties(verbose, test%stdout, test%stderr, 'EPPM_CWK'), &
+                   'EPPM_CWK properties')
+  call test%test( PLM_WLS_instance%check_properties(verbose, test%stdout, test%stderr, 'PLM_WLS'), &
+                   'PLM_WLS properties')
+
   ! Randomized, brute force tests
   ntests = 3000
   if (present(num_comp_samp)) ntests = num_comp_samp

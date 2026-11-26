@@ -13,6 +13,7 @@
 module Recon1d_PPM_H4_2018
 
 use Recon1d_PPM_H4_2019, only : PPM_H4_2019, testing
+use Recon1d_type, only : claim_is_unsupported
 use regrid_edge_values, only : bound_edge_values, check_discontinuous_edge_values
 use regrid_solvers, only :  solve_linear_system
 
@@ -41,6 +42,8 @@ type, extends (PPM_H4_2019) :: PPM_H4_2018
 contains
   !> Implementation of the PPM_H4_2018 reconstruction
   procedure :: reconstruct => reconstruct
+  !> Not reflection symmetric because this scheme reproduces the OM4-era PPM_H4
+  procedure, nopass :: claims_reflection => claim_is_unsupported
   !> Implementation of unit tests for the PPM_H4_2018 reconstruction
   procedure :: unit_tests => unit_tests
 

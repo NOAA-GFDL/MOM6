@@ -12,7 +12,7 @@
 !! reflection symmetric. This implementation is reached with "C_PPM_HYBGEN_V1".
 module Recon1d_PPM_hybgen_v1
 
-use Recon1d_type, only : testing
+use Recon1d_type, only : testing, claim_is_unsupported
 use Recon1d_PPM_hybgen, only : PPM_hybgen
 
 implicit none ; private
@@ -40,6 +40,9 @@ contains
   procedure :: average => average
   !> Implementation of evaluating the PPM_hybgen_v1 reconstruction at a point [A]
   procedure :: f => f
+  !> Not reflection symmetric because, to reproduce PPM_HYBGEN, f() at x=1/2, and average()
+  !! over intervals centered on x=1/2, use the form based on the right edge value
+  procedure, nopass :: claims_reflection => claim_is_unsupported
 
 end type PPM_hybgen_v1
 

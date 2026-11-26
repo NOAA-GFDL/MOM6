@@ -11,6 +11,7 @@ implicit none ; private
 
 public Recon1d
 public testing
+public claim_is_supported, claim_is_unsupported
 
 !> The base class for implementations of 1D reconstructions
 type, abstract :: Recon1d
@@ -59,6 +60,18 @@ contains
   procedure :: remap_to_sub_grid => remap_to_sub_grid
   !> Set debugging
   procedure :: set_debug => a_set_debug
+  !> Runs the generic property tests that apply to all reconstructions
+  !!
+  !! Returns True if a test fails. Returns False if all tests pass.
+  !! A property is only tested if the reconstruction claims it (see below).
+  procedure :: check_properties => check_properties
+
+  ! The following functions declare which properties a reconstruction claims, and so which
+  ! tests in check_properties() are applied. They default to claim_is_supported() and are
+  ! bound to claim_is_unsupported() by a reconstruction that does not have the property.
+
+  !> True if the reconstruction of a reflected column is the reflection of the reconstruction
+  procedure, nopass :: claims_reflection => claim_is_supported
 
   ! The following functions usually point to the same implementation as above but
   ! for derived secondary children these allow invocation of the parent class function.
@@ -376,6 +389,135 @@ subroutine a_set_debug(this)
   this%debug = .true.
 
 end subroutine a_set_debug
+
+!> Returns true, for binding to the claims_*() procedure of a property the reconstruction has
+logical function claim_is_supported()
+
+  claim_is_supported = .true.
+
+end function claim_is_supported
+
+!> Returns false, for binding to the claims_*() procedure of a property the reconstruction lacks
+logical function claim_is_unsupported()
+
+  claim_is_unsupported = .false.
+
+end function claim_is_unsupported
+
+!> Runs the generic property tests that apply to all reconstructions and returns True for
+!! any fails, False otherwise
+!!
+!! Each property is only tested if the reconstruction claims it. The state of this
+!! reconstruction is replaced, and the state of the random number generator is restored
+!! on return. Assumes single process/thread context.
+logical function check_properties(this, verbose, stdout, stderr, label)
+  class(Recon1d),   intent(inout) :: this    !< This reconstruction
+  logical,          intent(in)    :: verbose !< True, if verbose
+  integer,          intent(in)    :: stdout  !< I/O channel for stdout
+  integer,          intent(in)    :: stderr  !< I/O channel for stderr
+  character(len=*), intent(in)    :: label   !< Label for the summary, usually the name of the scheme
+  ! Local variables
+  type(testing) :: test ! Convenience functions
+  integer :: seed_size ! Number of integers used by seed
+  integer, allocatable :: seed(:), saved_seed(:) ! Random number seeds
+  integer :: n ! Number of cells in a test column
+  character(len=8) :: n_str ! n as a string
+
+  call test%set( verbose=verbose, stdout=stdout, stderr=stderr )
+
+  call random_seed( size=seed_size )
+  allocate( seed(seed_size), saved_seed(seed_size) )
+  call random_seed( get=saved_seed )
+  seed(:) = 102030405 ! Repeatable sequences
+  call random_seed( put=seed )
+
+  ! Columns have at least four cells, which the PPM_H4 schemes need
+  if (this%claims_reflection()) then
+    do n = 4, 12
+      write(n_str,'(i0)') n
+      call test%test( test_reflection(this, n, 100, stdout), 'reflection, n='//trim(n_str) )
+    enddo
+  endif
+
+  call random_seed( put=saved_seed )
+
+  check_properties = test%summarize( trim(label)//':check_properties' )
+
+end function check_properties
+
+!> Returns true if the reconstruction of a reflected column is not, bitwise, the reflection of
+!! the reconstruction of the original column
+!!
+!! The column has random cell means, and thicknesses that are either zero (5%) or 1, 1/2, 1/4
+!! or 1/8. Using powers of two for the thicknesses avoids round-off that depends on the order of
+!! operations in calculating, for example, ratios of thicknesses or weighted sums. The
+!! reconstruction, f, its derivative, dfdx, and averages are compared at dyadic positions, x,
+!! within each cell so that the reflected position, 1-x, is exact. Unlike the reflection test
+!! of the full remapping in MOM_remapping, this includes the whole-cell average and averages
+!! over intervals centered on x=1/2.
+logical function test_reflection(this, n, niter, stdout)
+  class(Recon1d), intent(inout) :: this   !< This reconstruction
+  integer,        intent(in)    :: n      !< Number of cells in the column
+  integer,        intent(in)    :: niter  !< Number of random columns to try
+  integer,        intent(in)    :: stdout !< I/O channel for stdout
+  ! Local variables
+  class(Recon1d), allocatable :: that ! The reconstruction of the reflected column
+  real :: h(n), hr(n) ! Thicknesses of the column and its reflection [H]
+  real :: u(n), ur(n) ! Cell means of the column and its reflection [A]
+  real :: r ! A random number [nondim]
+  real :: xa, xb ! Positions within a cell [nondim]
+  real :: val(3), val_r(3) ! f(xa), dfdx(xa) and the average from xa to xb for the original
+                           ! column, and the same for the reflected column with the sign of
+                           ! dfdx reversed [A]
+  integer :: iter, k, kr, i, j
+
+  allocate( that, mold=this )
+  call this%init(n, h_neglect=1.e-30)
+  call that%init(n, h_neglect=1.e-30)
+
+  test_reflection = .false.
+  columns: do iter = 1, niter
+    do k = 1, n
+      call random_number( r )
+      if (r < 0.05) then
+        h(k) = 0.
+      else
+        h(k) = 2.**(-int(4.*r))
+      endif
+    enddo
+    call random_number( u )
+    hr(:) = h(n:1:-1)
+    ur(:) = u(n:1:-1)
+
+    call this%reconstruct(h, u)
+    call that%reconstruct(hr, ur)
+
+    do k = 1, n
+      kr = n + 1 - k
+      do i = 0, 8
+        xa = 0.125 * real(i)
+        do j = i, 8
+          xb = 0.125 * real(j)
+          val(:) = (/ this%f(k, xa), this%dfdx(k, xa), this%average(k, xa, xb) /)
+          val_r(:) = (/ that%f(kr, 1. - xa), - that%dfdx(kr, 1. - xa), that%average(kr, 1. - xb, 1. - xa) /)
+          if (any( val(:) /= val_r(:) )) then ! Write the details of the first fail only
+            test_reflection = .true.
+            write(stdout,'(a,i0,a,i0,a,f5.3,a,f5.3)') 'test_reflection: iter=', iter, ' k=', k, &
+                  ' x=', xa, ' to ', xb
+            write(stdout,*) ' h=', h
+            write(stdout,*) ' u=', u
+            write(stdout,*) ' f, dfdx, average=', val
+            write(stdout,*) ' for reflected column=', val_r
+            exit columns
+          endif
+        enddo
+      enddo
+    enddo
+  enddo columns
+
+  call that%destroy()
+
+end function test_reflection
 
 !> \namespace recon1d_type
 !!
