@@ -51,6 +51,7 @@ C_MPLM_CWK | Monotonized Piecewise Linear Method in index space (grid independen
 C_EMPLM_CWK | Boundary extrapolatino of Monotonized Piecewise Linear Method in index space (grid independent) | recon1d_emplm_cwk
 C_PPM_CW | Piecewise Linear Method (faithful to Colella and Woodward \cite colella1984) | recon1d_ppm_cw
 C_PPM_HYBGEN | PPM (equivalent to PPM_HYBGEN) | recon1d_ppm_hybgen
+C_PPM_HYBGEN_V1 | PPM (equivalent to PPM_HYBGEN) | recon1d_ppm_hybgen_v1 (extends recon1d_ppm_hybgen)
 C_PPM_H4_2018 | (equivalent to PPM_H4 with answers circa 2018) | recon1d_ppm_h4_2018
 C_PPM_H4_2019 | (equivalent to PPM_H4 with answers post 2019) | recon1d_ppm_h4_2019
 C_PPM_CWK | Piecewise Parabolic Method in index space (grid independent) | recon1d_ppm_cwk
@@ -83,6 +84,7 @@ C_MPLM_CWK       | Edge values    | Yes                | Yes        | No        
 C_EMPLM_CWK      | Edge values    | Yes                | Yes        | No             | Pass
 C_PPM_CW         | Edge values    | Yes                | Yes        | Yes            | Pass
 C_PPM_HYBGEN     | Edge values    | * forced           | Yes        | Yes            | Pass
+C_PPM_HYBGEN_V1  | Edge values    | * forced           | Yes        | Yes            | Pass
 C_PPM_H4_2018    | Edge values    | * forced           |            | Yes            | Pass
 C_PPM_H4_2019    | Edge values    | * forced           | Yes        | Yes            | Pass
 C_PPM_CWK        | Edge values    | Yes                | Yes        | No             | Pass

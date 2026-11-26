@@ -11,7 +11,7 @@ use MOM_remapping, only : remapping_core_h
 implicit none
 
 type(remapping_CS) :: CS
-integer, parameter :: nk=75, nij=20*20, nits=10, nsamp=100, nschemes = 22
+integer, parameter :: nk=75, nij=20*20, nits=10, nsamp=100, nschemes = 23
 character(len=16) :: scheme_labels(nschemes) = [ character(len=16) :: &
       'PCM', &
       'C_PCM', &
@@ -32,6 +32,7 @@ character(len=16) :: scheme_labels(nschemes) = [ character(len=16) :: &
       'C_PPM_H4_2018', &
       'C_PPM_H4_2019', &
       'C_PPM_HYBGEN', &
+      'C_PPM_HYBGEN_V1', &
       'C_PPM_CW', &
       'C_PPM_CWK', &
       'C_EPPM_CWK' ]
