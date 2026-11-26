@@ -93,7 +93,7 @@ subroutine reconstruct(this, h, u)
     u_max = max( u(k), u_tmp )
     u_tmp = u(k) - 0.5 * mslp(k) ! Left edge value of cell k
     this%ul(k) = max( min( u_tmp, u_max), u_min ) ! Bounded to handle roundoff
-    u_tmp = u(k+1) - 0.5 * mslp(k-1) ! Left edge value of cell k+1
+    u_tmp = u(k+1) - 0.5 * mslp(k+1) ! Left edge value of cell k+1
     u_min = min( u(k), u_tmp )
     u_max = max( u(k), u_tmp )
     u_tmp = u(k) + 0.5 * mslp(k) ! Right edge value of cell k
@@ -240,6 +240,7 @@ logical function unit_tests(this, verbose, stdout, stderr)
   ! Local variables
   real, allocatable :: ul(:), ur(:), um(:) ! test values [A]
   real, allocatable :: ull(:), urr(:) ! test values [A]
+  real :: u5(5), um5(5) ! cell means and reconstructed cell averages for the conservation test [A]
   type(testing) :: test ! convenience functions
   integer :: k
 
@@ -276,6 +277,18 @@ logical function unit_tests(this, verbose, stdout, stderr)
     um(k) = this%average(k, 0.5, 0.75) ! Average from x=0.25 to 0.75 in each cell
   enddo
   call test%real_arr(3, um, (/1.,3.25,5./), 'Return interval average')
+
+  ! The average of the reconstruction over each cell must equal the cell mean (conservation).
+  ! In this column the slopes of the neighbours of cell 3 differ, so the bounds on its edge
+  ! values are active (see https://github.com/NOAA-GFDL/MOM6/issues/1239)
+  call this%destroy()
+  call this%init(5)
+  u5 = (/ 0., 1., 3., 4., 4. /)
+  call this%reconstruct( (/1.,1.,1.,1.,1./), u5 )
+  do k = 1, 5
+    um5(k) = this%average(k, 0., 1.)
+  enddo
+  call test%real_arr(5, um5, u5, 'Cell averages equal cell means', robits=4)
 
   unit_tests = test%summarize('MPLM_WA:unit_tests')
 
