@@ -480,7 +480,8 @@ subroutine build_reconstructions_1d( CS, n0, h0, u0, ppoly_r_coefs, &
         call PLM_boundary_extrapolation( n0, h0, u0, ppoly_r_E, ppoly_r_coefs, h_neglect )
       iMethod = INTEGRATION_PLM
     case ( REMAPPING_PPM_CW )
-      ! identical to REMAPPING_PPM_HYBGEN
+      ! Identical to REMAPPING_PPM_HYBGEN except where two or more adjacent layers are vanished,
+      ! because PPM_HYBGEN uses PCM for vanished layers whereas PPM_CW does not.
       call edge_values_explicit_h4cw( n0, h0, u0, ppoly_r_E, h_neg_edge )
       call PPM_monotonicity(   n0,     u0, ppoly_r_E )
       call PPM_reconstruction( n0, h0, u0, ppoly_r_E, ppoly_r_coefs, h_neglect, answer_date=CS%answer_date )
@@ -2850,7 +2851,9 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   n0 = 7
   n1 = 4
 
-  ! PPM_CW and PPM_HYBGEN are identical, but are different options in build_reconstructions_1d()
+  ! PPM_CW and PPM_HYBGEN are different options in build_reconstructions_1d() that give identical
+  ! answers except where two or more adjacent layers are vanished, because PPM_HYBGEN uses PCM for
+  ! vanished layers whereas PPM_CW does not.
   call initialize_remapping(CS, 'PPM_CW', answer_date=99990101, boundary_extrapolation=.false., &
                             om4_remap_via_sub_cells=.false., force_bounds_in_subcell=.false., &
                             h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
@@ -2884,7 +2887,7 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
   call initialize_remapping(CS2, 'PPM_HYBGEN', answer_date=99990101, boundary_extrapolation=.false., &
                             om4_remap_via_sub_cells=.true., force_bounds_in_subcell=.true., &
                             h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
-  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_CW <-> PPM_HYBGEN')
+  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_CW <-> PPM_HYBGEN OM4 bounded')
 
   ! PCM <-> C_PCM
   call initialize_remapping(CS, 'PCM', answer_date=99990101, om4_remap_via_sub_cells=.false., &
@@ -2960,7 +2963,7 @@ logical function remapping_unit_tests(verbose, num_comp_samp)
                             om4_remap_via_sub_cells=.false., force_bounds_in_subcell=.true., &
                             h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
   call initialize_remapping(CS2, 'C_PPM_HYBGEN', nk=n0, h_neglect=h_neglect)
-  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_HYBGEN bounded <-> C_PPM_HYGEN')
+  call compare_two_schemes(test, CS, CS2, n0, n1, ntests, 'PPM_HYBGEN bounded <-> C_PPM_hybgen')
 
   call end_remapping(CS)
   call end_remapping(CS2)
