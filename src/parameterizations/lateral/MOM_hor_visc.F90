@@ -107,6 +107,9 @@ type, public :: hor_visc_CS ; private
                              !! viscosity [L2 T-1 ~> m2 s-1]. The default is 0.0.
   logical :: FrictWork_bug   !< If true, retain an answer-changing bug in calculating FrictWork,
                              !! which cancels the h in thickness flux and the h at velocity point.
+  logical :: better_FrictWork !< If true calculate the friction velocity work terms more efficiently
+                             !! with far fewer divisions, in a form that is mathematically equivalent
+                             !! to the case with FrictWork_bug = .false.
   logical :: OBC_strain_bug  !< If true, recover a bug that specified shear strain option at open
                              !! boundaries cannot be applied.
   logical :: use_land_mask   !< Use the land mask for the computation of thicknesses
@@ -375,10 +378,14 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
   ! Local variables
   real, dimension(SZIB_(G),SZJ_(G),nkk) :: &
     Del2u, &      ! The u-component of the Laplacian of velocity [L-1 T-1 ~> m-1 s-1]
-    h_u           ! Thickness interpolated to u points [H ~> m or kg m-2].
+    h_u, &        ! Thickness interpolated to u points [H ~> m or kg m-2].
+    uh_hA         ! The u-transport divided by the u-cell mass or volume giving a rate of frictional
+                  ! work when combined with a stress [T-1 ~> s-1]
   real, dimension(SZI_(G),SZJB_(G),nkk) :: &
     Del2v, &      ! The v-component of the Laplacian of velocity [L-1 T-1 ~> m-1 s-1]
-    h_v           ! Thickness interpolated to v points [H ~> m or kg m-2].
+    h_v, &        ! Thickness interpolated to v points [H ~> m or kg m-2].
+    vh_hA         ! The v-transport divided by the v-cell mass or volume giving a rate of frictional
+                  ! work when combined with a stress [T-1 ~> s-1]
   real, dimension(SZI_(G),SZJB_(G)) :: &
     dudx_bt, dvdy_bt ! components in the barotropic horizontal tension [T-1 ~> s-1]
   real, dimension(SZI_(G),SZJ_(G),nkk) :: &
@@ -419,6 +426,7 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
                   ! at some points in the code it is not yet layer integrated, so is in [L2 T-2 ~> m2 s-2].
     str_xy_GME, & ! smoothed cross term in the stress tensor from GME [L2 T-2 ~> m2 s-2]
     bhstr_xy, &   ! A copy of str_xy that only contains the biharmonic contribution [H L2 T-2 ~> m3 s-2 or kg s-2]
+    work_xy, &    ! The work done by a q-point stress integrated of a q-point cell [H L4 T-3 ~> m5 s-3 or W]
     vort_xy, &    ! Vertical vorticity (dv/dx - du/dy) including metric terms [T-1 ~> s-1]
     vort_xy_smooth, & ! Vertical vorticity including metric terms, smoothed [T-1 ~> s-1]
     grad_vort_mag_q, & ! Magnitude of vorticity gradient at q-points [L-1 T-1 ~> m-1 s-1]
@@ -505,7 +513,7 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
   real :: dudx_smooth, dvdy_smooth ! components in the horizontal tension from smoothed velocity [T-1 ~> s-1]
 
   logical :: rescale_Kh
-  logical :: find_FrictWork
+  logical :: find_FrictWork, find_FrictWork_bh
   logical :: apply_OBC = .false.
   logical :: apply_OBC_strain
   logical :: use_MEKE_Ku
@@ -586,10 +594,10 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
 
   if (.not.(CS%Laplacian .or. CS%biharmonic)) return
 
-  find_FrictWork = (CS%id_FrictWork > 0)
-  if (CS%id_FrictWorkIntz > 0) find_FrictWork = .true.
+  find_FrictWork = ( (CS%id_FrictWork > 0) .or. (CS%id_FrictWorkIntz > 0) .or. allocated(MEKE%mom_src) )
+  find_FrictWork_bh = ( (CS%id_FrictWork_bh>0) .or. (CS%id_FrictWorkIntz_bh > 0) .or. &
+        allocated(MEKE%mom_src_bh) .or. (allocated(MEKE%mom_src) .and. (MEKE%backscatter_Ro_c /= 0.)) )
 
-  if (allocated(MEKE%mom_src)) find_FrictWork = .true.
   use_kh_struct = allocated(VarMix%BS_struct)
   backscat_subround = 0.0
   if (find_FrictWork .and. allocated(MEKE%mom_src) .and. (MEKE%backscatter_Ro_c > 0.0) .and. &
@@ -1783,6 +1791,18 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
                      G%IareaCv(i,J)) / (h_v(i,J,kk) + h_neglect)
     enddo ; enddo ; enddo
 
+
+    if ((find_FrictWork .or. find_FrictWork_bh .or. CS%use_GME) .and. (.not.CS%FrictWork_bug)) then
+      do kk=1,kke ; do j=js-1,je+1 ; do I=is-1,ie
+        k = ksb + kk - 1
+        uh_hA(I,j,kk) = uh(I,j,k) * G%IareaCu(I,j) / (h_u(I,j,kk)+h_neglect)
+      enddo ; enddo ; enddo
+      do kk=1,kke ; do J=js-1,je ; do i=is-1,ie+1
+        k = ksb + kk - 1
+        vh_hA(i,J,kk) = vh(i,J,k) * G%IareaCv(i,J) / (h_v(i,J,kk)+h_neglect)
+      enddo ; enddo ; enddo
+    endif
+
     if (apply_OBC) then
       ! This is not the right boundary condition. If all the masking of tendencies are done
       ! correctly later then eliminating this block should not change answers.
@@ -1798,59 +1818,54 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
     endif
 
     if (find_FrictWork) then
+      ! Diagnose  str_xx*d_x u - str_yy*d_y v + str_xy*(d_y u + d_x v)
       if (CS%FrictWork_bug) then
-        ! Diagnose   str_xx*d_x u - str_yy*d_y v + str_xy*(d_y u + d_x v)
         ! This is the old formulation that includes energy diffusion
+
+        ! Find the contributions of the corner point stresses to the frictional work
+        do kk=1,kke ; do J=js-1,je ; do I=is-1,ie
+          k = ksb + kk - 1
+          work_xy(I,J,kk) = str_xy(I,J,kk) * ( ((u(I,j+1,k)-u(I,j,k))*G%IdyBu(I,J)) &
+                                             + ((v(i+1,J,k)-v(i,J,k))*G%IdxBu(I,J)) )
+        enddo ; enddo ; enddo
         do kk=1,kke ; do j=js,je ; do i=is,ie
           k = ksb + kk - 1
           FrictWork(i,j,k) = GV%H_to_RZ * ( &
-                  ((str_xx(i,j,kk) * (u(I,j,k)-u(I-1,j,k))*G%IdxT(i,j))    &
-                 - (str_xx(i,j,kk) * (v(i,J,k)-v(i,J-1,k))*G%IdyT(i,j)))   &
-              + 0.25*(( (str_xy(I,J,kk) *                                  &
-                         (((u(I,j+1,k)-u(I,j,k))*G%IdyBu(I,J))          &
-                        + ((v(i+1,J,k)-v(i,J,k))*G%IdxBu(I,J))))        &
-                      + (str_xy(I-1,J-1,kk) *                              &
-                         (((u(I-1,j,k)-u(I-1,j-1,k))*G%IdyBu(I-1,J-1))  &
-                        + ((v(i,J-1,k)-v(i-1,J-1,k))*G%IdxBu(I-1,J-1)))) ) &
-                    + ( (str_xy(I-1,J,kk) *                                &
-                         (((u(I-1,j+1,k)-u(I-1,j,k))*G%IdyBu(I-1,J))    &
-                        + ((v(i,J,k)-v(i-1,J,k))*G%IdxBu(I-1,J))))      &
-                      + (str_xy(I,J-1,kk) *                                &
-                         (((u(I,j,k)-u(I,j-1,k))*G%IdyBu(I,J-1))        &
-                        + ((v(i+1,J-1,k)-v(i,J-1,k))*G%IdxBu(I,J-1)))) ) ) )
+              (  (str_xx(i,j,kk) * (u(I,j,k)-u(I-1,j,k))*G%IdxT(i,j)) &
+               - (str_xx(i,j,kk) * (v(i,J,k)-v(i,J-1,k))*G%IdyT(i,j)) ) &
+              + 0.25*( (work_xy(I,J,kk) + work_xy(I-1,J-1,kk)) + (work_xy(I-1,J,kk) + work_xy(I,J-1,kk)) ) )
         enddo ; enddo ; enddo
       else
-        do kk=1,kke ; do j=js,je ; do i=is,ie
+        ! Find the contributions of the corner point stresses to the frictional work
+        do kk=1,kke ; do J=js-1,je ; do I=is-1,ie
           k = ksb + kk - 1
-          FrictWork(i,j,k) = GV%H_to_RZ * G%IareaT(i,j) * ( &
-            ((str_xx(i,j,kk)*CS%dy2h(i,j) * ( &
-                  (uh(I,j,k)*G%dxCu(I,j)*G%IdyCu(I,j)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect)) &
-                - (uh(I-1,j,k)*G%dxCu(I-1,j)*G%IdyCu(I-1,j)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect)) ) ) &
-           - (str_xx(i,j,kk)*CS%dx2h(i,j) * ( &
-                  (vh(i,J,k)*G%dyCv(i,J)*G%IdxCv(i,J)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)) &
-                - (vh(i,J-1,k)*G%dyCv(i,J-1)*G%IdxCv(i,J-1)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)) ) )) &
-          + (0.25*(((str_xy(I,J,kk)*(                                     &
-                     (CS%dx2q(I,J)*((uh(I,j+1,k)*G%IareaCu(I,j+1)/(h_u(I,j+1,kk)+h_neglect)) &
-                                  - (uh(I,j,k)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect))))            &
-                   + (CS%dy2q(I,J)*((vh(i+1,J,k)*G%IareaCv(i+1,J)/(h_v(i+1,J,kk)+h_neglect)) &
-                                  - (vh(i,J,k)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)))) ))          &
-                +(str_xy(I-1,J-1,kk)*(                                 &
-                     (CS%dx2q(I-1,J-1)*((uh(I-1,j,k)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect)) &
-                                      - (uh(I-1,j-1,k)*G%IareaCu(I-1,j-1)/(h_u(I-1,j-1,kk)+h_neglect))))    &
-                   + (CS%dy2q(I-1,J-1)*((vh(i,J-1,k)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)) &
-                                      - (vh(i-1,J-1,k)*G%IareaCv(i-1,J-1)/(h_v(i-1,J-1,kk)+h_neglect)))) )) ) &
-               +((str_xy(I-1,J,kk)*(                                   &
-                     (CS%dx2q(I-1,J)*((uh(I-1,j+1,k)*G%IareaCu(I-1,j+1)/(h_u(I-1,j+1,kk)+h_neglect)) &
-                                    - (uh(I-1,j,k)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect))))      &
-                   + (CS%dy2q(I-1,J)*((vh(i,J,k)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)) &
-                                    - (vh(i-1,J,k)*G%IareaCv(i-1,J)/(h_v(i-1,J,kk)+h_neglect)))) ))        &
-                +(str_xy(I,J-1,kk)*(                                   &
-                     (CS%dx2q(I,J-1)*((uh(I,j,k)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect)) &
-                                    - (uh(I,j-1,k)*G%IareaCu(I,j-1)/(h_u(I,j-1,kk)+h_neglect))))          &
-                   + (CS%dy2q(I,J-1)*((vh(i+1,J-1,k)*G%IareaCv(i+1,J-1)/(h_v(i+1,J-1,kk)+h_neglect)) &
-                                    - (vh(i,J-1,k)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)))) )) ) )) )
-
+          work_xy(I,J,kk) = str_xy(I,J,kk) * ( (CS%dx2q(I,J)*(uh_hA(I,j+1,kk) - uh_hA(I,j,kk))) &
+                                             + (CS%dy2q(I,J)*(vh_hA(i+1,J,kk) - vh_hA(i,J,kk))) )
         enddo ; enddo ; enddo
+
+        if (CS%better_FrictWork) then
+          do kk=1,kke ; do j=js,je ; do i=is,ie
+            k = ksb + kk - 1
+            FrictWork(i,j,k) = GV%H_to_RZ * G%IareaT(i,j) * ( &
+                (  (str_xx(i,j,kk)*CS%dy2h(i,j) * ( (G%dxCu(I,j)*G%IdyCu(I,j) * uh_hA(I,j,kk)) &
+                                                  - (G%dxCu(I-1,j)*G%IdyCu(I-1,j) * uh_hA(I-1,j,kk)) ) ) &
+                 - (str_xx(i,j,kk)*CS%dx2h(i,j) * ( (G%dyCv(i,J)*G%IdxCv(i,J) * vh_hA(i,J,kk)) &
+                                                  - (G%dyCv(i,J-1)*G%IdxCv(i,J-1) * vh_hA(i,J-1,kk)) ) )) &
+                + 0.25 * ((work_xy(I,J,kk) + work_xy(I-1,J-1,kk)) + (work_xy(I-1,J,kk) + work_xy(I,J-1,kk))) )
+          enddo ; enddo ; enddo
+        else
+          do kk=1,kke ; do j=js,je ; do i=is,ie
+            k = ksb + kk - 1
+            FrictWork(i,j,k) = GV%H_to_RZ * G%IareaT(i,j) * ( &
+                ((str_xx(i,j,kk)*CS%dy2h(i,j) * ( &
+                    (uh(I,j,k)*G%dxCu(I,j)*G%IdyCu(I,j)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect)) &
+                  - (uh(I-1,j,k)*G%dxCu(I-1,j)*G%IdyCu(I-1,j)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect)) ) ) &
+                 - (str_xx(i,j,kk)*CS%dx2h(i,j) * ( &
+                    (vh(i,J,k)*G%dyCv(i,J)*G%IdxCv(i,J)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)) &
+                  - (vh(i,J-1,k)*G%dyCv(i,J-1)*G%IdxCv(i,J-1)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)) ) )) &
+                + (0.25 * ((work_xy(I,J,kk) + work_xy(I-1,J-1,kk)) + (work_xy(I-1,J,kk) + work_xy(I,J-1,kk))) ) )
+          enddo ; enddo ; enddo
+        endif
       endif
 
       if (CS%EY24_EBT_BS) then
@@ -1861,61 +1876,54 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
       endif
     endif
 
-    if (CS%id_FrictWork_bh>0 .or. CS%id_FrictWorkIntz_bh > 0 .or. allocated(MEKE%mom_src_bh) &
-        .or. (allocated(MEKE%mom_src) .and. MEKE%backscatter_Ro_c /= 0.)) then
+    if (find_FrictWork_bh) then
+      ! Diagnose  bhstr_xx*d_x u - bhstr_yy*d_y v + bhstr_xy*(d_y u + d_x v)
       if (CS%FrictWork_bug) then
-        ! Diagnose   bhstr_xx*d_x u - bhstr_yy*d_y v + bhstr_xy*(d_y u + d_x v)
-        ! This is the old formulation that includes energy diffusion !cyc
+        ! This is the old formulation that includes energy diffusion
+
+        ! Find the contributions of the corner point stresses to the frictional work
+        do kk=1,kke ; do J=js-1,je ; do I=is-1,ie
+          k = ksb + kk - 1
+          work_xy(I,J,kk) = bhstr_xy(I,J,kk) * ( ((u(I,j+1,k)-u(I,j,k))*G%IdyBu(I,J)) &
+                                               + ((v(i+1,J,k)-v(i,J,k))*G%IdxBu(I,J)) )
+        enddo ; enddo ; enddo
         do kk=1,kke ; do j=js,je ; do i=is,ie
           k = ksb + kk - 1
           FrictWork_bh(i,j,k) = GV%H_to_RZ * ( &
-                  ((bhstr_xx(i,j,kk) * (u(I,j,k)-u(I-1,j,k))*G%IdxT(i,j))  &
-                 - (bhstr_xx(i,j,kk) * (v(i,J,k)-v(i,J-1,k))*G%IdyT(i,j))) &
-              + 0.25*(( (bhstr_xy(I,J,kk) *                              &
-                       (((u(I,j+1,k)-u(I,j,k))*G%IdyBu(I,J))          &
-                      + ((v(i+1,J,k)-v(i,J,k))*G%IdxBu(I,J))))        &
-                    + (bhstr_xy(I-1,J-1,kk) *                            &
-                       (((u(I-1,j,k)-u(I-1,j-1,k))*G%IdyBu(I-1,J-1))  &
-                      + ((v(i,J-1,k)-v(i-1,J-1,k))*G%IdxBu(I-1,J-1)))) ) &
-                  + ( (bhstr_xy(I-1,J,kk) *                              &
-                       (((u(I-1,j+1,k)-u(I-1,j,k))*G%IdyBu(I-1,J))    &
-                      + ((v(i,J,k)-v(i-1,J,k))*G%IdxBu(I-1,J))))      &
-                    + (bhstr_xy(I,J-1,kk) *                              &
-                       (((u(I,j,k)-u(I,j-1,k))*G%IdyBu(I,J-1))        &
-                      + ((v(i+1,J-1,k)-v(i,J-1,k))*G%IdxBu(I,J-1)))) ) ) )
+              (  (bhstr_xx(i,j,kk) * (u(I,j,k)-u(I-1,j,k))*G%IdxT(i,j))  &
+               - (bhstr_xx(i,j,kk) * (v(i,J,k)-v(i,J-1,k))*G%IdyT(i,j)) ) &
+              + 0.25*( (work_xy(I,J,kk) + work_xy(I-1,J-1,kk)) + (work_xy(I-1,J,kk) + work_xy(I,J-1,kk)) ) )
         enddo ; enddo ; enddo
       else
-        ! Diagnose   bhstr_xx*d_x u - bhstr_yy*d_y v + bhstr_xy*(d_y u + d_x v)
-        do kk=1,kke ; do j=js,je ; do i=is,ie
+        ! Find the contributions of the corner point stresses to the frictional work
+        do kk=1,kke ; do J=js-1,je ; do I=is-1,ie
           k = ksb + kk - 1
-          FrictWork_bh(i,j,k) = GV%H_to_RZ * G%IareaT(i,j) * ( &
-            ((bhstr_xx(i,j,kk)*CS%dy2h(i,j) * ( &
-                  (uh(I,j,k)*G%dxCu(I,j)*G%IdyCu(I,j)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect)) &
-                - (uh(I-1,j,k)*G%dxCu(I-1,j)*G%IdyCu(I-1,j)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect)) ) ) &
-           - (bhstr_xx(i,j,kk)*CS%dx2h(i,j) * ( &
-                  (vh(i,J,k)*G%dyCv(i,J)*G%IdxCv(i,J)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)) &
-                - (vh(i,J-1,k)*G%dyCv(i,J-1)*G%IdxCv(i,J-1)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)) ) )) &
-          + (0.25*(((bhstr_xy(I,J,kk)*(                                     &
-                     (CS%dx2q(I,J)*((uh(I,j+1,k)*G%IareaCu(I,j+1)/(h_u(I,j+1,kk)+h_neglect)) &
-                                  - (uh(I,j,k)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect))))            &
-                   + (CS%dy2q(I,J)*((vh(i+1,J,k)*G%IareaCv(i+1,J)/(h_v(i+1,J,kk)+h_neglect)) &
-                                  - (vh(i,J,k)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)))) ))          &
-                +(bhstr_xy(I-1,J-1,kk)*(                                 &
-                     (CS%dx2q(I-1,J-1)*((uh(I-1,j,k)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect)) &
-                                      - (uh(I-1,j-1,k)*G%IareaCu(I-1,j-1)/(h_u(I-1,j-1,kk)+h_neglect))))    &
-                   + (CS%dy2q(I-1,J-1)*((vh(i,J-1,k)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)) &
-                                      - (vh(i-1,J-1,k)*G%IareaCv(i-1,J-1)/(h_v(i-1,J-1,kk)+h_neglect)))) )) ) &
-               +((bhstr_xy(I-1,J,kk)*(                                   &
-                     (CS%dx2q(I-1,J)*((uh(I-1,j+1,k)*G%IareaCu(I-1,j+1)/(h_u(I-1,j+1,kk)+h_neglect)) &
-                                    - (uh(I-1,j,k)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect))))      &
-                   + (CS%dy2q(I-1,J)*((vh(i,J,k)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)) &
-                                    - (vh(i-1,J,k)*G%IareaCv(i-1,J)/(h_v(i-1,J,kk)+h_neglect)))) ))        &
-                +(bhstr_xy(I,J-1,kk)*(                                   &
-                     (CS%dx2q(I,J-1)*((uh(I,j,k)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect)) &
-                                    - (uh(I,j-1,k)*G%IareaCu(I,j-1)/(h_u(I,j-1,kk)+h_neglect))))          &
-                   + (CS%dy2q(I,J-1)*((vh(i+1,J-1,k)*G%IareaCv(i+1,J-1)/(h_v(i+1,J-1,kk)+h_neglect)) &
-                                    - (vh(i,J-1,k)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)))) )) ) )) )
+          work_xy(I,J,kk) = bhstr_xy(I,J,kk) * ( (CS%dx2q(I,J)*(uh_hA(I,j+1,kk) - uh_hA(I,j,kk))) &
+                                               + (CS%dy2q(I,J)*(vh_hA(i+1,J,kk) - vh_hA(i,J,kk))) )
         enddo ; enddo ; enddo
+        if (CS%better_FrictWork) then
+          do kk=1,kke ; do j=js,je ; do i=is,ie
+            k = ksb + kk - 1
+            FrictWork_bh(i,j,k) = GV%H_to_RZ * G%IareaT(i,j) * ( &
+                (  (bhstr_xx(i,j,kk)*CS%dy2h(i,j) * ( (G%dxCu(I,j)*G%IdyCu(I,j)*uh_hA(I,j,kk)) &
+                                                    - (G%dxCu(I-1,j)*G%IdyCu(I-1,j)*uh_hA(I-1,j,kk)) ) ) &
+                 - (bhstr_xx(i,j,kk)*CS%dx2h(i,j) * ( (G%dyCv(i,J)*G%IdxCv(i,J)*vh_hA(i,J,kk)) &
+                                                    - (G%dyCv(i,J-1)*G%IdxCv(i,J-1)*vh_hA(i,J-1,kk)) ) )) &
+                + 0.25 * ((work_xy(I,J,kk) + work_xy(I-1,J-1,kk)) + (work_xy(I-1,J,kk) + work_xy(I,J-1,kk))) )
+          enddo ; enddo ; enddo
+        else
+          do kk=1,kke ; do j=js,je ; do i=is,ie
+            k = ksb + kk - 1
+            FrictWork_bh(i,j,k) = GV%H_to_RZ * G%IareaT(i,j) * ( &
+                (  (bhstr_xx(i,j,kk)*CS%dy2h(i,j) * ( &
+                      (uh(I,j,k)*G%dxCu(I,j)*G%IdyCu(I,j)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect)) &
+                    - (uh(I-1,j,k)*G%dxCu(I-1,j)*G%IdyCu(I-1,j)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect)) ) ) &
+                 - (bhstr_xx(i,j,kk)*CS%dx2h(i,j) * ( &
+                    (vh(i,J,k)*G%dyCv(i,J)*G%IdxCv(i,J)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)) &
+                  - (vh(i,J-1,k)*G%dyCv(i,J-1)*G%IdxCv(i,J-1)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)) ) )) &
+                + (0.25 * ((work_xy(I,J,kk) + work_xy(I-1,J-1,kk)) + (work_xy(I-1,J,kk) + work_xy(I,J-1,kk))) ) )
+          enddo ; enddo ; enddo
+        endif
       endif
 
       if (CS%EY24_EBT_BS) then
@@ -1927,56 +1935,54 @@ subroutine horizontal_viscosity_block(u, v, h, uh, vh, diffu, diffv, MEKE, VarMi
     endif
 
     if (CS%use_GME) then
-      if (CS%FrictWork_bug) then ; do kk=1,kke ; do j=js,je ; do i=is,ie
-        ! Diagnose   str_xx_GME*d_x u - str_yy_GME*d_y v + str_xy_GME*(d_y u + d_x v)
+      ! Diagnose  str_xx_GME*d_x u - str_yy_GME*d_y v + str_xy_GME*(d_y u + d_x v)
+      if (CS%FrictWork_bug) then
         ! This is the old formulation that includes energy diffusion
-        k = ksb + kk - 1
-        FrictWork_GME(i,j,k) = GV%H_to_RZ * ( &
-                ((str_xx_GME(i,j,kk)*(u(I,j,k)-u(I-1,j,k))*G%IdxT(i,j))    &
-               - (str_xx_GME(i,j,kk)*(v(i,J,k)-v(i,J-1,k))*G%IdyT(i,j)))   &
-              + 0.25*(( (str_xy_GME(I,J,kk) *                              &
-                         (((u(I,j+1,k)-u(I,j,k))*G%IdyBu(I,J))          &
-                        + ((v(i+1,J,k)-v(i,J,k))*G%IdxBu(I,J))))        &
-                      + (str_xy_GME(I-1,J-1,kk) *                          &
-                         (((u(I-1,j,k)-u(I-1,j-1,k))*G%IdyBu(I-1,J-1))  &
-                        + ((v(i,J-1,k)-v(i-1,J-1,k))*G%IdxBu(I-1,J-1)))) ) &
-                    + ( (str_xy_GME(I-1,J,kk) *                            &
-                         (((u(I-1,j+1,k)-u(I-1,j,k))*G%IdyBu(I-1,J))    &
-                        + ((v(i,J,k)-v(i-1,J,k))*G%IdxBu(I-1,J))))      &
-                      + (str_xy_GME(I,J-1,kk) *                            &
-                         (((u(I,j,k)-u(I,j-1,k))*G%IdyBu(I,J-1))        &
-                        + ((v(i+1,J-1,k)-v(i,J-1,k))*G%IdxBu(I,J-1)))) ) ) )
+
+        ! Find the contributions of the corner point stresses to the frictional work
+        do kk=1,kke ; do J=js-1,je ; do I=is-1,ie
+          k = ksb + kk - 1
+          work_xy(I,J,kk) = str_xy_GME(I,J,kk) * ( ((u(I,j+1,k)-u(I,j,k))*G%IdyBu(I,J)) &
+                                                 + ((v(i+1,J,k)-v(i,J,k))*G%IdxBu(I,J)) )
         enddo ; enddo ; enddo
-      else ; do kk=1,kke ; do j=js,je ; do i=is,ie
-        k = ksb + kk - 1
-        FrictWork_GME(i,j,k) = GV%H_to_RZ * G%IareaT(i,j) * ( &
-            ((str_xx_GME(i,j,kk)*CS%dy2h(i,j) * ( &
-                  (uh(I,j,k)*G%dxCu(I,j)*G%IdyCu(I,j)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect)) &
-                - (uh(I-1,j,k)*G%dxCu(I-1,j)*G%IdyCu(I-1,j)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect)) ) ) &
-           - (str_xx_GME(i,j,kk)*CS%dx2h(i,j) * ( &
-                  (vh(i,J,k)*G%dyCv(i,J)*G%IdxCv(i,J)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)) &
-                - (vh(i,J-1,k)*G%dyCv(i,J-1)*G%IdxCv(i,J-1)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)) ) )) &
-       + (0.25*(((str_xy_GME(I,J,kk)*(                                     &
-                     (CS%dx2q(I,J)*((uh(I,j+1,k)*G%IareaCu(I,j+1)/(h_u(I,j+1,kk)+h_neglect)) &
-                                  - (uh(I,j,k)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect))))            &
-                   + (CS%dy2q(I,J)*((vh(i+1,J,k)*G%IareaCv(i+1,J)/(h_v(i+1,J,kk)+h_neglect)) &
-                                  - (vh(i,J,k)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)))) ))          &
-                +(str_xy_GME(I-1,J-1,kk)*(                                 &
-                     (CS%dx2q(I-1,J-1)*((uh(I-1,j,k)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect)) &
-                                      - (uh(I-1,j-1,k)*G%IareaCu(I-1,j-1)/(h_u(I-1,j-1,kk)+h_neglect))))    &
-                   + (CS%dy2q(I-1,J-1)*((vh(i,J-1,k)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)) &
-                                      - (vh(i-1,J-1,k)*G%IareaCv(i-1,J-1)/(h_v(i-1,J-1,kk)+h_neglect)))) )) ) &
-               +((str_xy_GME(I-1,J,kk)*(                                   &
-                     (CS%dx2q(I-1,J)*((uh(I-1,j+1,k)*G%IareaCu(I-1,j+1)/(h_u(I-1,j+1,kk)+h_neglect)) &
-                                    - (uh(I-1,j,k)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect))))      &
-                   + (CS%dy2q(I-1,J)*((vh(i,J,k)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)) &
-                                    - (vh(i-1,J,k)*G%IareaCv(i-1,J)/(h_v(i-1,J,kk)+h_neglect)))) ))        &
-                +(str_xy_GME(I,J-1,kk)*(                                   &
-                      (CS%dx2q(I,J-1)*((uh(I,j,k)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect)) &
-                                     - (uh(I,j-1,k)*G%IareaCu(I,j-1)/(h_u(I,j-1,kk)+h_neglect))))          &
-                    + (CS%dy2q(I,J-1)*((vh(i+1,J-1,k)*G%IareaCv(i+1,J-1)/(h_v(i+1,J-1,kk)+h_neglect)) &
-                                     - (vh(i,J-1,k)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)))) )) ) )) )
-      enddo ; enddo ; enddo ; endif
+        do kk=1,kke ; do j=js,je ; do i=is,ie
+          k = ksb + kk - 1
+          FrictWork_GME(i,j,k) = GV%H_to_RZ * ( &
+              (  (str_xx_GME(i,j,kk)*(u(I,j,k)-u(I-1,j,k))*G%IdxT(i,j)) &
+               - (str_xx_GME(i,j,kk)*(v(i,J,k)-v(i,J-1,k))*G%IdyT(i,j)) ) &
+              + 0.25*( (work_xy(I,J,kk) + work_xy(I-1,J-1,kk)) + (work_xy(I-1,J,kk) + work_xy(I,J-1,kk)) ) )
+        enddo ; enddo ; enddo
+      else
+        ! Find the contributions of the corner point stresses to the frictional work
+        do kk=1,kke ; do J=js-1,je ; do I=is-1,ie
+          k = ksb + kk - 1
+          work_xy(I,J,kk) = str_xy_GME(I,J,kk) * ( (CS%dx2q(I,J)*(uh_hA(I,j+1,kk) - uh_hA(I,j,kk))) &
+                                                 + (CS%dy2q(I,J)*(vh_hA(i+1,J,kk) - vh_hA(i,J,kk))) )
+        enddo ; enddo ; enddo
+        if (CS%better_FrictWork) then
+          do kk=1,kke ; do j=js,je ; do i=is,ie
+            k = ksb + kk - 1
+            FrictWork_GME(i,j,k) = GV%H_to_RZ * G%IareaT(i,j) * ( &
+                (  (str_xx_GME(i,j,kk)*CS%dy2h(i,j) * ( (G%dxCu(I,j)*G%IdyCu(I,j) * uh_hA(I,j,kk)) &
+                                                      - (G%dxCu(I-1,j)*G%IdyCu(I-1,j) * uh_hA(I-1,j,kk)) ) ) &
+                 - (str_xx_GME(i,j,kk)*CS%dx2h(i,j) * ( (G%dyCv(i,J)*G%IdxCv(i,J) * vh_hA(i,J,kk)) &
+                                                      - (G%dyCv(i,J-1)*G%IdxCv(i,J-1) * vh_hA(i,J-1,kk)) ) )) &
+                + 0.25 * ((work_xy(I,J,kk) + work_xy(I-1,J-1,kk)) + (work_xy(I-1,J,kk) + work_xy(I,J-1,kk))) )
+          enddo ; enddo ; enddo
+        else
+          do kk=1,kke ; do j=js,je ; do i=is,ie
+            k = ksb + kk - 1
+            FrictWork_GME(i,j,k) = GV%H_to_RZ * G%IareaT(i,j) * ( &
+                (  (str_xx_GME(i,j,kk)*CS%dy2h(i,j) * ( &
+                      (uh(I,j,k)*G%dxCu(I,j)*G%IdyCu(I,j)*G%IareaCu(I,j)/(h_u(I,j,kk)+h_neglect)) &
+                    - (uh(I-1,j,k)*G%dxCu(I-1,j)*G%IdyCu(I-1,j)*G%IareaCu(I-1,j)/(h_u(I-1,j,kk)+h_neglect)) ) ) &
+                 - (str_xx_GME(i,j,kk)*CS%dx2h(i,j) * ( &
+                      (vh(i,J,k)*G%dyCv(i,J)*G%IdxCv(i,J)*G%IareaCv(i,J)/(h_v(i,J,kk)+h_neglect)) &
+                    - (vh(i,J-1,k)*G%dyCv(i,J-1)*G%IdxCv(i,J-1)*G%IareaCv(i,J-1)/(h_v(i,J-1,kk)+h_neglect)) ) )) &
+                + (0.25 * ((work_xy(I,J,kk) + work_xy(I-1,J-1,kk)) + (work_xy(I-1,J,kk) + work_xy(I,J-1,kk))) ) )
+          enddo ; enddo ; enddo
+        endif
+      endif
       if (find_FrictWork .and. allocated(MEKE%mom_src) .and. allocated(MEKE%GME_snk)) then
         do kk=1,kke ; do j=js,je ; do i=is,ie
           k = ksb + kk - 1
@@ -3136,10 +3142,16 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
                  "not recommended.", default=.false., do_not_log=.not.CS%use_Kh_bg_2d)
   call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
                  default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
+  ! The conditions under which CS%FrictWork_bug is applied are only known after diagnostics are
+  ! registered, otherwise a do_not_log flag should have been added here.
   call get_param(param_file, mdl, "FRICTWORK_BUG", CS%FrictWork_bug, &
                  "If true, retain an answer-changing bug in calculating the FrictWork, "//&
                  "which cancels the h in thickness flux and the h at velocity point. This is "//&
                  "not recommended.", default=.false.)
+  call get_param(param_file, mdl, "BETTER_FRICTWORK", CS%better_FrictWork, &
+                 "If true calculate the friction velocity work terms more efficiently with far "//&
+                 "fewer divisions, in a form that is mathematically equivalent to the case with "//&
+                 "FrictWork_bug = .false.", default=.false.)  !### Change the default to true.
   call get_param(param_file, mdl, "OBC_NUMBER_OF_SEGMENTS", number_of_OBC_segments, &
                  default=0, do_not_log=.true.)
   call get_param(param_file, mdl, "OBC_SPECIFIED_STRAIN_BUG", CS%OBC_strain_bug, &
