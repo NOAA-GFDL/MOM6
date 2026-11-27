@@ -715,6 +715,7 @@ subroutine horiz_interp_and_extrap_tracer_fms_id(field, Time, G, tr_z, mask_z, &
   real, dimension(SZI_(G),SZJ_(G)) :: fill2   ! 1 for points that still need to be filled after Ice-9 [nondim]
   integer :: turns
   integer :: verbosity
+  logical :: axes_allocated     ! Is the optional axes argument present and allocated?
 
   turns = G%HI%turns
 
@@ -740,7 +741,9 @@ subroutine horiz_interp_and_extrap_tracer_fms_id(field, Time, G, tr_z, mask_z, &
 
   call cpu_clock_begin(id_clock_read)
 
-  if (present(axes) .and. allocated(axes)) then
+  axes_allocated = .false.
+  if (present(axes)) axes_allocated = allocated(axes)
+  if ( axes_allocated) then
     call get_external_field_info(field, size=fld_sz, missing=missing_val_in)
     axes_data = axes
   else
