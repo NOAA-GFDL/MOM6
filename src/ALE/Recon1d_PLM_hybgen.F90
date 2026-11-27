@@ -15,7 +15,7 @@
 !! equiavalent to the recon1d_plm_hybgen module (this implementation).
 module Recon1d_PLM_hybgen
 
-use Recon1d_type, only : Recon1d, testing
+use Recon1d_type, only : Recon1d, testing, claim_is_unsupported
 
 implicit none ; private
 
@@ -59,6 +59,8 @@ contains
   procedure :: destroy => destroy
   !> Implementation of check reconstruction for the PLM_hybgen reconstruction
   procedure :: check_reconstruction => check_reconstruction
+  !> Not reflection symmetric because average() uses the one-sided form of PLM_HYBGEN
+  procedure, nopass :: claims_reflection => claim_is_unsupported
   !> Implementation of unit tests for the PLM_hybgen reconstruction
   procedure :: unit_tests => unit_tests
 

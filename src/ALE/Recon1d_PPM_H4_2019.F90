@@ -12,7 +12,7 @@
 !! The first and last cells are always limited to PCM.
 module Recon1d_PPM_H4_2019
 
-use Recon1d_type, only : Recon1d, testing
+use Recon1d_type, only : Recon1d, testing, claim_is_unsupported
 
 implicit none ; private
 
@@ -52,6 +52,9 @@ contains
   procedure :: destroy => destroy
   !> Implementation of check reconstruction for the PPM_H4_2019 reconstruction
   procedure :: check_reconstruction => check_reconstruction
+  !> Not reflection symmetric because, to reproduce PPM_H4, f() at x=1/2, and
+  !! average() over intervals centered on x=1/2, use the form based on the right edge value
+  procedure, nopass :: claims_reflection => claim_is_unsupported
   !> Implementation of unit tests for the PPM_H4_2019 reconstruction
   procedure :: unit_tests => unit_tests
 
@@ -430,6 +433,13 @@ real function average(this, k, xa, xb)
   real :: u_a, u_b ! Values at xa and xb [A]
   real :: xa2pxb2,  xa2b2ab, Ya2b2ab  ! Sums of squared fractional positions [nondim]
   real :: a_L, a_R, u_c, a_c    ! Values of the polynomial at various locations [A]
+
+  if (xb <= xa) then
+    ! For a vanishing interval, use the point value. The expressions in f() are the same as
+    ! those used for this case in the OM4-era average_value_ppoly().
+    average = this%f(k, xa)
+    return
+  endif
 
   mx = 0.5 * ( xa + xb )
   a_L = this%ul(k)

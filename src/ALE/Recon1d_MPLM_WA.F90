@@ -14,6 +14,7 @@
 module Recon1d_MPLM_WA
 
 use Recon1d_PLM_CW, only : PLM_CW, testing
+use Recon1d_type, only : claim_is_unsupported
 
 implicit none ; private
 
@@ -40,6 +41,9 @@ contains
   procedure :: reconstruct => reconstruct
   !> Implementation of check reconstruction for the MPLM_WA reconstruction
   procedure :: check_reconstruction => check_reconstruction
+  !> Not reflection symmetric because the left edge value of cell k+1 uses the slope of
+  !! cell k-1 (see NOAA-GFDL/MOM6#1239)
+  procedure, nopass :: claims_reflection => claim_is_unsupported
   !> Implementation of unit tests for the MPLM_WA reconstruction
   procedure :: unit_tests => unit_tests
 

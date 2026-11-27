@@ -9,9 +9,16 @@
 !! first ported from Hycom as hybgen_ppm_coefs() in the mom_hybgen_remap module. This module is
 !! a refactor to facilitate more complete testing and evaluation.
 !!
-!! The mom_hybgen_remap.hybgen_ppm_coefs() function (reached with "PPM_HYGEN"),
+!! The reconstruction in this implementation (reached with "C_PPM_HYBGEN") is equivalent to the
+!! mom_hybgen_remap.hybgen_ppm_coefs() function (reached with "PPM_HYBGEN"). The
 !! regrid_edge_values.edge_values_explicit_h4cw() function followed by ppm_functions.ppm_reconstruction()
-!! (reached with "PPM_CW"), are equivalent. Similarly recon1d_ppm_hybgen (this implementation) is equivalent also.
+!! (reached with "PPM_CW") is also equivalent except where two or more adjacent layers are vanished,
+!! because "PPM_HYBGEN" uses PCM for vanished layers whereas "PPM_CW" does not.
+!!
+!! f() and average() are inherited from recon1d_ppm_cw and are reflection symmetric, so they differ
+!! from those of "PPM_HYBGEN" for a point value at x=1/2, or an average over an interval centered on
+!! x=1/2. The first version, recon1d_ppm_hybgen_v1 (reached with "C_PPM_HYBGEN_V1"), retains the
+!! expressions of "PPM_HYBGEN" so as to reproduce it bitwise.
 module Recon1d_PPM_hybgen
 
 use Recon1d_type, only : testing
@@ -115,9 +122,9 @@ end subroutine reconstruct
 
 !> Average between xa and xb for cell k of a PPM_hybgen reconstruction [A]
 !!
-!! Calls the parent PPM_CW average and then clamps the result to [min(ul,ur), max(ul,ur)].
-!! This replicates the force_bounds_in_subcell behavior of the equivalent old-style PPM_HYBGEN
-!! scheme.
+!! Calls the parent PPM_CW average, or the point value f() when xa=xb, and then clamps the
+!! result to [min(ul,ur), max(ul,ur)]. This replicates the evaluation and the
+!! force_bounds_in_subcell behavior of the equivalent old-style PPM_HYBGEN scheme.
 real function average(this, k, xa, xb)
   class(PPM_hybgen), intent(in) :: this !< This reconstruction
   integer,           intent(in) :: k    !< Cell number
@@ -125,7 +132,12 @@ real function average(this, k, xa, xb)
   real,              intent(in) :: xb   !< End of averaging interval on element (0 to 1) [nondim]
   real :: u_lo, u_hi ! Bounds on the sub-cell average given by the edge values [A]
 
-  average = this%PPM_CW%average(k, xa, xb)
+  if (xb > xa) then
+    average = this%PPM_CW%average(k, xa, xb)
+  else ! For a vanishing interval, use the point value. The expressions in f() are the same as
+       ! those used for this case in the OM4-era average_value_ppoly().
+    average = this%f(k, xa)
+  endif
   u_lo = min(this%ul(k), this%ur(k))
   u_hi = max(this%ul(k), this%ur(k))
   average = max(u_lo, min(u_hi, average))
