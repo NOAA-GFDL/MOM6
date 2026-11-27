@@ -295,6 +295,10 @@ type, public :: barotropic_CS ; private
                              !! are large enough for a CFL number to exceed
                              !! CFL_trunc.  This should only be used as a
                              !! desperate debugging measure.
+  logical :: asymmetric_clip_bug !< If clip_velocity is true and this is true, clip large barotropic
+                             !! u-velocities to 95 percent of the maximum velocity but clip large
+                             !! v-velocities to 90 percent of the maximum, thereby breaking rotational
+                             !! symmetry.  If false, both are clipped to 90 percent.
   logical :: debug           !< If true, write verbose checksums for debugging purposes.
   logical :: debug_bt        !< If true, write verbose checksums from within the barotropic
                              !! time-stepping loop for debugging purposes.
@@ -331,10 +335,15 @@ type, public :: barotropic_CS ; private
   logical :: exterior_OBC_bug = .true. !< If true, recover a bug with boundary conditions
                              !! inside the domain.
   logical :: interior_OBC_PV !< If true, use only interior ocean points at OBCs to specify the PV
-                             !!  used in the barotropic Coriolis anomalies.  Otherwise the
+                             !! used in the barotropic Coriolis anomalies.  Otherwise the
                              !! calculation relies on bathymetry and eta being projected outward
                              !! across OBCs.  Unfortunately, this option does change answers near
                              !! convex (peninsula-type) pairs of OBC segments.
+  logical :: OBC_gtot_edge_weights  !< If true, use the fractional thickness weights at OBC velocity
+                             !! points when projecting the effective gravitational acceleration out
+                             !! past OBC faces.  If false, the thickness weights are taken from the
+                             !! velocity point opposite the OBC face, although the same values of
+                             !! pbce (akin to reduced gravities) are used in both cases.
   type(time_type), pointer :: Time  => NULL() !< A pointer to the ocean models clock.
   type(diag_ctrl), pointer :: diag => NULL()  !< A structure that is used to regulate
                              !! the timing of diagnostic output.
@@ -1175,20 +1184,30 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   enddo
 
   if (CS%BT_OBC%u_OBCs_on_PE) then
-    do j=js,je ; do I=is-1,ie
-      if (CS%BT_OBC%u_OBC_type(I,j) > 0) & ! Eastern boundary condition
-        gtot_W(i+1,j) = gtot_W(i,j)  ! Perhaps this should be gtot_E(i,j)?
-      if (CS%BT_OBC%u_OBC_type(I,j) < 0) & ! Western boundary condition
-        gtot_E(i,j) = gtot_E(i+1,j)  ! Perhaps this should be gtot_W(i+1,j)?
-    enddo ; enddo
+    if (CS%OBC_gtot_edge_weights) then
+      do j=js,je ; do I=is-1,ie
+        if (CS%BT_OBC%u_OBC_type(I,j) > 0) gtot_W(i+1,j) = gtot_E(i,j)  ! Eastern boundary condition
+        if (CS%BT_OBC%u_OBC_type(I,j) < 0) gtot_E(i,j) = gtot_W(i+1,j)  ! Western boundary condition
+      enddo ; enddo
+    else
+      do j=js,je ; do I=is-1,ie
+        if (CS%BT_OBC%u_OBC_type(I,j) > 0) gtot_W(i+1,j) = gtot_W(i,j)  ! Eastern boundary condition
+        if (CS%BT_OBC%u_OBC_type(I,j) < 0) gtot_E(i,j) = gtot_E(i+1,j)  ! Western boundary condition
+      enddo ; enddo
+    endif
   endif
   if (CS%BT_OBC%v_OBCs_on_PE) then
-    do J=js-1,je ; do i=is,ie
-      if (CS%BT_OBC%v_OBC_type(i,J) > 0) & ! Northern boundary condition
-        gtot_S(i,j+1) = gtot_S(i,j)  !### Should this be gtot_N(i,j) to use wt_v at the same point?
-      if (CS%BT_OBC%v_OBC_type(i,J) < 0) & ! Southern boundary condition
-        gtot_N(i,j) = gtot_N(i,j+1)  ! Perhaps this should be gtot_S(i,j+1)?
-    enddo ; enddo
+    if (CS%OBC_gtot_edge_weights) then
+      do J=js-1,je ; do i=is,ie
+        if (CS%BT_OBC%v_OBC_type(i,J) > 0) gtot_S(i,j+1) = gtot_N(i,j)  ! Northern boundary condition
+        if (CS%BT_OBC%v_OBC_type(i,J) < 0) gtot_N(i,j) = gtot_S(i,j+1)  ! Southern boundary condition
+      enddo ; enddo
+    else
+      do J=js-1,je ; do i=is,ie
+        if (CS%BT_OBC%v_OBC_type(i,J) > 0) gtot_S(i,j+1) = gtot_S(i,j)  ! Northern boundary condition
+        if (CS%BT_OBC%v_OBC_type(i,J) < 0) gtot_N(i,j) = gtot_N(i,j+1)  ! Southern boundary condition
+      enddo ; enddo
+    endif
   endif
 
   if (CS%calculate_SAL) then
@@ -2016,7 +2035,22 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
   call btstep_layer_accel(dt, u_accel_bt, v_accel_bt, pbce, gtot_E, gtot_W, gtot_N, gtot_S, &
                           e_anom, G, GV, CS, accel_layer_u, accel_layer_v)
 
-  if (apply_OBCs) then
+  if (apply_OBCs) then ; if (CS%answer_date >= 20270101) then
+    ! Correct the accelerations at OBC velocity points, but only in the
+    ! symmetric-memory computational domain, not in the wide halo regions.
+    if (CS%BT_OBC%u_OBCs_on_PE) then ; do j=js,je ; do I=is-1,ie
+      if (CS%BT_OBC%u_OBC_type(I,j) /= 0) then
+        u_accel_bt(I,j) = (ubt_wtd(I,j) - ubt_st(I,j)) * Idt
+        do k=1,nz ; accel_layer_u(I,j,k) = u_accel_bt(I,j) ; enddo
+      endif
+    enddo ; enddo ; endif
+    if (CS%BT_OBC%v_OBCs_on_PE) then ; do J=js-1,je ; do i=is,ie
+      if (CS%BT_OBC%v_OBC_type(i,J) /= 0) then
+        v_accel_bt(i,J) = (vbt_wtd(i,J) - vbt_st(i,J)) * Idt
+        do k=1,nz ; accel_layer_v(i,J,k) = v_accel_bt(i,J) ; enddo
+      endif
+    enddo ; enddo ; endif
+  else
     ! Correct the accelerations at OBC velocity points, but only in the
     ! symmetric-memory computational domain, not in the wide halo regions.
     if (CS%BT_OBC%u_OBCs_on_PE) then ; do j=js,je ; do I=is-1,ie
@@ -2031,7 +2065,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
         do k=1,nz ; accel_layer_v(i,J,k) = v_accel_bt(i,J) ; enddo
       endif
     enddo ; enddo ; endif
-  endif
+  endif ; endif
 
   if (id_clock_calc_post > 0) call cpu_clock_end(id_clock_calc_post)
 
@@ -3051,7 +3085,7 @@ subroutine btstep_find_Cor(q, DCor_u, DCor_v, f_4_u, f_4_v, isvf, ievf, jsvf, je
   integer, intent(in) :: jsvf  !< The starting j-index of the largest valid range for tracer points
   integer, intent(in) :: jevf  !< The ending j-index of the largest valid range for tracer points
 
-  ! real :: C1_3 ! One third [nondim]
+  real, parameter :: C1_3 = 1.0 / 3.0 ! One third [nondim]
   integer :: i, j
 
   if (CS%Sadourny) then
@@ -3069,7 +3103,7 @@ subroutine btstep_find_Cor(q, DCor_u, DCor_v, f_4_u, f_4_v, isvf, ievf, jsvf, je
       f_4_u(1,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J-1) * q(I,J-1)
       f_4_u(2,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J-1) * q(I,J-1)
     enddo ; enddo
-  else  !### if (CS%answer_date < 20250601) then  ! Uncomment this later.
+  elseif (CS%answer_date < 20270101) then
     !$OMP parallel do default(shared)
     do J=jsvf-1,jevf ; do i=isvf-1,ievf+1
       f_4_v(1,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j) * ((q(I,J) + q(I-1,J-1)) + q(I-1,J)) / 3.0
@@ -3084,27 +3118,26 @@ subroutine btstep_find_Cor(q, DCor_u, DCor_v, f_4_u, f_4_v, isvf, ievf, jsvf, je
       f_4_u(1,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J-1) * ((q(I,J) + q(I-1,J-1)) + q(I,J-1)) / 3.0
       f_4_u(2,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J-1) * ((q(I,J) + q(I+1,J-1)) + q(I,J-1)) / 3.0
     enddo ; enddo
-  ! else
-  !   C1_3 = 1.0 / 3.0
-  !   !$OMP parallel do default(shared)
-  !   do J=jsvf-1,jevf ; do i=isvf-1,ievf+1
-  !     f_4_v(1,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j) * ((q(I,J) + q(I-1,J-1)) + q(I-1,J)) * C1_3
-  !     f_4_v(2,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j) * (q(I,J) + (q(I-1,J) + q(I,J-1))) * C1_3
-  !     f_4_v(4,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j+1) * (q(I,J) + (q(I-1,J) + q(I,J+1))) * C1_3
-  !     f_4_v(3,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j+1) * ((q(I,J) + q(I-1,J+1)) + q(I-1,J)) * C1_3
-  !   enddo ; enddo
-  !   !$OMP parallel do default(shared)
-  !   do j=jsvf-1,jevf+1 ; do I=isvf-1,ievf
-  !     f_4_u(4,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J) * (q(I,J) + (q(I+1,J) + q(I,J-1))) * C1_3
-  !     f_4_u(3,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J) * (q(I,J) + (q(I-1,J) + q(I,J-1))) * C1_3
-  !     f_4_u(1,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J-1) * ((q(I,J) + q(I-1,J-1)) + q(I,J-1)) * C1_3
-  !     f_4_u(2,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J-1) * ((q(I,J) + q(I+1,J-1)) + q(I,J-1)) * C1_3
-  !   enddo ; enddo
+  else
+    !$OMP parallel do default(shared)
+    do J=jsvf-1,jevf ; do i=isvf-1,ievf+1
+      f_4_v(1,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j) * ((q(I,J) + q(I-1,J-1)) + q(I-1,J)) * C1_3
+      f_4_v(2,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j) * (q(I,J) + (q(I-1,J) + q(I,J-1))) * C1_3
+      f_4_v(4,i,J) = CS%OBCmask_v(i,J) * DCor_u(I,j+1) * (q(I,J) + (q(I-1,J) + q(I,J+1))) * C1_3
+      f_4_v(3,i,J) = CS%OBCmask_v(i,J) * DCor_u(I-1,j+1) * ((q(I,J) + q(I-1,J+1)) + q(I-1,J)) * C1_3
+    enddo ; enddo
+    !$OMP parallel do default(shared)
+    do j=jsvf-1,jevf+1 ; do I=isvf-1,ievf
+      f_4_u(4,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J) * (q(I,J) + (q(I+1,J) + q(I,J-1))) * C1_3
+      f_4_u(3,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J) * (q(I,J) + (q(I-1,J) + q(I,J-1))) * C1_3
+      f_4_u(1,I,j) = CS%OBCmask_u(I,j) * DCor_v(i,J-1) * ((q(I,J) + q(I-1,J-1)) + q(I,J-1)) * C1_3
+      f_4_u(2,I,j) = CS%OBCmask_u(I,j) * DCor_v(i+1,J-1) * ((q(I,J) + q(I+1,J-1)) + q(I,J-1)) * C1_3
+    enddo ; enddo
   endif
 
 end subroutine btstep_find_Cor
 
-!> Do a CFL-based truncation of any excessively large batotropic velocities.
+!> Do a CFL-based truncation of any excessively large barotropic velocities.
 !! This should only be used as desperate debugging measure.
 subroutine truncate_velocities(ubt, vbt, dt, G, CS, isv, iev, jsv, jev)
   type(ocean_grid_type), intent(inout) :: G  !< The ocean's grid structure.
@@ -3117,16 +3150,19 @@ subroutine truncate_velocities(ubt, vbt, dt, G, CS, isv, iev, jsv, jev)
   integer, intent(in)    :: jsv !< The starting valid tracer array j-index that is being worked on
   integer, intent(in)    :: jev !< The ending valid tracer array j-index being that is worked on
 
+  real :: ubt_clip_frac  ! The fraction of the maximum u-velocity to use for the clipped value [nondim]
   integer :: i, j
+
+  ubt_clip_frac = 0.9*CS%CFL_trunc ; if (CS%asymmetric_clip_bug) ubt_clip_frac = 0.95*CS%CFL_trunc
 
   if (CS%clip_velocity) then
     do j=jsv,jev ; do I=isv-1,iev
       if ((ubt(I,j) * (dt * G%dy_Cu(I,j))) * G%IareaT(i+1,j) < -CS%CFL_trunc) then
         ! Add some error reporting later.
-        ubt(I,j) = (-0.95*CS%CFL_trunc) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
+        ubt(I,j) = (-ubt_clip_frac) * (G%areaT(i+1,j) / (dt * G%dy_Cu(I,j)))
       elseif ((ubt(I,j) * (dt * G%dy_Cu(I,j))) * G%IareaT(i,j) > CS%CFL_trunc) then
         ! Add some error reporting later.
-        ubt(I,j) = (0.95*CS%CFL_trunc) * (G%areaT(i,j) / (dt * G%dy_Cu(I,j)))
+        ubt(I,j) = ubt_clip_frac * (G%areaT(i,j) / (dt * G%dy_Cu(I,j)))
       endif
     enddo ; enddo
     do J=jsv-1,jev ; do i=isv,iev
@@ -5572,6 +5608,8 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                           ! land, coastal or OBC points.
   logical :: use_tides
   logical :: OBC_projection_bug
+  logical :: use_OBCs     ! If true, OBCs are used somewhere in the domain.
+  integer :: number_of_OBC_segments ! The number of active OBC segments, used to determine if OBCs are in use.
   logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
                           ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: visc_rem_bug ! Stores the value of runtime paramter VISC_REM_BUG.
@@ -5732,10 +5770,12 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
+  default_answer_date = min(default_answer_date, 20261231)  !### Remove this line later.
   call get_param(param_file, mdl, "BAROTROPIC_ANSWER_DATE", CS%answer_date, &
                  "The vintage of the expressions in the barotropic solver. "//&
-                 "Values below 20190101 recover the answers from the end of 2018, "//&
-                 "while higher values use more efficient or general expressions.", &
+                 "Values below 20190101 recover the answers from the end of 2018, while higher "//&
+                 "values use more efficient or general expressions.  Values of 20270101 or "//&
+                 "higher replace several divisions by multiplication by their reciprocal.", &
                  default=default_answer_date, do_not_log=.not.GV%Boussinesq)
   if (.not.GV%Boussinesq) CS%answer_date = max(CS%answer_date, 20230701)
 
@@ -5746,6 +5786,9 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                  "If true, recover a bug in barotropic solver that uses an unnormalized weight "//&
                  "function for vertical averages of baroclinic velocity and forcing. Default "//&
                  "of this flag is set by VISC_REM_BUG.", default=visc_rem_bug)
+  call get_param(param_file, mdl, "OBC_NUMBER_OF_SEGMENTS", number_of_OBC_segments, &
+                 default=0, do_not_log=.true.)
+  use_OBCs = (number_of_OBC_segments > 0)
   call get_param(param_file, mdl, "EXTERIOR_OBC_BUG", CS%exterior_OBC_bug, &
                  "If true, recover a bug in barotropic solver and other routines when "//&
                  "boundary contitions interior to the domain are used.", &
@@ -5759,6 +5802,15 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                  "answers for some configurations that use OBCs.", &
                  default=enable_bugs, do_not_log=.true.)
   CS%interior_OBC_PV = .not.OBC_projection_bug
+  call get_param(param_file, mdl, "OBC_GTOT_EDGE_WEIGHTS", CS%OBC_gtot_edge_weights, &
+                 "If true, use the fractional thickness weights at OBC velocity points when "//&
+                 "projecting the effective gravitational acceleration out past OBC faces.  "//&
+                 "If false, the thickness weights are taken from the velocity point opposite "//&
+                 "the OBC face, although the same values of pbce (akin to reduced gravities) "//&
+                 "are used in both cases.  Because pressure gradient forces are zeroed out at "//&
+                 "OBC points, this option only changes estimates of the maximum stable timestep "//&
+                 "and the strength of rigid ice when DYNAMIC_SURFACE_PRESSURE is true.", &
+                 default=.false., do_not_log=.not.use_OBCs) !### Consider setting default to true.
   call get_param(param_file, mdl, "TIDES", use_tides, &
                  "If true, apply tidal momentum forcing.", default=.false.)
   if (use_tides .and. present(HA_CSp)) CS%HA_CSp => HA_CSp
@@ -5868,6 +5920,12 @@ subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
                  "The maximum velocity allowed before the velocity "//&
                  "components are truncated.", units="m s-1", default=3.0e8, scale=US%m_s_to_L_T, &
                  do_not_log=.not.CS%clip_velocity)
+  call get_param(param_file, mdl, "ASYMMETRIC_CLIP_BT_BUG", CS%asymmetric_clip_bug, &
+                 "If true, clip large barotropic u-velocities to 95 percent of the maximum "//&
+                 "velocity but clip large v-velocities to 90 percent of the maximum, thereby "//&
+                 "breaking rotational symmetry.  If false, both are clipped to 90 percent.  "//&
+                 "This only applies if CLIP_BT_VELOCITY is true.", &
+                 default=enable_bugs, do_not_log=.not.CS%clip_velocity)
   call get_param(param_file, mdl, "MAXCFL_BT_CONT", CS%maxCFL_BT_cont, &
                  "The maximum permitted CFL number associated with the "//&
                  "barotropic accelerations from the summed velocities "//&
