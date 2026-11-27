@@ -743,7 +743,7 @@ subroutine horiz_interp_and_extrap_tracer_fms_id(field, Time, G, tr_z, mask_z, &
 
   axes_allocated = .false.
   if (present(axes)) axes_allocated = allocated(axes)
-  if ( axes_allocated) then
+  if (axes_allocated) then
     call get_external_field_info(field, size=fld_sz, missing=missing_val_in)
     axes_data = axes
   else
